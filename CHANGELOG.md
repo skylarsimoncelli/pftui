@@ -2,6 +2,25 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat(F57.1): analytics views — structured per-analyst, per-asset directional views
+
+**What:** New `analytics views` CLI domain starting F57 (Timeframe Analyst Self-Awareness). Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) can now write structured views per asset with direction (bull/bear/neutral), conviction score (-5 to +5), reasoning, key evidence, and blind spots. Views are upserted per analyst+asset pair, so the latest view always replaces the previous one. Four subcommands: `set` (upsert a view), `list` (browse with analyst/asset filters), `matrix` (full cross-analyst view matrix — rows=assets, columns=analysts), `delete` (remove a view). New `analyst_views` table (SQLite + PostgreSQL) with unique constraint on (analyst, asset). Validation on analyst names, directions, and conviction range.
+
+**Commands:**
+- `pftui analytics views set --analyst low --asset BTC --direction bull --conviction 3 --reasoning "Momentum strong" --evidence "RSI 62" --blind-spots "Whale risk" --json`
+- `pftui analytics views list [--analyst high] [--asset BTC] --json`
+- `pftui analytics views matrix --json`
+- `pftui analytics views delete --analyst low --asset BTC --json`
+
+**Files changed:**
+- `src/db/analyst_views.rs` (new) — analyst_views table, CRUD, matrix, validation, both backends
+- `src/commands/analyst_views.rs` (new) — CLI command implementations (set, list, matrix, delete)
+- `src/cli.rs` — AnalyticsViewsCommand enum + Views variant in AnalyticsCommand + 4 parse tests
+- `src/main.rs` — dispatch wiring
+- `src/db/mod.rs`, `src/commands/mod.rs` — module registration
+
+**Tests:** 15 new (11 DB + 4 CLI parse). Full suite: 2026 passed, 0 failed. Clippy clean.
+
 ### 2026-03-29 — feat(F56.4): analytics debate-score — track historical bull/bear accuracy
 
 **What:** New `analytics debate-score` CLI domain completing F56 (Adversarial Debate Mechanism). Score resolved debates to track which side (bull/bear) was historically correct. Four subcommands: `add` (score a debate with winner/margin/outcome), `list` (browse scored debates with topic/winner filters), `accuracy` (aggregate bull vs bear win rates), `unscored` (find resolved debates awaiting scoring). New `debate_scores` table (SQLite + PostgreSQL) with upsert support. Feeds into system accuracy tracking.

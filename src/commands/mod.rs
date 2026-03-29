@@ -2,6 +2,7 @@ pub mod add_tx;
 pub mod agent_msg;
 pub mod alerts;
 pub mod allocation;
+pub mod analyst_views;
 pub mod analytics;
 pub mod annotate;
 pub mod backfill;

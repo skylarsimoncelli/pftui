@@ -2831,6 +2831,85 @@ pub enum AnalyticsConvictionCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsViewsCommand {
+    /// Set or update an analyst's view on an asset (upsert)
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views set --analyst low --asset BTC --direction bull --conviction 3 \
+    ///     --reasoning "Short-term momentum strong, breaking key resistance"
+    ///   pftui analytics views set --analyst high --asset GLD --direction bull --conviction 4 \
+    ///     --reasoning "Structural central bank buying" \
+    ///     --evidence "WGC Q4 data, PBOC reserves" \
+    ///     --blind-spots "Risk-on shift could pause buying" --json
+    Set {
+        /// Analyst layer: low, medium, high, macro
+        #[arg(long)]
+        analyst: String,
+        /// Asset symbol (e.g. BTC, GLD, TSLA)
+        #[arg(long)]
+        asset: String,
+        /// Direction: bull, bear, neutral
+        #[arg(long)]
+        direction: String,
+        /// Conviction score: -5 (strong bear) to +5 (strong bull)
+        #[arg(long, allow_hyphen_values = true)]
+        conviction: i64,
+        /// Why this view — reasoning summary
+        #[arg(long)]
+        reasoning: String,
+        /// Supporting data points
+        #[arg(long)]
+        evidence: Option<String>,
+        /// What could invalidate this view
+        #[arg(long = "blind-spots")]
+        blind_spots: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List current analyst views with optional filters
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views list --json
+    ///   pftui analytics views list --analyst low --json
+    ///   pftui analytics views list --asset BTC --json
+    List {
+        /// Filter by analyst layer: low, medium, high, macro
+        #[arg(long)]
+        analyst: Option<String>,
+        /// Filter by asset symbol
+        #[arg(long)]
+        asset: Option<String>,
+        /// Maximum results to show
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Full cross-analyst view matrix: rows=assets, columns=analysts (LOW/MEDIUM/HIGH/MACRO)
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views matrix --json
+    Matrix {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete an analyst's view on an asset
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views delete --analyst low --asset BTC --json
+    Delete {
+        /// Analyst layer: low, medium, high, macro
+        #[arg(long)]
+        analyst: String,
+        /// Asset symbol
+        #[arg(long)]
+        asset: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsDebateScoreCommand {
     /// Score a resolved debate: which side (bull/bear) was right?
     ///
@@ -3004,6 +3083,12 @@ pub enum AnalyticsCommand {
     DebateScore {
         #[command(subcommand)]
         command: AnalyticsDebateScoreCommand,
+    },
+    /// Per-analyst, per-asset directional views with conviction scores (F57: Timeframe Analyst Self-Awareness)
+    #[command(after_help = "Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) writes a structured\nview per asset on every run. Views include direction, conviction (-5 to +5),\nreasoning, key evidence, and blind spots.\n\nSubcommands:\n  set     — write/update an analyst's view on an asset\n  list    — list views with optional analyst/asset filters\n  matrix  — full cross-analyst view matrix\n  delete  — remove a view\n\nExamples:\n  pftui analytics views set --analyst low --asset BTC --direction bull \\\n    --conviction 3 --reasoning \"Momentum strong\" --json\n  pftui analytics views list --asset BTC --json\n  pftui analytics views matrix --json\n\nSee also: analytics alignment, analytics divergence")]
+    Views {
+        #[command(subcommand)]
+        command: AnalyticsViewsCommand,
     },
     /// Identified opportunities: undervalued positions, scenario plays, entry points
     Opportunities {
@@ -4193,6 +4278,152 @@ mod tests {
             panic!("expected analytics calibration command");
         };
         assert!((threshold - 10.0).abs() < f64::EPSILON);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_set() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "set",
+            "--analyst",
+            "low",
+            "--asset",
+            "BTC",
+            "--direction",
+            "bull",
+            "--conviction",
+            "3",
+            "--reasoning",
+            "Short-term momentum strong",
+            "--evidence",
+            "RSI 62, MACD cross",
+            "--blind-spots",
+            "Whale selling risk",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command:
+                        AnalyticsViewsCommand::Set {
+                            analyst,
+                            asset,
+                            direction,
+                            conviction,
+                            reasoning,
+                            evidence,
+                            blind_spots,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views set command");
+        };
+        assert_eq!(analyst, "low");
+        assert_eq!(asset, "BTC");
+        assert_eq!(direction, "bull");
+        assert_eq!(conviction, 3);
+        assert_eq!(reasoning, "Short-term momentum strong");
+        assert_eq!(evidence.as_deref(), Some("RSI 62, MACD cross"));
+        assert_eq!(blind_spots.as_deref(), Some("Whale selling risk"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_list() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "list",
+            "--analyst",
+            "high",
+            "--asset",
+            "GLD",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command:
+                        AnalyticsViewsCommand::List {
+                            analyst,
+                            asset,
+                            json,
+                            ..
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views list command");
+        };
+        assert_eq!(analyst.as_deref(), Some("high"));
+        assert_eq!(asset.as_deref(), Some("GLD"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_matrix() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "matrix",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command: AnalyticsViewsCommand::Matrix { json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views matrix command");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_delete() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "delete",
+            "--analyst",
+            "medium",
+            "--asset",
+            "TSLA",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command:
+                        AnalyticsViewsCommand::Delete {
+                            analyst,
+                            asset,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views delete command");
+        };
+        assert_eq!(analyst, "medium");
+        assert_eq!(asset, "TSLA");
         assert!(json);
     }
 
