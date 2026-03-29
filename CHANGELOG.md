@@ -2,6 +2,22 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat(F55.1-F55.3): Prediction market contracts — tag-based Polymarket event fetching
+
+**What:** Added `prediction_market_contracts` table with enriched schema (exchange, event_id, event_title, question, category, last_price, volume_24h, liquidity, end_date). New `fetch_polymarket_contracts()` function queries the Polymarket Gamma events API across 8 macro-relevant tag slugs (fed, economics, interest-rates, geopolitics, politics, bitcoin, crypto, ai) — replacing the previous undifferentiated top-100 markets fetch that was returning mostly low-quality crypto gossip. `data predictions` now prefers the enriched contracts table when populated, with graceful fallback to legacy `predictions_cache`. Integrated into the refresh DAG as a parallel async fetch alongside existing predictions source.
+
+**Files changed:**
+- `src/db/prediction_contracts.rs` — New module: upsert, query (with category/search filters), count, category counts, last_update. SQLite + Postgres dual backend.
+- `src/db/schema.rs` — Added `prediction_market_contracts` table + indexes (category, volume, exchange, event_id).
+- `src/db/mod.rs` — Registered `prediction_contracts` module.
+- `src/data/predictions.rs` — Added `fetch_polymarket_contracts()` (tag-based events API), `parse_yes_probability()`, `MACRO_TAG_SLUGS` constant.
+- `src/commands/refresh.rs` — Added `contracts_need_refresh()`, `store_contracts_result()`, wired into `tokio::join!` parallel fetch.
+- `src/commands/predictions.rs` — `run()` now prefers contracts table over legacy cache. Added `print_contracts_table()`, `print_contracts_json()`, `resolve_category_for_contracts()`.
+- `src/cli.rs` — Updated Markets subcommand help text with after_help cross-references. Added CLI parse test.
+- `TODO.md` — Marked F55.1, F55.2, F55.3 complete.
+
+**Tests:** 1935 total (+24 new). 12 unit tests in `db/prediction_contracts.rs`, 6 in `data/predictions.rs`, 5 in `commands/predictions.rs`, 1 CLI parse test.
+
 ### 2026-03-29 — feat: `data quotes` alias for `data prices`
 
 - What: Added `quotes` as a clap alias for the `data prices` command. `pftui data quotes`, `pftui data quotes --market`, and `pftui data quotes --json` all resolve to `DataCommand::Prices`. Added after_help cross-references on Prices (mentions quotes alias, points to `data futures`) and Futures (points to `data prices`/`data quotes` for portfolio quotes).

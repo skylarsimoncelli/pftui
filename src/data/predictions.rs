@@ -191,6 +191,146 @@ fn infer_category_from_question(question: &str) -> MarketCategory {
     }
 }
 
+// ── Tag-based event fetching (F55.2) ────────────────────────────────
+
+use crate::db::prediction_contracts::PredictionContract;
+
+/// Macro-relevant Polymarket tag slugs.
+/// Each maps to a category label stored in prediction_market_contracts.
+const MACRO_TAG_SLUGS: &[(&str, &str)] = &[
+    ("fed", "economics"),
+    ("economics", "economics"),
+    ("interest-rates", "economics"),
+    ("geopolitics", "geopolitics"),
+    ("politics", "geopolitics"),
+    ("bitcoin", "crypto"),
+    ("crypto", "crypto"),
+    ("ai", "ai"),
+];
+
+/// Gamma events API response structure.
+#[derive(Debug, Deserialize)]
+struct GammaEvent {
+    id: String,
+    title: String,
+    #[serde(default)]
+    markets: Vec<GammaEventMarket>,
+}
+
+/// A market within a Gamma event.
+#[derive(Debug, Deserialize)]
+struct GammaEventMarket {
+    #[serde(rename = "conditionId")]
+    condition_id: String,
+    question: String,
+    #[serde(rename = "outcomePrices")]
+    outcome_prices: String, // JSON string: "[\"0.42\", \"0.58\"]"
+    #[serde(rename = "volume24hr")]
+    volume_24hr: f64,
+    #[serde(rename = "liquidityNum", default)]
+    liquidity_num: f64,
+    #[serde(rename = "endDate", default)]
+    end_date: Option<String>,
+    #[serde(default)]
+    active: bool,
+    #[serde(default)]
+    closed: bool,
+}
+
+/// Fetch macro-relevant prediction market contracts from Polymarket Gamma events API.
+///
+/// Queries multiple tag slugs (fed, economics, geopolitics, politics, bitcoin, crypto, ai),
+/// deduplicates by condition_id, and returns structured `PredictionContract`s sorted by volume.
+/// Free, no auth required.
+pub async fn fetch_polymarket_contracts() -> Result<Vec<PredictionContract>> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()?;
+
+    let now = chrono::Utc::now().timestamp();
+    let mut seen = std::collections::HashSet::new();
+    let mut contracts = Vec::new();
+
+    for &(tag_slug, category) in MACRO_TAG_SLUGS {
+        let url = format!(
+            "https://gamma-api.polymarket.com/events?limit=25&active=true&closed=false&tag_slug={}&order=volume24hr&ascending=false",
+            tag_slug
+        );
+
+        let resp = match client.get(&url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Warning: Polymarket tag '{}' fetch failed: {}", tag_slug, e);
+                continue;
+            }
+        };
+
+        if !resp.status().is_success() {
+            continue;
+        }
+
+        let text = match resp.text().await {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        let events: Vec<GammaEvent> = match serde_json::from_str(&text) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for event in events {
+            for market in event.markets {
+                // Skip closed/inactive
+                if market.closed || !market.active {
+                    continue;
+                }
+
+                // Skip entertainment
+                if is_entertainment_market(&market.question)
+                    || is_entertainment_market(&event.title)
+                {
+                    continue;
+                }
+
+                // Deduplicate across tags
+                if !seen.insert(market.condition_id.clone()) {
+                    continue;
+                }
+
+                // Parse probability from outcome_prices
+                let prob = parse_yes_probability(&market.outcome_prices).unwrap_or(0.0);
+
+                contracts.push(PredictionContract {
+                    contract_id: market.condition_id,
+                    exchange: "polymarket".to_string(),
+                    event_id: event.id.clone(),
+                    event_title: event.title.clone(),
+                    question: market.question,
+                    category: category.to_string(),
+                    last_price: prob,
+                    volume_24h: market.volume_24hr,
+                    liquidity: market.liquidity_num,
+                    end_date: market.end_date,
+                    updated_at: now,
+                });
+            }
+        }
+    }
+
+    // Sort by volume descending
+    contracts.sort_by(|a, b| b.volume_24h.partial_cmp(&a.volume_24h).unwrap_or(std::cmp::Ordering::Equal));
+
+    Ok(contracts)
+}
+
+/// Parse the "Yes" probability from Polymarket's outcome_prices JSON string.
+/// Format: "[\"0.42\", \"0.58\"]" where index 0 is "Yes" price.
+fn parse_yes_probability(outcome_prices: &str) -> Option<f64> {
+    let prices: Vec<String> = serde_json::from_str(outcome_prices).ok()?;
+    prices.first()?.parse::<f64>().ok()
+}
+
 /// Check if a market question is entertainment/sports (should be filtered out).
 fn is_entertainment_market(question: &str) -> bool {
     let q_lower = question.to_lowercase();
@@ -258,5 +398,39 @@ mod tests {
             infer_category_from_question("Will it rain tomorrow?"),
             MarketCategory::Other
         );
+    }
+
+    #[test]
+    fn test_parse_yes_probability_valid() {
+        assert!((parse_yes_probability(r#"["0.42", "0.58"]"#).unwrap() - 0.42).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_yes_probability_zero() {
+        assert!((parse_yes_probability(r#"["0.00", "1.00"]"#).unwrap() - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_yes_probability_one() {
+        assert!((parse_yes_probability(r#"["1.00", "0.00"]"#).unwrap() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_yes_probability_invalid() {
+        assert!(parse_yes_probability("not json").is_none());
+    }
+
+    #[test]
+    fn test_parse_yes_probability_empty_array() {
+        assert!(parse_yes_probability("[]").is_none());
+    }
+
+    #[test]
+    fn test_macro_tag_slugs_non_empty() {
+        assert!(!MACRO_TAG_SLUGS.is_empty());
+        for &(slug, cat) in MACRO_TAG_SLUGS {
+            assert!(!slug.is_empty());
+            assert!(!cat.is_empty());
+        }
     }
 }
