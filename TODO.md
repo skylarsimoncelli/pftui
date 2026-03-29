@@ -22,10 +22,10 @@ _(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration
 **Scope:**
 - [x] F56.1: New `agent debate` CLI domain — `agent debate start --topic "<asset or scenario>" --rounds 3`, `agent debate history --json`, `agent debate summary --json`. *(done: PR #436)*
 - [x] F56.2: New table `debates` — debate_id, topic, status (active/resolved), created_at, resolved_at. New table `debate_rounds` — debate_id, round_num, position (bull/bear), agent_source, argument_text, evidence_refs, created_at. *(done: PR #436)*
-- [ ] F56.3: Evening-analysis routine update — before writing the final analysis, the agent runs `agent debate start` on the 1-2 most contentious topics of the day (identified from timeframe divergence). It plays both bull and bear, citing specific data from each timeframe agent. The debate output feeds into the final synthesis.
+- [x] F56.3: Evening-analysis routine update — before writing the final analysis, the agent runs `agent debate start` on the 1-2 most contentious topics of the day (identified from timeframe divergence). It plays both bull and bear, citing specific data from each timeframe agent. The debate output feeds into the final synthesis. *(done: PR #442)*
 - [ ] F56.4: `analytics debate-score --json` — track which side (bull/bear) was right historically for each debated topic. Feeds into system accuracy tracking.
 **Not in scope:** Multi-agent real-time debate (requires concurrent sessions). V1 is single-agent playing both sides with structured format.
-**Completed:** F56.1 (#436), F56.2 (#436).
+**Completed:** F56.1 (#436), F56.2 (#436), F56.3 (#442).
 **Effort:** 1-2 weeks. **Priority:** P2 — improves analysis quality but the current system works.
 
 ### F57: Timeframe Analyst Self-Awareness
@@ -93,6 +93,7 @@ _(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration
 6. ✅ Prediction lesson extraction (#432) — structured lessons from wrong predictions with DB storage
 7. ✅ F56.1+F56.2 adversarial debate mechanism (#436) — `agent debate` CLI + `debates`/`debate_rounds` tables
 8. ✅ Prediction lesson agent routine integration (#440) — evening-analysis now extracts lessons from wrong predictions every run
+9. ✅ F56.3 adversarial debate evening-analysis integration (#442) — mandatory structured bull/bear debates on contentious topics before cross-timeframe synthesis
 
 **Release status:** v0.21.0 eligible — 40 commits since v0.20.0, no P0 bugs, 1996 tests passing, clippy clean.
 

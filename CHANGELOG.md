@@ -2,6 +2,18 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat(F56.3): Adversarial debate integration in evening-analysis routine
+
+**What:** Integrated the adversarial debate mechanism (F56.1/F56.2) into the evening-analysis agent routine. Evening analysis now runs mandatory structured bull/bear debates on the 1-2 most contentious topics before writing the cross-timeframe synthesis. Topics are identified from timeframe divergence (`analytics divergence`) and calibration gaps (`analytics calibration`). Each debate runs 3 rounds: opening arguments with cited evidence, rebuttals addressing opposing points, and final assessment of what would confirm each thesis. Debates resolve with honest evidence assessment that feeds into cross-timeframe synthesis, scenario updates, and conviction changes. Handles continuity by continuing active debates from prior sessions. Added Adversarial Debate section to branded PDF template. Added `agent debate history/summary --json` to canonical analytics inputs.
+
+**Files changed:**
+- `agents/routines/evening-analysis.md` — Added debate history to inputs, new section 1c (Adversarial Debate) with full workflow, new PDF template section.
+- `agents/routines/README.md` — Added `agent debate history --json` and `agent debate summary --json` to canonical analytics inputs.
+
+**Tests:** Documentation-only change. No new tests. Full suite: 1996 passed, 0 failed. Clippy clean.
+
+**F56 status:** F56.1 (#436), F56.2 (#436), F56.3 (#442) complete. F56.4 (debate-score accuracy tracking) remaining.
+
 ### 2026-03-29 — feat: Prediction lesson extraction — agent routine integration
 
 **What:** Integrated `pftui journal prediction lessons` into the evening-analysis agent routine, completing the entire Prediction Lesson Extraction feature. Evening analysis now includes a mandatory Section 1b after the prediction review: the agent checks for wrong predictions without structured lessons, extracts up to 5 per run using `journal prediction lessons add`, and includes a Prediction Lessons section in the branded PDF report. Prioritisation is by conviction level (high-conviction wrong calls first), with a quality bar requiring specific, actionable lessons and an 80% coverage target. Also added `journal prediction lessons --json` to the canonical analytics inputs in README.md.
