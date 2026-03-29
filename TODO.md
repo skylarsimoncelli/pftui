@@ -14,15 +14,33 @@ _(none)_
 **Source:** Competitive research (prediction-market-analysis, pmxt). Biggest intelligence gap.
 **Why:** Polymarket/Kalshi contracts represent real-money consensus on geopolitical and macro events. These are exactly the scenarios Sentinel tracks (Iran war, recession, Fed decisions). Currently agents estimate probabilities from vibes and news. Prediction market data gives them crowd-calibrated baselines backed by actual capital at risk.
 **Scope:**
-- [x] F55.1: `data predictions` source — pull live contract prices from Polymarket API (free, no key needed). Target contracts: Fed rate decisions, recession probability, geopolitical events, election outcomes. Store in `predictions_cache` table (already exists but only used for internal predictions).
-- [x] F55.2: New table `prediction_market_contracts` — contract_id, exchange, event_id, event_title, question, category, last_price, volume_24h, liquidity, end_date, updated_at. Tag-based Polymarket events API fetch (fed, economics, geopolitics, politics, bitcoin, crypto, ai). Refresh in daemon DAG alongside other sources.
-- [x] F55.3: `data predictions list --json` — show all tracked prediction market contracts with current probabilities (prefers enriched contracts table, falls back to legacy cache).
 - [ ] F55.4: `data predictions map --scenario "<name>"` — link a prediction market contract to a pftui scenario. When refreshed, auto-log the market probability as a data point in scenario history.
 - [ ] F55.5: `analytics calibration --json` — compare pftui scenario probabilities vs prediction market consensus. Flag divergences >15pp. "Your Iran War estimate: 38%. Polymarket: 22%. Divergence: +16pp."
 - [ ] F55.6: Agent routine integration — morning-brief and evening-analysis include prediction market calibration section. Agents explain divergences between their estimates and market consensus.
+**Completed:** F55.1 (#422), F55.2 (#422), F55.3 (#422).
 **Effort:** 2-3 weeks. **Priority:** P1 — this is the single highest-value data source pftui doesn't have.
 
 ## P2 - Coverage And Agent Consumption
+
+### [Feedback] Catalyst-Scenario Linkage
+**Source:** Evening Analysis feedback (Mar 29, 78/75 — lowest scorer).
+**Why:** `analytics synthesis` shows catalysts with 0 linked scenarios on every catalyst. Connecting upcoming catalysts (Core PCE, ISM Manufacturing, FOMC) to active scenarios would significantly improve decision support. The evening analyst explicitly called this out as "empty catalyst-scenario linkage."
+**Scope:**
+- [ ] Auto-link catalysts to scenarios by keyword/category matching in `build_catalysts_backend()`. Each catalyst should reference which active scenarios it could impact and in which direction.
+- [ ] Enrich `CatalystJson` with `linked_scenarios: Vec<{name, direction, relevance}>` field.
+- [ ] Update terminal output to show linked scenarios per catalyst.
+**Files:** `src/commands/analytics.rs` (catalysts section), `src/analytics/situation.rs` (if catalysts built there).
+**Effort:** 1 session. **Priority:** P2 — directly addresses lowest-scorer workflow friction.
+
+### [Feedback] Prediction Lesson Extraction
+**Source:** Evening Analysis feedback (Mar 29, 78/75 — lowest scorer).
+**Why:** 43 wrong predictions exist with no structured lessons extracted. This is technical debt that degrades the model improvement loop. The evening analyst flagged this as a gap.
+**Scope:**
+- [ ] `journal prediction lessons --json` — for each scored-wrong prediction, extract a structured lesson: what was predicted, what happened, why it was wrong (directional miss, timing miss, magnitude miss), and what signal was misread.
+- [ ] Store lessons in a `prediction_lessons` table or as metadata on existing predictions.
+- [ ] Agent routine integration — evening-analysis reviews recent wrong predictions and generates lessons.
+**Files:** `src/commands/predictions.rs`, `src/db/` (new table or field), `src/cli.rs`.
+**Effort:** 1-2 sessions. **Priority:** P2 — closes the self-improvement feedback loop.
 
 ### F56: Adversarial Debate Mechanism
 **Source:** Competitive research (TradingAgents bull/bear debate, ai-hedge-fund persona diversity).
@@ -76,23 +94,25 @@ _(none)_
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Evening Analyst | 78% | 75% | Mar 28 | ↑ (72→78 usefulness, 75→75 overall. --claim fix #392 + cross-timeframe #396 + alerts redirect #398 shipped. **Lowest scorer — priority.**) |
-| Medium-Timeframe Analyst | 75% | 85% | Mar 29 | ↓ (90→85 overall. `data quotes` alias #419 shipped to address command discoverability.) |
+| Evening Analysis | 78% | 75% | Mar 29 | → (stable at 78/75. Catalyst-scenario linkage empty + 43 wrong predictions without lessons flagged. **Lowest scorer — priority.**) |
+| Medium-Timeframe Analyst | 75% | 85% | Mar 29 | ↓ (85→75 usefulness. `data quotes` alias #419 shipped. Macro regime detection praised.) |
 | Low-Timeframe Analyst | 85% | 90% | Mar 28 | → (stable. Alert triage #405 + regime transitions #407 + cross-timeframe resolve #410 shipped.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 26 | → (stable. Scenario suggest #366 shipped.) |
-| Morning Intelligence | 75% | 85% | Mar 28 | ↑ (first scored → correlation break interpretation #412 addresses "clearer break data" request.) |
+| Morning Intelligence | 75% | 85% | Mar 28 | → (stable. Correlation break interpretation #412 shipped.) |
 | Morning Brief | 85% | 80% | Mar 28 | → (stable. Morning-brief #363 shipped.) |
 | Alert Investigator | 85% | 80-82% | Mar 25-26 | → (stable, consistent.) |
-| Public Daily Report | 82% | 80% | Mar 28 | new (first scored review. Commodity coverage #402 shipped.) |
-| Dev Agent | 92% | 94% | Mar 28 | → (stable high.) |
+| Public Daily Report | 82% | 80% | Mar 28 | → (stable. Commodity coverage shipped.) |
+| Dev Agent | 92% | 94% | Mar 29 | → (stable high. F55.1-F55.3 prediction market contracts shipped #422.) |
 
-**Key changes since last review (Mar 29 run):**
-- `data quotes` alias shipped (#419) — `pftui data quotes` now resolves to `data prices`. Cross-reference help text on both Prices and Futures commands.
-- All explicit feedback items from all agents fully addressed.
+**Top 3 priorities based on feedback:**
+1. **Catalyst-scenario linkage** (Evening Analysis 78/75 — lowest scorer) — synthesis catalysts show 0 linked scenarios, reducing decision support value.
+2. **Prediction lesson extraction** (Evening Analysis 78/75) — 43 wrong predictions with no structured lessons. Technical debt degrading improvement loop.
+3. **F55.4-F55.6 completion** (prediction market mapping + calibration) — enables market-consensus comparison, high value for all analyst agents.
 
-**Shipped since last TODO update:**
-1. ✅ **`data quotes` alias** — #419. Added `quotes` as clap alias for `data prices`. After_help cross-references on Prices and Futures. 3 new CLI tests (1911 total). Addresses medium-timeframe-analyst feedback (Mar 29 75/85): `data quotes` fails.
+**Shipped since last review (Mar 28 → Mar 29):**
+1. ✅ `data quotes` alias (#419) — addresses medium-timeframe-analyst `data quotes fails`
+2. ✅ F55.1-F55.3 prediction market contracts (#422) — Polymarket tag-based fetching, enriched schema, 24 new tests
 
-**Release eligibility:** 30 commits since v0.19.0 with 13 PRs, no P0 bugs, tests (1911) and clippy clean. **Eligible for v0.20.0** — substantial new work shipped.
+**Release status:** v0.21.0 eligible — 37 commits since v0.20.0, no P0 bugs, 1935 tests passing, clippy clean.
 
-**GitHub stars:** 7 — Homebrew Core requires 50+.
+**GitHub stars:** 8 (was 7) — Homebrew Core requires 50+.
