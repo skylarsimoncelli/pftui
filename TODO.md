@@ -26,7 +26,7 @@ _(none)_
 **Why:** 43 wrong predictions exist with no structured lessons extracted. This is technical debt that degrades the model improvement loop. The evening analyst flagged this as a gap.
 **Scope:**
 - [x] `journal prediction lessons --json` — for each scored-wrong prediction, extract a structured lesson: what was predicted, what happened, why it was wrong (directional miss, timing miss, magnitude miss), and what signal was misread. *(done: PR #432)*
-- [ ] Store lessons in a `prediction_lessons` table or as metadata on existing predictions.
+- [x] Store lessons in a `prediction_lessons` table or as metadata on existing predictions. *(done: PR #432 — table shipped with CLI)*
 - [ ] Agent routine integration — evening-analysis reviews recent wrong predictions and generates lessons.
 **Files:** `src/commands/predictions.rs`, `src/db/` (new table or field), `src/cli.rs`.
 **Effort:** 1-2 sessions. **Priority:** P2 — closes the self-improvement feedback loop.
@@ -35,11 +35,12 @@ _(none)_
 **Source:** Competitive research (TradingAgents bull/bear debate, ai-hedge-fund persona diversity).
 **Why:** pftui's timeframe agents currently produce independent reports that the evening-analysis synthesises. There's no structured adversarial process. TradingAgents forces bull and bear researchers to debate with evidence before decisions. This catches contradictions, strengthens conviction signals, and produces better analysis. Cross-timeframe tension is already identified as "the intelligence product" in AGENTS.md. This formalises it.
 **Scope:**
-- [ ] F56.1: New `agent debate` CLI domain — `agent debate start --topic "<asset or scenario>" --rounds 3`, `agent debate history --json`, `agent debate summary --json`.
-- [ ] F56.2: New table `debates` — debate_id, topic, status (active/resolved), created_at, resolved_at. New table `debate_rounds` — debate_id, round_num, position (bull/bear), agent_source, argument_text, evidence_refs, created_at.
+- [x] F56.1: New `agent debate` CLI domain — `agent debate start --topic "<asset or scenario>" --rounds 3`, `agent debate history --json`, `agent debate summary --json`. *(done: PR #436)*
+- [x] F56.2: New table `debates` — debate_id, topic, status (active/resolved), created_at, resolved_at. New table `debate_rounds` — debate_id, round_num, position (bull/bear), agent_source, argument_text, evidence_refs, created_at. *(done: PR #436)*
 - [ ] F56.3: Evening-analysis routine update — before writing the final analysis, the agent runs `agent debate start` on the 1-2 most contentious topics of the day (identified from timeframe divergence). It plays both bull and bear, citing specific data from each timeframe agent. The debate output feeds into the final synthesis.
 - [ ] F56.4: `analytics debate-score --json` — track which side (bull/bear) was right historically for each debated topic. Feeds into system accuracy tracking.
 **Not in scope:** Multi-agent real-time debate (requires concurrent sessions). V1 is single-agent playing both sides with structured format.
+**Completed:** F56.1 (#436), F56.2 (#436).
 **Effort:** 1-2 weeks. **Priority:** P2 — improves analysis quality but the current system works.
 
 ### F57: Timeframe Analyst Self-Awareness
@@ -104,7 +105,9 @@ _(none)_
 3. ✅ F55.4 prediction market scenario mapping (#426) — link contracts to scenarios with auto-sync
 4. ✅ F55.5 analytics calibration (#428) — compare scenario vs market probabilities, flag divergences
 5. ✅ Catalyst-scenario linkage (#430) — category semantic matching with direction + relevance
+6. ✅ Prediction lesson extraction (#432) — structured lessons from wrong predictions with DB storage
+7. ✅ F56.1+F56.2 adversarial debate mechanism (#436) — `agent debate` CLI + `debates`/`debate_rounds` tables
 
-**Release status:** v0.21.0 eligible — 38 commits since v0.20.0, no P0 bugs, 1976 tests passing, clippy clean.
+**Release status:** v0.21.0 eligible — 40 commits since v0.20.0, no P0 bugs, 1996 tests passing, clippy clean.
 
 **GitHub stars:** 8 (was 7) — Homebrew Core requires 50+.

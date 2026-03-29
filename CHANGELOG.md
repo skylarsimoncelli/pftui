@@ -2,6 +2,27 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat(F56.1+F56.2): Adversarial debate mechanism — structured bull/bear argumentation
+
+**What:** New `agent debate` CLI domain implementing structured adversarial debates. Agents can start debates on contentious topics (assets, scenarios, macro questions), add bull and bear arguments in rounds with evidence references, and resolve debates with a summary of which side prevailed. Designed for single-agent operation where the agent plays both sides with structured format, forcing explicit evidence-based argumentation on both sides of a thesis. This formalises the cross-timeframe tension that AGENTS.md identifies as "the intelligence product."
+
+**Commands:**
+- `agent debate start --topic "<topic>" --rounds N` — start a new debate (1-10 rounds)
+- `agent debate add-round --debate-id N --round N --position bull|bear --argument "..." [--evidence "..."] [--agent-source "..."]` — add a bull or bear argument to a round
+- `agent debate resolve --debate-id N [--summary "..."]` — close a debate with resolution
+- `agent debate history [--status active|resolved] [--topic "keyword"] [--limit N] --json` — list debates
+- `agent debate summary [--debate-id N] --json` — show full debate with all rounds (latest if no ID)
+
+**Files changed:**
+- `src/db/debates.rs` — New module: `Debate`, `DebateRound`, `DebateView` structs, `debates` and `debate_rounds` tables (SQLite + Postgres), full CRUD with backend dispatch (`start_debate`, `add_round`, `resolve_debate`, `get_debate_view`, `list_debates`), validation for position (bull/bear) and status (active/resolved). 9 unit tests.
+- `src/commands/debate.rs` — New module: `start()`, `add_round()`, `resolve()`, `history()`, `summary()` command handlers. `AddRoundParams` struct for clean argument passing. Human-readable and `--json` output for all commands.
+- `src/cli.rs` — New `Debate` variant on `AgentCommand` with `AgentDebateCommand` subcommand enum: `Start`, `AddRound`, `Resolve`, `History`, `Summary`.
+- `src/main.rs` — Wired `AgentCommand::Debate` dispatch for all 5 subcommands.
+- `src/db/mod.rs` — Registered `debates` module.
+- `docs/ARCHITECTURE.md` — Added `db/debates.rs` to Data Layer section.
+
+**Tests:** 1996 total (+9 new). 9 DB tests: `test_create_tables`, `test_start_and_get_debate`, `test_add_rounds`, `test_resolve_debate`, `test_list_debates_filter`, `test_debate_view`, `test_invalid_position`, `test_validate_status`, `test_nonexistent_debate`.
+
 ### 2026-03-29 — feat: Prediction lesson extraction — structured learning from wrong predictions
 
 **What:** New `journal prediction lessons` command that extracts and stores structured lessons from wrong predictions. Each lesson captures the miss type (directional, timing, or magnitude), what actually happened, root cause analysis, and what signal was misread. Supports listing all wrong predictions with their lesson status (coverage tracking) and adding structured lessons via `journal prediction lessons add`. JSON output includes coverage statistics (total wrong, with/without lessons, coverage percentage). Closes the self-improvement feedback loop by making prediction failures queryable and structured rather than opaque text blobs.
