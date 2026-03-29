@@ -1165,5 +1165,18 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_power_flows_complex ON power_flows(source_complex);",
     )?;
 
+    // F55.4: Scenario-contract mappings — link prediction market contracts to scenarios
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS scenario_contract_mappings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+            contract_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(scenario_id, contract_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_scm_scenario ON scenario_contract_mappings(scenario_id);
+        CREATE INDEX IF NOT EXISTS idx_scm_contract ON scenario_contract_mappings(contract_id);",
+    )?;
+
     Ok(())
 }

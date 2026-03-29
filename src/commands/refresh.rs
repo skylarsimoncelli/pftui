@@ -1790,6 +1790,13 @@ fn store_contracts_result(
                                 error: None,
                                 detail: None,
                             });
+
+                            // F55.4: Sync mapped contract probabilities → scenario history
+                            match crate::db::scenario_contract_mappings::sync_mapped_probabilities(backend) {
+                                Ok(0) => {} // no mappings — silent
+                                Ok(n) => info_ln!(verbose, "  ↳ Synced {} scenario-contract mapping(s) to scenario history", n),
+                                Err(e) => info_ln!(verbose, "  ⚠ Scenario-contract sync failed: {}", e),
+                            }
                         }
                         Err(e) => {
                             info_ln!(

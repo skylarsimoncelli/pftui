@@ -623,6 +623,48 @@ pub enum DataPredictionsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Link a prediction market contract to a pftui scenario. On each refresh, the contract's probability is auto-logged as a scenario history data point.
+    #[command(
+        after_help = "Maps a Polymarket contract to a pftui scenario so that every\n`pftui data refresh` automatically logs the market probability as a\ndata point in the scenario's history timeline.\n\nUse --search to find contracts by keyword (matches question and event\ntitle). Use --scenario to specify the scenario name.\n\nExample:\n  pftui data predictions map --scenario \"US Recession 2026\" --search \"recession\"\n\nTo see all mappings:\n  pftui data predictions map --list\n\nSee also: `data predictions markets`, `analytics scenario list`,\n          `analytics calibration` (F55.5)"
+    )]
+    Map {
+        /// Scenario name to link (must match an existing scenario)
+        #[arg(long)]
+        scenario: Option<String>,
+
+        /// Search query to find a contract by question/event title
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Specific contract_id to link (alternative to --search)
+        #[arg(long)]
+        contract: Option<String>,
+
+        /// List all existing scenario-contract mappings
+        #[arg(long)]
+        list: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a scenario-contract mapping
+    #[command(
+        after_help = "Removes the link between a scenario and a prediction market contract.\nThe contract and scenario remain intact; only the mapping is deleted.\n\nUse --scenario to remove all mappings for a scenario, or provide\nboth --scenario and --contract to remove a specific mapping.\n\nSee also: `data predictions map --list`"
+    )]
+    Unmap {
+        /// Scenario name to unlink
+        #[arg(long, required = true)]
+        scenario: String,
+
+        /// Specific contract_id to unlink (if omitted, removes all mappings for this scenario)
+        #[arg(long)]
+        contract: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -5422,6 +5464,167 @@ mod tests {
                 assert!(json);
             }
             _ => panic!("expected markets subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_map_list() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "map",
+            "--list",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Map { list, json, .. }) => {
+                assert!(list);
+                assert!(json);
+            }
+            _ => panic!("expected map subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_map_with_scenario_and_search() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "map",
+            "--scenario",
+            "US Recession 2026",
+            "--search",
+            "recession",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Map {
+                scenario,
+                search,
+                contract,
+                list,
+                json,
+            }) => {
+                assert_eq!(scenario.as_deref(), Some("US Recession 2026"));
+                assert_eq!(search.as_deref(), Some("recession"));
+                assert!(contract.is_none());
+                assert!(!list);
+                assert!(!json);
+            }
+            _ => panic!("expected map subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_map_with_contract_id() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "map",
+            "--scenario",
+            "Fed Cut April",
+            "--contract",
+            "0xabc123",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Map {
+                scenario,
+                contract,
+                json,
+                ..
+            }) => {
+                assert_eq!(scenario.as_deref(), Some("Fed Cut April"));
+                assert_eq!(contract.as_deref(), Some("0xabc123"));
+                assert!(json);
+            }
+            _ => panic!("expected map subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_unmap() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "unmap",
+            "--scenario",
+            "US Recession 2026",
+            "--contract",
+            "0xdef456",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Unmap {
+                scenario,
+                contract,
+                json,
+            }) => {
+                assert_eq!(scenario, "US Recession 2026");
+                assert_eq!(contract.as_deref(), Some("0xdef456"));
+                assert!(!json);
+            }
+            _ => panic!("expected unmap subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_unmap_all() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "unmap",
+            "--scenario",
+            "Iran Strike",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Unmap {
+                scenario,
+                contract,
+                ..
+            }) => {
+                assert_eq!(scenario, "Iran Strike");
+                assert!(contract.is_none());
+            }
+            _ => panic!("expected unmap subcommand"),
         }
     }
 
