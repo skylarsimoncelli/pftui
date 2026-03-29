@@ -96,3 +96,4 @@ These commands should be preferred when the routine needs ranked, reusable analy
 - `pftui analytics opportunities --json`
 - `pftui analytics synthesis --json`
 - `pftui analytics narrative --json`
+- `pftui analytics calibration --json`
