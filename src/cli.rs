@@ -1583,6 +1583,59 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Structured lesson extraction from wrong predictions.
+    ///
+    /// Lists wrong predictions with their structured lessons (miss type, root cause, signal misread).
+    /// Use `lessons add` to attach a lesson to a wrong prediction.
+    ///
+    /// Examples:
+    ///   pftui journal prediction lessons --json
+    ///   pftui journal prediction lessons --miss-type timing --json
+    ///   pftui journal prediction lessons add --prediction-id 42 --miss-type directional \
+    ///     --what-happened "BTC dropped to 60k" --why-wrong "Ignored macro headwinds"
+    Lessons {
+        #[command(subcommand)]
+        command: Option<JournalPredictionLessonsCommand>,
+        /// Filter by miss type: directional, timing, magnitude
+        #[arg(long = "miss-type")]
+        miss_type: Option<String>,
+        /// Maximum lessons to show
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum JournalPredictionLessonsCommand {
+    /// Add a structured lesson for a wrong prediction
+    ///
+    /// Examples:
+    ///   pftui journal prediction lessons add --prediction-id 42 --miss-type directional \
+    ///     --what-happened "BTC dropped to 60k" --why-wrong "Ignored macro headwinds" \
+    ///     --signal-misread "Volume divergence was bearish"
+    Add {
+        /// ID of the wrong prediction to attach the lesson to
+        #[arg(long = "prediction-id")]
+        prediction_id: i64,
+        /// Type of miss: directional, timing, or magnitude
+        #[arg(long = "miss-type")]
+        miss_type: String,
+        /// What actually happened (market outcome)
+        #[arg(long = "what-happened")]
+        what_happened: String,
+        /// Why the prediction was wrong — root cause analysis
+        #[arg(long = "why-wrong")]
+        why_wrong: String,
+        /// What signal was misread or missed (optional)
+        #[arg(long = "signal-misread")]
+        signal_misread: Option<String>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -6272,5 +6325,118 @@ mod tests {
         };
         assert!(resolve);
         assert_eq!(symbol.as_deref(), Some("BTC"));
+    }
+
+    #[test]
+    fn parse_journal_prediction_lessons_list() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "lessons",
+            "--json",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        match command {
+            Some(JournalCommand::Prediction { command }) => {
+                match command {
+                    JournalPredictionCommand::Lessons { command, json, .. } => {
+                        assert!(command.is_none());
+                        assert!(json);
+                    }
+                    _ => panic!("expected Lessons"),
+                }
+            }
+            _ => panic!("expected Prediction"),
+        }
+    }
+
+    #[test]
+    fn parse_journal_prediction_lessons_with_miss_type() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "lessons",
+            "--miss-type",
+            "timing",
+            "--limit",
+            "5",
+            "--json",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        match command {
+            Some(JournalCommand::Prediction { command }) => {
+                match command {
+                    JournalPredictionCommand::Lessons { miss_type, limit, json, .. } => {
+                        assert_eq!(miss_type.as_deref(), Some("timing"));
+                        assert_eq!(limit, Some(5));
+                        assert!(json);
+                    }
+                    _ => panic!("expected Lessons"),
+                }
+            }
+            _ => panic!("expected Prediction"),
+        }
+    }
+
+    #[test]
+    fn parse_journal_prediction_lessons_add() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "lessons",
+            "add",
+            "--prediction-id",
+            "42",
+            "--miss-type",
+            "directional",
+            "--what-happened",
+            "BTC dropped to 60k",
+            "--why-wrong",
+            "Ignored macro headwinds",
+            "--signal-misread",
+            "Volume divergence was bearish",
+            "--json",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        match command {
+            Some(JournalCommand::Prediction { command }) => {
+                match command {
+                    JournalPredictionCommand::Lessons { command, .. } => {
+                        match command {
+                            Some(JournalPredictionLessonsCommand::Add {
+                                prediction_id,
+                                miss_type,
+                                what_happened,
+                                why_wrong,
+                                signal_misread,
+                                json,
+                            }) => {
+                                assert_eq!(prediction_id, 42);
+                                assert_eq!(miss_type, "directional");
+                                assert_eq!(what_happened, "BTC dropped to 60k");
+                                assert_eq!(why_wrong, "Ignored macro headwinds");
+                                assert_eq!(signal_misread.as_deref(), Some("Volume divergence was bearish"));
+                                assert!(json);
+                            }
+                            _ => panic!("expected Add"),
+                        }
+                    }
+                    _ => panic!("expected Lessons"),
+                }
+            }
+            _ => panic!("expected Prediction"),
+        }
     }
 }

@@ -25,7 +25,7 @@ _(none)_
 **Source:** Evening Analysis feedback (Mar 29, 78/75 — lowest scorer).
 **Why:** 43 wrong predictions exist with no structured lessons extracted. This is technical debt that degrades the model improvement loop. The evening analyst flagged this as a gap.
 **Scope:**
-- [ ] `journal prediction lessons --json` — for each scored-wrong prediction, extract a structured lesson: what was predicted, what happened, why it was wrong (directional miss, timing miss, magnitude miss), and what signal was misread.
+- [x] `journal prediction lessons --json` — for each scored-wrong prediction, extract a structured lesson: what was predicted, what happened, why it was wrong (directional miss, timing miss, magnitude miss), and what signal was misread. *(done: PR #432)*
 - [ ] Store lessons in a `prediction_lessons` table or as metadata on existing predictions.
 - [ ] Agent routine integration — evening-analysis reviews recent wrong predictions and generates lessons.
 **Files:** `src/commands/predictions.rs`, `src/db/` (new table or field), `src/cli.rs`.
