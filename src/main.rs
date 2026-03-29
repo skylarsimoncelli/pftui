@@ -2153,6 +2153,48 @@ fn main() -> Result<()> {
                     commands::debate_score::unscored(&backend, limit, json)
                 }
             },
+            cli::AnalyticsCommand::Views { command } => match command {
+                cli::AnalyticsViewsCommand::Set {
+                    analyst,
+                    asset,
+                    direction,
+                    conviction,
+                    reasoning,
+                    evidence,
+                    blind_spots,
+                    json,
+                } => commands::analyst_views::set(
+                    &backend,
+                    &analyst,
+                    &asset,
+                    &direction,
+                    conviction,
+                    &reasoning,
+                    evidence.as_deref(),
+                    blind_spots.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsViewsCommand::List {
+                    analyst,
+                    asset,
+                    limit,
+                    json,
+                } => commands::analyst_views::list(
+                    &backend,
+                    analyst.as_deref(),
+                    asset.as_deref(),
+                    limit,
+                    json,
+                ),
+                cli::AnalyticsViewsCommand::Matrix { json } => {
+                    commands::analyst_views::matrix(&backend, json)
+                }
+                cli::AnalyticsViewsCommand::Delete {
+                    analyst,
+                    asset,
+                    json,
+                } => commands::analyst_views::delete(&backend, &analyst, &asset, json),
+            },
             cli::AnalyticsCommand::Opportunities { json } => commands::analytics::run(
                 &backend,
                 "opportunities",
