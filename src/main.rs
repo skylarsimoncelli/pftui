@@ -1808,6 +1808,53 @@ fn main() -> Result<()> {
                     json,
                 ),
             },
+            crate::cli::AgentCommand::Debate { command } => match command {
+                cli::AgentDebateCommand::Start {
+                    topic,
+                    rounds,
+                    json,
+                } => commands::debate::start(&backend, &topic, rounds, json),
+                cli::AgentDebateCommand::AddRound {
+                    debate_id,
+                    round,
+                    position,
+                    argument,
+                    agent_source,
+                    evidence,
+                    json,
+                } => commands::debate::add_round(
+                    &backend,
+                    &commands::debate::AddRoundParams {
+                        debate_id,
+                        round_num: round,
+                        position: &position,
+                        agent_source: agent_source.as_deref(),
+                        argument: &argument,
+                        evidence: evidence.as_deref(),
+                        json_output: json,
+                    },
+                ),
+                cli::AgentDebateCommand::Resolve {
+                    debate_id,
+                    summary,
+                    json,
+                } => commands::debate::resolve(&backend, debate_id, summary.as_deref(), json),
+                cli::AgentDebateCommand::History {
+                    status,
+                    topic,
+                    limit,
+                    json,
+                } => commands::debate::history(
+                    &backend,
+                    status.as_deref(),
+                    topic.as_deref(),
+                    limit,
+                    json,
+                ),
+                cli::AgentDebateCommand::Summary { debate_id, json } => {
+                    commands::debate::summary(&backend, debate_id, json)
+                }
+            },
         },
         Some(Command::Analytics { command }) => match command {
             cli::AnalyticsCommand::Asset { symbol, json } => {

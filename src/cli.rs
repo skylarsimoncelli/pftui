@@ -172,6 +172,121 @@ pub enum AgentCommand {
         #[command(subcommand)]
         command: AgentMessageCommand,
     },
+    /// Adversarial debate mechanism — structured bull/bear arguments on assets or scenarios.
+    ///
+    /// Start debates, add rounds with bull/bear arguments, and resolve with a summary.
+    /// Designed for single-agent structured argumentation (agent plays both sides).
+    ///
+    /// Examples:
+    ///   pftui agent debate start --topic "BTC to 200k this cycle?" --rounds 3
+    ///   pftui agent debate add-round --debate-id 1 --round 1 --position bull \
+    ///     --argument "Halving supply shock + ETF demand" --evidence "ETF flow data, on-chain metrics"
+    ///   pftui agent debate add-round --debate-id 1 --round 1 --position bear \
+    ///     --argument "Macro headwinds, DXY strength" --evidence "Fed dot plot, DXY chart"
+    ///   pftui agent debate resolve --debate-id 1 --summary "Bull case stronger near-term"
+    ///   pftui agent debate history --json
+    ///   pftui agent debate summary --debate-id 1 --json
+    Debate {
+        #[command(subcommand)]
+        command: AgentDebateCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AgentDebateCommand {
+    /// Start a new adversarial debate on a topic
+    ///
+    /// Examples:
+    ///   pftui agent debate start --topic "Is gold going to 5000?" --rounds 3
+    ///   pftui agent debate start --topic "US recession in 2026?" --json
+    Start {
+        /// Topic of the debate (asset, scenario, or macro question)
+        #[arg(long)]
+        topic: String,
+        /// Number of argument rounds (default 3, max 10)
+        #[arg(long, default_value = "3")]
+        rounds: i64,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add a bull or bear argument to a debate round
+    ///
+    /// Examples:
+    ///   pftui agent debate add-round --debate-id 1 --round 1 --position bull \
+    ///     --argument "ETF inflows accelerating" --evidence "BlackRock IBIT data"
+    #[command(name = "add-round")]
+    AddRound {
+        /// ID of the debate to add to
+        #[arg(long = "debate-id")]
+        debate_id: i64,
+        /// Round number (1-indexed)
+        #[arg(long)]
+        round: i64,
+        /// Position: bull or bear
+        #[arg(long)]
+        position: String,
+        /// The argument text
+        #[arg(long)]
+        argument: String,
+        /// Source agent name (e.g. high-agent, evening-analysis)
+        #[arg(long = "agent-source")]
+        agent_source: Option<String>,
+        /// Evidence references supporting the argument
+        #[arg(long)]
+        evidence: Option<String>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Resolve (close) a debate with an optional summary
+    ///
+    /// Examples:
+    ///   pftui agent debate resolve --debate-id 1 --summary "Bull case wins on flow data"
+    Resolve {
+        /// ID of the debate to resolve
+        #[arg(long = "debate-id")]
+        debate_id: i64,
+        /// Resolution summary explaining which side prevailed and why
+        #[arg(long)]
+        summary: Option<String>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// List past debates with optional filters
+    ///
+    /// Examples:
+    ///   pftui agent debate history --json
+    ///   pftui agent debate history --status active
+    ///   pftui agent debate history --topic gold --limit 5
+    History {
+        /// Filter by status: active, resolved
+        #[arg(long)]
+        status: Option<String>,
+        /// Filter by topic keyword
+        #[arg(long)]
+        topic: Option<String>,
+        /// Maximum debates to show
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show full debate detail with all rounds
+    ///
+    /// Examples:
+    ///   pftui agent debate summary --debate-id 1 --json
+    ///   pftui agent debate summary --json  # shows latest debate
+    Summary {
+        /// Debate ID (shows latest if omitted)
+        #[arg(long = "debate-id")]
+        debate_id: Option<i64>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
