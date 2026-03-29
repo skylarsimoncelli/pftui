@@ -2113,6 +2113,14 @@ fn run_catalysts(
                     "- [{}] {} — {} | {} | assets: {}",
                     item.significance, item.time, item.title, item.countdown_bucket, assets
                 );
+                if !item.linked_scenarios.is_empty() {
+                    for ls in &item.linked_scenarios {
+                        println!(
+                            "    → {} ({}, {})",
+                            ls.name, ls.direction, ls.relevance
+                        );
+                    }
+                }
             }
         }
     }
