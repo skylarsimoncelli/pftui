@@ -2,6 +2,30 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat(F58.4): integrate backtest accuracy into agent routines — F58 COMPLETE
+
+All 4 timeframe analysts and evening-analysis now consume prediction backtest data before making or synthesizing predictions. This closes the self-improvement feedback loop: agents see their own win rates, conviction calibration, asset class strengths, and streaks before each prediction cycle.
+
+**Integration points:**
+- **macro-timeframe-analyst**: Full "Prediction Backtesting (Weekly Self-Review)" section — runs `analytics backtest agent --agent macro-agent --json` + `analytics backtest report --json` + `journal prediction lessons --json`. Structured guidance on interpreting win rates by conviction, asset class, streaks, best/worst trades, and cross-agent ranking.
+- **high-timeframe-analyst**: New "Backtest Review" section before predictions — runs `analytics backtest agent --agent high-agent --json` for conviction calibration and asset class accuracy.
+- **medium-timeframe-analyst**: New "Backtest Review" section before predictions — runs `analytics backtest agent --agent medium-agent --json`.
+- **low-timeframe-analyst**: Backtest review step integrated before daily prediction block — runs `analytics backtest agent --agent low-agent --json` to calibrate conviction levels.
+- **evening-analysis**: Now reads `analytics backtest report --json` in both input sections. Weights analyst views by backtest win rate alongside accuracy scores. Surfaces tension when an analyst has strong views but poor historical performance.
+
+**Completes F58 (Prediction Accuracy Backtesting):** All 4 sub-items shipped (F58.1 predictions, F58.2 report, F58.3 agent, F58.4 routine integration).
+
+**Files changed:**
+- `agents/routines/macro-timeframe-analyst.md` — +19 lines (backtest self-review section)
+- `agents/routines/high-timeframe-analyst.md` — +15 lines (backtest review section)
+- `agents/routines/medium-timeframe-analyst.md` — +15 lines (backtest review section)
+- `agents/routines/low-timeframe-analyst.md` — +10 lines (backtest review step)
+- `agents/routines/evening-analysis.md` — +9/-4 lines (backtest report input + synthesis weighting)
+
+**Tests:** 2115 passing (unchanged — agent routine markdown only). Clippy clean.
+
+---
+
 ### 2026-03-30 — feat(F58.3): analytics backtest agent — per-agent accuracy breakdown
 
 New subcommand: `pftui analytics backtest agent --agent <name> [--json]`

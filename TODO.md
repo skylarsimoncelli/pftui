@@ -38,9 +38,9 @@ _(none)_
 - [x] F58.1: `analytics backtest predictions --json` — replay all scored predictions. For each: entry price at prediction date, exit price at target date, theoretical P&L if acted on at stated conviction level. *(done: PR #468)*
 - [x] F58.2: `analytics backtest report --json` — aggregate backtest results. Win rate by conviction level, by timeframe, by asset class, by source agent. Sharpe ratio equivalent for prediction-based strategy. *(done: PR #471)*
 - [x] F58.3: `analytics backtest agent --agent <name> --json` — per-agent accuracy breakdown. Which timeframe analyst produces the best predictions? *(done: PR #474)*
-- [ ] F58.4: Agent routine integration — weekly self-review (macro-timeframe-analyst) includes backtest summary. Surface which conviction levels and which agents are most reliable.
+- [x] F58.4: Agent routine integration — weekly self-review (macro-timeframe-analyst) includes backtest summary. Surface which conviction levels and which agents are most reliable. *(done: PR #478)*
 **Not in scope:** Full portfolio simulation, position sizing, transaction costs. V1 is prediction accuracy analysis only.
-**Effort:** 2-3 weeks. **Priority:** P2 — valuable but not blocking daily operations.
+**Effort:** 2-3 weeks. **Priority:** P2 — **COMPLETE.** All 4 sub-items shipped.
 
 ## P3 - Long Term
 
@@ -72,12 +72,13 @@ _(none)_
 | Dev Agent | 92% | 94% | Mar 30 | → (stable high. F57.2-F57.3 shipped.) |
 
 **Top 3 priorities based on feedback:**
-1. **F57.5-F57.6 completion** — Analyst view accuracy + routine integration. Makes the existing architecture self-improving.
-2. **Fresher indicator data** — Medium-Timeframe Analyst (lowest overall at 75%) needs less stale PMI/GDP. Improving FRED refresh or adding direct ISM source.
-3. **Stress-test scenario discoverability** — Low-Timeframe Analyst wants `--list-scenarios` flag.
+1. **Fresher indicator data** — Medium-Timeframe Analyst (lowest overall at 75%) needs less stale PMI/GDP. Improving FRED refresh or adding direct ISM source.
+2. **Stress-test scenario discoverability** — Low-Timeframe Analyst wants `--list-scenarios` flag.
+3. **F59: Capital Flow Tracking** — next major feature after F57/F58 completion.
 
 **Shipped since last review (Mar 30):**
 1. ✅ Situation engine auto-populate (P1) — `analytics situation populate` derives timeframe scores from existing regime/scenario/trend/cycle data
+5. ✅ F58.4 backtest routine integration (#478) — all 4 analysts + evening-analysis now consume backtest accuracy data. **F58 complete.**
 2. ✅ F57.2 portfolio-matrix (#450) — `analytics views portfolio-matrix` with coverage stats
 3. ✅ F57.3 analyst view history (#453) — `analytics views history` with drift tracking
 4. ✅ F58.3 backtest agent (#474) — `analytics backtest agent --agent <name>` per-agent accuracy breakdown
