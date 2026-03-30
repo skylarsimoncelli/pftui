@@ -2904,6 +2904,29 @@ pub enum AnalyticsViewsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show how analyst views on an asset have evolved over time
+    ///
+    /// Displays the chronological history of every view update for the given asset.
+    /// Use --analyst to filter to a single timeframe layer. Tracks conviction drift
+    /// and direction flip points.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views history --asset BTC --json
+    ///   pftui analytics views history --asset GLD --analyst high --json
+    ///   pftui analytics views history --asset BTC --limit 20 --json
+    History {
+        /// Asset symbol to show history for (required)
+        #[arg(long)]
+        asset: String,
+        /// Filter by analyst layer: low, medium, high, macro
+        #[arg(long)]
+        analyst: Option<String>,
+        /// Maximum entries to show (default: all)
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Delete an analyst's view on an asset
     ///
     /// EXAMPLES:
@@ -3096,7 +3119,7 @@ pub enum AnalyticsCommand {
         command: AnalyticsDebateScoreCommand,
     },
     /// Per-analyst, per-asset directional views with conviction scores (F57: Timeframe Analyst Self-Awareness)
-    #[command(after_help = "Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) writes a structured\nview per asset on every run. Views include direction, conviction (-5 to +5),\nreasoning, key evidence, and blind spots.\n\nSubcommands:\n  set     — write/update an analyst's view on an asset\n  list    — list views with optional analyst/asset filters\n  matrix  — full cross-analyst view matrix\n  delete  — remove a view\n\nExamples:\n  pftui analytics views set --analyst low --asset BTC --direction bull \\\n    --conviction 3 --reasoning \"Momentum strong\" --json\n  pftui analytics views list --asset BTC --json\n  pftui analytics views matrix --json\n\nSee also: analytics alignment, analytics divergence")]
+    #[command(after_help = "Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) writes a structured\nview per asset on every run. Views include direction, conviction (-5 to +5),\nreasoning, key evidence, and blind spots.\n\nSubcommands:\n  set              — write/update an analyst's view on an asset\n  list             — list views with optional analyst/asset filters\n  matrix           — full cross-analyst view matrix\n  portfolio-matrix — portfolio-aware matrix with coverage stats\n  history          — view evolution over time for an asset\n  delete           — remove a view\n\nExamples:\n  pftui analytics views set --analyst low --asset BTC --direction bull \\\n    --conviction 3 --reasoning \"Momentum strong\" --json\n  pftui analytics views list --asset BTC --json\n  pftui analytics views history --asset BTC --json\n  pftui analytics views matrix --json\n\nSee also: analytics alignment, analytics divergence")]
     Views {
         #[command(subcommand)]
         command: AnalyticsViewsCommand,
@@ -4459,6 +4482,77 @@ mod tests {
         assert_eq!(analyst, "medium");
         assert_eq!(asset, "TSLA");
         assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_history() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "history",
+            "--asset",
+            "BTC",
+            "--analyst",
+            "low",
+            "--limit",
+            "20",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command:
+                        AnalyticsViewsCommand::History {
+                            asset,
+                            analyst,
+                            limit,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views history command");
+        };
+        assert_eq!(asset, "BTC");
+        assert_eq!(analyst.as_deref(), Some("low"));
+        assert_eq!(limit, Some(20));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_history_minimal() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "history",
+            "--asset",
+            "GLD",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command:
+                        AnalyticsViewsCommand::History {
+                            asset,
+                            analyst,
+                            limit,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views history command");
+        };
+        assert_eq!(asset, "GLD");
+        assert!(analyst.is_none());
+        assert!(limit.is_none());
+        assert!(!json);
     }
 
     #[test]

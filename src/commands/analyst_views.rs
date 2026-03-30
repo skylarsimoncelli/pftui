@@ -279,6 +279,110 @@ pub fn portfolio_matrix(backend: &BackendConnection, json_output: bool) -> Resul
     Ok(())
 }
 
+/// Show how analyst views on an asset have evolved over time.
+pub fn history(
+    backend: &BackendConnection,
+    asset: &str,
+    analyst: Option<&str>,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    if let Some(a) = analyst {
+        analyst_views::validate_analyst(a)?;
+    }
+    let entries = analyst_views::get_view_history_backend(backend, asset, analyst, limit)?;
+
+    if json_output {
+        // Compute conviction drift summary per analyst
+        let mut drift_map: std::collections::BTreeMap<
+            String,
+            Vec<&analyst_views::AnalystViewHistoryEntry>,
+        > = std::collections::BTreeMap::new();
+        for e in &entries {
+            drift_map.entry(e.analyst.clone()).or_default().push(e);
+        }
+
+        let mut drift_summary = Vec::new();
+        for (analyst_name, hist) in &drift_map {
+            // hist is sorted DESC (newest first)
+            let latest = hist.first();
+            let oldest = hist.last();
+            let flips: usize = hist
+                .windows(2)
+                .filter(|w| w[0].direction != w[1].direction)
+                .count();
+
+            if let (Some(latest), Some(oldest)) = (latest, oldest) {
+                drift_summary.push(json!({
+                    "analyst": analyst_name,
+                    "entries": hist.len(),
+                    "current_direction": latest.direction,
+                    "current_conviction": latest.conviction,
+                    "first_direction": oldest.direction,
+                    "first_conviction": oldest.conviction,
+                    "conviction_drift": latest.conviction - oldest.conviction,
+                    "direction_flips": flips,
+                }));
+            }
+        }
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "asset": asset.to_uppercase(),
+                "entries": entries.len(),
+                "analyst_filter": analyst,
+                "history": entries,
+                "drift_summary": drift_summary,
+            }))?
+        );
+    } else if entries.is_empty() {
+        println!(
+            "No view history for {}.",
+            asset.to_uppercase()
+        );
+        if analyst.is_some() {
+            println!("Try without --analyst filter.");
+        }
+    } else {
+        println!(
+            "View history for {} ({} entries):\n",
+            asset.to_uppercase(),
+            entries.len()
+        );
+        println!(
+            "{:<8} {:<9} {:<6} {:<32} Recorded",
+            "Analyst", "Direction", "Conv", "Reasoning"
+        );
+        println!("{}", "-".repeat(80));
+        for e in &entries {
+            let icon = match e.direction.as_str() {
+                "bull" => "🐂",
+                "bear" => "🐻",
+                _ => "⚖️",
+            };
+            let sign = if e.conviction > 0 { "+" } else { "" };
+            let reasoning_short = if e.reasoning_summary.len() > 30 {
+                format!("{}…", &e.reasoning_summary[..29])
+            } else {
+                e.reasoning_summary.clone()
+            };
+            let recorded_short = e.recorded_at.get(..16).unwrap_or(&e.recorded_at);
+            println!(
+                "{:<8} {} {:<7} {}{:<4} {:<32} {}",
+                e.analyst,
+                icon,
+                e.direction,
+                sign,
+                e.conviction,
+                reasoning_short,
+                recorded_short,
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Delete an analyst's view on an asset.
 pub fn delete(
     backend: &BackendConnection,
