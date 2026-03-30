@@ -2941,6 +2941,30 @@ pub enum AnalyticsViewsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Surface assets where analysts strongly disagree — ranked by divergence magnitude
+    ///
+    /// Finds assets where the gap between the most bullish and most bearish analyst
+    /// conviction scores is largest. These are the interesting signals: LOW says bear -3
+    /// but HIGH says bull +4 means the timeframes are seeing different things.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views divergence --json
+    ///   pftui analytics views divergence --min-spread 3 --json
+    ///   pftui analytics views divergence --asset BTC --json
+    ///   pftui analytics views divergence --limit 5 --json
+    Divergence {
+        /// Minimum conviction spread to include (default: 2)
+        #[arg(long = "min-spread", default_value = "2")]
+        min_spread: i64,
+        /// Filter to a specific asset
+        #[arg(long)]
+        asset: Option<String>,
+        /// Maximum results to show
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3119,7 +3143,7 @@ pub enum AnalyticsCommand {
         command: AnalyticsDebateScoreCommand,
     },
     /// Per-analyst, per-asset directional views with conviction scores (F57: Timeframe Analyst Self-Awareness)
-    #[command(after_help = "Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) writes a structured\nview per asset on every run. Views include direction, conviction (-5 to +5),\nreasoning, key evidence, and blind spots.\n\nSubcommands:\n  set              — write/update an analyst's view on an asset\n  list             — list views with optional analyst/asset filters\n  matrix           — full cross-analyst view matrix\n  portfolio-matrix — portfolio-aware matrix with coverage stats\n  history          — view evolution over time for an asset\n  delete           — remove a view\n\nExamples:\n  pftui analytics views set --analyst low --asset BTC --direction bull \\\n    --conviction 3 --reasoning \"Momentum strong\" --json\n  pftui analytics views list --asset BTC --json\n  pftui analytics views history --asset BTC --json\n  pftui analytics views matrix --json\n\nSee also: analytics alignment, analytics divergence")]
+    #[command(after_help = "Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) writes a structured\nview per asset on every run. Views include direction, conviction (-5 to +5),\nreasoning, key evidence, and blind spots.\n\nSubcommands:\n  set              — write/update an analyst's view on an asset\n  list             — list views with optional analyst/asset filters\n  matrix           — full cross-analyst view matrix\n  portfolio-matrix — portfolio-aware matrix with coverage stats\n  history          — view evolution over time for an asset\n  divergence       — surface assets where analysts strongly disagree\n  delete           — remove a view\n\nExamples:\n  pftui analytics views set --analyst low --asset BTC --direction bull \\\n    --conviction 3 --reasoning \"Momentum strong\" --json\n  pftui analytics views list --asset BTC --json\n  pftui analytics views history --asset BTC --json\n  pftui analytics views divergence --json\n  pftui analytics views matrix --json\n\nSee also: analytics alignment, analytics divergence")]
     Views {
         #[command(subcommand)]
         command: AnalyticsViewsCommand,
@@ -4553,6 +4577,76 @@ mod tests {
         assert!(analyst.is_none());
         assert!(limit.is_none());
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_views_divergence() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "divergence",
+            "--min-spread",
+            "3",
+            "--asset",
+            "BTC",
+            "--limit",
+            "5",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command:
+                        AnalyticsViewsCommand::Divergence {
+                            min_spread,
+                            asset,
+                            limit,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views divergence command");
+        };
+        assert_eq!(min_spread, 3);
+        assert_eq!(asset.as_deref(), Some("BTC"));
+        assert_eq!(limit, Some(5));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_divergence_defaults() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "divergence",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command:
+                        AnalyticsViewsCommand::Divergence {
+                            min_spread,
+                            asset,
+                            limit,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views divergence command");
+        };
+        assert_eq!(min_spread, 2); // default
+        assert!(asset.is_none());
+        assert!(limit.is_none());
+        assert!(json);
     }
 
     #[test]

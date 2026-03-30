@@ -383,6 +383,105 @@ pub fn history(
     Ok(())
 }
 
+/// Surface assets where analysts strongly disagree — ranked by divergence magnitude.
+pub fn divergence(
+    backend: &BackendConnection,
+    min_spread: i64,
+    asset: Option<&str>,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let divs = analyst_views::compute_divergence_backend(backend, min_spread, asset, limit)?;
+
+    if json_output {
+        let summary = json!({
+            "divergences": divs.iter().map(|d| {
+                json!({
+                    "asset": d.asset,
+                    "spread": d.spread,
+                    "most_bullish": {
+                        "analyst": d.most_bullish.analyst,
+                        "direction": d.most_bullish.direction,
+                        "conviction": d.most_bullish.conviction,
+                        "reasoning": d.most_bullish.reasoning_summary,
+                    },
+                    "most_bearish": {
+                        "analyst": d.most_bearish.analyst,
+                        "direction": d.most_bearish.direction,
+                        "conviction": d.most_bearish.conviction,
+                        "reasoning": d.most_bearish.reasoning_summary,
+                    },
+                    "all_views": d.all_views.iter().map(|v| {
+                        json!({
+                            "analyst": v.analyst,
+                            "direction": v.direction,
+                            "conviction": v.conviction,
+                            "reasoning": v.reasoning_summary,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+            }).collect::<Vec<_>>(),
+            "count": divs.len(),
+            "min_spread": min_spread,
+            "asset_filter": asset,
+        });
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+    } else if divs.is_empty() {
+        if let Some(sym) = asset {
+            println!("No divergence found for {} (min spread: {}).", sym.to_uppercase(), min_spread);
+        } else {
+            println!("No analyst view divergences found (min spread: {}).", min_spread);
+        }
+        println!("Divergence requires at least 2 analysts with different conviction scores on the same asset.");
+    } else {
+        println!("Analyst View Divergences (min spread: {})\n", min_spread);
+        for d in &divs {
+            let bull_sign = if d.most_bullish.conviction > 0 { "+" } else { "" };
+            let bear_sign = if d.most_bearish.conviction > 0 { "+" } else { "" };
+            println!(
+                "🔀 {} — spread {}",
+                d.asset, d.spread,
+            );
+            println!(
+                "   🐂 {} ({}{}) — {}",
+                d.most_bullish.analyst.to_uppercase(),
+                bull_sign,
+                d.most_bullish.conviction,
+                d.most_bullish.reasoning_summary,
+            );
+            println!(
+                "   🐻 {} ({}{}) — {}",
+                d.most_bearish.analyst.to_uppercase(),
+                bear_sign,
+                d.most_bearish.conviction,
+                d.most_bearish.reasoning_summary,
+            );
+            // Show other analysts if more than 2
+            for v in &d.all_views {
+                if v.analyst != d.most_bullish.analyst && v.analyst != d.most_bearish.analyst {
+                    let icon = match v.direction.as_str() {
+                        "bull" => "🐂",
+                        "bear" => "🐻",
+                        _ => "⚖️",
+                    };
+                    let sign = if v.conviction > 0 { "+" } else { "" };
+                    println!(
+                        "   {} {} ({}{}) — {}",
+                        icon,
+                        v.analyst.to_uppercase(),
+                        sign,
+                        v.conviction,
+                        v.reasoning_summary,
+                    );
+                }
+            }
+            println!();
+        }
+        println!("{} divergence(s) found", divs.len());
+    }
+    Ok(())
+}
+
 /// Delete an analyst's view on an asset.
 pub fn delete(
     backend: &BackendConnection,
