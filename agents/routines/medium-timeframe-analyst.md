@@ -183,6 +183,30 @@ For assets affected by medium-term developments:
 pftui analytics conviction set <SYMBOL> --score <n> --notes "MEDIUM [date]: [What medium-term force changed]. Evidence: [specific]. Changed from [old] because [reason]."
 ```
 
+## Write Structured Views
+
+After completing your analysis, write a structured view for each held and watched asset you assessed this run. This makes your reasoning transparent, trackable, and queryable across the system.
+
+For each asset you analyzed (focus on held + watched + scenario-affected):
+```bash
+pftui analytics views set --analyst medium --asset <SYMBOL> \
+  --direction <bull|bear|neutral> --conviction <-5 to +5> \
+  --reasoning "<1-2 sentence summary of your MEDIUM view>" \
+  --evidence "<scenario probabilities, economic data, central bank trajectory>" \
+  --blind-spots "<what could invalidate this view>" --json
+```
+
+Example:
+```bash
+pftui analytics views set --analyst medium --asset GLD \
+  --direction bull --conviction 3 \
+  --reasoning "Rate cut cycle beginning with geopolitical uncertainty elevated. CB buying sustained." \
+  --evidence "FedWatch showing 65% cut by June. COT gold longs at 78th percentile. CB purchases +320t YTD." \
+  --blind-spots "Inflation re-acceleration would delay cuts. Strong USD rally if risk-off favors treasuries over gold." --json
+```
+
+Do NOT skip this step. The structured views feed into the evening analyst's cross-timeframe divergence analysis and accuracy tracking.
+
 ## Prediction Self-Reflection
 
 Score any MEDIUM predictions that accumulated enough evidence:

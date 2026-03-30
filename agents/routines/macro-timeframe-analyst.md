@@ -232,6 +232,30 @@ pftui analytics macro log add --date $(date +%Y-%m-%d) \
   --notes "[Dalio lens: X. Fourth Turning lens: Y. Constraint on lower timeframes: Z.]"
 ```
 
+## Write Structured Views
+
+After completing your macro analysis, write a structured view for each asset where the MACRO layer has a meaningful structural opinion. These views represent the deepest timeframe perspective — the empire cycle and generational forces that constrain all shorter-term analysis.
+
+For each asset where the macro framework produces a view (typically: BTC, GLD, SLV, DXY, and any with structural significance):
+```bash
+pftui analytics views set --analyst macro --asset <SYMBOL> \
+  --direction <bull|bear|neutral> --conviction <-5 to +5> \
+  --reasoning "<1-2 sentence summary of your MACRO structural view>" \
+  --evidence "<Dalio determinants, Fourth Turning phase, power structure signals>" \
+  --blind-spots "<what macro force could invalidate this view>" --json
+```
+
+Example:
+```bash
+pftui analytics views set --analyst macro --asset GLD \
+  --direction bull --conviction 5 \
+  --reasoning "Empire transition reserve asset. CB accumulation is structural, not tactical — de-dollarisation accelerating across BRICS+ and Gulf states." \
+  --evidence "Dalio reserve currency determinant declining. CB gold purchases 3yr running above 1000t. Fourth Turning crisis phase favors hard assets historically." \
+  --blind-spots "FIC-managed dollar transition could stabilise faster than expected. Digital gold alternatives (tokenized gold on-chain) could fragment demand." --json
+```
+
+Do NOT skip this step. The MACRO views provide the deepest constraint layer — when macro says bull +5 on gold but low says bear -1, the evening analyst needs to understand whether the short-term view is noise or a genuine structural counterargument.
+
 ## Predictions
 
 Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how this cycle's predictions account for it.

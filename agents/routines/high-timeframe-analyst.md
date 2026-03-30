@@ -164,6 +164,30 @@ pftui analytics trends add "[name]" --timeframe high \
   --description "[what it is and why it matters]"
 ```
 
+## Write Structured Views
+
+After completing your trend analysis and research, write a structured view for each held and watched asset affected by your structural analysis. This makes the HIGH layer's reasoning transparent and queryable.
+
+For each asset where you have a structural view (focus on held + watched + trend-affected):
+```bash
+pftui analytics views set --analyst high --asset <SYMBOL> \
+  --direction <bull|bear|neutral> --conviction <-5 to +5> \
+  --reasoning "<1-2 sentence summary of your HIGH structural view>" \
+  --evidence "<trend evidence, adoption curves, supply/demand fundamentals>" \
+  --blind-spots "<what structural force could invalidate this view>" --json
+```
+
+Example:
+```bash
+pftui analytics views set --analyst high --asset BTC \
+  --direction bull --conviction 4 \
+  --reasoning "Sovereign adoption accelerating. Supply halving cycle intact. ETF infrastructure creating sustained institutional demand channel." \
+  --evidence "3 new sovereign holders in 2026. Post-halving supply squeeze underway. Self-custody ratio stable at 68%." \
+  --blind-spots "Regulatory capture via ETF centralization. Quantum computing timeline acceleration. FIC absorption thesis." --json
+```
+
+Do NOT skip this step. The structured views feed into cross-timeframe divergence analysis — when HIGH says bull +4 but LOW says bear -2, that tension IS the intelligence.
+
 ## Prediction Self-Reflection
 
 Score HIGH predictions where enough evidence has accumulated:

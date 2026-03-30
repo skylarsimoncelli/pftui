@@ -2,6 +2,26 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat(F57.6): agent routine integration for analyst views
+
+Completes F57 (Timeframe Analyst Self-Awareness) by integrating the structured analyst views system into all agent routines:
+
+**Timeframe analysts (low, medium, high, macro):** Each routine now includes a mandatory "Write Structured Views" step. After completing analysis, every timeframe analyst writes structured views per asset via `analytics views set`, including direction, conviction (-5 to +5), reasoning, evidence, and blind spots. Each routine includes a domain-specific example showing the appropriate level of detail.
+
+**Evening analysis:** Now reads `analytics views portfolio-matrix`, `analytics views divergence`, and `analytics views accuracy` as part of its input phase. The cross-timeframe synthesis section is updated to start from the structured view grid, anchor on divergence rankings, and weight analyst views by accuracy scores before cross-referencing with raw digest messages.
+
+**Morning brief:** Now reads `analytics views divergence` and `analytics views portfolio-matrix` as inputs. The Cross-Timeframe Alignment section of the PDF template includes a one-line analyst view divergence summary (e.g. "🔀 Biggest analyst disagreement: BTC (LOW bull +3 vs HIGH bear -2, spread 5)").
+
+This closes the loop: analysts write structured views → evening analyst reads the full matrix and weights by accuracy → morning brief surfaces the sharpest disagreement to the user. The system's reasoning is now transparent, trackable, and self-improving.
+
+**Files changed:**
+- `agents/routines/low-timeframe-analyst.md` — added "Write Structured Views" section
+- `agents/routines/medium-timeframe-analyst.md` — added "Write Structured Views" section
+- `agents/routines/high-timeframe-analyst.md` — added "Write Structured Views" section
+- `agents/routines/macro-timeframe-analyst.md` — added "Write Structured Views" section
+- `agents/routines/evening-analysis.md` — added views commands to inputs, updated cross-timeframe synthesis methodology
+- `agents/routines/morning-brief.md` — added views commands to inputs, added divergence summary to template
+
 ### 2026-03-30 — feat: portfolio stress-test --list-scenarios for scenario discoverability
 
 New flag: `pftui portfolio stress-test --list-scenarios [--json]`
