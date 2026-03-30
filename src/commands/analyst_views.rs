@@ -6,11 +6,14 @@
 //!   matrix — full cross-analyst view matrix (rows=assets, columns=analysts)
 //!   delete — remove an analyst's view on an asset
 
+use std::collections::BTreeSet;
+
 use anyhow::Result;
 use serde_json::json;
 
 use crate::db::analyst_views;
 use crate::db::backend::BackendConnection;
+use crate::models::asset::AssetCategory;
 
 /// Set (upsert) an analyst's view on an asset.
 #[allow(clippy::too_many_arguments)]
@@ -159,6 +162,119 @@ pub fn matrix(backend: &BackendConnection, json_output: bool) -> Result<()> {
             );
         }
         println!("\n{} asset(s) with views", matrix.len());
+    }
+    Ok(())
+}
+
+/// Portfolio-aware view matrix: includes held + watched + viewed assets.
+pub fn portfolio_matrix(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    // Collect held symbols (from transactions + allocations)
+    let mut symbols = BTreeSet::new();
+
+    if let Ok(rows) = crate::db::transactions::get_unique_symbols_backend(backend) {
+        for (sym, cat) in rows {
+            if cat != AssetCategory::Cash {
+                symbols.insert(sym.to_uppercase());
+            }
+        }
+    }
+    if let Ok(rows) = crate::db::allocations::get_unique_allocation_symbols_backend(backend) {
+        for (sym, cat) in rows {
+            if cat != AssetCategory::Cash {
+                symbols.insert(sym.to_uppercase());
+            }
+        }
+    }
+
+    // Collect watchlist symbols
+    if let Ok(rows) = crate::db::watchlist::get_watchlist_symbols_backend(backend) {
+        for (sym, _cat) in rows {
+            symbols.insert(sym.to_uppercase());
+        }
+    }
+
+    let portfolio_symbols: Vec<String> = symbols.into_iter().collect();
+    let matrix = analyst_views::get_portfolio_view_matrix_backend(backend, &portfolio_symbols)?;
+
+    if json_output {
+        // Enrich JSON with coverage stats
+        let total_assets = matrix.len();
+        let analysts = ["low", "medium", "high", "macro"];
+        let total_cells = total_assets * analysts.len();
+        let filled_cells: usize = matrix
+            .iter()
+            .map(|row| {
+                analysts
+                    .iter()
+                    .filter(|a| row.views.iter().any(|v| v.analyst == **a))
+                    .count()
+            })
+            .sum();
+        let coverage_pct = if total_cells > 0 {
+            (filled_cells as f64 / total_cells as f64 * 100.0).round() as u64
+        } else {
+            0
+        };
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "portfolio_matrix": matrix,
+                "total_assets": total_assets,
+                "total_cells": total_cells,
+                "filled_cells": filled_cells,
+                "coverage_pct": coverage_pct,
+            }))?
+        );
+    } else if matrix.is_empty() {
+        println!("No held, watched, or viewed assets found.");
+        println!("Add positions, watchlist items, or set views with `analytics views set`.");
+    } else {
+        // Header
+        println!(
+            "{:<10} {:<16} {:<16} {:<16} {:<16}",
+            "Asset", "LOW", "MEDIUM", "HIGH", "MACRO"
+        );
+        println!("{}", "═".repeat(74));
+
+        let analysts = ["low", "medium", "high", "macro"];
+        let mut filled = 0usize;
+        let total = matrix.len() * analysts.len();
+
+        for row in &matrix {
+            let mut cells: Vec<String> = Vec::new();
+            for a in &analysts {
+                if let Some(v) = row.views.iter().find(|v| v.analyst == *a) {
+                    let icon = match v.direction.as_str() {
+                        "bull" => "🐂",
+                        "bear" => "🐻",
+                        _ => "⚖️",
+                    };
+                    let sign = if v.conviction > 0 { "+" } else { "" };
+                    cells.push(format!("{} {}{}", icon, sign, v.conviction));
+                    filled += 1;
+                } else {
+                    cells.push("—".to_string());
+                }
+            }
+            println!(
+                "{:<10} {:<16} {:<16} {:<16} {:<16}",
+                row.asset, cells[0], cells[1], cells[2], cells[3]
+            );
+        }
+
+        let coverage = if total > 0 {
+            (filled as f64 / total as f64 * 100.0).round() as u64
+        } else {
+            0
+        };
+        println!(
+            "\n{} asset(s) | {}/{} cells filled ({}% coverage)",
+            matrix.len(),
+            filled,
+            total,
+            coverage
+        );
     }
     Ok(())
 }

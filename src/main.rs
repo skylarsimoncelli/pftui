@@ -2189,6 +2189,9 @@ fn main() -> Result<()> {
                 cli::AnalyticsViewsCommand::Matrix { json } => {
                     commands::analyst_views::matrix(&backend, json)
                 }
+                cli::AnalyticsViewsCommand::PortfolioMatrix { json } => {
+                    commands::analyst_views::portfolio_matrix(&backend, json)
+                }
                 cli::AnalyticsViewsCommand::Delete {
                     analyst,
                     asset,

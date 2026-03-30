@@ -2893,6 +2893,17 @@ pub enum AnalyticsViewsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Portfolio-aware view matrix: includes all held + watchlisted assets alongside viewed assets
+    ///
+    /// Shows every asset the user holds or watches, plus any asset with existing analyst views.
+    /// Assets without views show '—' for that analyst column, surfacing coverage gaps.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views portfolio-matrix --json
+    PortfolioMatrix {
+        #[arg(long)]
+        json: bool,
+    },
     /// Delete an analyst's view on an asset
     ///
     /// EXAMPLES:
@@ -4389,6 +4400,29 @@ mod tests {
         }) = cli.command
         else {
             panic!("expected analytics views matrix command");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_portfolio_matrix() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "portfolio-matrix",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command: AnalyticsViewsCommand::PortfolioMatrix { json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views portfolio-matrix command");
         };
         assert!(json);
     }

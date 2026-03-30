@@ -264,6 +264,30 @@ fn get_view_matrix(conn: &Connection) -> Result<Vec<AssetViewMatrix>> {
     Ok(matrix)
 }
 
+fn get_portfolio_view_matrix(
+    conn: &Connection,
+    portfolio_symbols: &[String],
+) -> Result<Vec<AssetViewMatrix>> {
+    // Merge portfolio symbols with any assets that already have views
+    let mut all_assets: Vec<String> = portfolio_symbols.to_vec();
+    let viewed = list_assets_with_views(conn)?;
+    for a in viewed {
+        let upper = a.to_uppercase();
+        if !all_assets.iter().any(|s| s.to_uppercase() == upper) {
+            all_assets.push(a);
+        }
+    }
+    all_assets.sort_by_key(|a| a.to_uppercase());
+    all_assets.dedup_by(|a, b| a.to_uppercase() == b.to_uppercase());
+
+    let mut matrix = Vec::new();
+    for asset in all_assets {
+        let views = list_views(conn, None, Some(&asset), None)?;
+        matrix.push(AssetViewMatrix { asset, views });
+    }
+    Ok(matrix)
+}
+
 fn delete_view(conn: &Connection, analyst: &str, asset: &str) -> Result<bool> {
     let affected = conn.execute(
         "DELETE FROM analyst_views WHERE analyst = ? AND asset = ?",
@@ -404,6 +428,32 @@ fn get_view_matrix_postgres(pool: &PgPool) -> Result<Vec<AssetViewMatrix>> {
     Ok(matrix)
 }
 
+fn get_portfolio_view_matrix_postgres(
+    pool: &PgPool,
+    portfolio_symbols: &[String],
+) -> Result<Vec<AssetViewMatrix>> {
+    let mut all_assets: Vec<String> = portfolio_symbols.to_vec();
+    let viewed = list_assets_with_views_postgres(pool)?;
+    for a in viewed {
+        let upper = a.to_uppercase();
+        if !all_assets.iter().any(|s| s.to_uppercase() == upper) {
+            all_assets.push(a);
+        }
+    }
+    all_assets.sort_by_key(|a| a.to_uppercase());
+    all_assets.dedup_by(|a, b| a.to_uppercase() == b.to_uppercase());
+
+    let mut matrix = Vec::new();
+    for asset in &all_assets {
+        let views = list_views_postgres(pool, None, Some(asset), None)?;
+        matrix.push(AssetViewMatrix {
+            asset: asset.clone(),
+            views,
+        });
+    }
+    Ok(matrix)
+}
+
 fn delete_view_postgres(pool: &PgPool, analyst: &str, asset: &str) -> Result<bool> {
     let result = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM analyst_views WHERE analyst = $1 AND asset = $2")
@@ -495,6 +545,23 @@ pub fn get_view_matrix_backend(
         |pool| {
             ensure_tables_postgres(pool)?;
             get_view_matrix_postgres(pool)
+        },
+    )
+}
+
+pub fn get_portfolio_view_matrix_backend(
+    backend: &BackendConnection,
+    portfolio_symbols: &[String],
+) -> Result<Vec<AssetViewMatrix>> {
+    query::dispatch(
+        backend,
+        |conn| {
+            ensure_tables(conn)?;
+            get_portfolio_view_matrix(conn, portfolio_symbols)
+        },
+        |pool| {
+            ensure_tables_postgres(pool)?;
+            get_portfolio_view_matrix_postgres(pool, portfolio_symbols)
         },
     )
 }
@@ -726,5 +793,79 @@ mod tests {
         let conn = setup_db();
         let result = get_view(&conn, "low", "DOESNOTEXIST").unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_portfolio_matrix_includes_all_symbols() {
+        let conn = setup_db();
+        // Only BTC has a view
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None).unwrap();
+
+        // Portfolio has BTC, GLD, SLV — GLD and SLV have no views
+        let symbols = vec!["BTC".to_string(), "GLD".to_string(), "SLV".to_string()];
+        let matrix = get_portfolio_view_matrix(&conn, &symbols).unwrap();
+
+        assert_eq!(matrix.len(), 3);
+        let btc = matrix.iter().find(|m| m.asset == "BTC").unwrap();
+        assert_eq!(btc.views.len(), 1);
+        let gld = matrix.iter().find(|m| m.asset == "GLD").unwrap();
+        assert_eq!(gld.views.len(), 0); // no views yet
+        let slv = matrix.iter().find(|m| m.asset == "SLV").unwrap();
+        assert_eq!(slv.views.len(), 0);
+    }
+
+    #[test]
+    fn test_portfolio_matrix_includes_viewed_assets_not_in_portfolio() {
+        let conn = setup_db();
+        // TSLA has a view but is not in portfolio
+        upsert_view(&conn, "high", "TSLA", "bear", -2, "Overvalued", None, None).unwrap();
+
+        let symbols = vec!["BTC".to_string(), "GLD".to_string()];
+        let matrix = get_portfolio_view_matrix(&conn, &symbols).unwrap();
+
+        // Should include BTC, GLD (portfolio) + TSLA (has views)
+        assert_eq!(matrix.len(), 3);
+        assert!(matrix.iter().any(|m| m.asset == "BTC"));
+        assert!(matrix.iter().any(|m| m.asset == "GLD"));
+        assert!(matrix.iter().any(|m| m.asset == "TSLA"));
+    }
+
+    #[test]
+    fn test_portfolio_matrix_deduplicates() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Test", None, None).unwrap();
+
+        // BTC is in both portfolio and has views — should not be duplicated
+        let symbols = vec!["BTC".to_string()];
+        let matrix = get_portfolio_view_matrix(&conn, &symbols).unwrap();
+
+        assert_eq!(matrix.len(), 1);
+        assert_eq!(matrix[0].asset, "BTC");
+        assert_eq!(matrix[0].views.len(), 1);
+    }
+
+    #[test]
+    fn test_portfolio_matrix_empty_portfolio() {
+        let conn = setup_db();
+        upsert_view(&conn, "macro", "GLD", "bull", 5, "Structural", None, None).unwrap();
+
+        // Empty portfolio — should still show assets with views
+        let symbols: Vec<String> = vec![];
+        let matrix = get_portfolio_view_matrix(&conn, &symbols).unwrap();
+
+        assert_eq!(matrix.len(), 1);
+        assert_eq!(matrix[0].asset, "GLD");
+    }
+
+    #[test]
+    fn test_portfolio_matrix_sorted() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "TSLA", "bear", -1, "Test", None, None).unwrap();
+
+        let symbols = vec!["SLV".to_string(), "BTC".to_string(), "GLD".to_string()];
+        let matrix = get_portfolio_view_matrix(&conn, &symbols).unwrap();
+
+        let assets: Vec<&str> = matrix.iter().map(|m| m.asset.as_str()).collect();
+        assert_eq!(assets, vec!["BTC", "GLD", "SLV", "TSLA"]);
     }
 }
