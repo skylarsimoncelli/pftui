@@ -37,7 +37,7 @@ _(none)_
 **Scope:**
 - [x] F58.1: `analytics backtest predictions --json` — replay all scored predictions. For each: entry price at prediction date, exit price at target date, theoretical P&L if acted on at stated conviction level. *(done: PR #468)*
 - [x] F58.2: `analytics backtest report --json` — aggregate backtest results. Win rate by conviction level, by timeframe, by asset class, by source agent. Sharpe ratio equivalent for prediction-based strategy. *(done: PR #471)*
-- [ ] F58.3: `analytics backtest agent --agent <name> --json` — per-agent accuracy breakdown. Which timeframe analyst produces the best predictions?
+- [x] F58.3: `analytics backtest agent --agent <name> --json` — per-agent accuracy breakdown. Which timeframe analyst produces the best predictions? *(done: PR #474)*
 - [ ] F58.4: Agent routine integration — weekly self-review (macro-timeframe-analyst) includes backtest summary. Surface which conviction levels and which agents are most reliable.
 **Not in scope:** Full portfolio simulation, position sizing, transaction costs. V1 is prediction accuracy analysis only.
 **Effort:** 2-3 weeks. **Priority:** P2 — valuable but not blocking daily operations.
@@ -80,7 +80,8 @@ _(none)_
 1. ✅ Situation engine auto-populate (P1) — `analytics situation populate` derives timeframe scores from existing regime/scenario/trend/cycle data
 2. ✅ F57.2 portfolio-matrix (#450) — `analytics views portfolio-matrix` with coverage stats
 3. ✅ F57.3 analyst view history (#453) — `analytics views history` with drift tracking
+4. ✅ F58.3 backtest agent (#474) — `analytics backtest agent --agent <name>` per-agent accuracy breakdown
 
-**Release status:** v0.22.0 eligible — 47 commits since v0.21.0, no P0 bugs, 2043 tests passing, clippy clean. Features shipped: F55 complete, F56 complete, F57.1-F57.3, prediction lessons, catalyst linkage, adversarial debates, analyst views.
+**Release status:** v0.22.0 eligible — 48 commits since v0.21.0, no P0 bugs, 2115 tests passing, clippy clean. Features shipped: F55 complete, F56 complete, F57.1-F57.3, F58.1-F58.3, prediction lessons, catalyst linkage, adversarial debates, analyst views.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.
