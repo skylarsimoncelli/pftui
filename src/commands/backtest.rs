@@ -507,6 +507,428 @@ fn print_table(entries: &[BacktestEntry], summary: &BacktestSummary) {
     }
 }
 
+// ─── F58.3: Per-Agent Accuracy Breakdown ────────────────────────────────────
+
+/// Detailed per-agent accuracy profile.
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentProfile {
+    pub agent_name: String,
+    pub total_predictions: usize,
+    pub with_price_data: usize,
+    pub win_count: usize,
+    pub loss_count: usize,
+    pub partial_count: usize,
+    pub win_rate_pct: Option<Decimal>,
+    pub total_pnl: Decimal,
+    pub avg_pnl: Option<Decimal>,
+    pub sharpe_equivalent: Option<Decimal>,
+    pub best_trade: Option<AgentTrade>,
+    pub worst_trade: Option<AgentTrade>,
+    pub by_conviction: Vec<BucketStats>,
+    pub by_timeframe: Vec<BucketStats>,
+    pub by_asset_class: Vec<BucketStats>,
+    pub by_symbol: Vec<BucketStats>,
+    /// Current streak: positive = consecutive wins, negative = consecutive losses
+    pub current_streak: i32,
+    /// Longest winning streak
+    pub longest_win_streak: usize,
+    /// Longest losing streak
+    pub longest_loss_streak: usize,
+    /// Rank among all agents by win rate (1-based, None if not enough data)
+    pub rank_by_win_rate: Option<usize>,
+    /// Total number of agents with scored predictions
+    pub total_agents: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentTrade {
+    pub claim: String,
+    pub symbol: Option<String>,
+    pub pnl: Decimal,
+    pub outcome: String,
+    pub date: String,
+}
+
+/// Compute streak info from chronologically-sorted entries.
+fn compute_streaks(entries: &[BacktestEntry]) -> (i32, usize, usize) {
+    let mut longest_win: usize = 0;
+    let mut longest_loss: usize = 0;
+    let mut win_run: usize = 0;
+    let mut loss_run: usize = 0;
+
+    // Sort by created_at for chronological streak
+    let mut sorted: Vec<&BacktestEntry> = entries.iter().collect();
+    sorted.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
+    for entry in &sorted {
+        match entry.outcome.as_str() {
+            "correct" => {
+                win_run += 1;
+                loss_run = 0;
+                if win_run > longest_win {
+                    longest_win = win_run;
+                }
+            }
+            "wrong" => {
+                loss_run += 1;
+                win_run = 0;
+                if loss_run > longest_loss {
+                    longest_loss = loss_run;
+                }
+            }
+            _ => {
+                // partial doesn't break streaks but doesn't extend them
+            }
+        }
+    }
+
+    // Current streak: check from the end
+    let mut current_streak: i32 = 0;
+    for entry in sorted.iter().rev() {
+        match entry.outcome.as_str() {
+            "correct" => {
+                if current_streak < 0 {
+                    break;
+                }
+                current_streak += 1;
+            }
+            "wrong" => {
+                if current_streak > 0 {
+                    break;
+                }
+                current_streak -= 1;
+            }
+            _ => break, // partial ends streak counting
+        }
+    }
+
+    (current_streak, longest_win, longest_loss)
+}
+
+/// Run `analytics backtest agent --agent <name>`.
+pub fn run_agent(
+    backend: &BackendConnection,
+    agent_name: &str,
+    json_output: bool,
+) -> Result<()> {
+    // Load all scored predictions
+    let mut all_predictions =
+        user_predictions::list_predictions_backend(backend, None, None, None, None)?;
+    all_predictions.retain(|p| {
+        matches!(p.outcome.as_str(), "correct" | "partial" | "wrong")
+    });
+
+    // Build backtest entries for ALL agents (needed for ranking)
+    let all_entries: Vec<BacktestEntry> = all_predictions
+        .iter()
+        .map(|pred| backtest_prediction(backend, pred))
+        .collect();
+
+    // Compute per-agent win rates for ranking
+    let agent_win_rates = build_breakdown(&all_entries, |e| {
+        e.source_agent
+            .as_deref()
+            .unwrap_or("unknown")
+            .to_lowercase()
+    });
+    let total_agents = agent_win_rates.len();
+
+    // Rank agents by win rate (descending), only those with ≥3 decided trades
+    let mut ranked: Vec<(&str, Decimal)> = agent_win_rates
+        .iter()
+        .filter(|b| (b.wins + b.losses) >= 3)
+        .filter_map(|b| {
+            b.win_rate_pct.map(|wr| (b.label.as_str(), wr))
+        })
+        .collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let agent_lower = agent_name.to_lowercase();
+    let rank = ranked
+        .iter()
+        .position(|(name, _)| *name == agent_lower)
+        .map(|pos| pos + 1); // 1-based
+
+    // Filter to target agent
+    let agent_entries: Vec<BacktestEntry> = all_entries
+        .into_iter()
+        .filter(|e| {
+            e.source_agent
+                .as_deref()
+                .is_some_and(|a| a.eq_ignore_ascii_case(agent_name))
+        })
+        .collect();
+
+    if agent_entries.is_empty() {
+        if json_output {
+            let output = json!({
+                "backtest": "agent",
+                "agent": agent_name,
+                "error": "No scored predictions found for this agent"
+            });
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        } else {
+            println!(
+                "No scored predictions found for agent '{}'.",
+                agent_name
+            );
+            println!("\nAvailable agents with scored predictions:");
+            for b in &agent_win_rates {
+                println!("  - {} ({} predictions)", b.label, b.count);
+            }
+        }
+        return Ok(());
+    }
+
+    // Compute stats
+    let with_price = agent_entries.iter().filter(|e| e.has_price_data).count();
+    let mut wins = 0usize;
+    let mut losses = 0usize;
+    let mut partials = 0usize;
+    let mut total_pnl = Decimal::ZERO;
+    let mut best_trade: Option<AgentTrade> = None;
+    let mut worst_trade: Option<AgentTrade> = None;
+
+    for entry in &agent_entries {
+        match entry.outcome.as_str() {
+            "correct" => wins += 1,
+            "wrong" => losses += 1,
+            "partial" => partials += 1,
+            _ => {}
+        }
+        if let Some(pnl) = entry.theoretical_pnl {
+            total_pnl += pnl;
+            if best_trade.as_ref().is_none_or(|t| pnl > t.pnl) {
+                best_trade = Some(AgentTrade {
+                    claim: entry.claim.clone(),
+                    symbol: entry.resolved_symbol.clone(),
+                    pnl,
+                    outcome: entry.outcome.clone(),
+                    date: entry.created_at.clone(),
+                });
+            }
+            if worst_trade.as_ref().is_none_or(|t| pnl < t.pnl) {
+                worst_trade = Some(AgentTrade {
+                    claim: entry.claim.clone(),
+                    symbol: entry.resolved_symbol.clone(),
+                    pnl,
+                    outcome: entry.outcome.clone(),
+                    date: entry.created_at.clone(),
+                });
+            }
+        }
+    }
+
+    let decided = wins + losses;
+    let win_rate = if decided > 0 {
+        Some(Decimal::from(wins as u64) / Decimal::from(decided as u64) * dec!(100))
+    } else {
+        None
+    };
+
+    let avg_pnl = if with_price > 0 {
+        let pnl_count = wins + losses + partials;
+        if pnl_count > 0 {
+            Some(total_pnl / Decimal::from(pnl_count as u64))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let sharpe = compute_sharpe_equivalent(&agent_entries);
+    let (current_streak, longest_win, longest_loss) = compute_streaks(&agent_entries);
+
+    // Breakdowns
+    let by_conviction = build_breakdown(&agent_entries, |e| e.conviction.to_lowercase());
+    let by_timeframe = build_breakdown(&agent_entries, |e| {
+        e.timeframe
+            .as_deref()
+            .unwrap_or("unknown")
+            .to_lowercase()
+    });
+    let by_asset_class = build_breakdown(&agent_entries, |e| match &e.resolved_symbol {
+        Some(sym) => format!("{}", infer_category(sym)),
+        None => "unknown".to_string(),
+    });
+    let by_symbol = build_breakdown(&agent_entries, |e| {
+        e.resolved_symbol
+            .as_deref()
+            .unwrap_or("unknown")
+            .to_string()
+    });
+
+    let profile = AgentProfile {
+        agent_name: agent_name.to_string(),
+        total_predictions: agent_entries.len(),
+        with_price_data: with_price,
+        win_count: wins,
+        loss_count: losses,
+        partial_count: partials,
+        win_rate_pct: win_rate,
+        total_pnl,
+        avg_pnl,
+        sharpe_equivalent: sharpe,
+        best_trade,
+        worst_trade,
+        by_conviction,
+        by_timeframe,
+        by_asset_class,
+        by_symbol,
+        current_streak,
+        longest_win_streak: longest_win,
+        longest_loss_streak: longest_loss,
+        rank_by_win_rate: rank,
+        total_agents,
+    };
+
+    if json_output {
+        print_agent_json(&profile)?;
+    } else {
+        print_agent_table(&profile);
+    }
+
+    Ok(())
+}
+
+fn trade_to_json(trade: &AgentTrade) -> serde_json::Value {
+    json!({
+        "claim": trade.claim,
+        "symbol": trade.symbol,
+        "pnl": trade.pnl.round_dp(2).to_string(),
+        "outcome": trade.outcome,
+        "date": trade.date,
+    })
+}
+
+fn print_agent_json(profile: &AgentProfile) -> Result<()> {
+    let output = json!({
+        "backtest": "agent",
+        "agent": profile.agent_name,
+        "methodology": {
+            "notional_portfolio": NOTIONAL_PORTFOLIO.to_string(),
+            "conviction_weights": {
+                "high": "10%",
+                "medium": "5%",
+                "low": "2%"
+            },
+            "sharpe_note": "Per-trade Sharpe equivalent: mean(P&L) / stddev(P&L). Not annualised.",
+            "ranking_threshold": "≥3 decided trades required for ranking"
+        },
+        "summary": {
+            "total_predictions": profile.total_predictions,
+            "with_price_data": profile.with_price_data,
+            "wins": profile.win_count,
+            "losses": profile.loss_count,
+            "partials": profile.partial_count,
+            "win_rate_pct": profile.win_rate_pct.map(|v| v.round_dp(1).to_string()),
+            "total_pnl": profile.total_pnl.round_dp(2).to_string(),
+            "avg_pnl": profile.avg_pnl.map(|v| v.round_dp(2).to_string()),
+            "sharpe_equivalent": profile.sharpe_equivalent.map(|v| v.round_dp(3).to_string()),
+            "current_streak": profile.current_streak,
+            "longest_win_streak": profile.longest_win_streak,
+            "longest_loss_streak": profile.longest_loss_streak,
+            "rank_by_win_rate": profile.rank_by_win_rate,
+            "total_agents_ranked": profile.total_agents,
+        },
+        "best_trade": profile.best_trade.as_ref().map(trade_to_json),
+        "worst_trade": profile.worst_trade.as_ref().map(trade_to_json),
+        "by_conviction": profile.by_conviction.iter().map(bucket_to_json).collect::<Vec<_>>(),
+        "by_timeframe": profile.by_timeframe.iter().map(bucket_to_json).collect::<Vec<_>>(),
+        "by_asset_class": profile.by_asset_class.iter().map(bucket_to_json).collect::<Vec<_>>(),
+        "by_symbol": profile.by_symbol.iter().map(bucket_to_json).collect::<Vec<_>>(),
+    });
+
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+fn print_agent_table(profile: &AgentProfile) {
+    println!("═══ Agent Backtest: {} ═══", profile.agent_name);
+    println!("Notional portfolio: ${}", NOTIONAL_PORTFOLIO);
+    println!(
+        "Predictions: {} | With prices: {}",
+        profile.total_predictions, profile.with_price_data
+    );
+    if let Some(wr) = profile.win_rate_pct {
+        println!(
+            "Win rate: {}% ({} wins, {} losses, {} partial)",
+            wr.round_dp(1),
+            profile.win_count,
+            profile.loss_count,
+            profile.partial_count,
+        );
+    } else {
+        println!(
+            "Record: {} wins, {} losses, {} partial (no decided trades for win rate)",
+            profile.win_count, profile.loss_count, profile.partial_count,
+        );
+    }
+    println!(
+        "Total theoretical P&L: ${}",
+        profile.total_pnl.round_dp(2)
+    );
+    if let Some(avg) = profile.avg_pnl {
+        println!("Avg P&L per trade: ${}", avg.round_dp(2));
+    }
+    if let Some(sharpe) = profile.sharpe_equivalent {
+        println!("Sharpe equivalent (per-trade): {}", sharpe.round_dp(3));
+    }
+    println!();
+
+    // Streaks
+    println!("─── Streaks ───");
+    let streak_str = if profile.current_streak > 0 {
+        format!("{} wins", profile.current_streak)
+    } else if profile.current_streak < 0 {
+        format!("{} losses", profile.current_streak.abs())
+    } else {
+        "none".to_string()
+    };
+    println!("  Current streak: {}", streak_str);
+    println!("  Longest win streak: {}", profile.longest_win_streak);
+    println!("  Longest loss streak: {}", profile.longest_loss_streak);
+
+    // Ranking
+    if let Some(rank) = profile.rank_by_win_rate {
+        println!(
+            "  Rank: #{} of {} agents (by win rate, ≥3 decided trades)",
+            rank, profile.total_agents
+        );
+    }
+    println!();
+
+    // Best/worst trades
+    if let Some(ref trade) = profile.best_trade {
+        let sym = trade.symbol.as_deref().unwrap_or("—");
+        println!(
+            "─── Best Trade ───\n  {} [{}] — ${} ({})",
+            trade.claim,
+            sym,
+            trade.pnl.round_dp(2),
+            trade.date,
+        );
+    }
+    if let Some(ref trade) = profile.worst_trade {
+        let sym = trade.symbol.as_deref().unwrap_or("—");
+        println!(
+            "─── Worst Trade ───\n  {} [{}] — ${} ({})",
+            trade.claim,
+            sym,
+            trade.pnl.round_dp(2),
+            trade.date,
+        );
+    }
+    println!();
+
+    // Breakdowns
+    print_breakdown_section("By Conviction", &profile.by_conviction);
+    print_breakdown_section("By Timeframe", &profile.by_timeframe);
+    print_breakdown_section("By Asset Class", &profile.by_asset_class);
+    print_breakdown_section("By Symbol", &profile.by_symbol);
+}
+
 // ─── F58.2: Aggregate Backtest Report ───────────────────────────────────────
 
 /// Stats for a single grouping bucket (conviction level, timeframe, asset class, or agent).
@@ -1651,5 +2073,281 @@ mod tests {
         assert_eq!(by_timeframe.len(), 2); // "medium" and "high"
         let medium = by_timeframe.iter().find(|b| b.label == "medium").unwrap();
         assert_eq!(medium.count, 2);
+    }
+
+    // ─── F58.3: Per-agent backtest tests ───
+
+    #[test]
+    fn test_agent_empty() {
+        let backend = setup_db();
+        let result = run_agent(&backend, "nonexistent-agent", false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_agent_json_output() {
+        let backend = setup_db();
+        let conn = match &backend {
+            BackendConnection::Sqlite { conn } => conn,
+            _ => panic!("expected sqlite"),
+        };
+
+        insert_prediction(
+            conn,
+            "BTC above $100K",
+            Some("BTC-USD"),
+            "high",
+            "correct",
+            "2025-12-01",
+            Some("2026-03-01"),
+            Some("2026-03-15"),
+            Some("low-timeframe"),
+            Some("medium"),
+        );
+        insert_prediction(
+            conn,
+            "Gold drops below $2500",
+            Some("GC=F"),
+            "medium",
+            "wrong",
+            "2025-11-01",
+            Some("2026-01-31"),
+            Some("2026-01-31"),
+            Some("low-timeframe"),
+            Some("high"),
+        );
+        insert_prediction(
+            conn,
+            "DXY stays above 104",
+            Some("DX-Y.NYB"),
+            "low",
+            "correct",
+            "2025-10-01",
+            Some("2026-02-01"),
+            Some("2026-02-01"),
+            Some("high-timeframe"),
+            Some("macro"),
+        );
+
+        insert_price(conn, "BTC-USD", "2025-12-01", "95000");
+        insert_price(conn, "BTC-USD", "2026-03-01", "110000");
+        insert_price(conn, "GC=F", "2025-11-01", "2700");
+        insert_price(conn, "GC=F", "2026-01-31", "2650");
+        insert_price(conn, "DX-Y.NYB", "2025-10-01", "105");
+        insert_price(conn, "DX-Y.NYB", "2026-02-01", "106");
+
+        let result = run_agent(&backend, "low-timeframe", true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_agent_table_output() {
+        let backend = setup_db();
+        let conn = match &backend {
+            BackendConnection::Sqlite { conn } => conn,
+            _ => panic!("expected sqlite"),
+        };
+
+        insert_prediction(
+            conn,
+            "BTC rallies",
+            Some("BTC-USD"),
+            "high",
+            "correct",
+            "2025-12-01",
+            Some("2026-03-01"),
+            Some("2026-03-01"),
+            Some("macro-timeframe"),
+            Some("macro"),
+        );
+
+        insert_price(conn, "BTC-USD", "2025-12-01", "95000");
+        insert_price(conn, "BTC-USD", "2026-03-01", "110000");
+
+        let result = run_agent(&backend, "macro-timeframe", false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_agent_case_insensitive() {
+        let backend = setup_db();
+        let conn = match &backend {
+            BackendConnection::Sqlite { conn } => conn,
+            _ => panic!("expected sqlite"),
+        };
+
+        insert_prediction(
+            conn,
+            "Silver rises",
+            Some("SI=F"),
+            "medium",
+            "correct",
+            "2025-12-01",
+            Some("2026-03-01"),
+            Some("2026-03-01"),
+            Some("Low-Timeframe"),
+            Some("low"),
+        );
+
+        insert_price(conn, "SI=F", "2025-12-01", "30");
+        insert_price(conn, "SI=F", "2026-03-01", "35");
+
+        // Should match case-insensitively
+        let result = run_agent(&backend, "low-timeframe", true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_compute_streaks_all_wins() {
+        let entries: Vec<BacktestEntry> = (1..=5)
+            .map(|i| BacktestEntry {
+                id: i,
+                claim: format!("Win {}", i),
+                symbol: None,
+                resolved_symbol: None,
+                conviction: "high".into(),
+                timeframe: None,
+                confidence: None,
+                source_agent: Some("test-agent".into()),
+                outcome: "correct".into(),
+                created_at: format!("2025-01-{:02}", i),
+                target_date: None,
+                scored_at: None,
+                entry_price: None,
+                exit_price: None,
+                price_change_pct: None,
+                direction_multiplier: None,
+                theoretical_pnl: Some(dec!(100)),
+                has_price_data: true,
+                data_note: None,
+            })
+            .collect();
+
+        let (current, longest_win, longest_loss) = compute_streaks(&entries);
+        assert_eq!(current, 5);
+        assert_eq!(longest_win, 5);
+        assert_eq!(longest_loss, 0);
+    }
+
+    #[test]
+    fn test_compute_streaks_mixed() {
+        let outcomes = ["correct", "correct", "wrong", "correct", "wrong", "wrong"];
+        let entries: Vec<BacktestEntry> = outcomes
+            .iter()
+            .enumerate()
+            .map(|(i, outcome)| BacktestEntry {
+                id: (i + 1) as i64,
+                claim: format!("Pred {}", i + 1),
+                symbol: None,
+                resolved_symbol: None,
+                conviction: "medium".into(),
+                timeframe: None,
+                confidence: None,
+                source_agent: Some("test-agent".into()),
+                outcome: outcome.to_string(),
+                created_at: format!("2025-01-{:02}", i + 1),
+                target_date: None,
+                scored_at: None,
+                entry_price: None,
+                exit_price: None,
+                price_change_pct: None,
+                direction_multiplier: None,
+                theoretical_pnl: Some(if *outcome == "correct" {
+                    dec!(50)
+                } else {
+                    dec!(-30)
+                }),
+                has_price_data: true,
+                data_note: None,
+            })
+            .collect();
+
+        let (current, longest_win, longest_loss) = compute_streaks(&entries);
+        assert_eq!(current, -2); // ends with 2 losses
+        assert_eq!(longest_win, 2); // first two are wins
+        assert_eq!(longest_loss, 2); // last two are losses
+    }
+
+    #[test]
+    fn test_compute_streaks_empty() {
+        let entries: Vec<BacktestEntry> = vec![];
+        let (current, longest_win, longest_loss) = compute_streaks(&entries);
+        assert_eq!(current, 0);
+        assert_eq!(longest_win, 0);
+        assert_eq!(longest_loss, 0);
+    }
+
+    #[test]
+    fn test_agent_ranking() {
+        let backend = setup_db();
+        let conn = match &backend {
+            BackendConnection::Sqlite { conn } => conn,
+            _ => panic!("expected sqlite"),
+        };
+
+        // Agent A: 3 wins, 0 losses (100% win rate)
+        for i in 1..=3 {
+            insert_prediction(
+                conn,
+                &format!("A win {}", i),
+                Some("BTC-USD"),
+                "high",
+                "correct",
+                &format!("2025-01-{:02}", i),
+                Some(&format!("2025-02-{:02}", i)),
+                Some(&format!("2025-02-{:02}", i)),
+                Some("agent-a"),
+                Some("low"),
+            );
+        }
+
+        // Agent B: 1 win, 2 losses (33% win rate)
+        insert_prediction(
+            conn,
+            "B win",
+            Some("GC=F"),
+            "medium",
+            "correct",
+            "2025-01-01",
+            Some("2025-02-01"),
+            Some("2025-02-01"),
+            Some("agent-b"),
+            Some("high"),
+        );
+        for i in 1..=2 {
+            insert_prediction(
+                conn,
+                &format!("B loss {}", i),
+                Some("GC=F"),
+                "medium",
+                "wrong",
+                &format!("2025-01-{:02}", i + 1),
+                Some(&format!("2025-02-{:02}", i + 1)),
+                Some(&format!("2025-02-{:02}", i + 1)),
+                Some("agent-b"),
+                Some("high"),
+            );
+        }
+
+        insert_price(conn, "BTC-USD", "2025-01-01", "95000");
+        insert_price(conn, "BTC-USD", "2025-01-02", "96000");
+        insert_price(conn, "BTC-USD", "2025-01-03", "97000");
+        insert_price(conn, "BTC-USD", "2025-02-01", "100000");
+        insert_price(conn, "BTC-USD", "2025-02-02", "101000");
+        insert_price(conn, "BTC-USD", "2025-02-03", "102000");
+        insert_price(conn, "GC=F", "2025-01-01", "2700");
+        insert_price(conn, "GC=F", "2025-01-02", "2710");
+        insert_price(conn, "GC=F", "2025-01-03", "2720");
+        insert_price(conn, "GC=F", "2025-02-01", "2800");
+        insert_price(conn, "GC=F", "2025-02-02", "2650");
+        insert_price(conn, "GC=F", "2025-02-03", "2600");
+
+        // Agent A should rank #1
+        let result = run_agent(&backend, "agent-a", true);
+        assert!(result.is_ok());
+
+        // Agent B should rank #2
+        let result = run_agent(&backend, "agent-b", true);
+        assert!(result.is_ok());
     }
 }

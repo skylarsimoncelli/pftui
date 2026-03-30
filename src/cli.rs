@@ -3492,6 +3492,16 @@ pub enum AnalyticsBacktestCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Per-agent accuracy breakdown: detailed backtest profile for a specific agent
+    #[command(after_help = "Produces a detailed accuracy profile for a single agent.\nIncludes win rate, P&L, Sharpe equivalent, streaks, best/worst trades,\nand breakdowns by conviction, timeframe, asset class, and symbol.\n\nAlso ranks the agent among all agents with ≥3 decided trades.\n\nExamples:\n  pftui analytics backtest agent --agent low-timeframe --json\n  pftui analytics backtest agent --agent macro-timeframe\n  pftui analytics backtest agent --agent high-timeframe --json\n\nSee also: analytics backtest report, analytics views accuracy")]
+    Agent {
+        /// Agent name (e.g. low-timeframe, high-timeframe, macro-timeframe)
+        #[arg(long)]
+        agent: String,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -7023,6 +7033,53 @@ mod tests {
         let AnalyticsBacktestCommand::Report { json } = command else {
             panic!("expected Report");
         };
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_backtest_agent_json() {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "backtest",
+            "agent",
+            "--agent",
+            "low-timeframe",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Backtest { command } = command else {
+            panic!("expected Backtest");
+        };
+        let AnalyticsBacktestCommand::Agent { agent, json } = command else {
+            panic!("expected Agent");
+        };
+        assert_eq!(agent, "low-timeframe");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_backtest_agent_no_json() {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "backtest",
+            "agent",
+            "--agent",
+            "macro-timeframe",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Backtest { command } = command else {
+            panic!("expected Backtest");
+        };
+        let AnalyticsBacktestCommand::Agent { agent, json } = command else {
+            panic!("expected Agent");
+        };
+        assert_eq!(agent, "macro-timeframe");
         assert!(!json);
     }
 
