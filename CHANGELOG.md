@@ -2,6 +2,40 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat(F57.5): analytics views accuracy — per-analyst directional accuracy measurement
+
+New subcommand: `pftui analytics views accuracy [--analyst low] [--asset BTC] [--json]`
+
+Compares historical analyst directional calls (bull/bear) against actual price movements
+over timeframe-appropriate evaluation windows (LOW=3d, MEDIUM=14d, HIGH=30d, MACRO=90d).
+Reports per-analyst hit rate, per-asset breakdown, conviction-weighted averages, and
+full evaluated-call details. Neutral calls are skipped. Only calls whose evaluation
+window has fully elapsed are scored.
+
+**Files changed:**
+- `src/db/analyst_views.rs` — accuracy structs, get_all_view_history (SQLite + Postgres),
+  compute_accuracy_from_entries shared logic, backend dispatch
+- `src/db/price_history.rs` — made get_price_at_date_postgres pub(crate) for cross-module use
+- `src/commands/analyst_views.rs` — accuracy() command with JSON + human-readable output
+- `src/cli.rs` — Accuracy variant in AnalyticsViewsCommand, after_help updated, 2 parse tests
+- `src/main.rs` — dispatch wiring for Accuracy variant
+- `TODO.md` — F57.5 marked complete
+
+**Tests added:** 10 new tests
+- `test_date_plus_days` — date arithmetic helper
+- `test_eval_window_days` — per-analyst evaluation windows
+- `test_accuracy_empty_history` — empty DB returns empty report
+- `test_accuracy_with_history_no_prices` — history but no price data → 0 evaluated
+- `test_accuracy_bull_correct` — bull call + price up = correct
+- `test_accuracy_bear_correct` — bear call + price down = correct
+- `test_accuracy_bull_incorrect` — bull call + price down = incorrect
+- `test_accuracy_neutral_skipped` — neutral calls excluded from evaluation
+- `test_accuracy_analyst_filter` — --analyst filter works
+- `test_accuracy_multiple_analysts` — cross-analyst accuracy with different timeframes
+- `test_get_all_view_history` — retrieval with analyst/asset/limit filters
+- `parse_analytics_views_accuracy` — CLI parse test with all flags
+- `parse_analytics_views_accuracy_defaults` — CLI parse test with defaults
+
 ### 2026-03-30 — feat: analytics situation populate — auto-populate timeframe scores from existing data
 
 **What:** New `analytics situation populate` subcommand solving the P1 feedback issue where the situation engine (`analytics situation`, `analytics recap`, `analytics synthesis`) returned empty despite regime, scenario, trend, and cycle data existing in the database. The `mobile_timeframe_scores` table — which the situation engine reads for cross-timeframe scores — previously had no CLI command or cron pathway to populate it, requiring manual setup that never happened in practice.

@@ -482,6 +482,89 @@ pub fn divergence(
     Ok(())
 }
 
+/// Per-analyst accuracy: compare historical directional calls against price outcomes.
+pub fn accuracy(
+    backend: &BackendConnection,
+    analyst: Option<&str>,
+    asset: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    if let Some(a) = analyst {
+        analyst_views::validate_analyst(a)?;
+    }
+    let report = analyst_views::compute_accuracy_backend(backend, analyst, asset)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else if report.total_history_entries == 0 {
+        println!("No analyst view history found.");
+        println!(
+            "Views are recorded when analysts call `analytics views set`. \
+             Once views accumulate and their evaluation windows elapse, \
+             accuracy will be measured against actual price movements."
+        );
+    } else if report.total_evaluated == 0 {
+        println!(
+            "{} view history entries found, but none have completed their evaluation window yet.",
+            report.total_history_entries
+        );
+        println!(
+            "Evaluation windows: LOW=3d, MEDIUM=14d, HIGH=30d, MACRO=90d."
+        );
+        println!("Accuracy will appear once enough time has passed to compare against price outcomes.");
+    } else {
+        println!(
+            "Analyst View Accuracy Report\n\
+             ════════════════════════════\n\
+             Total history entries: {}\n\
+             Evaluated (window elapsed): {}\n\
+             Overall hit rate: {:.1}% ({}/{})\n",
+            report.total_history_entries,
+            report.total_evaluated,
+            report.overall_hit_rate_pct,
+            report.total_correct,
+            report.total_evaluated,
+        );
+
+        for a in &report.analysts {
+            if a.evaluated == 0 && a.total_calls == 0 {
+                continue;
+            }
+            let status = if a.evaluated == 0 {
+                "  (no evaluated calls yet)".to_string()
+            } else {
+                format!(
+                    "  Hit rate: {:.1}% ({}/{})",
+                    a.hit_rate_pct, a.correct, a.evaluated
+                )
+            };
+            println!(
+                "📊 {} ({}d window) — {} total calls, {} evaluated, {} neutral skipped",
+                a.analyst.to_uppercase(),
+                a.eval_window_days,
+                a.total_calls,
+                a.evaluated,
+                a.neutral_skipped,
+            );
+            println!("{}", status);
+            if a.evaluated > 0 {
+                println!(
+                    "  Avg conviction on correct: {:.1} | on incorrect: {:.1}",
+                    a.avg_conviction_correct, a.avg_conviction_incorrect
+                );
+                for aa in &a.by_asset {
+                    println!(
+                        "    {}: {:.1}% ({}/{})",
+                        aa.asset, aa.hit_rate_pct, aa.correct, aa.evaluated
+                    );
+                }
+            }
+            println!();
+        }
+    }
+    Ok(())
+}
+
 /// Delete an analyst's view on an asset.
 pub fn delete(
     backend: &BackendConnection,

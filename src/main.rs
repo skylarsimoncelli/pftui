@@ -2216,6 +2216,16 @@ fn main() -> Result<()> {
                     limit,
                     json,
                 ),
+                cli::AnalyticsViewsCommand::Accuracy {
+                    analyst,
+                    asset,
+                    json,
+                } => commands::analyst_views::accuracy(
+                    &backend,
+                    analyst.as_deref(),
+                    asset.as_deref(),
+                    json,
+                ),
                 cli::AnalyticsViewsCommand::Delete {
                     analyst,
                     asset,

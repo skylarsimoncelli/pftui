@@ -926,6 +926,464 @@ pub fn compute_divergence_backend(
 }
 
 // ---------------------------------------------------------------------------
+// Accuracy — per-analyst accuracy measurement against price outcomes
+// ---------------------------------------------------------------------------
+
+/// Evaluation window in days for each analyst timeframe.
+fn eval_window_days(analyst: &str) -> i64 {
+    match analyst {
+        "low" => 3,
+        "medium" => 14,
+        "high" => 30,
+        "macro" => 90,
+        _ => 7, // fallback
+    }
+}
+
+/// Format a date string offset by N days.  Expects `YYYY-MM-DD...` prefix.
+fn date_plus_days(date_str: &str, days: i64) -> Option<String> {
+    let date_part = date_str.get(..10)?;
+    let parsed = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d").ok()?;
+    let target = parsed + chrono::Duration::days(days);
+    Some(target.format("%Y-%m-%d").to_string())
+}
+
+/// A single evaluated view call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvaluatedCall {
+    pub analyst: String,
+    pub asset: String,
+    pub direction: String,
+    pub conviction: i64,
+    pub recorded_at: String,
+    pub entry_price: String,
+    pub exit_price: String,
+    pub price_change_pct: f64,
+    pub correct: bool,
+    pub eval_window_days: i64,
+}
+
+/// Per-analyst accuracy summary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalystAccuracy {
+    pub analyst: String,
+    pub total_calls: usize,
+    pub evaluated: usize,
+    pub correct: usize,
+    pub incorrect: usize,
+    pub neutral_skipped: usize,
+    pub hit_rate_pct: f64,
+    pub avg_conviction_correct: f64,
+    pub avg_conviction_incorrect: f64,
+    pub eval_window_days: i64,
+    pub by_asset: Vec<AssetAccuracy>,
+}
+
+/// Per-analyst-per-asset accuracy breakdown.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetAccuracy {
+    pub asset: String,
+    pub evaluated: usize,
+    pub correct: usize,
+    pub incorrect: usize,
+    pub hit_rate_pct: f64,
+}
+
+/// Full accuracy report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccuracyReport {
+    pub analysts: Vec<AnalystAccuracy>,
+    pub total_history_entries: usize,
+    pub total_evaluated: usize,
+    pub total_correct: usize,
+    pub overall_hit_rate_pct: f64,
+    pub evaluated_calls: Vec<EvaluatedCall>,
+}
+
+/// Retrieve all view history entries (all analysts, all assets) — SQLite.
+fn get_all_view_history(
+    conn: &Connection,
+    analyst: Option<&str>,
+    asset: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<AnalystViewHistoryEntry>> {
+    ensure_tables(conn)?;
+    let mut query = String::from(
+        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, recorded_at
+         FROM analyst_view_history WHERE 1=1",
+    );
+    if let Some(a) = analyst {
+        query.push_str(&format!(" AND analyst = '{}'", a.replace('\'', "''")));
+    }
+    if let Some(sym) = asset {
+        query.push_str(&format!(
+            " AND UPPER(asset) = UPPER('{}')",
+            sym.replace('\'', "''")
+        ));
+    }
+    query.push_str(" ORDER BY recorded_at ASC, id ASC");
+    if let Some(n) = limit {
+        query.push_str(&format!(" LIMIT {}", n));
+    }
+    let mut stmt = conn.prepare(&query)?;
+    let rows = stmt.query_map([], AnalystViewHistoryEntry::from_row)?;
+    let mut items = Vec::new();
+    for row in rows {
+        items.push(row?);
+    }
+    Ok(items)
+}
+
+/// Retrieve all view history entries — PostgreSQL.
+fn get_all_view_history_postgres(
+    pool: &PgPool,
+    analyst: Option<&str>,
+    asset: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<AnalystViewHistoryEntry>> {
+    ensure_tables_postgres(pool)?;
+    let mut query = String::from(
+        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, recorded_at::text
+         FROM analyst_view_history WHERE 1=1",
+    );
+    if let Some(a) = analyst {
+        query.push_str(&format!(" AND analyst = '{}'", a.replace('\'', "''")));
+    }
+    if let Some(sym) = asset {
+        query.push_str(&format!(
+            " AND UPPER(asset) = UPPER('{}')",
+            sym.replace('\'', "''")
+        ));
+    }
+    query.push_str(" ORDER BY recorded_at ASC, id ASC");
+    if let Some(n) = limit {
+        query.push_str(&format!(" LIMIT {}", n));
+    }
+    let rows: Vec<HistoryPgRow> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(&query).fetch_all(pool).await
+    })?;
+    Ok(rows.into_iter().map(history_from_pg).collect())
+}
+
+/// Compute accuracy report — SQLite path.
+fn compute_accuracy_sqlite(
+    conn: &Connection,
+    analyst_filter: Option<&str>,
+    asset_filter: Option<&str>,
+) -> Result<AccuracyReport> {
+    let entries = get_all_view_history(conn, analyst_filter, asset_filter, None)?;
+    compute_accuracy_from_entries(&entries, |symbol, date| {
+        crate::db::price_history::get_price_at_date(conn, symbol, date)
+    })
+}
+
+/// Compute accuracy report — PostgreSQL path.
+fn compute_accuracy_postgres(
+    pool: &PgPool,
+    analyst_filter: Option<&str>,
+    asset_filter: Option<&str>,
+) -> Result<AccuracyReport> {
+    let entries = get_all_view_history_postgres(pool, analyst_filter, asset_filter, None)?;
+    compute_accuracy_from_entries(&entries, |symbol, date| {
+        crate::db::price_history::get_price_at_date_postgres(pool, symbol, date)
+    })
+}
+
+/// Per-asset call tracking: (evaluated calls, correct count, incorrect count).
+type AssetCallTracker = (Vec<EvaluatedCall>, usize, usize);
+/// Per-analyst map of per-asset call trackers.
+type AnalystCallMap = std::collections::BTreeMap<String, std::collections::BTreeMap<String, AssetCallTracker>>;
+
+/// Shared accuracy computation from a set of history entries and a price lookup function.
+fn compute_accuracy_from_entries<F>(
+    entries: &[AnalystViewHistoryEntry],
+    get_price: F,
+) -> Result<AccuracyReport>
+where
+    F: Fn(&str, &str) -> Result<Option<rust_decimal::Decimal>>,
+{
+    let mut evaluated_calls = Vec::new();
+    // Group tracking: analyst → asset → (correct, incorrect)
+    let mut analyst_map: AnalystCallMap =
+        std::collections::BTreeMap::new();
+    let mut neutral_by_analyst: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut total_by_analyst: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+
+    for entry in entries {
+        *total_by_analyst.entry(entry.analyst.clone()).or_default() += 1;
+
+        // Skip neutral calls — they make no directional claim
+        if entry.direction == "neutral" {
+            *neutral_by_analyst.entry(entry.analyst.clone()).or_default() += 1;
+            continue;
+        }
+
+        let window = eval_window_days(&entry.analyst);
+        let exit_date = match date_plus_days(&entry.recorded_at, window) {
+            Some(d) => d,
+            None => continue,
+        };
+
+        // Skip if the evaluation window hasn't passed yet
+        if exit_date > today {
+            continue;
+        }
+
+        let entry_date = match entry.recorded_at.get(..10) {
+            Some(d) => d,
+            None => continue,
+        };
+
+        let entry_price = match get_price(&entry.asset, entry_date)? {
+            Some(p) if !p.is_zero() => p,
+            _ => continue, // no price data → can't evaluate
+        };
+        let exit_price = match get_price(&entry.asset, &exit_date)? {
+            Some(p) if !p.is_zero() => p,
+            _ => continue, // no price data → can't evaluate
+        };
+
+        let change = exit_price - entry_price;
+        let change_pct = if !entry_price.is_zero() {
+            use rust_decimal::prelude::ToPrimitive;
+            (change / entry_price * rust_decimal::Decimal::ONE_HUNDRED)
+                .to_f64()
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+
+        let correct = match entry.direction.as_str() {
+            "bull" => change_pct > 0.0,
+            "bear" => change_pct < 0.0,
+            _ => true, // should not happen given neutral filter
+        };
+
+        let call = EvaluatedCall {
+            analyst: entry.analyst.clone(),
+            asset: entry.asset.clone(),
+            direction: entry.direction.clone(),
+            conviction: entry.conviction,
+            recorded_at: entry.recorded_at.clone(),
+            entry_price: entry_price.to_string(),
+            exit_price: exit_price.to_string(),
+            price_change_pct: (change_pct * 100.0).round() / 100.0,
+            correct,
+            eval_window_days: window,
+        };
+
+        let asset_entry = analyst_map
+            .entry(entry.analyst.clone())
+            .or_default()
+            .entry(entry.asset.clone())
+            .or_insert((Vec::new(), 0, 0));
+        if correct {
+            asset_entry.1 += 1;
+        } else {
+            asset_entry.2 += 1;
+        }
+        asset_entry.0.push(call.clone());
+        evaluated_calls.push(call);
+    }
+
+    // Build per-analyst summaries
+    let all_analysts = ["low", "medium", "high", "macro"];
+    let mut analysts = Vec::new();
+    let mut total_evaluated = 0usize;
+    let mut total_correct = 0usize;
+
+    for analyst_name in &all_analysts {
+        let name = analyst_name.to_string();
+        let total_calls = total_by_analyst.get(&name).copied().unwrap_or(0);
+        let neutral = neutral_by_analyst.get(&name).copied().unwrap_or(0);
+
+        let asset_map = analyst_map.get(&name);
+        let mut by_asset = Vec::new();
+        let mut sum_correct = 0usize;
+        let mut sum_incorrect = 0usize;
+        let mut conv_correct_sum = 0i64;
+        let mut conv_incorrect_sum = 0i64;
+
+        if let Some(am) = asset_map {
+            for (asset_sym, (calls, corr, incorr)) in am {
+                sum_correct += corr;
+                sum_incorrect += incorr;
+                for c in calls {
+                    if c.correct {
+                        conv_correct_sum += c.conviction.unsigned_abs() as i64;
+                    } else {
+                        conv_incorrect_sum += c.conviction.unsigned_abs() as i64;
+                    }
+                }
+                let asset_total = corr + incorr;
+                by_asset.push(AssetAccuracy {
+                    asset: asset_sym.clone(),
+                    evaluated: asset_total,
+                    correct: *corr,
+                    incorrect: *incorr,
+                    hit_rate_pct: if asset_total > 0 {
+                        (*corr as f64 / asset_total as f64 * 100.0 * 10.0).round() / 10.0
+                    } else {
+                        0.0
+                    },
+                });
+            }
+        }
+
+        by_asset.sort_by(|a, b| b.evaluated.cmp(&a.evaluated));
+
+        let evaluated = sum_correct + sum_incorrect;
+        let hit_rate = if evaluated > 0 {
+            (sum_correct as f64 / evaluated as f64 * 100.0 * 10.0).round() / 10.0
+        } else {
+            0.0
+        };
+
+        total_evaluated += evaluated;
+        total_correct += sum_correct;
+
+        // Only include analysts that have at least some history
+        if total_calls > 0 {
+            analysts.push(AnalystAccuracy {
+                analyst: name,
+                total_calls,
+                evaluated,
+                correct: sum_correct,
+                incorrect: sum_incorrect,
+                neutral_skipped: neutral,
+                hit_rate_pct: hit_rate,
+                avg_conviction_correct: if sum_correct > 0 {
+                    (conv_correct_sum as f64 / sum_correct as f64 * 10.0).round() / 10.0
+                } else {
+                    0.0
+                },
+                avg_conviction_incorrect: if sum_incorrect > 0 {
+                    (conv_incorrect_sum as f64 / sum_incorrect as f64 * 10.0).round() / 10.0
+                } else {
+                    0.0
+                },
+                eval_window_days: eval_window_days(analyst_name),
+                by_asset,
+            });
+        }
+    }
+
+    // Include any custom analyst names not in the standard four
+    if has_extra_analysts(&analyst_map, &all_analysts) {
+        for extra_name in extra_analysts(&analyst_map, &all_analysts) {
+            let total_calls = total_by_analyst.get(extra_name.as_str()).copied().unwrap_or(0);
+            let neutral = neutral_by_analyst.get(extra_name.as_str()).copied().unwrap_or(0);
+            let mut by_asset = Vec::new();
+            let mut sum_correct = 0usize;
+            let mut sum_incorrect = 0usize;
+            let mut conv_correct_sum = 0i64;
+            let mut conv_incorrect_sum = 0i64;
+
+            if let Some(asset_data) = analyst_map.get(&extra_name) {
+                for (asset_sym, (calls, corr, incorr)) in asset_data {
+                    sum_correct += corr;
+                    sum_incorrect += incorr;
+                    for c in calls {
+                        if c.correct {
+                            conv_correct_sum += c.conviction.unsigned_abs() as i64;
+                        } else {
+                            conv_incorrect_sum += c.conviction.unsigned_abs() as i64;
+                        }
+                    }
+                    let asset_total = corr + incorr;
+                    by_asset.push(AssetAccuracy {
+                        asset: asset_sym.clone(),
+                        evaluated: asset_total,
+                        correct: *corr,
+                        incorrect: *incorr,
+                        hit_rate_pct: if asset_total > 0 {
+                            (*corr as f64 / asset_total as f64 * 100.0 * 10.0).round() / 10.0
+                        } else {
+                            0.0
+                        },
+                    });
+                }
+            }
+
+            by_asset.sort_by(|a, b| b.evaluated.cmp(&a.evaluated));
+
+            let evaluated = sum_correct + sum_incorrect;
+            total_evaluated += evaluated;
+            total_correct += sum_correct;
+
+            analysts.push(AnalystAccuracy {
+                analyst: extra_name.clone(),
+                total_calls,
+                evaluated,
+                correct: sum_correct,
+                incorrect: sum_incorrect,
+                neutral_skipped: neutral,
+                hit_rate_pct: if evaluated > 0 {
+                    (sum_correct as f64 / evaluated as f64 * 100.0 * 10.0).round() / 10.0
+                } else {
+                    0.0
+                },
+                avg_conviction_correct: if sum_correct > 0 {
+                    (conv_correct_sum as f64 / sum_correct as f64 * 10.0).round() / 10.0
+                } else {
+                    0.0
+                },
+                avg_conviction_incorrect: if sum_incorrect > 0 {
+                    (conv_incorrect_sum as f64 / sum_incorrect as f64 * 10.0).round() / 10.0
+                } else {
+                    0.0
+                },
+                eval_window_days: eval_window_days(&extra_name),
+                by_asset,
+            });
+        }
+    }
+
+    let overall_hit_rate = if total_evaluated > 0 {
+        (total_correct as f64 / total_evaluated as f64 * 100.0 * 10.0).round() / 10.0
+    } else {
+        0.0
+    };
+
+    Ok(AccuracyReport {
+        analysts,
+        total_history_entries: entries.len(),
+        total_evaluated,
+        total_correct,
+        overall_hit_rate_pct: overall_hit_rate,
+        evaluated_calls,
+    })
+}
+
+/// Helper: check if any non-standard analyst names exist in the map.
+fn has_extra_analysts(map: &AnalystCallMap, standard: &[&str]) -> bool {
+    map.keys().any(|k| !standard.contains(&k.as_str()))
+}
+
+/// Helper: iterate non-standard analyst names from the map.
+fn extra_analysts(map: &AnalystCallMap, standard: &[&str]) -> Vec<String> {
+    map.keys()
+        .filter(|k| !standard.contains(&k.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// Public backend dispatch for accuracy computation.
+pub fn compute_accuracy_backend(
+    backend: &BackendConnection,
+    analyst: Option<&str>,
+    asset: Option<&str>,
+) -> Result<AccuracyReport> {
+    query::dispatch(
+        backend,
+        |conn| compute_accuracy_sqlite(conn, analyst, asset),
+        |pool| compute_accuracy_postgres(pool, analyst, asset),
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -937,6 +1395,25 @@ mod tests {
     fn setup_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         ensure_tables(&conn).unwrap();
+        conn
+    }
+
+    /// Setup DB with both analyst_views and price_history tables.
+    fn setup_db_with_prices() -> Connection {
+        let conn = setup_db();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS price_history (
+                symbol TEXT NOT NULL,
+                date TEXT NOT NULL,
+                close TEXT NOT NULL,
+                source TEXT NOT NULL,
+                volume TEXT,
+                open TEXT,
+                high TEXT,
+                low TEXT,
+                PRIMARY KEY (symbol, date)
+            )"
+        ).unwrap();
         conn
     }
 
@@ -1479,5 +1956,335 @@ mod tests {
         let conn = setup_db();
         let divs = compute_divergence(&conn, 0, Some("NOPE"), None).unwrap();
         assert!(divs.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Accuracy tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_date_plus_days() {
+        assert_eq!(date_plus_days("2026-03-20", 3), Some("2026-03-23".to_string()));
+        assert_eq!(date_plus_days("2026-03-30", 7), Some("2026-04-06".to_string()));
+        assert_eq!(date_plus_days("2026-12-29", 5), Some("2027-01-03".to_string()));
+        // Works with datetime suffix
+        assert_eq!(
+            date_plus_days("2026-03-20 14:30:00", 3),
+            Some("2026-03-23".to_string())
+        );
+        // Too short
+        assert_eq!(date_plus_days("2026-03", 3), None);
+    }
+
+    #[test]
+    fn test_eval_window_days() {
+        assert_eq!(eval_window_days("low"), 3);
+        assert_eq!(eval_window_days("medium"), 14);
+        assert_eq!(eval_window_days("high"), 30);
+        assert_eq!(eval_window_days("macro"), 90);
+        assert_eq!(eval_window_days("unknown"), 7);
+    }
+
+    #[test]
+    fn test_accuracy_empty_history() {
+        let conn = setup_db();
+        let report = compute_accuracy_sqlite(&conn, None, None).unwrap();
+        assert_eq!(report.total_history_entries, 0);
+        assert_eq!(report.total_evaluated, 0);
+        assert_eq!(report.overall_hit_rate_pct, 0.0);
+        assert!(report.analysts.is_empty());
+        assert!(report.evaluated_calls.is_empty());
+    }
+
+
+    #[test]
+    fn test_accuracy_with_history_no_prices() {
+        let conn = setup_db_with_prices();
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('low', 'BTC', 'bull', 3, 'Test', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+
+        let report = compute_accuracy_sqlite(&conn, None, None).unwrap();
+        assert_eq!(report.total_history_entries, 1);
+        assert_eq!(report.total_evaluated, 0);
+        assert_eq!(report.analysts.len(), 1);
+        assert_eq!(report.analysts[0].analyst, "low");
+        assert_eq!(report.analysts[0].total_calls, 1);
+        assert_eq!(report.analysts[0].evaluated, 0);
+    }
+
+    #[test]
+    fn test_accuracy_bull_correct() {
+        let conn = setup_db_with_prices();
+        crate::db::price_history::upsert_history(
+            &conn,
+            "BTC",
+            "test",
+            &[
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-01".to_string(),
+                    close: rust_decimal::Decimal::new(10000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-04".to_string(),
+                    close: rust_decimal::Decimal::new(11000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+            ],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('low', 'BTC', 'bull', 3, 'Momentum strong', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+
+        let report = compute_accuracy_sqlite(&conn, None, None).unwrap();
+        assert_eq!(report.total_evaluated, 1);
+        assert_eq!(report.total_correct, 1);
+        assert_eq!(report.overall_hit_rate_pct, 100.0);
+        assert_eq!(report.evaluated_calls.len(), 1);
+        assert!(report.evaluated_calls[0].correct);
+        assert!(report.evaluated_calls[0].price_change_pct > 0.0);
+    }
+
+    #[test]
+    fn test_accuracy_bear_correct() {
+        let conn = setup_db_with_prices();
+        crate::db::price_history::upsert_history(
+            &conn,
+            "BTC",
+            "test",
+            &[
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-01".to_string(),
+                    close: rust_decimal::Decimal::new(10000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-04".to_string(),
+                    close: rust_decimal::Decimal::new(9000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+            ],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('low', 'BTC', 'bear', -3, 'Weakness', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+
+        let report = compute_accuracy_sqlite(&conn, None, None).unwrap();
+        assert_eq!(report.total_evaluated, 1);
+        assert_eq!(report.total_correct, 1);
+        assert!(report.evaluated_calls[0].correct);
+    }
+
+    #[test]
+    fn test_accuracy_bull_incorrect() {
+        let conn = setup_db_with_prices();
+        crate::db::price_history::upsert_history(
+            &conn,
+            "BTC",
+            "test",
+            &[
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-01".to_string(),
+                    close: rust_decimal::Decimal::new(10000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-04".to_string(),
+                    close: rust_decimal::Decimal::new(9000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+            ],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('low', 'BTC', 'bull', 4, 'Wrong call', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+
+        let report = compute_accuracy_sqlite(&conn, None, None).unwrap();
+        assert_eq!(report.total_evaluated, 1);
+        assert_eq!(report.total_correct, 0);
+        assert!(!report.evaluated_calls[0].correct);
+        assert_eq!(report.overall_hit_rate_pct, 0.0);
+    }
+
+    #[test]
+    fn test_accuracy_neutral_skipped() {
+        let conn = setup_db_with_prices();
+        crate::db::price_history::upsert_history(
+            &conn,
+            "BTC",
+            "test",
+            &[
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-01".to_string(),
+                    close: rust_decimal::Decimal::new(10000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+            ],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('low', 'BTC', 'neutral', 0, 'No view', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+
+        let report = compute_accuracy_sqlite(&conn, None, None).unwrap();
+        assert_eq!(report.total_history_entries, 1);
+        assert_eq!(report.total_evaluated, 0);
+        assert_eq!(report.analysts.len(), 1);
+        assert_eq!(report.analysts[0].neutral_skipped, 1);
+    }
+
+    #[test]
+    fn test_accuracy_analyst_filter() {
+        let conn = setup_db_with_prices();
+        crate::db::price_history::upsert_history(
+            &conn,
+            "BTC",
+            "test",
+            &[
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-01".to_string(),
+                    close: rust_decimal::Decimal::new(10000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-04".to_string(),
+                    close: rust_decimal::Decimal::new(11000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-15".to_string(),
+                    close: rust_decimal::Decimal::new(10500, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+            ],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('low', 'BTC', 'bull', 3, 'Up', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('medium', 'BTC', 'bull', 2, 'Medium up', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+
+        let report = compute_accuracy_sqlite(&conn, Some("low"), None).unwrap();
+        assert_eq!(report.total_history_entries, 1);
+        assert_eq!(report.analysts.len(), 1);
+        assert_eq!(report.analysts[0].analyst, "low");
+    }
+
+    #[test]
+    fn test_accuracy_multiple_analysts() {
+        let conn = setup_db_with_prices();
+        crate::db::price_history::upsert_history(
+            &conn,
+            "BTC",
+            "test",
+            &[
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-01".to_string(),
+                    close: rust_decimal::Decimal::new(10000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-04".to_string(),
+                    close: rust_decimal::Decimal::new(11000, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-15".to_string(),
+                    close: rust_decimal::Decimal::new(10500, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+                crate::models::price::HistoryRecord {
+                    date: "2025-01-31".to_string(),
+                    close: rust_decimal::Decimal::new(9500, 2),
+                    volume: None, open: None, high: None, low: None,
+                },
+            ],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('low', 'BTC', 'bull', 3, 'Up', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('medium', 'BTC', 'bear', -2, 'Down medium', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('high', 'BTC', 'bear', -4, 'Structural down', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+
+        let report = compute_accuracy_sqlite(&conn, None, None).unwrap();
+        assert_eq!(report.total_history_entries, 3);
+        assert_eq!(report.total_evaluated, 3);
+        assert_eq!(report.total_correct, 2);
+        assert!((report.overall_hit_rate_pct - 66.7).abs() < 0.1);
+
+        let low = report.analysts.iter().find(|a| a.analyst == "low").unwrap();
+        assert_eq!(low.evaluated, 1);
+        assert_eq!(low.correct, 1);
+        assert_eq!(low.hit_rate_pct, 100.0);
+
+        let med = report.analysts.iter().find(|a| a.analyst == "medium").unwrap();
+        assert_eq!(med.evaluated, 1);
+        assert_eq!(med.correct, 0);
+        assert_eq!(med.hit_rate_pct, 0.0);
+
+        let high = report.analysts.iter().find(|a| a.analyst == "high").unwrap();
+        assert_eq!(high.evaluated, 1);
+        assert_eq!(high.correct, 1);
+        assert_eq!(high.hit_rate_pct, 100.0);
+    }
+
+    #[test]
+    fn test_get_all_view_history() {
+        let conn = setup_db();
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('low', 'BTC', 'bull', 3, 'Up', '2025-01-01 12:00:00')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('high', 'GLD', 'bear', -2, 'Down', '2025-01-02 12:00:00')",
+            [],
+        ).unwrap();
+
+        let all = get_all_view_history(&conn, None, None, None).unwrap();
+        assert_eq!(all.len(), 2);
+
+        let low_only = get_all_view_history(&conn, Some("low"), None, None).unwrap();
+        assert_eq!(low_only.len(), 1);
+        assert_eq!(low_only[0].analyst, "low");
+
+        let gld_only = get_all_view_history(&conn, None, Some("GLD"), None).unwrap();
+        assert_eq!(gld_only.len(), 1);
+        assert_eq!(gld_only[0].asset, "GLD");
+
+        let limited = get_all_view_history(&conn, None, None, Some(1)).unwrap();
+        assert_eq!(limited.len(), 1);
     }
 }
