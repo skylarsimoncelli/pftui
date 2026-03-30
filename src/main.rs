@@ -4009,6 +4009,9 @@ fn main() -> Result<()> {
                     limit,
                     json,
                 ),
+                cli::AnalyticsBacktestCommand::Report { json } => {
+                    commands::backtest::run_report(&backend, json)
+                }
             },
         },
     };
