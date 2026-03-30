@@ -10,23 +10,15 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-_(F55: Prediction Market Probability Feeds — COMPLETE. All sub-items shipped: F55.1-F55.3 #422, F55.4 #426, F55.5 #428, F55.6 #437.)_
+- [Feedback] **Situation engine auto-population from crons** — Evening Analyst (88/85 Mar 30) reports `analytics situation/recap/synthesis` returning empty despite regime data existing in `analytics summary`. The situation engine requires manual `journal scenario promote` + indicator/update setup. Agent crons (evening-analysis, morning-brief) should auto-populate situation data from existing regime, scenario, and signal sources so agents get non-empty results without manual setup. See `src/commands/situation.rs`, `src/analytics/situation.rs`.
 
 ## P2 - Coverage And Agent Consumption
 
-_(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration #440.)_
+- [Feedback] **Fresher PMI/GDP data sources** — Medium-Timeframe Analyst (85/75 Mar 30) reports some indicators are stale. PMI and GDP sourced from Brave scraping have low confidence and may lag. Investigate adding ISM PMI direct source or increasing FRED refresh frequency for GDP/GDI. See `src/data/economic.rs`, `src/commands/economy.rs`.
 
-### F56: Adversarial Debate Mechanism
-**Source:** Competitive research (TradingAgents bull/bear debate, ai-hedge-fund persona diversity).
-**Why:** pftui's timeframe agents currently produce independent reports that the evening-analysis synthesises. There's no structured adversarial process. TradingAgents forces bull and bear researchers to debate with evidence before decisions. This catches contradictions, strengthens conviction signals, and produces better analysis. Cross-timeframe tension is already identified as "the intelligence product" in AGENTS.md. This formalises it.
-**Scope:**
-- [x] F56.1: New `agent debate` CLI domain — `agent debate start --topic "<asset or scenario>" --rounds 3`, `agent debate history --json`, `agent debate summary --json`. *(done: PR #436)*
-- [x] F56.2: New table `debates` — debate_id, topic, status (active/resolved), created_at, resolved_at. New table `debate_rounds` — debate_id, round_num, position (bull/bear), agent_source, argument_text, evidence_refs, created_at. *(done: PR #436)*
-- [x] F56.3: Evening-analysis routine update — before writing the final analysis, the agent runs `agent debate start` on the 1-2 most contentious topics of the day (identified from timeframe divergence). It plays both bull and bear, citing specific data from each timeframe agent. The debate output feeds into the final synthesis. *(done: PR #442)*
-- [x] F56.4: `analytics debate-score --json` — track which side (bull/bear) was right historically for each debated topic. Feeds into system accuracy tracking. *(done: PR #444)*
-**Not in scope:** Multi-agent real-time debate (requires concurrent sessions). V1 is single-agent playing both sides with structured format.
-**Completed:** F56.1 (#436), F56.2 (#436), F56.3 (#442), F56.4 (#444). **F56 COMPLETE.**
-**Effort:** 1-2 weeks. **Priority:** P2 — improves analysis quality but the current system works.
+- [Feedback] **`portfolio stress-test --list-scenarios`** — Low-Timeframe Analyst (85/88 Mar 29) wants a way to discover available scenario names for stress testing without trial/error. Add `--list-scenarios` flag to `portfolio stress-test` that shows active scenario names. See `src/commands/stress_test.rs`.
+
+- [Feedback] **Historical regime transition data** — Macro-Timeframe Analyst (80/85 Mar 29) wants historical regime transition data to track past crisis periods. `analytics macro regime transitions` exists but may need richer historical context. Verify current coverage and add date-range filtering or summary stats if missing. See `src/commands/regime.rs`, `src/commands/regime_transitions.rs`.
 
 ### F57: Timeframe Analyst Self-Awareness
 **Source:** Competitive research insight: the best multi-agent systems make their reasoning transparent and trackable.
@@ -69,40 +61,26 @@ _(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Evening Analysis | 78% | 75% | Mar 29 | → (stable at 78/75. Catalyst-scenario linkage empty + 43 wrong predictions without lessons flagged. **Lowest scorer — priority.**) |
-| Medium-Timeframe Analyst | 75% | 85% | Mar 29 | ↓ (85→75 usefulness. `data quotes` alias #419 shipped. Macro regime detection praised.) |
-| Low-Timeframe Analyst | 85% | 90% | Mar 28 | → (stable. Alert triage #405 + regime transitions #407 + cross-timeframe resolve #410 shipped.) |
+| Evening Analyst | 88% | 85% | Mar 30 | ↑ (78→88 use, 75→85 overall. Major improvement! Consolidated evening-brief #416, debate mechanism, lesson extraction all landed. Main friction: situation engine empty without manual setup.) |
+| Medium-Timeframe Analyst | 85% | 75% | Mar 30 | ↓ overall (85→75). Stale indicator data. `data quotes` alias helped. **Lowest overall scorer — priority.** |
+| Low-Timeframe Analyst | 85% | 88% | Mar 29 | ↓ overall (90→88). Stable usefulness. Wants stress-test scenario discoverability. |
+| Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (new scorer. Wants scenarios + historical regime transitions.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 26 | → (stable. Scenario suggest #366 shipped.) |
 | Morning Intelligence | 75% | 85% | Mar 28 | → (stable. Correlation break interpretation #412 shipped.) |
-| Morning Brief | 85% | 80% | Mar 28 | → (stable. Morning-brief #363 shipped.) |
+| Morning Brief | 85% | 80% | Mar 29 | → (stable. Scenario tracking on promotion requested.) |
 | Alert Investigator | 85% | 80-82% | Mar 25-26 | → (stable, consistent.) |
 | Public Daily Report | 82% | 80% | Mar 28 | → (stable. Commodity coverage shipped.) |
-| Dev Agent | 92% | 94% | Mar 29 | → (stable high. F55.5 analytics calibration shipped #428.) |
+| Dev Agent | 92% | 94% | Mar 30 | → (stable high. F57.2-F57.3 shipped.) |
 
 **Top 3 priorities based on feedback:**
-1. ~~**Prediction lesson extraction**~~ — COMPLETE (#432 CLI + #440 agent routine integration). Evening analysis now extracts structured lessons from wrong predictions every run.
-2. ~~**F55.6 completion**~~ — COMPLETE (#437). Morning/evening briefs include calibration section.
-3. ~~**F56: Adversarial Debate Mechanism**~~ — COMPLETE (#436, #442, #444). All 4 sub-items shipped.
+1. **Situation engine auto-population (P1)** — Evening Analyst's main friction. Situation/recap/synthesis empty without manual setup. Auto-populating from crons would also benefit Medium-Timeframe and Morning Brief workflows.
+2. **F57.4-F57.6 completion** — Analyst view divergence + accuracy + routine integration. Makes the existing architecture self-improving.
+3. **Fresher indicator data** — Medium-Timeframe Analyst (lowest overall at 75%) needs less stale PMI/GDP. Improving FRED refresh or adding direct ISM source.
 
-**Shipped since last review (Mar 29b → Mar 30):**
-1. ✅ F57.2 portfolio-matrix (#450) — `analytics views portfolio-matrix` with coverage stats, cross-references portfolio + watchlist + viewed assets
-2. ✅ F57.3 analyst view history (#453) — `analytics views history --asset <SYM>` with conviction drift tracking, direction flip detection, full append-only history log
+**Shipped since last review (Mar 30):**
+1. ✅ F57.2 portfolio-matrix (#450) — `analytics views portfolio-matrix` with coverage stats
+2. ✅ F57.3 analyst view history (#453) — `analytics views history` with drift tracking
 
-**Shipped (Mar 29 → Mar 29b):**
-1. ✅ F57.1 analyst views (#446) — `analytics views` CLI with set/list/matrix/delete, `analyst_views` table (SQLite + PostgreSQL), 15 new tests
+**Release status:** v0.22.0 eligible — 47 commits since v0.21.0, no P0 bugs, 2043 tests passing, clippy clean. Features shipped: F55 complete, F56 complete, F57.1-F57.3, prediction lessons, catalyst linkage, adversarial debates, analyst views.
 
-**Shipped (Mar 28 → Mar 29):**
-1. ✅ `data quotes` alias (#419) — addresses medium-timeframe-analyst `data quotes fails`
-2. ✅ F55.1-F55.3 prediction market contracts (#422) — Polymarket tag-based fetching, enriched schema, 24 new tests
-3. ✅ F55.4 prediction market scenario mapping (#426) — link contracts to scenarios with auto-sync
-4. ✅ F55.5 analytics calibration (#428) — compare scenario vs market probabilities, flag divergences
-5. ✅ Catalyst-scenario linkage (#430) — category semantic matching with direction + relevance
-6. ✅ Prediction lesson extraction (#432) — structured lessons from wrong predictions with DB storage
-7. ✅ F56.1+F56.2 adversarial debate mechanism (#436) — `agent debate` CLI + `debates`/`debate_rounds` tables
-8. ✅ Prediction lesson agent routine integration (#440) — evening-analysis now extracts lessons from wrong predictions every run
-9. ✅ F56.3 adversarial debate evening-analysis integration (#442) — mandatory structured bull/bear debates on contentious topics before cross-timeframe synthesis
-10. ✅ F56.4 debate-score accuracy tracking (#444) — score resolved debates, track bull/bear accuracy, 15 new tests
-
-**Release status:** v0.21.0 eligible — 42 commits since v0.20.0, no P0 bugs, 2026 tests passing, clippy clean.
-
-**GitHub stars:** 8 (was 7) — Homebrew Core requires 50+.
+**GitHub stars:** 8 — Homebrew Core requires 50+.
