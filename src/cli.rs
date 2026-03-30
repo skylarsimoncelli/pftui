@@ -2699,6 +2699,13 @@ pub enum SituationCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Auto-populate timeframe scores from existing regime, scenario, trend, and cycle data.
+    /// Derives LOW/MEDIUM/HIGH/MACRO scores so the situation engine returns non-empty results
+    /// without requiring manual setup. Safe to call repeatedly — upserts on each run.
+    Populate {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -7214,6 +7221,42 @@ mod tests {
                 }
             }
             _ => panic!("expected Prediction"),
+        }
+    }
+
+    #[test]
+    fn parse_situation_populate() {
+        let cli = Cli::try_parse_from([
+            "pftui", "analytics", "situation", "populate", "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Situation { command, .. },
+        }) = cli.command
+        else {
+            panic!("expected analytics situation command");
+        };
+        match command {
+            Some(SituationCommand::Populate { json }) => assert!(json),
+            _ => panic!("expected Populate"),
+        }
+    }
+
+    #[test]
+    fn parse_situation_populate_no_json() {
+        let cli = Cli::try_parse_from([
+            "pftui", "analytics", "situation", "populate",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Situation { command, .. },
+        }) = cli.command
+        else {
+            panic!("expected analytics situation command");
+        };
+        match command {
+            Some(SituationCommand::Populate { json }) => assert!(!json),
+            _ => panic!("expected Populate"),
         }
     }
 }

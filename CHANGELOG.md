@@ -2,6 +2,29 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat: analytics situation populate — auto-populate timeframe scores from existing data
+
+**What:** New `analytics situation populate` subcommand solving the P1 feedback issue where the situation engine (`analytics situation`, `analytics recap`, `analytics synthesis`) returned empty despite regime, scenario, trend, and cycle data existing in the database. The `mobile_timeframe_scores` table — which the situation engine reads for cross-timeframe scores — previously had no CLI command or cron pathway to populate it, requiring manual setup that never happened in practice.
+
+The populate command derives scores from existing data sources:
+- **LOW** (hours→days): from regime snapshot (risk-on/risk-off/crisis/etc.) scaled by confidence, plus technical signal density modifier
+- **MEDIUM** (weeks→months): from scenario probabilities (keyword-classified as bull/bear) and conviction score averages
+- **HIGH** (months→years): from active trend directions weighted by conviction level (high/medium/low)
+- **MACRO** (years→decades): from structural cycle stages (expansion/contraction/peak/trough)
+
+Safe to call repeatedly (upserts). Designed for cron integration — agent routines can call `pftui analytics situation populate --json` before reading situation data to ensure non-empty results.
+
+**Commands:**
+- `pftui analytics situation populate --json`
+- `pftui analytics situation populate`
+
+**Files changed:**
+- `src/commands/situation.rs` — `run_populate()` with four derive functions (`derive_low_score`, `derive_medium_score`, `derive_high_score`, `derive_macro_score`), `classify_scenario_direction()` keyword classifier, `PopulateResult`/`PopulatedScore`/`PopulateSources` structs
+- `src/cli.rs` — `Populate` variant in `SituationCommand` with doc comments, 2 parse tests
+- No new tables, no schema changes — writes to existing `mobile_timeframe_scores` table
+
+**Tests:** 10 new (7 populate logic + 1 scenario classifier + 2 CLI parse). Full suite: 2064 passed, 0 failed. Clippy clean.
+
 ### 2026-03-30 — feat(F57.4): analytics views divergence — surface analyst disagreements
 
 **What:** New `analytics views divergence` subcommand completing F57.4 (Timeframe Analyst Self-Awareness). Surfaces assets where analysts strongly disagree, ranked by conviction spread between most-bullish and most-bearish views. A spread of 7 (LOW bear -3 vs HIGH bull +4) surfaces the interesting cross-timeframe signal. Supports `--min-spread` (default 2), `--asset` filter, and `--limit`. JSON output includes divergences array with full view context, count, and filter metadata. Enables evening-analysis to spot and discuss the most contentious assets.
