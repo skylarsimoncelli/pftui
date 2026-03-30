@@ -211,6 +211,21 @@ pftui journal notes add "HIGH WRONG CALL: [prediction]. Structural thesis: [X]. 
   --date $(date +%Y-%m-%d) --section analysis
 ```
 
+## Backtest Review
+
+Before making new predictions, check your accuracy profile:
+
+```bash
+pftui analytics backtest agent --agent high-agent --json   # your accuracy: win rate, streaks, best/worst by conviction and asset class
+```
+
+Key questions:
+- Are your high-conviction calls more accurate than low-conviction? If not, recalibrate.
+- Which asset classes do you read best? Add caveats on your weak areas.
+- Are you on a streak? Adjust confidence accordingly.
+
+State how backtest results influence this cycle's predictions.
+
 ## High Predictions
 
 Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how this cycle's predictions account for it.
