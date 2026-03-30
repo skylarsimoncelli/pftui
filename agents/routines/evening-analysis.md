@@ -44,6 +44,9 @@ pftui analytics narrative --json
 pftui analytics summary --json
 pftui analytics alignment --json
 pftui analytics divergence --json
+pftui analytics views portfolio-matrix --json
+pftui analytics views divergence --json
+pftui analytics views accuracy --json
 pftui analytics recap --date today --json
 pftui analytics medium --json
 pftui analytics high --json
@@ -233,11 +236,26 @@ pftui agent debate resolve --debate-id <ID> \
 
 This is your unique value. No other agent sees all 4 layers simultaneously.
 
+**Start with the structured analyst views.** Each timeframe analyst now writes structured views per asset after every run. Read these FIRST — they are the definitive, queryable record of each analyst's current position:
+```bash
+pftui analytics views portfolio-matrix --json   # all analysts × all held/watched assets
+pftui analytics views divergence --json          # assets where analysts disagree most
+pftui analytics views accuracy --json            # which analyst is most accurate (weight accordingly)
+```
+
+The portfolio-matrix shows you the full grid: every analyst's direction, conviction (-5 to +5), and reasoning for every asset. The divergence output ranks assets by inter-analyst disagreement magnitude — these are the most analytically interesting assets. The accuracy output tells you which analyst to trust more on which asset class.
+
+**Use the views to anchor your synthesis.** For each major asset:
+- Read the structured views from `portfolio-matrix` for all 4 analysts
+- Check if the asset appears in `divergence` output (high disagreement = needs deeper analysis)
+- Weight each analyst's view by their `accuracy` score for that asset class
+- Then cross-reference with the raw digest messages for nuance the structured views don't capture
+
 For each major asset (BTC, gold, silver, oil, equities, DXY, cash):
-- What does LOW say? (today's price action, technicals, sentiment)
-- What does MEDIUM say? (scenario implications, economic data)
-- What does HIGH say? (structural trends, adoption curves)
-- What does MACRO say? (empire cycle, power transition)
+- What does LOW say? (structured view + today's price action, technicals, sentiment)
+- What does MEDIUM say? (structured view + scenario implications, economic data)
+- What does HIGH say? (structured view + structural trends, adoption curves)
+- What does MACRO say? (structured view + empire cycle, power transition)
 - WHERE DO THEY AGREE? (convergence = potential deployment signal)
 - WHERE DO THEY DISAGREE? (divergence = the interesting analytical question)
 

@@ -155,6 +155,30 @@ pftui analytics situation update log --situation "<relevant situation>" \
 
 **Note:** This is a signal detection layer, not a structural analysis. You're looking for the daily data points that feed into the higher-timeframe power structure framework. Flag signals; let evening analyst and medium/high agents do the deeper interpretation.
 
+## Every Run: Write Structured Views
+
+7b. After completing your analysis, write a structured view for each held and watched asset you assessed this run. This makes your reasoning transparent, trackable, and queryable by the evening analyst and other agents.
+
+For each asset you analyzed (focus on held + watched + any with significant moves):
+```bash
+pftui analytics views set --analyst low --asset <SYMBOL> \
+  --direction <bull|bear|neutral> --conviction <-5 to +5> \
+  --reasoning "<1-2 sentence summary of your LOW view>" \
+  --evidence "<key data points: technicals, sentiment, flows>" \
+  --blind-spots "<what could invalidate this view>" --json
+```
+
+Example:
+```bash
+pftui analytics views set --analyst low --asset BTC \
+  --direction bull --conviction 2 \
+  --reasoning "Holding above 50-SMA with rising volume. ETF inflows positive 3 consecutive days." \
+  --evidence "RSI 58, MACD bullish cross, $127M net ETF inflow today" \
+  --blind-spots "VIX rising could trigger risk-off rotation. Support at 82k untested." --json
+```
+
+Do NOT skip this step. The structured views are how the system tracks your reasoning over time and measures accuracy.
+
 ## Pre-Market Run
 
 9. Make 3-5 LOW predictions for today. Cause-and-effect, not price targets. Read your notes and scenario context to inform predictions:

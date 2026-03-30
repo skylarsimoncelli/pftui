@@ -37,6 +37,8 @@ pftui analytics opportunities --json
 pftui analytics synthesis --json
 pftui analytics summary --json
 pftui analytics alignment --json
+pftui analytics views divergence --json
+pftui analytics views portfolio-matrix --json
 pftui analytics recap --date yesterday --json
 pftui portfolio brief --json
 pftui analytics movers --overnight --json
@@ -132,7 +134,11 @@ why the divergence exists or what it suggests. If no mappings exist, omit this s
 [Rank held and watched assets by cross-timeframe consensus. For each, explain which
 layers agree and why. Surface any asset with strong alignment not in the portfolio.
 State where conviction is forming and where it isn't. Explain the disagreements
-between timeframes and what they tell you.]
+between timeframes and what they tell you.
+
+Include a one-line **Analyst View Divergence** summary from `analytics views divergence`:
+e.g. "🔀 Biggest analyst disagreement: BTC (LOW bull +3 vs HIGH bear -2, spread 5)"
+This tells the reader where the system's internal debate is sharpest.]
 
 ## Overnight Developments
 
