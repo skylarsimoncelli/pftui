@@ -13,6 +13,8 @@
 //! - T10Y2Y: 10-Year Treasury Minus 2-Year Treasury (daily, yield curve spread)
 //! - RSAFS: Advance Retail Sales (monthly)
 //! - INDPRO: Industrial Production Index (monthly)
+//! - DGORDER: Manufacturers' New Orders: Durable Goods (monthly, GDP leading indicator)
+//! - UMCSENT: University of Michigan Consumer Sentiment (monthly)
 
 use anyhow::{bail, Result};
 use chrono::{NaiveDate, Utc};
@@ -101,6 +103,18 @@ pub const FRED_SERIES: &[FredSeries] = &[
     FredSeries {
         id: "INDPRO",
         name: "Industrial Production Index",
+        unit: "index",
+        frequency: Frequency::Monthly,
+    },
+    FredSeries {
+        id: "DGORDER",
+        name: "Durable Goods Orders",
+        unit: "millions_usd",
+        frequency: Frequency::Monthly,
+    },
+    FredSeries {
+        id: "UMCSENT",
+        name: "Consumer Sentiment (UMich)",
         unit: "index",
         frequency: Frequency::Monthly,
     },
@@ -428,7 +442,7 @@ mod tests {
 
     #[test]
     fn test_fred_series_count() {
-        assert_eq!(FRED_SERIES.len(), 13);
+        assert_eq!(FRED_SERIES.len(), 15);
     }
 
     #[test]
