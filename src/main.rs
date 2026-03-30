@@ -2192,6 +2192,18 @@ fn main() -> Result<()> {
                 cli::AnalyticsViewsCommand::PortfolioMatrix { json } => {
                     commands::analyst_views::portfolio_matrix(&backend, json)
                 }
+                cli::AnalyticsViewsCommand::History {
+                    asset,
+                    analyst,
+                    limit,
+                    json,
+                } => commands::analyst_views::history(
+                    &backend,
+                    &asset,
+                    analyst.as_deref(),
+                    limit,
+                    json,
+                ),
                 cli::AnalyticsViewsCommand::Delete {
                     analyst,
                     asset,
