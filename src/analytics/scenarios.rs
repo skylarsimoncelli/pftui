@@ -15,6 +15,50 @@ pub enum ScenarioPreset {
     OilCrisis1973,
 }
 
+/// Metadata for a built-in stress-test preset.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PresetInfo {
+    pub name: String,
+    pub aliases: Vec<String>,
+    pub description: String,
+}
+
+/// Return metadata for every built-in preset.
+pub fn list_presets() -> Vec<PresetInfo> {
+    vec![
+        PresetInfo {
+            name: "Oil $100".to_string(),
+            aliases: vec!["oil100".into(), "oilat100".into(), "oil100usd".into()],
+            description: "Oil spikes to $100 — equities -4%, funds -3%, commodities +5%"
+                .to_string(),
+        },
+        PresetInfo {
+            name: "BTC 40k".to_string(),
+            aliases: vec!["btc40k".into(), "bitcoin40k".into(), "btc40000".into()],
+            description: "Bitcoin crashes to $40k — crypto -30%, equities -6%".to_string(),
+        },
+        PresetInfo {
+            name: "Gold $6000".to_string(),
+            aliases: vec!["gold6000".into(), "gold6k".into(), "gold6000usd".into()],
+            description: "Gold surges to $6000 — commodities +22%, equities -12%".to_string(),
+        },
+        PresetInfo {
+            name: "2008 GFC".to_string(),
+            aliases: vec!["2008gfc".into(), "gfc2008".into()],
+            description:
+                "2008 financial crisis replay — equities -40%, funds -30%, crypto -55%, oil -35%, gold +15%"
+                    .to_string(),
+        },
+        PresetInfo {
+            name: "1973 Oil Crisis".to_string(),
+            aliases: vec!["1973oilcrisis".into(), "oilcrisis1973".into()],
+            description:
+                "1973 oil crisis replay — oil +120%, commodities +35%, equities -32%, funds -25%, crypto -20%"
+                    .to_string(),
+        },
+    ]
+}
+
 pub fn parse_preset(name: &str) -> Option<ScenarioPreset> {
     let key = normalize(name);
     match key.as_str() {
@@ -194,5 +238,29 @@ mod tests {
         let prices = sample_prices();
         let ov = apply_preset(ScenarioPreset::Btc40k, &prices);
         assert_eq!(ov.get("BTC"), Some(&dec!(28000))); // 40k then -30%
+    }
+
+    #[test]
+    fn list_presets_returns_all() {
+        let presets = list_presets();
+        assert_eq!(presets.len(), 5);
+        let names: Vec<&str> = presets.iter().map(|p| p.name.as_str()).collect();
+        assert!(names.contains(&"Oil $100"));
+        assert!(names.contains(&"BTC 40k"));
+        assert!(names.contains(&"Gold $6000"));
+        assert!(names.contains(&"2008 GFC"));
+        assert!(names.contains(&"1973 Oil Crisis"));
+    }
+
+    #[test]
+    fn list_presets_all_parseable() {
+        let presets = list_presets();
+        for p in &presets {
+            assert!(
+                parse_preset(&p.name).is_some(),
+                "Preset name '{}' should be parseable by parse_preset()",
+                p.name
+            );
+        }
     }
 }

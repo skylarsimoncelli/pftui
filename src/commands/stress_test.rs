@@ -4,11 +4,12 @@ use anyhow::{anyhow, Result};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::analytics::scenarios::{apply_preset, parse_preset};
+use crate::analytics::scenarios::{apply_preset, list_presets, parse_preset};
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations_backend;
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
+use crate::db::scenarios::list_scenarios_backend;
 use crate::db::transactions::list_transactions_backend;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 
@@ -97,5 +98,78 @@ pub fn run(backend: &BackendConnection, config: &Config, scenario: &str, json: b
     for (sym, px) in overrides {
         println!("  {} -> {:.2}", sym, px);
     }
+    Ok(())
+}
+
+/// List all available stress-test scenarios: built-in presets + active user scenarios.
+pub fn run_list(backend: &BackendConnection, json: bool) -> Result<()> {
+    let presets = list_presets();
+    let active_scenarios = list_scenarios_backend(backend, Some("active")).unwrap_or_default();
+
+    if json {
+        let preset_json: Vec<serde_json::Value> = presets
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "name": p.name,
+                    "type": "preset",
+                    "aliases": p.aliases,
+                    "description": p.description,
+                })
+            })
+            .collect();
+
+        let scenario_json: Vec<serde_json::Value> = active_scenarios
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "name": s.name,
+                    "type": "scenario",
+                    "probability": s.probability,
+                    "description": s.description,
+                    "phase": s.phase,
+                })
+            })
+            .collect();
+
+        let payload = serde_json::json!({
+            "presets": preset_json,
+            "scenarios": scenario_json,
+            "total": presets.len() + active_scenarios.len(),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
+    println!("Built-in Presets");
+    println!("{}", "─".repeat(60));
+    for p in &presets {
+        println!("  {:20} {}", p.name, p.description);
+        println!(
+            "  {:20} aliases: {}",
+            "",
+            p.aliases.join(", ")
+        );
+    }
+
+    if !active_scenarios.is_empty() {
+        println!();
+        println!("Active Scenarios (from analytics scenario list)");
+        println!("{}", "─".repeat(60));
+        for s in &active_scenarios {
+            let desc = s.description.as_deref().unwrap_or("—");
+            println!(
+                "  {:20} prob: {:>5.1}%  {}",
+                s.name, s.probability, desc
+            );
+        }
+    }
+
+    println!();
+    println!(
+        "Total: {} presets + {} active scenarios",
+        presets.len(),
+        active_scenarios.len()
+    );
     Ok(())
 }
