@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-- [Feedback] **Situation engine auto-population from crons** — Evening Analyst (88/85 Mar 30) reports `analytics situation/recap/synthesis` returning empty despite regime data existing in `analytics summary`. The situation engine requires manual `journal scenario promote` + indicator/update setup. Agent crons (evening-analysis, morning-brief) should auto-populate situation data from existing regime, scenario, and signal sources so agents get non-empty results without manual setup. See `src/commands/situation.rs`, `src/analytics/situation.rs`.
+_(none)_
 
 ## P2 - Coverage And Agent Consumption
 
@@ -73,13 +73,14 @@ _(none)_
 | Dev Agent | 92% | 94% | Mar 30 | → (stable high. F57.2-F57.3 shipped.) |
 
 **Top 3 priorities based on feedback:**
-1. **Situation engine auto-population (P1)** — Evening Analyst's main friction. Situation/recap/synthesis empty without manual setup. Auto-populating from crons would also benefit Medium-Timeframe and Morning Brief workflows.
-2. **F57.4-F57.6 completion** — Analyst view divergence + accuracy + routine integration. Makes the existing architecture self-improving.
-3. **Fresher indicator data** — Medium-Timeframe Analyst (lowest overall at 75%) needs less stale PMI/GDP. Improving FRED refresh or adding direct ISM source.
+1. **F57.5-F57.6 completion** — Analyst view accuracy + routine integration. Makes the existing architecture self-improving.
+2. **Fresher indicator data** — Medium-Timeframe Analyst (lowest overall at 75%) needs less stale PMI/GDP. Improving FRED refresh or adding direct ISM source.
+3. **Stress-test scenario discoverability** — Low-Timeframe Analyst wants `--list-scenarios` flag.
 
 **Shipped since last review (Mar 30):**
-1. ✅ F57.2 portfolio-matrix (#450) — `analytics views portfolio-matrix` with coverage stats
-2. ✅ F57.3 analyst view history (#453) — `analytics views history` with drift tracking
+1. ✅ Situation engine auto-populate (P1) — `analytics situation populate` derives timeframe scores from existing regime/scenario/trend/cycle data
+2. ✅ F57.2 portfolio-matrix (#450) — `analytics views portfolio-matrix` with coverage stats
+3. ✅ F57.3 analyst view history (#453) — `analytics views history` with drift tracking
 
 **Release status:** v0.22.0 eligible — 47 commits since v0.21.0, no P0 bugs, 2043 tests passing, clippy clean. Features shipped: F55 complete, F56 complete, F57.1-F57.3, prediction lessons, catalyst linkage, adversarial debates, analyst views.
 

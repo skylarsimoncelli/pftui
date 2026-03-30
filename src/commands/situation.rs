@@ -3,6 +3,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::cli::SituationCommand;
+use crate::db;
 use crate::db::backend::BackendConnection;
 use crate::db::scenarios;
 
@@ -61,6 +62,7 @@ pub fn run(backend: &BackendConnection, command: SituationCommand) -> Result<()>
         SituationCommand::Indicator { command } => run_indicator(backend, command),
         SituationCommand::Update { command } => run_update(backend, command),
         SituationCommand::Exposure { symbol, json } => run_exposure(backend, &symbol, json),
+        SituationCommand::Populate { json } => run_populate(backend, json),
     }
 }
 
@@ -1150,6 +1152,333 @@ fn print_matrix_text(report: &MatrixReport) {
     }
 }
 
+#[derive(Debug, Serialize)]
+struct PopulateResult {
+    populated: Vec<PopulatedScore>,
+    sources: PopulateSources,
+}
+
+#[derive(Debug, Serialize)]
+struct PopulatedScore {
+    timeframe: String,
+    score: f64,
+    summary: String,
+}
+
+#[derive(Debug, Serialize)]
+struct PopulateSources {
+    regime: Option<String>,
+    regime_confidence: Option<f64>,
+    active_scenarios: usize,
+    active_trends: usize,
+    structural_cycles: usize,
+    convictions: usize,
+    technical_signals: usize,
+}
+
+/// Derive a LOW timeframe score from regime snapshot data.
+///
+/// Maps regime classification → base direction, scaled by confidence.
+/// Also incorporates technical signal density as a volatility modifier.
+fn derive_low_score(backend: &BackendConnection) -> (f64, String) {
+    let regime = db::regime_snapshots::get_current_backend(backend)
+        .unwrap_or(None);
+    let tech_signals = db::technical_signals::list_signals_backend(backend, None, None, Some(200))
+        .unwrap_or_default();
+
+    let (base, regime_label) = match regime.as_ref().map(|r| r.regime.as_str()) {
+        Some("risk-on") => (40.0, "risk-on"),
+        Some("risk-off") => (-40.0, "risk-off"),
+        Some("crisis") => (-60.0, "crisis"),
+        Some("stagflation") => (-50.0, "stagflation"),
+        Some("cautious") => (-15.0, "cautious"),
+        Some("neutral") | Some("mixed") => (0.0, "neutral"),
+        Some("euphoric") => (60.0, "euphoric"),
+        Some(other) => (0.0, other),
+        None => return (0.0, "No regime data available".to_string()),
+    };
+
+    let confidence = regime
+        .as_ref()
+        .and_then(|r| r.confidence)
+        .unwrap_or(0.5);
+    let scaled = base * confidence;
+
+    // Technical signal density modifier: more signals = more conviction in the direction
+    let signal_modifier = (tech_signals.len() as f64 / 50.0).min(1.0) * 10.0;
+    let final_score = (scaled + if base >= 0.0 { signal_modifier } else { -signal_modifier })
+        .clamp(-100.0, 100.0);
+
+    let summary = format!(
+        "Regime {} (conf {:.0}%), {} tech signals",
+        regime_label,
+        confidence * 100.0,
+        tech_signals.len()
+    );
+    (final_score, summary)
+}
+
+/// Derive a MEDIUM timeframe score from scenario probabilities and convictions.
+///
+/// Positive-outlook scenarios (probability weighted) push score up;
+/// negative-outlook scenarios push it down. Convictions add directional tilt.
+fn derive_medium_score(backend: &BackendConnection) -> (f64, String) {
+    let scenarios_list = scenarios::list_scenarios_backend(backend, Some("active"))
+        .unwrap_or_default();
+    let convictions = db::convictions::list_current_backend(backend)
+        .unwrap_or_default();
+
+    if scenarios_list.is_empty() && convictions.is_empty() {
+        return (0.0, "No scenario or conviction data available".to_string());
+    }
+
+    // Scenario-weighted score: classify each scenario by its impact text
+    let mut scenario_score = 0.0;
+    let mut scenario_weight = 0.0;
+    for s in &scenarios_list {
+        let direction = classify_scenario_direction(s);
+        scenario_score += direction * (s.probability / 100.0);
+        scenario_weight += s.probability / 100.0;
+    }
+    if scenario_weight > 0.0 {
+        scenario_score /= scenario_weight;
+    }
+    scenario_score *= 50.0; // Scale to -50..+50 range
+
+    // Conviction average: score is -5 to +5, scale to -20..+20
+    let conviction_score = if convictions.is_empty() {
+        0.0
+    } else {
+        let avg = convictions.iter().map(|c| c.score as f64).sum::<f64>()
+            / convictions.len() as f64;
+        avg * 4.0 // -5*4=-20 to 5*4=+20
+    };
+
+    let final_score = (scenario_score + conviction_score).clamp(-100.0, 100.0);
+    let summary = format!(
+        "{} active scenarios, {} convictions",
+        scenarios_list.len(),
+        convictions.len()
+    );
+    (final_score, summary)
+}
+
+/// Derive a HIGH timeframe score from active trend directions and convictions.
+///
+/// Bullish trends push score up, bearish down, weighted by conviction level.
+fn derive_high_score(backend: &BackendConnection) -> (f64, String) {
+    let trends = db::trends::list_trends_backend(backend, Some("active"), None)
+        .unwrap_or_default();
+
+    if trends.is_empty() {
+        return (0.0, "No active trend data available".to_string());
+    }
+
+    let mut score = 0.0;
+    for t in &trends {
+        let direction_mult = match t.direction.to_lowercase().as_str() {
+            "up" | "bullish" => 1.0,
+            "down" | "bearish" => -1.0,
+            _ => 0.0,
+        };
+        let conviction_mult = match t.conviction.to_lowercase().as_str() {
+            "high" => 1.0,
+            "medium" => 0.6,
+            "low" => 0.3,
+            _ => 0.5,
+        };
+        score += direction_mult * conviction_mult * 20.0;
+    }
+
+    let final_score = (score / trends.len() as f64).clamp(-100.0, 100.0);
+    let bull_count = trends.iter().filter(|t| {
+        matches!(t.direction.to_lowercase().as_str(), "up" | "bullish")
+    }).count();
+    let bear_count = trends.iter().filter(|t| {
+        matches!(t.direction.to_lowercase().as_str(), "down" | "bearish")
+    }).count();
+
+    let summary = format!(
+        "{} trends ({} bull, {} bear)",
+        trends.len(),
+        bull_count,
+        bear_count
+    );
+    (final_score, summary)
+}
+
+/// Derive a MACRO timeframe score from structural cycles.
+///
+/// Cycle stages map to a score: expansion/boom = positive, contraction/bust = negative.
+fn derive_macro_score(backend: &BackendConnection) -> (f64, String) {
+    let cycles = db::structural::list_cycles_backend(backend).unwrap_or_default();
+
+    if cycles.is_empty() {
+        return (0.0, "No structural cycle data available".to_string());
+    }
+
+    let mut score = 0.0;
+    for c in &cycles {
+        let stage_score = match c.current_stage.to_lowercase().as_str() {
+            "expansion" | "boom" | "growth" | "recovery" => 30.0,
+            "peak" | "topping" | "late-cycle" => 10.0,
+            "contraction" | "bust" | "recession" | "decline" => -30.0,
+            "trough" | "bottoming" | "accumulation" => -10.0,
+            "transition" | "mixed" => 0.0,
+            _ => 0.0,
+        };
+        score += stage_score;
+    }
+
+    let final_score = (score / cycles.len() as f64).clamp(-100.0, 100.0);
+    let stages: Vec<String> = cycles.iter()
+        .map(|c| format!("{}: {}", c.cycle_name, c.current_stage))
+        .collect();
+
+    let summary = if stages.len() <= 3 {
+        stages.join(", ")
+    } else {
+        format!("{} cycles tracked", cycles.len())
+    };
+    (final_score, summary)
+}
+
+/// Classify a scenario's directional impact from its description and impact text.
+/// Returns +1.0 (bullish), -1.0 (bearish), or 0.0 (neutral/ambiguous).
+fn classify_scenario_direction(scenario: &scenarios::Scenario) -> f64 {
+    let text = [
+        scenario.description.as_deref().unwrap_or(""),
+        scenario.asset_impact.as_deref().unwrap_or(""),
+        &scenario.name,
+    ]
+    .join(" ")
+    .to_lowercase();
+
+    let bull_keywords = [
+        "bull", "rally", "growth", "expansion", "boom", "recovery",
+        "upside", "breakout", "risk-on", "easing",
+    ];
+    let bear_keywords = [
+        "bear", "crash", "recession", "contraction", "crisis", "decline",
+        "downside", "breakdown", "risk-off", "tightening", "stagflation",
+    ];
+
+    let bull_hits = bull_keywords.iter().filter(|kw| text.contains(**kw)).count();
+    let bear_hits = bear_keywords.iter().filter(|kw| text.contains(**kw)).count();
+
+    if bull_hits > bear_hits {
+        1.0
+    } else if bear_hits > bull_hits {
+        -1.0
+    } else {
+        0.0
+    }
+}
+
+fn run_populate(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let (low_score, low_summary) = derive_low_score(backend);
+    let (medium_score, medium_summary) = derive_medium_score(backend);
+    let (high_score, high_summary) = derive_high_score(backend);
+    let (macro_score, macro_summary) = derive_macro_score(backend);
+
+    // Upsert all four timeframe scores
+    db::mobile_timeframe_scores::upsert_score_backend(
+        backend, "low", low_score, Some(&low_summary),
+    )?;
+    db::mobile_timeframe_scores::upsert_score_backend(
+        backend, "medium", medium_score, Some(&medium_summary),
+    )?;
+    db::mobile_timeframe_scores::upsert_score_backend(
+        backend, "high", high_score, Some(&high_summary),
+    )?;
+    db::mobile_timeframe_scores::upsert_score_backend(
+        backend, "macro", macro_score, Some(&macro_summary),
+    )?;
+
+    // Collect source stats for reporting
+    let regime = db::regime_snapshots::get_current_backend(backend).unwrap_or(None);
+    let scenarios_list = scenarios::list_scenarios_backend(backend, Some("active"))
+        .unwrap_or_default();
+    let trends = db::trends::list_trends_backend(backend, Some("active"), None)
+        .unwrap_or_default();
+    let cycles = db::structural::list_cycles_backend(backend).unwrap_or_default();
+    let convictions = db::convictions::list_current_backend(backend).unwrap_or_default();
+    let tech_signals = db::technical_signals::list_signals_backend(backend, None, None, Some(200))
+        .unwrap_or_default();
+
+    let result = PopulateResult {
+        populated: vec![
+            PopulatedScore {
+                timeframe: "low".to_string(),
+                score: (low_score * 10.0).round() / 10.0,
+                summary: low_summary.clone(),
+            },
+            PopulatedScore {
+                timeframe: "medium".to_string(),
+                score: (medium_score * 10.0).round() / 10.0,
+                summary: medium_summary.clone(),
+            },
+            PopulatedScore {
+                timeframe: "high".to_string(),
+                score: (high_score * 10.0).round() / 10.0,
+                summary: high_summary.clone(),
+            },
+            PopulatedScore {
+                timeframe: "macro".to_string(),
+                score: (macro_score * 10.0).round() / 10.0,
+                summary: macro_summary.clone(),
+            },
+        ],
+        sources: PopulateSources {
+            regime: regime.as_ref().map(|r| r.regime.clone()),
+            regime_confidence: regime.as_ref().and_then(|r| r.confidence),
+            active_scenarios: scenarios_list.len(),
+            active_trends: trends.len(),
+            structural_cycles: cycles.len(),
+            convictions: convictions.len(),
+            technical_signals: tech_signals.len(),
+        },
+    };
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        println!("Situation Engine — Auto-Populate");
+        println!("════════════════════════════════════════════════════════════════");
+        println!();
+        println!("Sources:");
+        if let Some(r) = &regime {
+            println!(
+                "  Regime: {} (confidence {:.0}%)",
+                r.regime,
+                r.confidence.unwrap_or(0.0) * 100.0
+            );
+        } else {
+            println!("  Regime: none");
+        }
+        println!("  Scenarios: {}", scenarios_list.len());
+        println!("  Trends: {}", trends.len());
+        println!("  Cycles: {}", cycles.len());
+        println!("  Convictions: {}", convictions.len());
+        println!("  Tech signals: {}", tech_signals.len());
+        println!();
+        println!("Derived Timeframe Scores:");
+        for score in &result.populated {
+            println!(
+                "  {:>6}: {:+6.1}  {}",
+                score.timeframe.to_uppercase(),
+                score.score,
+                score.summary
+            );
+        }
+        println!();
+        println!("✓ Scores written to mobile_timeframe_scores table.");
+        println!("  Run `pftui analytics situation --json` to verify.");
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1160,6 +1489,183 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         db::schema::run_migrations(&conn).unwrap();
         BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn populate_empty_db_produces_zero_scores() {
+        let backend = setup();
+        run_populate(&backend, false).unwrap();
+
+        let scores = db::mobile_timeframe_scores::list_scores_backend(&backend).unwrap();
+        assert_eq!(scores.len(), 4);
+        for score in &scores {
+            assert_eq!(score.score, 0.0, "empty DB should produce zero for {}", score.timeframe);
+        }
+    }
+
+    #[test]
+    fn populate_with_regime_sets_low_score() {
+        let backend = setup();
+        db::regime_snapshots::store_regime_backend(
+            &backend,
+            "risk-on",
+            Some(0.8),
+            Some("VIX low, DXY weak"),
+            Some(14.0),
+            Some(100.0),
+            Some(4.2),
+            Some(70.0),
+            Some(2500.0),
+            Some(90000.0),
+        )
+        .unwrap();
+
+        run_populate(&backend, false).unwrap();
+
+        let scores = db::mobile_timeframe_scores::list_scores_backend(&backend).unwrap();
+        let low = scores.iter().find(|s| s.timeframe == "low").unwrap();
+        assert!(low.score > 20.0, "risk-on with 0.8 confidence should be positive, got {}", low.score);
+        assert!(low.summary.as_deref().unwrap_or("").contains("risk-on"));
+    }
+
+    #[test]
+    fn populate_with_scenarios_sets_medium_score() {
+        let backend = setup();
+        // Add a bearish scenario with high probability
+        scenarios::add_scenario_backend(
+            &backend,
+            "Recession",
+            70.0,
+            Some("Economic contraction accelerating"),
+            Some("bearish equities, bearish crypto"),
+            None,
+            None,
+        )
+        .unwrap();
+
+        run_populate(&backend, false).unwrap();
+
+        let scores = db::mobile_timeframe_scores::list_scores_backend(&backend).unwrap();
+        let medium = scores.iter().find(|s| s.timeframe == "medium").unwrap();
+        assert!(medium.score < 0.0, "bearish scenario should produce negative medium, got {}", medium.score);
+    }
+
+    #[test]
+    fn populate_with_trends_sets_high_score() {
+        let backend = setup();
+        db::trends::add_trend_backend(
+            &backend,
+            "AI capex cycle",
+            "high",
+            "up",
+            "high",
+            Some("tech"),
+            Some("AI demand increasing"),
+            Some("bullish NVDA"),
+            Some("earnings"),
+        )
+        .unwrap();
+
+        run_populate(&backend, false).unwrap();
+
+        let scores = db::mobile_timeframe_scores::list_scores_backend(&backend).unwrap();
+        let high = scores.iter().find(|s| s.timeframe == "high").unwrap();
+        assert!(high.score > 0.0, "bullish trend should produce positive high, got {}", high.score);
+        assert!(high.summary.as_deref().unwrap_or("").contains("1 trends"));
+    }
+
+    #[test]
+    fn populate_with_cycles_sets_macro_score() {
+        let backend = setup();
+        db::structural::set_cycle_backend(
+            &backend,
+            "US Debt Cycle",
+            "contraction",
+            Some("2025-01-01"),
+            Some("Fiscal tightening, debt ceiling"),
+            Some("Rising yields, budget cuts"),
+        )
+        .unwrap();
+
+        run_populate(&backend, false).unwrap();
+
+        let scores = db::mobile_timeframe_scores::list_scores_backend(&backend).unwrap();
+        let macro_s = scores.iter().find(|s| s.timeframe == "macro").unwrap();
+        assert!(macro_s.score < 0.0, "contraction stage should produce negative macro, got {}", macro_s.score);
+    }
+
+    #[test]
+    fn populate_is_idempotent() {
+        let backend = setup();
+        db::regime_snapshots::store_regime_backend(
+            &backend,
+            "risk-off",
+            Some(0.7),
+            Some("VIX elevated"),
+            Some(28.0),
+            Some(106.0),
+            Some(4.5),
+            Some(80.0),
+            Some(2600.0),
+            Some(78000.0),
+        )
+        .unwrap();
+
+        run_populate(&backend, false).unwrap();
+        let first = db::mobile_timeframe_scores::list_scores_backend(&backend).unwrap();
+
+        run_populate(&backend, false).unwrap();
+        let second = db::mobile_timeframe_scores::list_scores_backend(&backend).unwrap();
+
+        assert_eq!(first.len(), second.len());
+        for (a, b) in first.iter().zip(second.iter()) {
+            assert_eq!(a.timeframe, b.timeframe);
+            assert_eq!(a.score, b.score);
+        }
+    }
+
+    #[test]
+    fn populate_json_output_is_valid() {
+        let backend = setup();
+        // Just verify it doesn't panic with json=true
+        run_populate(&backend, true).unwrap();
+    }
+
+    #[test]
+    fn classify_scenario_direction_works() {
+        let bull = scenarios::Scenario {
+            id: 1,
+            name: "Bull market".to_string(),
+            probability: 50.0,
+            description: Some("Growth expansion ahead".to_string()),
+            asset_impact: Some("bullish equities".to_string()),
+            triggers: None,
+            historical_precedent: None,
+            status: "active".to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            phase: "active".to_string(),
+            resolved_at: None,
+            resolution_notes: None,
+        };
+        assert_eq!(classify_scenario_direction(&bull), 1.0);
+
+        let bear = scenarios::Scenario {
+            id: 2,
+            name: "Recession scenario".to_string(),
+            probability: 30.0,
+            description: Some("Economic contraction".to_string()),
+            asset_impact: Some("bearish risk assets, crash risk".to_string()),
+            triggers: None,
+            historical_precedent: None,
+            status: "active".to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            phase: "active".to_string(),
+            resolved_at: None,
+            resolution_notes: None,
+        };
+        assert_eq!(classify_scenario_direction(&bear), -1.0);
     }
 
     #[test]
