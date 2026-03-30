@@ -3485,6 +3485,13 @@ pub enum AnalyticsBacktestCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Aggregate backtest report: win rate by conviction, timeframe, asset class, and source agent
+    #[command(after_help = "Aggregates prediction backtest results into a structured report.\nBreaks down win rate, P&L, and accuracy by:\n  - Conviction level (high/medium/low)\n  - Timeframe (low/medium/high/macro)\n  - Asset class (equity/crypto/commodity/fund/forex)\n  - Source agent (which timeframe analyst)\n\nIncludes a Sharpe-ratio equivalent for the prediction-based strategy\nand identifies the most/least reliable conviction levels and agents.\n\nExamples:\n  pftui analytics backtest report --json\n  pftui analytics backtest report\n\nSee also: analytics backtest predictions, analytics views accuracy")]
+    Report {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -6920,7 +6927,10 @@ mod tests {
             conviction,
             limit,
             json,
-        } = command;
+        } = command
+        else {
+            panic!("expected Predictions");
+        };
         assert!(json);
         assert!(symbol.is_none());
         assert!(agent.is_none());
@@ -6959,7 +6969,10 @@ mod tests {
             conviction,
             limit,
             json,
-        } = command;
+        } = command
+        else {
+            panic!("expected Predictions");
+        };
         assert!(json);
         assert_eq!(symbol.as_deref(), Some("BTC-USD"));
         assert_eq!(agent.as_deref(), Some("low-timeframe"));
@@ -6977,7 +6990,39 @@ mod tests {
         let AnalyticsCommand::Backtest { command } = command else {
             panic!("expected Backtest");
         };
-        let AnalyticsBacktestCommand::Predictions { json, .. } = command;
+        let AnalyticsBacktestCommand::Predictions { json, .. } = command else {
+            panic!("expected Predictions");
+        };
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_backtest_report_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "backtest", "report", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Backtest { command } = command else {
+            panic!("expected Backtest");
+        };
+        let AnalyticsBacktestCommand::Report { json } = command else {
+            panic!("expected Report");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_backtest_report_no_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "backtest", "report"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Backtest { command } = command else {
+            panic!("expected Backtest");
+        };
+        let AnalyticsBacktestCommand::Report { json } = command else {
+            panic!("expected Report");
+        };
         assert!(!json);
     }
 
