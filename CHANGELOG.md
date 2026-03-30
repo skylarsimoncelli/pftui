@@ -2,6 +2,28 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat: portfolio stress-test --list-scenarios for scenario discoverability
+
+New flag: `pftui portfolio stress-test --list-scenarios [--json]`
+
+Lists all available stress-test scenarios without trial/error:
+- 5 built-in presets: Oil $100, BTC 40k, Gold $6000, 2008 GFC, 1973 Oil Crisis
+- All active user-defined scenarios from the database (with probabilities)
+- JSON output includes names, aliases, descriptions, types, and probabilities
+- Human output shows a clean two-section table
+
+The `scenario` positional argument is now optional — only required when not listing.
+
+Addresses Low-Timeframe Analyst feedback requesting scenario discoverability.
+
+**Files changed:**
+- `src/analytics/scenarios.rs` — `PresetInfo` struct, `list_presets()` function
+- `src/cli.rs` — `scenario` → `Option<String>`, `--list-scenarios` flag, `after_help`, 2 parse tests
+- `src/commands/stress_test.rs` — `run_list()` with JSON + human output
+- `src/main.rs` — dispatch for `--list-scenarios` vs scenario run
+
+**Tests added:** 4 new (list_presets_returns_all, list_presets_all_parseable, parse_stress_test_list_scenarios, parse_stress_test_with_scenario). Full suite: 2081 passed, 0 failed. Clippy clean.
+
 ### 2026-03-30 — feat(F57.5): analytics views accuracy — per-analyst directional accuracy measurement
 
 New subcommand: `pftui analytics views accuracy [--analyst low] [--asset BTC] [--json]`

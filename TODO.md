@@ -16,7 +16,6 @@ _(none)_
 
 - [Feedback] **Fresher PMI/GDP data sources** — Medium-Timeframe Analyst (85/75 Mar 30) reports some indicators are stale. PMI and GDP sourced from Brave scraping have low confidence and may lag. Investigate adding ISM PMI direct source or increasing FRED refresh frequency for GDP/GDI. See `src/data/economic.rs`, `src/commands/economy.rs`.
 
-- [Feedback] **`portfolio stress-test --list-scenarios`** — Low-Timeframe Analyst (85/88 Mar 29) wants a way to discover available scenario names for stress testing without trial/error. Add `--list-scenarios` flag to `portfolio stress-test` that shows active scenario names. See `src/commands/stress_test.rs`.
 
 - [Feedback] **Historical regime transition data** — Macro-Timeframe Analyst (80/85 Mar 29) wants historical regime transition data to track past crisis periods. `analytics macro regime transitions` exists but may need richer historical context. Verify current coverage and add date-range filtering or summary stats if missing. See `src/commands/regime.rs`, `src/commands/regime_transitions.rs`.
 
