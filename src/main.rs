@@ -2204,6 +2204,18 @@ fn main() -> Result<()> {
                     limit,
                     json,
                 ),
+                cli::AnalyticsViewsCommand::Divergence {
+                    min_spread,
+                    asset,
+                    limit,
+                    json,
+                } => commands::analyst_views::divergence(
+                    &backend,
+                    min_spread,
+                    asset.as_deref(),
+                    limit,
+                    json,
+                ),
                 cli::AnalyticsViewsCommand::Delete {
                     analyst,
                     asset,

@@ -783,6 +783,148 @@ pub fn get_view_history_backend(
     )
 }
 
+/// A divergence record: one asset where analysts disagree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ViewDivergence {
+    pub asset: String,
+    /// Absolute spread between most-bullish and most-bearish conviction
+    pub spread: i64,
+    /// The most bullish view
+    pub most_bullish: AnalystView,
+    /// The most bearish view
+    pub most_bearish: AnalystView,
+    /// All views for this asset (for context)
+    pub all_views: Vec<AnalystView>,
+}
+
+// ---------------------------------------------------------------------------
+// Divergence — SQLite
+// ---------------------------------------------------------------------------
+
+fn compute_divergence(
+    conn: &Connection,
+    min_spread: i64,
+    asset_filter: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<ViewDivergence>> {
+    // Get the full matrix (or filtered to one asset)
+    let matrix = if let Some(asset) = asset_filter {
+        let views = list_views(conn, None, Some(asset), None)?;
+        if views.is_empty() {
+            return Ok(Vec::new());
+        }
+        vec![AssetViewMatrix {
+            asset: asset.to_uppercase(),
+            views,
+        }]
+    } else {
+        get_view_matrix(conn)?
+    };
+
+    let mut divergences = divergences_from_matrix(matrix, min_spread);
+    if let Some(n) = limit {
+        divergences.truncate(n);
+    }
+    Ok(divergences)
+}
+
+// ---------------------------------------------------------------------------
+// Divergence — PostgreSQL
+// ---------------------------------------------------------------------------
+
+fn compute_divergence_postgres(
+    pool: &PgPool,
+    min_spread: i64,
+    asset_filter: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<ViewDivergence>> {
+    let matrix = if let Some(asset) = asset_filter {
+        let views = list_views_postgres(pool, None, Some(asset), None)?;
+        if views.is_empty() {
+            return Ok(Vec::new());
+        }
+        vec![AssetViewMatrix {
+            asset: asset.to_uppercase(),
+            views,
+        }]
+    } else {
+        get_view_matrix_postgres(pool)?
+    };
+
+    let mut divergences = divergences_from_matrix(matrix, min_spread);
+    if let Some(n) = limit {
+        divergences.truncate(n);
+    }
+    Ok(divergences)
+}
+
+/// Shared logic: compute divergences from a matrix of views.
+fn divergences_from_matrix(
+    matrix: Vec<AssetViewMatrix>,
+    min_spread: i64,
+) -> Vec<ViewDivergence> {
+    let mut divergences: Vec<ViewDivergence> = Vec::new();
+
+    for row in matrix {
+        if row.views.len() < 2 {
+            continue; // need at least 2 analysts to have divergence
+        }
+
+        // Find most-bullish and most-bearish by conviction score
+        let most_bullish = row
+            .views
+            .iter()
+            .max_by_key(|v| v.conviction)
+            .unwrap()
+            .clone();
+        let most_bearish = row
+            .views
+            .iter()
+            .min_by_key(|v| v.conviction)
+            .unwrap()
+            .clone();
+
+        let spread = most_bullish.conviction - most_bearish.conviction;
+
+        if spread >= min_spread {
+            divergences.push(ViewDivergence {
+                asset: row.asset,
+                spread,
+                most_bullish,
+                most_bearish,
+                all_views: row.views,
+            });
+        }
+    }
+
+    // Sort by spread descending (biggest divergence first)
+    divergences.sort_by(|a, b| b.spread.cmp(&a.spread));
+    divergences
+}
+
+// ---------------------------------------------------------------------------
+// Divergence — backend dispatch
+// ---------------------------------------------------------------------------
+
+pub fn compute_divergence_backend(
+    backend: &BackendConnection,
+    min_spread: i64,
+    asset: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<ViewDivergence>> {
+    query::dispatch(
+        backend,
+        |conn| {
+            ensure_tables(conn)?;
+            compute_divergence(conn, min_spread, asset, limit)
+        },
+        |pool| {
+            ensure_tables_postgres(pool)?;
+            compute_divergence_postgres(pool, min_spread, asset, limit)
+        },
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1214,5 +1356,128 @@ mod tests {
         assert_eq!(high.len(), 2);
         assert_eq!(high[0].direction, "neutral"); // newest first
         assert_eq!(high[1].direction, "bear");
+    }
+
+    // --- Divergence tests ---
+
+    #[test]
+    fn test_divergence_basic() {
+        let conn = setup_db();
+        // BTC: LOW bull +3, HIGH bear -2 → spread = 5
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "Overvalued", None, None).unwrap();
+
+        let divs = compute_divergence(&conn, 2, None, None).unwrap();
+        assert_eq!(divs.len(), 1);
+        assert_eq!(divs[0].asset, "BTC");
+        assert_eq!(divs[0].spread, 5);
+        assert_eq!(divs[0].most_bullish.analyst, "low");
+        assert_eq!(divs[0].most_bullish.conviction, 3);
+        assert_eq!(divs[0].most_bearish.analyst, "high");
+        assert_eq!(divs[0].most_bearish.conviction, -2);
+        assert_eq!(divs[0].all_views.len(), 2);
+    }
+
+    #[test]
+    fn test_divergence_min_spread_filter() {
+        let conn = setup_db();
+        // BTC: spread 5 (bull +3, bear -2)
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "Down", None, None).unwrap();
+        // GLD: spread 2 (bull +4, neutral +2)
+        upsert_view(&conn, "low", "GLD", "bull", 4, "Safe haven", None, None).unwrap();
+        upsert_view(&conn, "macro", "GLD", "bull", 2, "Moderate", None, None).unwrap();
+
+        // min_spread 3: only BTC qualifies
+        let divs = compute_divergence(&conn, 3, None, None).unwrap();
+        assert_eq!(divs.len(), 1);
+        assert_eq!(divs[0].asset, "BTC");
+
+        // min_spread 2: both qualify
+        let divs = compute_divergence(&conn, 2, None, None).unwrap();
+        assert_eq!(divs.len(), 2);
+    }
+
+    #[test]
+    fn test_divergence_sorted_by_spread_desc() {
+        let conn = setup_db();
+        // GLD: spread 9 (bull +5, bear -4)
+        upsert_view(&conn, "macro", "GLD", "bull", 5, "Structural", None, None).unwrap();
+        upsert_view(&conn, "low", "GLD", "bear", -4, "Short-term sell", None, None).unwrap();
+        // BTC: spread 5 (bull +3, bear -2)
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "Down", None, None).unwrap();
+
+        let divs = compute_divergence(&conn, 2, None, None).unwrap();
+        assert_eq!(divs.len(), 2);
+        assert_eq!(divs[0].asset, "GLD"); // spread 9 first
+        assert_eq!(divs[0].spread, 9);
+        assert_eq!(divs[1].asset, "BTC"); // spread 5 second
+        assert_eq!(divs[1].spread, 5);
+    }
+
+    #[test]
+    fn test_divergence_asset_filter() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "Down", None, None).unwrap();
+        upsert_view(&conn, "low", "GLD", "bull", 4, "Up", None, None).unwrap();
+        upsert_view(&conn, "high", "GLD", "bear", -3, "Down", None, None).unwrap();
+
+        let divs = compute_divergence(&conn, 2, Some("BTC"), None).unwrap();
+        assert_eq!(divs.len(), 1);
+        assert_eq!(divs[0].asset, "BTC");
+    }
+
+    #[test]
+    fn test_divergence_limit() {
+        let conn = setup_db();
+        // Create 3 divergent assets
+        for (asset, conv_hi, conv_lo) in [("BTC", 3, -2), ("GLD", 5, -4), ("SLV", 2, -1)] {
+            upsert_view(&conn, "low", asset, "bull", conv_hi, "Up", None, None).unwrap();
+            upsert_view(&conn, "high", asset, "bear", conv_lo, "Down", None, None).unwrap();
+        }
+
+        let divs = compute_divergence(&conn, 2, None, Some(2)).unwrap();
+        assert_eq!(divs.len(), 2);
+        // Should be top 2 by spread: GLD (9), BTC (5)
+        assert_eq!(divs[0].asset, "GLD");
+        assert_eq!(divs[1].asset, "BTC");
+    }
+
+    #[test]
+    fn test_divergence_single_analyst_excluded() {
+        let conn = setup_db();
+        // Only one analyst on this asset → no divergence
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
+
+        let divs = compute_divergence(&conn, 0, None, None).unwrap();
+        assert!(divs.is_empty());
+    }
+
+    #[test]
+    fn test_divergence_all_agree() {
+        let conn = setup_db();
+        // All analysts agree on bull +3 → spread 0
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bull", 3, "Up", None, None).unwrap();
+        upsert_view(&conn, "macro", "BTC", "bull", 3, "Up", None, None).unwrap();
+
+        let divs = compute_divergence(&conn, 1, None, None).unwrap();
+        assert!(divs.is_empty());
+    }
+
+    #[test]
+    fn test_divergence_empty_db() {
+        let conn = setup_db();
+        let divs = compute_divergence(&conn, 2, None, None).unwrap();
+        assert!(divs.is_empty());
+    }
+
+    #[test]
+    fn test_divergence_nonexistent_asset() {
+        let conn = setup_db();
+        let divs = compute_divergence(&conn, 0, Some("NOPE"), None).unwrap();
+        assert!(divs.is_empty());
     }
 }
