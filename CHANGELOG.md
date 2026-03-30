@@ -2,6 +2,32 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat(F58.2): analytics backtest report — aggregate prediction accuracy by conviction, timeframe, asset class, and agent
+
+New subcommand: `pftui analytics backtest report [--json]`
+
+Aggregates all scored prediction backtest results into a structured report with breakdowns by:
+- **Conviction level** (high/medium/low): which conviction levels produce the best returns
+- **Timeframe** (low/medium/high/macro): which analytical timeframes are most accurate
+- **Asset class** (equity/crypto/commodity/fund/forex): accuracy by market segment
+- **Source agent**: which timeframe analyst makes the most reliable predictions
+
+Includes:
+- **Sharpe-ratio equivalent** (per-trade): mean(P&L) / stddev(P&L) — a prediction quality metric
+- **Reliability insights**: identifies the most/least reliable conviction levels and agents (minimum 3 decided trades for statistical significance)
+- **Per-bucket stats**: count, wins, losses, partials, win rate, total P&L, avg P&L, best/worst P&L
+
+Both human-readable table and `--json` output for agent consumption.
+
+**Files changed:**
+- `src/commands/backtest.rs` — `run_report()`, `BucketStats`, `BacktestReport`, `build_breakdown()`, `compute_sharpe_equivalent()`, `find_best_worst()`, JSON + table report formatting
+- `src/cli.rs` — `AnalyticsBacktestCommand::Report` variant, `let...else` fixes for existing tests, 2 new CLI parse tests
+- `src/main.rs` — wire `Report` subcommand dispatch
+
+**Tests:** 2105 passing (+14 new: bucket accumulation, Sharpe computation, breakdown building, best/worst finding, empty/populated report generation, CLI parsing). Clippy clean. CI 4/4 green.
+
+---
+
 ### 2026-03-30 — feat(F58.1): analytics backtest predictions — replay scored predictions against historical prices
 
 New subcommand: `pftui analytics backtest predictions [--symbol SYM] [--agent NAME] [--timeframe TF] [--conviction LEVEL] [--limit N] [--json]`
