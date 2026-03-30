@@ -1055,10 +1055,14 @@ pub enum PortfolioCommand {
         json: bool,
     },
     /// Run named portfolio stress scenarios
-    #[command(name = "stress-test")]
+    #[command(name = "stress-test", after_help = "Run a named stress scenario against your portfolio to see the\nimpact. Use --list-scenarios to discover available preset names\nand active user-defined scenarios.\n\nBuilt-in presets: Oil $100, BTC 40k, Gold $6000, 2008 GFC,\n1973 Oil Crisis. Active scenarios from `analytics scenario list`\nare also available.\n\nSee also: analytics impact-matrix, analytics scenario list")]
     StressTest {
         /// Scenario name (e.g. "2008 GFC", "Oil $100", "BTC 40k")
-        scenario: String,
+        scenario: Option<String>,
+
+        /// List all available scenario names (built-in presets + active scenarios)
+        #[arg(long)]
+        list_scenarios: bool,
 
         /// Output as JSON
         #[arg(long)]
@@ -7344,5 +7348,55 @@ mod tests {
             Some(SituationCommand::Populate { json }) => assert!(!json),
             _ => panic!("expected Populate"),
         }
+    }
+
+    #[test]
+    fn parse_stress_test_list_scenarios() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "stress-test",
+            "--list-scenarios",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Portfolio {
+            command: Some(PortfolioCommand::StressTest {
+                scenario,
+                list_scenarios,
+                json,
+            }),
+        }) = cli.command
+        else {
+            panic!("expected portfolio stress-test command");
+        };
+        assert!(list_scenarios);
+        assert!(json);
+        assert!(scenario.is_none());
+    }
+
+    #[test]
+    fn parse_stress_test_with_scenario() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "stress-test",
+            "2008 GFC",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Portfolio {
+            command: Some(PortfolioCommand::StressTest {
+                scenario,
+                list_scenarios,
+                json,
+            }),
+        }) = cli.command
+        else {
+            panic!("expected portfolio stress-test command");
+        };
+        assert!(!list_scenarios);
+        assert!(json);
+        assert_eq!(scenario, Some("2008 GFC".to_string()));
     }
 }

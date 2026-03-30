@@ -1250,8 +1250,21 @@ fn main() -> Result<()> {
             Some(cli::PortfolioCommand::Rebalance { json }) => {
                 commands::rebalance::run(&backend, json)
             }
-            Some(cli::PortfolioCommand::StressTest { scenario, json }) => {
-                commands::stress_test::run(&backend, &config, &scenario, json)
+            Some(cli::PortfolioCommand::StressTest {
+                scenario,
+                list_scenarios,
+                json,
+            }) => {
+                if list_scenarios {
+                    commands::stress_test::run_list(&backend, json)
+                } else {
+                    let scenario = scenario.ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Scenario name required. Use --list-scenarios to see available options."
+                        )
+                    })?;
+                    commands::stress_test::run(&backend, &config, &scenario, json)
+                }
             }
             Some(cli::PortfolioCommand::Dividends {
                 action,
