@@ -12,6 +12,8 @@ pub enum DataSource {
     Fred,
     /// Bureau of Labor Statistics
     Bls,
+    /// ISM targeted web search — structured extraction from ISM press releases
+    Ism,
     /// Brave Search text extraction — least reliable
     Brave,
 }
@@ -22,7 +24,8 @@ impl DataSource {
         match self {
             DataSource::Fred => 0,
             DataSource::Bls => 1,
-            DataSource::Brave => 2,
+            DataSource::Ism => 2,
+            DataSource::Brave => 3,
         }
     }
 
@@ -30,6 +33,7 @@ impl DataSource {
         match self {
             DataSource::Fred => "fred",
             DataSource::Bls => "bls",
+            DataSource::Ism => "ism",
             DataSource::Brave => "brave",
         }
     }
@@ -39,6 +43,7 @@ impl DataSource {
         match self {
             DataSource::Fred => "high",
             DataSource::Bls => "high",
+            DataSource::Ism => "medium",
             DataSource::Brave => "low",
         }
     }
@@ -90,6 +95,8 @@ pub fn fred_to_indicator(series_id: &str) -> Option<&'static str> {
         "JTSJOL" => Some("jolts"),
         "RSAFS" => Some("retail_sales"),
         "INDPRO" => Some("industrial_production"),
+        "DGORDER" => Some("durable_goods"),
+        "UMCSENT" => Some("consumer_sentiment"),
         _ => None,
     }
 }
@@ -489,13 +496,15 @@ mod tests {
     #[test]
     fn data_source_priority_ordering() {
         assert!(DataSource::Fred.priority() < DataSource::Bls.priority());
-        assert!(DataSource::Bls.priority() < DataSource::Brave.priority());
+        assert!(DataSource::Bls.priority() < DataSource::Ism.priority());
+        assert!(DataSource::Ism.priority() < DataSource::Brave.priority());
     }
 
     #[test]
     fn data_source_names() {
         assert_eq!(DataSource::Fred.name(), "fred");
         assert_eq!(DataSource::Bls.name(), "bls");
+        assert_eq!(DataSource::Ism.name(), "ism");
         assert_eq!(DataSource::Brave.name(), "brave");
     }
 
@@ -503,6 +512,7 @@ mod tests {
     fn data_source_confidence() {
         assert_eq!(DataSource::Fred.confidence(), "high");
         assert_eq!(DataSource::Bls.confidence(), "high");
+        assert_eq!(DataSource::Ism.confidence(), "medium");
         assert_eq!(DataSource::Brave.confidence(), "low");
     }
 
@@ -615,6 +625,8 @@ mod tests {
         assert_eq!(fred_to_indicator("JTSJOL"), Some("jolts"));
         assert_eq!(fred_to_indicator("RSAFS"), Some("retail_sales"));
         assert_eq!(fred_to_indicator("INDPRO"), Some("industrial_production"));
+        assert_eq!(fred_to_indicator("DGORDER"), Some("durable_goods"));
+        assert_eq!(fred_to_indicator("UMCSENT"), Some("consumer_sentiment"));
         assert_eq!(fred_to_indicator("BOGUS"), None);
     }
 

@@ -476,6 +476,8 @@ fn indicator_to_fred_series(indicator: &str) -> Option<&'static str> {
         "jolts" => Some("JTSJOL"),
         "retail_sales" => Some("RSAFS"),
         "industrial_production" => Some("INDPRO"),
+        "durable_goods" => Some("DGORDER"),
+        "consumer_sentiment" => Some("UMCSENT"),
         _ => None,
     }
 }
@@ -553,6 +555,7 @@ fn confidence_reason_for_source(source: &str, confidence: &str) -> String {
         ("bls", "high") => "Bureau of Labor Statistics — official government source, authoritative".to_string(),
         ("bls", _) => "Bureau of Labor Statistics — official source, data may be from prior release".to_string(),
         ("fred", _) => "FRED — Federal Reserve Economic Data, authoritative".to_string(),
+        ("ism", _) => "ISM targeted extraction — structured parsing of ISM press releases via web search".to_string(),
         _ => format!("Source: {}, confidence: {}", source, confidence),
     }
 }
@@ -600,6 +603,8 @@ fn display_name(indicator: &str) -> &str {
         "jolts" => "JOLTS Job Openings",
         "retail_sales" => "Retail Sales",
         "industrial_production" => "Industrial Production",
+        "durable_goods" => "Durable Goods Orders",
+        "consumer_sentiment" => "Consumer Sentiment",
         _ => indicator,
     }
 }
@@ -623,6 +628,8 @@ fn indicator_metadata(indicator: &str) -> (&str, &str) {
         "yield_spread_10y2y" => ("%", "10Y-2Y Yield Spread"),
         "retail_sales" => ("% MoM", "Retail Sales (MoM Change)"),
         "industrial_production" => ("% YoY", "Industrial Production (YoY Change)"),
+        "durable_goods" => ("millions USD", "Durable Goods Orders"),
+        "consumer_sentiment" => ("index", "Consumer Sentiment (UMich)"),
         _ => ("", indicator),
     }
 }
@@ -654,6 +661,8 @@ fn merge_fred_only_indicators(
         ("GDP", "gdp"),
         ("PCE", "pce"),
         ("JTSJOL", "jolts"),
+        ("DGORDER", "durable_goods"),
+        ("UMCSENT", "consumer_sentiment"),
     ];
 
     for (series_id, indicator) in direct_series {
@@ -750,6 +759,11 @@ mod tests {
             indicator_to_fred_series("industrial_production"),
             Some("INDPRO")
         );
+        assert_eq!(indicator_to_fred_series("durable_goods"), Some("DGORDER"));
+        assert_eq!(
+            indicator_to_fred_series("consumer_sentiment"),
+            Some("UMCSENT")
+        );
         assert_eq!(indicator_to_fred_series("bogus"), None);
     }
 
@@ -781,6 +795,30 @@ mod tests {
         let reason = confidence_reason_for_source("bls", "high");
         assert!(reason.contains("Bureau of Labor Statistics"));
         assert!(reason.contains("authoritative"));
+    }
+
+    #[test]
+    fn confidence_reason_ism_source() {
+        let reason = confidence_reason_for_source("ism", "medium");
+        assert!(reason.contains("ISM"));
+        assert!(reason.contains("targeted"));
+    }
+
+    #[test]
+    fn indicator_metadata_covers_durable_goods_and_sentiment() {
+        let (unit, name) = indicator_metadata("durable_goods");
+        assert_eq!(unit, "millions USD");
+        assert!(name.contains("Durable Goods"));
+
+        let (unit, name) = indicator_metadata("consumer_sentiment");
+        assert_eq!(unit, "index");
+        assert!(name.contains("Consumer Sentiment"));
+    }
+
+    #[test]
+    fn display_name_covers_durable_goods_and_sentiment() {
+        assert_eq!(display_name("durable_goods"), "Durable Goods Orders");
+        assert_eq!(display_name("consumer_sentiment"), "Consumer Sentiment");
     }
 
     #[test]

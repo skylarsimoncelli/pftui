@@ -12,7 +12,7 @@ use crate::analytics::technicals;
 use crate::commands::refresh_dag::{RefreshResult, SourceResult, SourceStatus};
 use crate::config::{Config, PortfolioMode};
 use crate::data::{
-    bls, brave, calendar, comex, cot, economic, fedwatch, fred, fx, onchain, predictions, rss,
+    bls, brave, calendar, comex, cot, economic, fedwatch, fred, fx, ism, onchain, predictions, rss,
     sentiment, worldbank,
 };
 use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocations_backend};
@@ -906,6 +906,20 @@ fn run_pipeline(
             Some((readings, used_brave, start.elapsed()))
         };
 
+        // ISM PMI: dedicated targeted extraction for manufacturing + services PMI
+        let ism_brave_key = brave_key.clone();
+        let ism_fut = async {
+            if !plan.economy || ism_brave_key.is_empty() {
+                return None;
+            }
+            let start = Instant::now();
+            match ism::fetch_ism_pmi(&ism_brave_key).await {
+                Ok(readings) if !readings.is_empty() => Some((Ok(readings), start.elapsed())),
+                Ok(_) => None,
+                Err(_) => None, // ISM is supplementary; silent failure is fine
+            }
+        };
+
         let fred_fut = async {
             if !fred_due {
                 return None;
@@ -971,6 +985,7 @@ fn run_pipeline(
             bls_fut,
             worldbank_fut,
             economy_fut,
+            ism_fut,
             fred_fut,
             rss_fut,
             brave_news_fut,
@@ -985,6 +1000,7 @@ fn run_pipeline(
         bls_data,
         worldbank_data,
         economy_data,
+        ism_data,
         fred_data,
         rss_data,
         brave_news_data,
@@ -1125,6 +1141,9 @@ fn run_pipeline(
         economy_data,
         &mut dag_result,
     );
+
+    // ISM PMI (targeted extraction, supplements economy data)
+    store_ism_result(backend, verbose, plan.economy, ism_data, &mut dag_result);
 
     // FRED
     store_fred_result(
@@ -2458,6 +2477,71 @@ fn store_economy_result(
             error: None,
             detail: None,
         });
+    }
+}
+
+fn store_ism_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    in_plan: bool,
+    data: Option<(Result<Vec<crate::data::economic::EconomicReading>>, Duration)>,
+    dag_result: &mut RefreshResult,
+) {
+    if !in_plan {
+        return;
+    }
+    if let Some((readings_result, elapsed)) = data {
+        match readings_result {
+            Ok(items) if !items.is_empty() => {
+                let now = chrono::Utc::now().to_rfc3339();
+                for item in &items {
+                    let entry = economic_data_db::EconomicDataEntry {
+                        indicator: item.indicator.clone(),
+                        value: item.value,
+                        previous: item.previous,
+                        change: item.change,
+                        source_url: item.source_url.clone(),
+                        source: item.source.name().to_string(),
+                        confidence: item.source.confidence().to_string(),
+                        fetched_at: now.clone(),
+                    };
+                    let _ = economic_data_db::upsert_entry_backend(backend, &entry);
+                }
+                info_ln!(
+                    verbose,
+                    "✓ ISM PMI ({} indicators via targeted extraction)",
+                    items.len()
+                );
+                dag_result.add(SourceResult {
+                    name: "ism_pmi".to_string(),
+                    label: "ISM PMI".to_string(),
+                    status: SourceStatus::Ok,
+                    items_updated: Some(items.len()),
+                    duration_ms: elapsed.as_millis() as u64,
+                    reason: None,
+                    age_minutes: None,
+                    error: None,
+                    detail: None,
+                });
+            }
+            Ok(_) => {
+                info_ln!(verbose, "⊘ ISM PMI (no data extracted)");
+            }
+            Err(e) => {
+                info_ln!(verbose, "✗ ISM PMI (failed: {})", e);
+                dag_result.add(SourceResult {
+                    name: "ism_pmi".to_string(),
+                    label: "ISM PMI".to_string(),
+                    status: SourceStatus::Failed,
+                    items_updated: None,
+                    duration_ms: elapsed.as_millis() as u64,
+                    reason: None,
+                    age_minutes: None,
+                    error: Some(e.to_string()),
+                    detail: None,
+                });
+            }
+        }
     }
 }
 

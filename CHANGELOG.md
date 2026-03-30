@@ -2,6 +2,37 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat: ISM PMI targeted extraction + FRED durable goods & consumer sentiment series
+
+Addresses Medium-Timeframe Analyst feedback (lowest overall scorer at 75%) about stale/low-confidence PMI and GDP data. Two improvements:
+
+**1. ISM PMI dedicated scraper (`src/data/ism.rs`):**
+- New `DataSource::Ism` variant (priority between BLS and Brave, "medium" confidence)
+- Targeted Brave Search queries aimed at ISM press releases (PR Newswire) and financial data aggregators
+- 4 extraction strategies: ISM official "registered XX.X percent" format, title patterns, Actual/Previous financial data format, narrative patterns ("slipped to", "rose to")
+- Previous month value extraction from comparison patterns
+- Plausibility validation (25-80 range)
+- Wired into refresh pipeline as concurrent ISM future alongside economy fetch
+- New `store_ism_result()` stores ISM readings with proper source attribution
+
+**2. New FRED series for GDP freshness proxies:**
+- `DGORDER` (Durable Goods Orders) — monthly, strong GDP leading indicator
+- `UMCSENT` (U Michigan Consumer Sentiment) — monthly, demand/spending proxy
+- Both wired into economy command: `indicator_to_fred_series`, `display_name`, `indicator_metadata`, `merge_fred_only_indicators`
+- Both mapped in `fred_to_indicator` for cross-source reconciliation
+
+**Files changed:**
+- `src/data/ism.rs` — **NEW**: ISM PMI fetcher with 4 extraction strategies, 11 unit tests
+- `src/data/mod.rs` — add `ism` module
+- `src/data/economic.rs` — add `DataSource::Ism` variant, update priority/name/confidence, add `DGORDER`/`UMCSENT` mappings
+- `src/data/fred.rs` — add `DGORDER` and `UMCSENT` series definitions, update doc comment
+- `src/commands/economy.rs` — add display names, metadata, FRED mappings, confidence reason for ISM source, 3 new tests
+- `src/commands/refresh.rs` — add `ism` import, ISM concurrent future, `store_ism_result()` function
+
+**Tests:** 2129 passing (+14 new: 11 ISM extraction tests, 3 economy command tests). Clippy clean.
+
+---
+
 ### 2026-03-30 — feat(F58.4): integrate backtest accuracy into agent routines — F58 COMPLETE
 
 All 4 timeframe analysts and evening-analysis now consume prediction backtest data before making or synthesizing predictions. This closes the self-improvement feedback loop: agents see their own win rates, conviction calibration, asset class strengths, and streaks before each prediction cycle.

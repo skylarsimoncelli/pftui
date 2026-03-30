@@ -16,6 +16,8 @@ pub mod eia;
 pub mod fedwatch;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
 pub mod fred;
+#[allow(dead_code)] // Infrastructure for ISM PMI direct scraping (fresher PMI data)
+pub mod ism;
 pub mod futures;
 pub mod fx;
 #[allow(dead_code)] // Infrastructure for F44 smart macro alerts
