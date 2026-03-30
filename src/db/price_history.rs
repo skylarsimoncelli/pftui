@@ -371,7 +371,7 @@ fn get_history_postgres(pool: &PgPool, symbol: &str, limit: u32) -> Result<Vec<H
     Ok(out)
 }
 
-fn get_price_at_date_postgres(pool: &PgPool, symbol: &str, date: &str) -> Result<Option<Decimal>> {
+pub(crate) fn get_price_at_date_postgres(pool: &PgPool, symbol: &str, date: &str) -> Result<Option<Decimal>> {
     ensure_tables_postgres(pool)?;
     let close: Option<String> = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(

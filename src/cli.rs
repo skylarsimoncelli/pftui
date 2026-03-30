@@ -2972,6 +2972,28 @@ pub enum AnalyticsViewsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Per-analyst accuracy: how often each timeframe's directional calls are correct
+    ///
+    /// Compares historical analyst views against actual price movements.
+    /// Each analyst's calls are evaluated over a timeframe-appropriate window:
+    /// LOW=3 days, MEDIUM=14 days, HIGH=30 days, MACRO=90 days.
+    /// Bull calls that see price rise are correct; bear calls that see price fall are correct.
+    /// Neutral calls are skipped. Only calls whose evaluation window has fully elapsed are scored.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views accuracy --json
+    ///   pftui analytics views accuracy --analyst low --json
+    ///   pftui analytics views accuracy --asset BTC --json
+    Accuracy {
+        /// Filter to a specific analyst layer: low, medium, high, macro
+        #[arg(long)]
+        analyst: Option<String>,
+        /// Filter to a specific asset symbol
+        #[arg(long)]
+        asset: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3150,7 +3172,7 @@ pub enum AnalyticsCommand {
         command: AnalyticsDebateScoreCommand,
     },
     /// Per-analyst, per-asset directional views with conviction scores (F57: Timeframe Analyst Self-Awareness)
-    #[command(after_help = "Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) writes a structured\nview per asset on every run. Views include direction, conviction (-5 to +5),\nreasoning, key evidence, and blind spots.\n\nSubcommands:\n  set              — write/update an analyst's view on an asset\n  list             — list views with optional analyst/asset filters\n  matrix           — full cross-analyst view matrix\n  portfolio-matrix — portfolio-aware matrix with coverage stats\n  history          — view evolution over time for an asset\n  divergence       — surface assets where analysts strongly disagree\n  delete           — remove a view\n\nExamples:\n  pftui analytics views set --analyst low --asset BTC --direction bull \\\n    --conviction 3 --reasoning \"Momentum strong\" --json\n  pftui analytics views list --asset BTC --json\n  pftui analytics views history --asset BTC --json\n  pftui analytics views divergence --json\n  pftui analytics views matrix --json\n\nSee also: analytics alignment, analytics divergence")]
+    #[command(after_help = "Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) writes a structured\nview per asset on every run. Views include direction, conviction (-5 to +5),\nreasoning, key evidence, and blind spots.\n\nSubcommands:\n  set              — write/update an analyst's view on an asset\n  list             — list views with optional analyst/asset filters\n  matrix           — full cross-analyst view matrix\n  portfolio-matrix — portfolio-aware matrix with coverage stats\n  history          — view evolution over time for an asset\n  divergence       — surface assets where analysts strongly disagree\n  accuracy         — per-analyst accuracy against price outcomes\n  delete           — remove a view\n\nExamples:\n  pftui analytics views set --analyst low --asset BTC --direction bull \\\n    --conviction 3 --reasoning \"Momentum strong\" --json\n  pftui analytics views list --asset BTC --json\n  pftui analytics views history --asset BTC --json\n  pftui analytics views divergence --json\n  pftui analytics views accuracy --json\n  pftui analytics views matrix --json\n\nSee also: analytics alignment, analytics divergence")]
     Views {
         #[command(subcommand)]
         command: AnalyticsViewsCommand,
@@ -4653,6 +4675,70 @@ mod tests {
         assert_eq!(min_spread, 2); // default
         assert!(asset.is_none());
         assert!(limit.is_none());
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_accuracy() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "accuracy",
+            "--analyst",
+            "low",
+            "--asset",
+            "BTC",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command:
+                        AnalyticsViewsCommand::Accuracy {
+                            analyst,
+                            asset,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views accuracy command");
+        };
+        assert_eq!(analyst.as_deref(), Some("low"));
+        assert_eq!(asset.as_deref(), Some("BTC"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_accuracy_defaults() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "accuracy",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command:
+                        AnalyticsViewsCommand::Accuracy {
+                            analyst,
+                            asset,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics views accuracy command");
+        };
+        assert!(analyst.is_none());
+        assert!(asset.is_none());
         assert!(json);
     }
 
