@@ -2,6 +2,21 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat(F57.2): analytics views portfolio-matrix — portfolio-aware analyst view coverage
+
+**What:** New `analytics views portfolio-matrix` subcommand completing F57.2 (Timeframe Analyst Self-Awareness). Shows analyst views for ALL held, watched, and viewed assets — not just assets with existing views. Cross-references portfolio positions (from transactions + allocation targets), watchlist symbols, and any assets that already have analyst views. Surfaces coverage gaps where analysts haven't yet written views. JSON output includes coverage statistics (`total_assets`, `total_cells`, `filled_cells`, `coverage_pct`) so agents can track and improve their view coverage over time.
+
+**Commands:**
+- `pftui analytics views portfolio-matrix --json`
+
+**Files changed:**
+- `src/db/analyst_views.rs` — `get_portfolio_view_matrix()` for SQLite + PostgreSQL + backend dispatch
+- `src/commands/analyst_views.rs` — `portfolio_matrix()` command implementation with coverage stats
+- `src/cli.rs` — `PortfolioMatrix` variant in `AnalyticsViewsCommand` + 1 parse test
+- `src/main.rs` — dispatch wiring
+
+**Tests:** 6 new (5 DB + 1 CLI parse). Full suite: 2032 passed, 0 failed. Clippy clean.
+
 ### 2026-03-29 — feat(F57.1): analytics views — structured per-analyst, per-asset directional views
 
 **What:** New `analytics views` CLI domain starting F57 (Timeframe Analyst Self-Awareness). Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) can now write structured views per asset with direction (bull/bear/neutral), conviction score (-5 to +5), reasoning, key evidence, and blind spots. Views are upserted per analyst+asset pair, so the latest view always replaces the previous one. Four subcommands: `set` (upsert a view), `list` (browse with analyst/asset filters), `matrix` (full cross-analyst view matrix — rows=assets, columns=analysts), `delete` (remove a view). New `analyst_views` table (SQLite + PostgreSQL) with unique constraint on (analyst, asset). Validation on analyst names, directions, and conviction range.

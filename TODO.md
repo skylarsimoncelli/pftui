@@ -33,7 +33,7 @@ _(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration
 **Why:** The 4 timeframe analysts (LOW/MEDIUM/HIGH/MACRO) are the architecture. But right now their outputs are opaque text blobs in `agent_messages`. The evening synthesis reads them but there's no structured way to see where each analyst stands on each asset, track how their views evolve over time, or measure which analyst is most accurate at which task. Making the analysts' reasoning structured and queryable makes the whole system smarter.
 **Scope:**
 - [x] F57.1: New table `analyst_views` — analyst (low/medium/high/macro), asset, direction (bull/bear/neutral), conviction (-5 to +5), reasoning_summary, key_evidence, blind_spots, updated_at. Each analyst writes a structured view per asset on every run. *(done: PR #446)*
-- [ ] F57.2: `analytics views --json` — show current view from each analyst for all held/watched assets. Matrix format: rows = assets, columns = analysts, cells = direction + conviction.
+- [x] F57.2: `analytics views portfolio-matrix --json` — portfolio-aware view matrix: all held + watched + viewed assets. Coverage stats in JSON. *(done: PR #450)*
 - [ ] F57.3: `analytics views history --asset <SYM> --json` — how each analyst's view on an asset has evolved over time. Track conviction drift and flip points.
 - [ ] F57.4: `analytics views divergence --json` — surface assets where analysts strongly disagree. LOW says bear -3 but HIGH says bull +4 = the interesting signal. Ranked by divergence magnitude.
 - [ ] F57.5: `analytics views accuracy --json` — per-analyst accuracy. Which timeframe is best at short-term calls? Which catches structural turns? Feed this back into the synthesis layer so evening-analysis knows which analyst to weight more.
@@ -84,7 +84,10 @@ _(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration
 2. ~~**F55.6 completion**~~ — COMPLETE (#437). Morning/evening briefs include calibration section.
 3. ~~**F56: Adversarial Debate Mechanism**~~ — COMPLETE (#436, #442, #444). All 4 sub-items shipped.
 
-**Shipped since last review (Mar 29 → Mar 29b):**
+**Shipped since last review (Mar 29b → Mar 30):**
+1. ✅ F57.2 portfolio-matrix (#450) — `analytics views portfolio-matrix` with coverage stats, cross-references portfolio + watchlist + viewed assets
+
+**Shipped (Mar 29 → Mar 29b):**
 1. ✅ F57.1 analyst views (#446) — `analytics views` CLI with set/list/matrix/delete, `analyst_views` table (SQLite + PostgreSQL), 15 new tests
 
 **Shipped (Mar 28 → Mar 29):**
