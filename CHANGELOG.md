@@ -2,6 +2,23 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat(F57.3): analytics views history — track analyst view evolution over time
+
+**What:** New `analytics views history --asset <SYM> --json` subcommand completing F57.3. Shows how each analyst's view on an asset has evolved over time. New append-only `analyst_view_history` table (SQLite + PostgreSQL) logs every view update. Every `analytics views set` now also records in the history log. JSON output includes `drift_summary` per analyst: conviction drift from first to latest entry, direction flip count, entry count. Enables tracking conviction drift and direction flip points across analyst runs.
+
+**Commands:**
+- `pftui analytics views history --asset BTC --json`
+- `pftui analytics views history --asset GLD --analyst high --json`
+- `pftui analytics views history --asset BTC --limit 20 --json`
+
+**Files changed:**
+- `src/db/analyst_views.rs` — new `analyst_view_history` table (SQLite + PostgreSQL), `AnalystViewHistoryEntry` struct, `get_view_history` + `get_view_history_postgres` + backend dispatch, upsert functions now append to history
+- `src/commands/analyst_views.rs` — `history()` command with JSON drift summary and human-readable table
+- `src/cli.rs` — `History` variant in `AnalyticsViewsCommand` + 2 parse tests, updated after_help
+- `src/main.rs` — dispatch wiring
+
+**Tests:** 12 new (10 DB history + 2 CLI parse). Full suite: 2053 passed, 0 failed. Clippy clean.
+
 ### 2026-03-30 — feat(F57.2): analytics views portfolio-matrix — portfolio-aware analyst view coverage
 
 **What:** New `analytics views portfolio-matrix` subcommand completing F57.2 (Timeframe Analyst Self-Awareness). Shows analyst views for ALL held, watched, and viewed assets — not just assets with existing views. Cross-references portfolio positions (from transactions + allocation targets), watchlist symbols, and any assets that already have analyst views. Surfaces coverage gaps where analysts haven't yet written views. JSON output includes coverage statistics (`total_assets`, `total_cells`, `filled_cells`, `coverage_pct`) so agents can track and improve their view coverage over time.

@@ -34,7 +34,7 @@ _(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration
 **Scope:**
 - [x] F57.1: New table `analyst_views` — analyst (low/medium/high/macro), asset, direction (bull/bear/neutral), conviction (-5 to +5), reasoning_summary, key_evidence, blind_spots, updated_at. Each analyst writes a structured view per asset on every run. *(done: PR #446)*
 - [x] F57.2: `analytics views portfolio-matrix --json` — portfolio-aware view matrix: all held + watched + viewed assets. Coverage stats in JSON. *(done: PR #450)*
-- [ ] F57.3: `analytics views history --asset <SYM> --json` — how each analyst's view on an asset has evolved over time. Track conviction drift and flip points.
+- [x] F57.3: `analytics views history --asset <SYM> --json` — how each analyst's view on an asset has evolved over time. Track conviction drift and flip points. *(done: PR #453)*
 - [ ] F57.4: `analytics views divergence --json` — surface assets where analysts strongly disagree. LOW says bear -3 but HIGH says bull +4 = the interesting signal. Ranked by divergence magnitude.
 - [ ] F57.5: `analytics views accuracy --json` — per-analyst accuracy. Which timeframe is best at short-term calls? Which catches structural turns? Feed this back into the synthesis layer so evening-analysis knows which analyst to weight more.
 - [ ] F57.6: Agent routine integration — each timeframe analyst writes structured views via `analytics views set` after every run. Evening-analysis reads the view matrix before synthesis. Morning-brief includes a one-line divergence summary.
@@ -86,6 +86,7 @@ _(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration
 
 **Shipped since last review (Mar 29b → Mar 30):**
 1. ✅ F57.2 portfolio-matrix (#450) — `analytics views portfolio-matrix` with coverage stats, cross-references portfolio + watchlist + viewed assets
+2. ✅ F57.3 analyst view history (#453) — `analytics views history --asset <SYM>` with conviction drift tracking, direction flip detection, full append-only history log
 
 **Shipped (Mar 29 → Mar 29b):**
 1. ✅ F57.1 analyst views (#446) — `analytics views` CLI with set/list/matrix/delete, `analyst_views` table (SQLite + PostgreSQL), 15 new tests
