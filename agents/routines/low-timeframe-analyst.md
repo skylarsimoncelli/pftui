@@ -187,7 +187,15 @@ pftui journal notes list --limit 5 --json
 pftui journal scenario list --json
 ```
 
-Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how today's predictions account for it.
+Before making new predictions, check your accuracy profile and review lessons:
+
+```bash
+pftui analytics backtest agent --agent low-agent --json   # your accuracy: win rate, streaks, best/worst by conviction and asset class
+```
+
+Are your high-conviction calls more accurate than low-conviction? Which asset classes do you read best? Are you on a streak? Let backtest results calibrate today's conviction levels.
+
+Also review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how today's predictions account for it.
 
 Example prediction format:
 - "[Event/data] causes [effect on asset] today" (confidence: 0.7)

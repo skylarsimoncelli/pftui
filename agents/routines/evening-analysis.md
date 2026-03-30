@@ -47,6 +47,7 @@ pftui analytics divergence --json
 pftui analytics views portfolio-matrix --json
 pftui analytics views divergence --json
 pftui analytics views accuracy --json
+pftui analytics backtest report --json
 pftui analytics recap --date today --json
 pftui analytics medium --json
 pftui analytics high --json
@@ -241,14 +242,16 @@ This is your unique value. No other agent sees all 4 layers simultaneously.
 pftui analytics views portfolio-matrix --json   # all analysts × all held/watched assets
 pftui analytics views divergence --json          # assets where analysts disagree most
 pftui analytics views accuracy --json            # which analyst is most accurate (weight accordingly)
+pftui analytics backtest report --json           # prediction accuracy by conviction, timeframe, asset class, agent
 ```
 
-The portfolio-matrix shows you the full grid: every analyst's direction, conviction (-5 to +5), and reasoning for every asset. The divergence output ranks assets by inter-analyst disagreement magnitude — these are the most analytically interesting assets. The accuracy output tells you which analyst to trust more on which asset class.
+The portfolio-matrix shows you the full grid: every analyst's direction, conviction (-5 to +5), and reasoning for every asset. The divergence output ranks assets by inter-analyst disagreement magnitude — these are the most analytically interesting assets. The accuracy output tells you which analyst to trust more on which asset class. The backtest report adds a harder metric: which agents and conviction levels produce actual profitable predictions when replayed against historical prices.
 
-**Use the views to anchor your synthesis.** For each major asset:
+**Use the views and backtest data to anchor your synthesis.** For each major asset:
 - Read the structured views from `portfolio-matrix` for all 4 analysts
 - Check if the asset appears in `divergence` output (high disagreement = needs deeper analysis)
-- Weight each analyst's view by their `accuracy` score for that asset class
+- Weight each analyst's view by their `accuracy` score AND `backtest` win rate for that asset class
+- If an analyst has a strong view but poor backtest performance in that asset class, note the tension
 - Then cross-reference with the raw digest messages for nuance the structured views don't capture
 
 For each major asset (BTC, gold, silver, oil, equities, DXY, cash):

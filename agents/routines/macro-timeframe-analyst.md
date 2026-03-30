@@ -256,6 +256,25 @@ pftui analytics views set --analyst macro --asset GLD \
 
 Do NOT skip this step. The MACRO views provide the deepest constraint layer — when macro says bull +5 on gold but low says bear -1, the evening analyst needs to understand whether the short-term view is noise or a genuine structural counterargument.
 
+## Prediction Backtesting (Weekly Self-Review)
+
+Before making new predictions, run the backtest suite to understand your track record:
+
+```bash
+pftui analytics backtest agent --agent macro-agent --json   # your personal accuracy profile
+pftui analytics backtest report --json                       # system-wide accuracy by conviction, timeframe, asset class, agent
+pftui journal prediction lessons --json                      # structured lessons from past misses
+```
+
+Analyze your backtest profile:
+- **Win rate by conviction level:** Are your high-conviction calls actually more accurate? If not, you're miscalibrating conviction.
+- **Win rate by asset class:** Which markets do you read best (gold? BTC? equities?)? Which do you consistently misread? Lean into strengths, add caveats to weak areas.
+- **Streaks:** Are you on a losing streak? If so, reduce conviction on new predictions until the streak breaks. On a winning streak? Don't let it breed overconfidence — check if you're in a regime that flatters your framework.
+- **Best/worst trades:** What was your best call? What made it work? What was your worst? What structural signal did you miss?
+- **Cross-agent comparison:** How do you rank vs LOW/MEDIUM/HIGH agents? The system-wide report shows which timeframe is most reliable — if macro is lagging, identify why.
+
+Use these insights to calibrate this cycle's predictions. State explicitly: "My backtest shows [X pattern], so this cycle I am [adjusting Y]."
+
 ## Predictions
 
 Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how this cycle's predictions account for it.
