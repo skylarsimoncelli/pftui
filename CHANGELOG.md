@@ -2,6 +2,24 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat(F57.4): analytics views divergence — surface analyst disagreements
+
+**What:** New `analytics views divergence` subcommand completing F57.4 (Timeframe Analyst Self-Awareness). Surfaces assets where analysts strongly disagree, ranked by conviction spread between most-bullish and most-bearish views. A spread of 7 (LOW bear -3 vs HIGH bull +4) surfaces the interesting cross-timeframe signal. Supports `--min-spread` (default 2), `--asset` filter, and `--limit`. JSON output includes divergences array with full view context, count, and filter metadata. Enables evening-analysis to spot and discuss the most contentious assets.
+
+**Commands:**
+- `pftui analytics views divergence --json`
+- `pftui analytics views divergence --min-spread 3 --json`
+- `pftui analytics views divergence --asset BTC --json`
+- `pftui analytics views divergence --limit 5 --json`
+
+**Files changed:**
+- `src/db/analyst_views.rs` — `ViewDivergence` struct, `compute_divergence` for SQLite + PostgreSQL, `divergences_from_matrix` shared logic, `compute_divergence_backend` dispatch
+- `src/commands/analyst_views.rs` — `divergence()` command with JSON + human-readable output
+- `src/cli.rs` — `Divergence` variant in `AnalyticsViewsCommand` + 2 parse tests, updated after_help
+- `src/main.rs` — dispatch wiring
+
+**Tests:** 10 new (8 DB divergence + 2 CLI parse). Full suite: 2054 passed, 0 failed. Clippy clean.
+
 ### 2026-03-30 — feat(F57.3): analytics views history — track analyst view evolution over time
 
 **What:** New `analytics views history --asset <SYM> --json` subcommand completing F57.3. Shows how each analyst's view on an asset has evolved over time. New append-only `analyst_view_history` table (SQLite + PostgreSQL) logs every view update. Every `analytics views set` now also records in the history log. JSON output includes `drift_summary` per analyst: conviction drift from first to latest entry, direction flip count, entry count. Enables tracking conviction drift and direction flip points across analyst runs.
