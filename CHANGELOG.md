@@ -2,6 +2,36 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat(F58.1): analytics backtest predictions — replay scored predictions against historical prices
+
+New subcommand: `pftui analytics backtest predictions [--symbol SYM] [--agent NAME] [--timeframe TF] [--conviction LEVEL] [--limit N] [--json]`
+
+Replays all scored predictions (correct/partial/wrong) against historical price data to compute theoretical P&L. For each scored prediction with a symbol:
+- Looks up the entry price (closest available date on or before the prediction creation date)
+- Looks up the exit price (closest available date on or before the target_date, falling back to scored_at)
+- Computes percentage price change and conviction-weighted theoretical P&L
+
+Conviction weights on a $10,000 notional portfolio:
+- **high** = 10% ($1,000 position)
+- **medium** = 5% ($500 position)
+- **low** = 2% ($200 position)
+
+P&L scoring: correct predictions earn +|return|, wrong predictions lose -|return|, partial predictions earn +0.5*|return|.
+
+JSON output includes full methodology documentation, per-entry price data, and summary statistics (total P&L, win rate, best/worst trades, data coverage).
+
+Filters: `--symbol`, `--agent`, `--timeframe`, `--conviction`, `--limit`.
+
+This is the first sub-item of F58 (Prediction Accuracy Backtesting), which closes the self-improvement feedback loop by answering: "If I had followed the system's high-conviction calls, what would my returns be?"
+
+**Files changed:**
+- `src/commands/backtest.rs` — new module: `run_predictions()`, `BacktestEntry`/`BacktestSummary` structs, price lookup, P&L computation, JSON + table output
+- `src/commands/mod.rs` — register `backtest` module
+- `src/cli.rs` — `AnalyticsCommand::Backtest` variant, `AnalyticsBacktestCommand::Predictions` subcommand with filters, 3 CLI parse tests
+- `src/main.rs` — dispatch `Backtest { Predictions { .. } }` to `commands::backtest::run_predictions`
+
+**Tests added:** 14 new (11 unit tests: empty backtest, correct/wrong/partial predictions with prices, no-symbol skip, symbol filtering, scored_at fallback, conviction weights, date extraction, symbol alias resolution, summary computation; 3 CLI parse tests: json flag, filters, no-json). Full suite: 2095 passed, 0 failed. Clippy clean.
+
 ### 2026-03-30 — feat(F57.6): agent routine integration for analyst views
 
 Completes F57 (Timeframe Analyst Self-Awareness) by integrating the structured analyst views system into all agent routines:

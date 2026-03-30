@@ -3992,6 +3992,24 @@ fn main() -> Result<()> {
             cli::AnalyticsCommand::RegimeTransitions { json } => {
                 commands::regime_transitions::run(&backend, json)
             }
+            cli::AnalyticsCommand::Backtest { command } => match command {
+                cli::AnalyticsBacktestCommand::Predictions {
+                    symbol,
+                    agent,
+                    timeframe,
+                    conviction,
+                    limit,
+                    json,
+                } => commands::backtest::run_predictions(
+                    &backend,
+                    symbol.as_deref(),
+                    agent.as_deref(),
+                    timeframe.as_deref(),
+                    conviction.as_deref(),
+                    limit,
+                    json,
+                ),
+            },
         },
     };
 

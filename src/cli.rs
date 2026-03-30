@@ -3454,6 +3454,37 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Prediction backtesting: replay scored predictions against historical prices to compute theoretical P&L
+    #[command(after_help = "Replays all scored predictions against historical price data.\nFor each: entry price at prediction date, exit price at target/scored date,\ntheoretical P&L based on conviction-weighted position sizing.\n\nConviction weights on $10,000 notional:\n  high = 10% ($1,000 position)\n  medium = 5% ($500 position)\n  low = 2% ($200 position)\n\nExamples:\n  pftui analytics backtest predictions --json\n  pftui analytics backtest predictions --symbol BTC-USD --json\n  pftui analytics backtest predictions --agent low-timeframe --json\n  pftui analytics backtest predictions --conviction high --json\n\nSee also: journal prediction scorecard, analytics views accuracy")]
+    Backtest {
+        #[command(subcommand)]
+        command: AnalyticsBacktestCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsBacktestCommand {
+    /// Replay scored predictions against historical prices for theoretical P&L
+    Predictions {
+        /// Filter by symbol (e.g. BTC-USD, GC=F)
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Filter by source agent (e.g. low-timeframe, high-timeframe)
+        #[arg(long)]
+        agent: Option<String>,
+        /// Filter by timeframe (low, medium, high, macro)
+        #[arg(long)]
+        timeframe: Option<String>,
+        /// Filter by conviction level (high, medium, low)
+        #[arg(long)]
+        conviction: Option<String>,
+        /// Maximum number of predictions to include
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -6869,6 +6900,84 @@ mod tests {
         let AnalyticsCommand::RegimeTransitions { json } = command else {
             panic!("expected RegimeTransitions");
         };
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_backtest_predictions_json() {
+        let cli =
+            Cli::parse_from(["pftui", "analytics", "backtest", "predictions", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Backtest { command } = command else {
+            panic!("expected Backtest");
+        };
+        let AnalyticsBacktestCommand::Predictions {
+            symbol,
+            agent,
+            timeframe,
+            conviction,
+            limit,
+            json,
+        } = command;
+        assert!(json);
+        assert!(symbol.is_none());
+        assert!(agent.is_none());
+        assert!(timeframe.is_none());
+        assert!(conviction.is_none());
+        assert!(limit.is_none());
+    }
+
+    #[test]
+    fn parse_analytics_backtest_predictions_with_filters() {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "backtest",
+            "predictions",
+            "--symbol",
+            "BTC-USD",
+            "--agent",
+            "low-timeframe",
+            "--conviction",
+            "high",
+            "--limit",
+            "10",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Backtest { command } = command else {
+            panic!("expected Backtest");
+        };
+        let AnalyticsBacktestCommand::Predictions {
+            symbol,
+            agent,
+            timeframe,
+            conviction,
+            limit,
+            json,
+        } = command;
+        assert!(json);
+        assert_eq!(symbol.as_deref(), Some("BTC-USD"));
+        assert_eq!(agent.as_deref(), Some("low-timeframe"));
+        assert_eq!(conviction.as_deref(), Some("high"));
+        assert_eq!(limit, Some(10));
+        assert!(timeframe.is_none());
+    }
+
+    #[test]
+    fn parse_analytics_backtest_predictions_no_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "backtest", "predictions"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Backtest { command } = command else {
+            panic!("expected Backtest");
+        };
+        let AnalyticsBacktestCommand::Predictions { json, .. } = command;
         assert!(!json);
     }
 
