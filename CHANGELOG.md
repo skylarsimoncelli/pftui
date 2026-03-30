@@ -2,6 +2,32 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-30 — feat(F58.3): analytics backtest agent — per-agent accuracy breakdown
+
+New subcommand: `pftui analytics backtest agent --agent <name> [--json]`
+
+Produces a detailed accuracy profile for a specific agent, answering: "Which timeframe analyst produces the best predictions?"
+
+Includes:
+- **Summary stats**: win rate, total P&L, avg P&L, Sharpe equivalent (per-trade)
+- **Streak tracking**: current streak, longest win/loss streaks
+- **Agent ranking**: rank among all agents by win rate (≥3 decided trades for significance)
+- **Best/worst trades**: individual trade details with claim, symbol, P&L, date
+- **Breakdowns**: by conviction level, timeframe, asset class, and per-symbol
+- **Graceful empty state**: lists available agents when requested agent has no scored predictions
+- **Case-insensitive matching**: `--agent low-timeframe` matches `Low-Timeframe`
+
+Both human-readable table and `--json` output for agent consumption.
+
+**Files changed:**
+- `src/commands/backtest.rs` — `run_agent()`, `AgentProfile`, `AgentTrade`, `compute_streaks()`, `trade_to_json()`, `print_agent_json()`, `print_agent_table()`, 8 new unit tests
+- `src/cli.rs` — `AnalyticsBacktestCommand::Agent` variant with after_help, 2 CLI parse tests
+- `src/main.rs` — wire `Agent` subcommand dispatch
+
+**Tests:** 2115 passing (+10 new: agent empty, agent JSON output, agent table output, agent case-insensitive, compute streaks all wins, compute streaks mixed, compute streaks empty, agent ranking, 2 CLI parse tests). Clippy clean. CI 4/4 green.
+
+---
+
 ### 2026-03-30 — feat(F58.2): analytics backtest report — aggregate prediction accuracy by conviction, timeframe, asset class, and agent
 
 New subcommand: `pftui analytics backtest report [--json]`
