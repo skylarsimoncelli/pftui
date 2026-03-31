@@ -274,7 +274,63 @@ pub fn run(
             }
         }
 
-        _ => bail!("unknown action '{}'. Valid: add, list, update, remove, promote, signal-add, signal-list, signal-update, signal-remove, history", action),
+        "timeline" => {
+            let timelines = scenarios::get_all_timelines_backend(backend, limit.map(|l| l as u32))?;
+
+            if json_output {
+                // Compute period bounds
+                let mut min_date: Option<String> = None;
+                let mut max_date: Option<String> = None;
+                for t in &timelines {
+                    for pt in &t.data_points {
+                        if min_date.as_ref().is_none_or(|d| pt.date < *d) {
+                            min_date = Some(pt.date.clone());
+                        }
+                        if max_date.as_ref().is_none_or(|d| pt.date > *d) {
+                            max_date = Some(pt.date.clone());
+                        }
+                    }
+                }
+                let period = json!({
+                    "from": min_date,
+                    "to": max_date,
+                });
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({
+                        "timeline": {
+                            "scenarios": timelines,
+                            "period": period,
+                        }
+                    }))?
+                );
+            } else if timelines.is_empty() {
+                println!("No active scenarios with history.");
+            } else {
+                println!("Scenario Probability Timeline");
+                println!("{}", "=".repeat(60));
+                for t in &timelines {
+                    let change_str = match t.change {
+                        Some(c) if c > 0.0 => format!(" (+{:.1}pp)", c),
+                        Some(c) if c < 0.0 => format!(" ({:.1}pp)", c),
+                        _ => String::new(),
+                    };
+                    println!(
+                        "\n  {} — current: {:.1}%{}",
+                        t.name, t.current_probability, change_str
+                    );
+                    if t.data_points.is_empty() {
+                        println!("    (no history)");
+                    } else {
+                        for pt in &t.data_points {
+                            println!("    {}  {:.1}%", pt.date, pt.probability);
+                        }
+                    }
+                }
+            }
+        }
+
+        _ => bail!("unknown action '{}'. Valid: add, list, update, remove, promote, signal-add, signal-list, signal-update, signal-remove, history, timeline", action),
     }
 
     Ok(())

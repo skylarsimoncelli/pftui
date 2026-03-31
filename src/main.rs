@@ -526,6 +526,26 @@ fn run_agent_journal(
                 None,
                 json,
             ),
+            cli::JournalScenarioCommand::Timeline { days, json } => commands::scenario::run(
+                backend,
+                "timeline",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                days.map(|d| d as usize),
+                json,
+            ),
             cli::JournalScenarioCommand::Signal { command } => match command {
                 cli::JournalScenarioSignalCommand::Add {
                     value,
@@ -3901,6 +3921,28 @@ fn main() -> Result<()> {
                 }
                 cli::AnalyticsScenarioCommand::ImpactMatrix { json } => {
                     commands::impact_matrix::run(&backend, &config, json)
+                }
+                cli::AnalyticsScenarioCommand::Timeline { days, json } => {
+                    commands::scenario::run(
+                        &backend,
+                        "timeline",
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        days.map(|d| d as usize),
+                        json,
+                    )
                 }
             },
             cli::AnalyticsCommand::Conviction { command } => match command {

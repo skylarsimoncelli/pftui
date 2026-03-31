@@ -1959,6 +1959,15 @@ pub enum JournalScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Probability timeline: all active scenarios' probability evolution over time
+    Timeline {
+        /// Lookback window in days (default: all history)
+        #[arg(long)]
+        days: Option<u32>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2822,6 +2831,18 @@ pub enum AnalyticsScenarioCommand {
         after_help = "Runs every active scenario (using defined impacts) AND all built-in\nstress presets through the portfolio, producing a ranked matrix of\noutcomes sorted by impact severity (worst to best).\n\nScenario impacts use direction+tier assumptions (15/8/4% for\nprimary/secondary/tertiary). Presets use fixed historical-analog shocks.\nExpected P&L is probability-weighted across active scenarios only.\n\nDesigned for agent consumption — one JSON call returns the complete\nrisk landscape.\n\nSee also: analytics impact-estimate, portfolio stress-test,\n          analytics scenario list, analytics scenario suggest"
     )]
     ImpactMatrix {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Probability timeline: all active scenarios' probability evolution over time
+    #[command(
+        after_help = "Shows how each active scenario's probability has evolved over time,\nwith daily-deduplicated data points and net change.\n\nDesigned for agent consumption — one JSON call returns the complete\nprobability landscape across all scenarios.\n\nUse --days to limit the lookback window.\n\nExample:\n  pftui analytics scenario timeline --days 14 --json\n\nSee also: analytics scenario history, analytics scenario list"
+    )]
+    Timeline {
+        /// Lookback window in days (default: all history)
+        #[arg(long)]
+        days: Option<u32>,
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -5108,6 +5129,57 @@ mod tests {
         assert_eq!(value, "Hard Landing");
         assert_eq!(limit, Some(10));
         assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_timeline() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "timeline",
+            "--days",
+            "14",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command: AnalyticsScenarioCommand::Timeline { days, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario timeline command");
+        };
+
+        assert_eq!(days, Some(14));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_timeline_no_args() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "timeline",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command: AnalyticsScenarioCommand::Timeline { days, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario timeline command");
+        };
+
+        assert_eq!(days, None);
+        assert!(!json);
     }
 
     #[test]
