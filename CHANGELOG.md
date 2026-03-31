@@ -2,6 +2,20 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-31 — fix: deduplicate triggered alerts in portfolio brief
+
+Groups repeated triggered alerts by symbol in the markdown `portfolio brief` output. When multiple triggered alerts share the same symbol (e.g. scan alerts oscillating between thresholds), shows only the most recent one with a count annotation ("+N more") instead of listing every individual alert.
+
+**Before:** 22 lines of `big-losers` scan alert spam (5→4, 4→5, 5→4...)
+**After:** 1 line: `Scan 'big-losers' result count changed: 5 -> 4 (current: N/A) (+21 more)`
+
+Shared `render_alerts_markdown()` replaces duplicated logic in `print_alerts()` and `print_alerts_backend()`.
+
+**Files changed:**
+- `src/commands/brief.rs` — new `render_alerts_markdown()` shared helper, refactored `print_alerts()` and `print_alerts_backend()` to use it, 6 new dedup tests
+
+**Tests:** 2209 pass (+6 new: dedup grouping, distinct symbol separation, single alert no suffix, empty results, armed alerts not deduped, armed beyond threshold excluded), clippy clean.
+
 ### 2026-03-31 — feat: `analytics guidance` — routine workflow priority advisor
 
 New `analytics guidance` command — a single-call routine priority advisor for agent workflows. Answers "what should I focus on right now?" by aggregating pending actions into one prioritized payload.
