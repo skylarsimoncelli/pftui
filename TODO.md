@@ -14,7 +14,7 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **Historical regime transition data** — Macro-Timeframe Analyst (80/85 Mar 29) wants historical regime transition data to track past crisis periods. `analytics macro regime transitions` exists but may need richer historical context. Verify current coverage and add date-range filtering or summary stats if missing. See `src/commands/regime.rs`, `src/commands/regime_transitions.rs`.
+- [x] [Feedback] **Historical regime transition data** — Macro-Timeframe Analyst (80/85 Mar 29) wants historical regime transition data to track past crisis periods. Added `--from`/`--to` date-range filtering to `history` and `transitions` subcommands, plus new `summary` subcommand with per-regime stats and transition pair analysis. *(done: PR #486)*
 
 ### F57: Timeframe Analyst Self-Awareness
 **Source:** Competitive research insight: the best multi-agent systems make their reasoning transparent and trackable.

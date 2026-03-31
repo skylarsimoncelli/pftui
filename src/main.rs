@@ -2790,7 +2790,9 @@ fn main() -> Result<()> {
                 ),
                 Some(cli::AnalyticsMacroCommand::Regime { command }) => match command {
                     cli::AnalyticsMacroRegimeCommand::Current { json } => {
-                        commands::regime::run(&backend, "current", None, json)
+                        commands::regime::run(
+                            &backend, "current", None, None, None, json,
+                        )
                     }
                     cli::AnalyticsMacroRegimeCommand::Set {
                         regime,
@@ -2804,11 +2806,41 @@ fn main() -> Result<()> {
                         drivers.as_deref(),
                         json,
                     ),
-                    cli::AnalyticsMacroRegimeCommand::History { limit, json } => {
-                        commands::regime::run(&backend, "history", limit, json)
-                    }
-                    cli::AnalyticsMacroRegimeCommand::Transitions { limit, json } => {
-                        commands::regime::run(&backend, "transitions", limit, json)
+                    cli::AnalyticsMacroRegimeCommand::History {
+                        limit,
+                        from,
+                        to,
+                        json,
+                    } => commands::regime::run(
+                        &backend,
+                        "history",
+                        limit,
+                        from.as_deref(),
+                        to.as_deref(),
+                        json,
+                    ),
+                    cli::AnalyticsMacroRegimeCommand::Transitions {
+                        limit,
+                        from,
+                        to,
+                        json,
+                    } => commands::regime::run(
+                        &backend,
+                        "transitions",
+                        limit,
+                        from.as_deref(),
+                        to.as_deref(),
+                        json,
+                    ),
+                    cli::AnalyticsMacroRegimeCommand::Summary { from, to, json } => {
+                        commands::regime::run(
+                            &backend,
+                            "summary",
+                            None,
+                            from.as_deref(),
+                            to.as_deref(),
+                            json,
+                        )
                     }
                 },
             },

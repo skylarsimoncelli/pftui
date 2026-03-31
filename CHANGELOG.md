@@ -2,6 +2,39 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-31 — feat: regime history date-range filtering + summary statistics
+
+Addresses Macro-Timeframe Analyst feedback (80/85 Mar 29) requesting historical regime transition data to track past crisis periods. The existing `analytics macro regime history` and `transitions` commands only supported `--limit`. Now they support full date-range queries and a new `summary` subcommand provides aggregate statistics.
+
+**1. `--from` / `--to` date filters on `history` and `transitions`:**
+- `analytics macro regime history --from 2026-03-25 --to 2026-03-30 --json`
+- `analytics macro regime transitions --from 2026-03-20 --json`
+- Works with both SQLite and PostgreSQL backends
+- Combinable with existing `--limit` flag
+
+**2. New `analytics macro regime summary` subcommand:**
+- Per-regime breakdown: snapshot count, percentage of total time, average confidence, first/last seen dates
+- Transition pair analysis: counts per from→to pair, last occurrence
+- Date range metadata: from/to dates, total days covered
+- Full `--json` output for agent consumption
+- `--from` / `--to` filters for period-specific analysis (e.g. "show me regime stats for the last crisis week")
+
+**Agent consumption examples:**
+```
+pftui analytics macro regime summary --json                      # All-time stats
+pftui analytics macro regime summary --from 2026-03-25 --json    # Crisis week only
+pftui analytics macro regime history --from 2026-03-01 --to 2026-03-15 --json
+pftui analytics macro regime transitions --from 2026-03-20 --limit 10 --json
+```
+
+**Files changed:**
+- `src/cli.rs` — add `--from`/`--to` args to History and Transitions variants, add Summary variant; 3 new CLI parse tests
+- `src/db/regime_snapshots.rs` — add `get_history_filtered()` and `get_history_filtered_postgres()` with WHERE clause construction, `get_history_filtered_backend()`, `get_transitions_filtered_backend()`
+- `src/commands/regime.rs` — update `run()` signature for from/to params, add `run_summary()` with `RegimeSummary`, `RegimeStats`, `TransitionPair`, `DateRange` structs; 9 new unit tests
+- `src/main.rs` — wire new CLI variants to updated `run()` calls including Summary dispatch
+
+**Tests:** 2142 pass (+12 new), clippy clean.
+
 ### 2026-03-31 — feat: FRED GDPNow + Real GDP Growth Rate series for fresher GDP data
 
 Addresses Medium-Timeframe Analyst feedback about stale GDP data (181 days old, conf=low). The raw GDP series is quarterly and lags significantly. This adds two supplementary GDP series that provide much fresher reads:

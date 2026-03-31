@@ -2390,6 +2390,12 @@ pub enum AnalyticsMacroRegimeCommand {
     History {
         #[arg(long)]
         limit: Option<usize>,
+        /// Filter: only show snapshots on or after this date (YYYY-MM-DD)
+        #[arg(long)]
+        from: Option<String>,
+        /// Filter: only show snapshots on or before this date (YYYY-MM-DD)
+        #[arg(long)]
+        to: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -2397,6 +2403,23 @@ pub enum AnalyticsMacroRegimeCommand {
     Transitions {
         #[arg(long)]
         limit: Option<usize>,
+        /// Filter: only show transitions on or after this date (YYYY-MM-DD)
+        #[arg(long)]
+        from: Option<String>,
+        /// Filter: only show transitions on or before this date (YYYY-MM-DD)
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Summary statistics: time spent in each regime, transition counts, durations
+    Summary {
+        /// Filter: only include snapshots on or after this date (YYYY-MM-DD)
+        #[arg(long)]
+        from: Option<String>,
+        /// Filter: only include snapshots on or before this date (YYYY-MM-DD)
+        #[arg(long)]
+        to: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -5310,6 +5333,130 @@ mod tests {
         assert_eq!(regime, "risk-off");
         assert_eq!(confidence, Some(0.8));
         assert_eq!(drivers.as_deref(), Some("manual override"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_regime_history_with_date_filters() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "regime",
+            "history",
+            "--from",
+            "2026-03-20",
+            "--to",
+            "2026-03-30",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Regime {
+                            command:
+                                AnalyticsMacroRegimeCommand::History {
+                                    limit,
+                                    from,
+                                    to,
+                                    json,
+                                },
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro regime history command");
+        };
+
+        assert!(limit.is_none());
+        assert_eq!(from.as_deref(), Some("2026-03-20"));
+        assert_eq!(to.as_deref(), Some("2026-03-30"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_regime_transitions_with_date_filters() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "regime",
+            "transitions",
+            "--from",
+            "2026-03-15",
+            "--limit",
+            "10",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Regime {
+                            command:
+                                AnalyticsMacroRegimeCommand::Transitions {
+                                    limit,
+                                    from,
+                                    to,
+                                    json,
+                                },
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro regime transitions command");
+        };
+
+        assert_eq!(limit, Some(10));
+        assert_eq!(from.as_deref(), Some("2026-03-15"));
+        assert!(to.is_none());
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_regime_summary() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "regime",
+            "summary",
+            "--from",
+            "2026-03-01",
+            "--to",
+            "2026-03-31",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Regime {
+                            command:
+                                AnalyticsMacroRegimeCommand::Summary {
+                                    from,
+                                    to,
+                                    json,
+                                },
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro regime summary command");
+        };
+
+        assert_eq!(from.as_deref(), Some("2026-03-01"));
+        assert_eq!(to.as_deref(), Some("2026-03-31"));
         assert!(json);
     }
 
