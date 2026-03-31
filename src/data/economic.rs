@@ -1,4 +1,5 @@
 use anyhow::Result;
+use regex::Regex;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
@@ -313,12 +314,67 @@ fn reading(indicator: &str, value: Decimal) -> EconomicReading {
 fn extract_value(indicator: &str, text: &str) -> Option<Decimal> {
     let raw = match indicator {
         "nfp" | "initial_jobless_claims" => extract_integer_like(text),
+        // PMI needs context-aware extraction — generic extract_decimal_like picks
+        // up stray numbers (dates, ranks) that happen to fall in the 25-80 range.
+        "pmi_manufacturing" | "pmi_services" => extract_pmi_contextual(text),
         _ => extract_percent_like(text).or_else(|| extract_decimal_like(text)),
     };
 
     // Validate extracted values against reasonable bounds to reject garbage.
     // These ranges are deliberately wide to avoid false negatives.
     raw.filter(|v| is_plausible(indicator, *v))
+}
+
+/// Extract PMI value using context-aware patterns rather than matching any
+/// decimal in the text. This prevents stray numbers (dates like "March 30",
+/// result ranks, etc.) from being extracted as PMI values.
+///
+/// Looks for numbers near PMI-related keywords: "PMI", "Actual", "registered",
+/// "percent", "index", or movement verbs like "rose to", "fell to".
+fn extract_pmi_contextual(text: &str) -> Option<Decimal> {
+    // Pattern group: PMI number formats (2-digit, optional 1-2 decimal places)
+    let num_pat = r"\d{2}(?:\.\d{1,2})?";
+
+    // Strategy 1: "PMI ... registered/at XX.X [percent/%]"
+    let pmi_re = Regex::new(&format!(
+        r"(?i)PMI[®]?\s+(?:registered|at)\s+({num_pat})\s*(?:percent|%)?"
+    ))
+    .ok()?;
+    if let Some(caps) = pmi_re.captures(text) {
+        return Decimal::from_str(caps.get(1)?.as_str()).ok();
+    }
+
+    // Strategy 2: "Actual52.4" or "Actual: 52.4" (financial data sites)
+    let actual_re = Regex::new(&format!(r"(?i)Actual[:\s]*({num_pat})")).ok()?;
+    if let Some(caps) = actual_re.captures(text) {
+        return Decimal::from_str(caps.get(1)?.as_str()).ok();
+    }
+
+    // Strategy 3: Movement verbs "fell to 49", "rose to 52.4"
+    let verb_re = Regex::new(&format!(
+        r"(?i)(?:slipped|rose|fell|increased|decreased|came\s+in|expanded|contracted)\s+to\s+({num_pat})"
+    ))
+    .ok()?;
+    if let Some(caps) = verb_re.captures(text) {
+        return Decimal::from_str(caps.get(1)?.as_str()).ok();
+    }
+
+    // Strategy 4: "XX.X percent" or "XX.X%" near any text (still contextual —
+    // requires the "percent" or "%" suffix, unlike extract_decimal_like)
+    let pct_re = Regex::new(&format!(r"({num_pat})\s*(?:percent|%)")).ok()?;
+    if let Some(caps) = pct_re.captures(text) {
+        return Decimal::from_str(caps.get(1)?.as_str()).ok();
+    }
+
+    // Strategy 5: "index ... XX.X" (within 30 chars of "index")
+    let index_re = Regex::new(&format!(r"(?i)index.{{0,30}}({num_pat})")).ok()?;
+    if let Some(caps) = index_re.captures(text) {
+        return Decimal::from_str(caps.get(1)?.as_str()).ok();
+    }
+
+    // Do NOT fall through to extract_decimal_like — that's what caused the
+    // original discrepancy (picking up "30" from a date or other stray number).
+    None
 }
 
 /// Reject obviously implausible values that result from naive text extraction
@@ -711,5 +767,75 @@ mod tests {
     fn brave_rejects_garbage_pmi() {
         // "2.5" should now be rejected by the tighter PMI bounds (25-80)
         assert!(extract_value("pmi_manufacturing", "ISM PMI index 2.5% decline").is_none());
+    }
+
+    // ─── PMI contextual extraction tests ───
+
+    #[test]
+    fn pmi_contextual_extracts_registered_format() {
+        let text = "The Manufacturing PMI® registered 49.1 percent in March";
+        assert_eq!(extract_pmi_contextual(text), Some(dec!(49.1)));
+    }
+
+    #[test]
+    fn pmi_contextual_extracts_at_format() {
+        let text = "ISM Manufacturing PMI at 52.4%";
+        assert_eq!(extract_pmi_contextual(text), Some(dec!(52.4)));
+    }
+
+    #[test]
+    fn pmi_contextual_extracts_actual_format() {
+        let text = "Actual49.2 Forecast51.2 Previous50.3";
+        assert_eq!(extract_pmi_contextual(text), Some(dec!(49.2)));
+    }
+
+    #[test]
+    fn pmi_contextual_extracts_verb_format() {
+        let text = "ISM manufacturing PMI fell to 49 in March from 50.3 in February";
+        assert_eq!(extract_pmi_contextual(text), Some(dec!(49)));
+    }
+
+    #[test]
+    fn pmi_contextual_extracts_percent_suffix() {
+        let text = "the index came in at 48.7 percent, down from last month";
+        assert_eq!(extract_pmi_contextual(text), Some(dec!(48.7)));
+    }
+
+    #[test]
+    fn pmi_contextual_extracts_index_context() {
+        let text = "The manufacturing index slowed to 49.2 in the latest reading";
+        // "index" followed within 30 chars by the number
+        assert_eq!(extract_pmi_contextual(text), Some(dec!(49.2)));
+    }
+
+    #[test]
+    fn pmi_contextual_rejects_stray_date() {
+        // "March 30" should NOT be extracted — no PMI context words near it
+        let text = "Published March 30 by Reuters economic desk analysis";
+        assert!(extract_pmi_contextual(text).is_none());
+    }
+
+    #[test]
+    fn pmi_contextual_rejects_year() {
+        let text = "ISM PMI fell in 2025 outlook uncertain";
+        // 2025 is 4 digits, not 2 — the num pattern \d{2} won't match it
+        assert!(extract_pmi_contextual(text).is_none());
+    }
+
+    #[test]
+    fn pmi_contextual_extracts_round_integer() {
+        let text = "ISM Manufacturing PMI® at 50%";
+        assert_eq!(extract_pmi_contextual(text), Some(dec!(50)));
+    }
+
+    #[test]
+    fn pmi_extract_value_uses_contextual() {
+        // This was the original bug: "30" from a date being extracted as PMI
+        let text = "Latest data from March 30: ISM outlook remains uncertain";
+        assert!(extract_value("pmi_manufacturing", text).is_none());
+
+        // But contextual extraction works when PMI keywords are present
+        let text2 = "ISM Manufacturing PMI® registered 49.1 percent on March 30";
+        assert_eq!(extract_value("pmi_manufacturing", text2), Some(dec!(49.1)));
     }
 }
