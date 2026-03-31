@@ -26,6 +26,7 @@ pub fn run(
     mechanism: Option<&str>,
     impact_timeframe: Option<&str>,
     limit: Option<usize>,
+    verbose: bool,
     json_output: bool,
 ) -> Result<()> {
     match action {
@@ -50,29 +51,128 @@ pub fn run(
             let trends_list = trends::list_trends_backend(backend, status, category)?;
 
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "trends": trends_list }))?);
+                let mut enriched = Vec::new();
+                for t in &trends_list {
+                    let evidence_list = trends::list_evidence_backend(backend, t.id, None).unwrap_or_default();
+                    let impacts = trends::list_asset_impacts_backend(backend, t.id).unwrap_or_default();
+                    let evidence_count = evidence_list.len();
+                    let latest_evidence = evidence_list.first().map(|e| e.date.clone());
+                    let recent_evidence: Vec<_> = evidence_list.into_iter().take(3).collect();
+
+                    let bullish: Vec<_> = impacts.iter().filter(|i| i.impact == "bullish").map(|i| i.symbol.as_str()).collect();
+                    let bearish: Vec<_> = impacts.iter().filter(|i| i.impact == "bearish").map(|i| i.symbol.as_str()).collect();
+
+                    enriched.push(json!({
+                        "trend": t,
+                        "evidence_count": evidence_count,
+                        "latest_evidence_date": latest_evidence,
+                        "recent_evidence": recent_evidence,
+                        "asset_impacts": {
+                            "bullish": bullish,
+                            "bearish": bearish,
+                            "total": impacts.len(),
+                        },
+                    }));
+                }
+                println!("{}", serde_json::to_string_pretty(&json!({ "trends": enriched }))?);
             } else {
                 if trends_list.is_empty() {
                     println!("No trends found.");
                     return Ok(());
                 }
 
-                println!(
-                    "{:<40} {:<10} {:<12} {:<10} {:<12} {:<10}",
-                    "Name", "Timeframe", "Direction", "Conviction", "Category", "Status"
-                );
-                println!("{}", "─".repeat(100));
+                if verbose {
+                    // Enriched output with evidence and asset impacts inline
+                    for (i, t) in trends_list.iter().enumerate() {
+                        if i > 0 {
+                            println!();
+                        }
+                        let direction_symbol = match t.direction.as_str() {
+                            "accelerating" => "▲",
+                            "stable" => "→",
+                            "decelerating" => "▽",
+                            "reversing" => "◀",
+                            _ => "•",
+                        };
 
-                for t in trends_list {
+                        println!(
+                            "{} {} [{}/{}] — {} ({})",
+                            direction_symbol,
+                            t.name,
+                            t.timeframe,
+                            t.category.as_deref().unwrap_or("—"),
+                            t.direction.to_uppercase(),
+                            t.conviction
+                        );
+
+                        if let Some(desc) = &t.description {
+                            println!("  {}", desc);
+                        }
+
+                        if let Some(sig) = &t.key_signal {
+                            println!("  Key signal: {}", sig);
+                        }
+
+                        let evidence_list = trends::list_evidence_backend(backend, t.id, Some(3)).unwrap_or_default();
+                        if !evidence_list.is_empty() {
+                            println!("  Evidence ({} total):", trends::count_evidence_backend(backend, t.id).unwrap_or(evidence_list.len()));
+                            for e in evidence_list {
+                                let impact_mark = match e.direction_impact.as_deref() {
+                                    Some("strengthens") => "↑",
+                                    Some("weakens") => "↓",
+                                    _ => "•",
+                                };
+                                println!("    {} [{}] {}", impact_mark, e.date, truncate(&e.evidence, 60));
+                            }
+                        }
+
+                        let impacts = trends::list_asset_impacts_backend(backend, t.id).unwrap_or_default();
+                        if !impacts.is_empty() {
+                            let bullish: Vec<_> = impacts.iter().filter(|i| i.impact == "bullish").map(|i| i.symbol.as_str()).collect();
+                            let bearish: Vec<_> = impacts.iter().filter(|i| i.impact == "bearish").map(|i| i.symbol.as_str()).collect();
+
+                            if !bullish.is_empty() {
+                                println!("  Bullish: {}", bullish.join(", "));
+                            }
+                            if !bearish.is_empty() {
+                                println!("  Bearish: {}", bearish.join(", "));
+                            }
+                        }
+                    }
+                } else {
+                    // Compact table with evidence summary columns
                     println!(
-                        "{:<40} {:<10} {:<12} {:<10} {:<12} {:<10}",
-                        truncate(&t.name, 38),
-                        t.timeframe,
-                        t.direction,
-                        t.conviction,
-                        t.category.as_deref().unwrap_or("—"),
-                        t.status
+                        "{:<36} {:<8} {:<12} {:<10} {:<10} {:<8} {:<12} Impacts",
+                        "Name", "TF", "Direction", "Conviction", "Category", "Evid#", "Last Evid"
                     );
+                    println!("{}", "─".repeat(110));
+
+                    for t in &trends_list {
+                        let evidence_count = trends::count_evidence_backend(backend, t.id).unwrap_or(0);
+                        let evidence_list = trends::list_evidence_backend(backend, t.id, Some(1)).unwrap_or_default();
+                        let latest_date = evidence_list.first().map(|e| e.date.as_str()).unwrap_or("—");
+
+                        let impacts = trends::list_asset_impacts_backend(backend, t.id).unwrap_or_default();
+                        let impact_summary = if impacts.is_empty() {
+                            "—".to_string()
+                        } else {
+                            let bullish_count = impacts.iter().filter(|i| i.impact == "bullish").count();
+                            let bearish_count = impacts.iter().filter(|i| i.impact == "bearish").count();
+                            format!("↑{} ↓{}", bullish_count, bearish_count)
+                        };
+
+                        println!(
+                            "{:<36} {:<8} {:<12} {:<10} {:<10} {:<8} {:<12} {}",
+                            truncate(&t.name, 34),
+                            t.timeframe,
+                            t.direction,
+                            t.conviction,
+                            t.category.as_deref().unwrap_or("—"),
+                            evidence_count,
+                            latest_date,
+                            impact_summary
+                        );
+                    }
                 }
             }
             Ok(())

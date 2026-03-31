@@ -2272,6 +2272,9 @@ pub enum AnalyticsTrendsCommand {
         status: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Include recent evidence and asset impacts inline (enriched output for faster synthesis)
+        #[arg(long)]
+        verbose: bool,
         #[arg(long)]
         json: bool,
     },
@@ -7878,5 +7881,39 @@ mod tests {
         assert!(!list_scenarios);
         assert!(json);
         assert_eq!(scenario, Some("2008 GFC".to_string()));
+    }
+
+    #[test]
+    fn parse_analytics_trends_list_verbose() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "analytics", "trends", "list", "--verbose", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Trends { command } = command else {
+            panic!("expected trends");
+        };
+        let AnalyticsTrendsCommand::List { verbose, json, .. } = command else {
+            panic!("expected list");
+        };
+        assert!(verbose);
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_analytics_trends_list_no_verbose() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "analytics", "trends", "list", "--timeframe", "high"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Trends { command } = command else {
+            panic!("expected trends");
+        };
+        let AnalyticsTrendsCommand::List { verbose, timeframe, .. } = command else {
+            panic!("expected list");
+        };
+        assert!(!verbose);
+        assert_eq!(timeframe.as_deref(), Some("high"));
+        Ok(())
     }
 }

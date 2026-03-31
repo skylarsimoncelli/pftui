@@ -561,6 +561,38 @@ pub fn list_evidence_backend(
     )
 }
 
+fn count_evidence(conn: &Connection, trend_id: i64) -> Result<usize> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM trend_evidence WHERE trend_id = ?",
+        params![trend_id],
+        |row| row.get(0),
+    )?;
+    Ok(count as usize)
+}
+
+fn count_evidence_postgres(pool: &PgPool, trend_id: i64) -> Result<usize> {
+    crate::db::pg_runtime::block_on(async {
+        let row = sqlx::query("SELECT COUNT(*) FROM trend_evidence WHERE trend_id = $1")
+            .bind(trend_id)
+            .fetch_one(pool)
+            .await?;
+        let count: i64 = row.get(0);
+        Ok::<usize, sqlx::Error>(count as usize)
+    })
+    .map_err(Into::into)
+}
+
+pub fn count_evidence_backend(
+    backend: &BackendConnection,
+    trend_id: i64,
+) -> Result<usize> {
+    query::dispatch(
+        backend,
+        |conn| count_evidence(conn, trend_id),
+        |pool| count_evidence_postgres(pool, trend_id),
+    )
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 // Trend asset impact CRUD
 // ───────────────────────────────────────────────────────────────────────────────
@@ -862,4 +894,60 @@ pub fn list_all_impacts_backend(
     backend: &BackendConnection,
 ) -> Result<Vec<(Trend, TrendAssetImpact)>> {
     query::dispatch(backend, list_all_impacts, list_all_impacts_postgres)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema;
+
+    fn setup_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        schema::run_migrations(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn count_evidence_empty() {
+        let conn = setup_db();
+        let trend_id = add_trend(&conn, "Test Trend", "high", "stable", "medium", None, None, None, None).unwrap();
+        assert_eq!(count_evidence(&conn, trend_id).unwrap(), 0);
+    }
+
+    #[test]
+    fn count_evidence_multiple() {
+        let conn = setup_db();
+        let trend_id = add_trend(&conn, "Test Trend", "high", "stable", "medium", None, None, None, None).unwrap();
+        add_evidence(&conn, trend_id, "2026-03-01", "First evidence", None, None).unwrap();
+        add_evidence(&conn, trend_id, "2026-03-02", "Second evidence", Some("strengthens"), None).unwrap();
+        add_evidence(&conn, trend_id, "2026-03-03", "Third evidence", Some("weakens"), Some("Reuters")).unwrap();
+        assert_eq!(count_evidence(&conn, trend_id).unwrap(), 3);
+    }
+
+    #[test]
+    fn count_evidence_different_trends_isolated() {
+        let conn = setup_db();
+        let t1 = add_trend(&conn, "Trend A", "high", "stable", "medium", None, None, None, None).unwrap();
+        let t2 = add_trend(&conn, "Trend B", "low", "accelerating", "high", None, None, None, None).unwrap();
+        add_evidence(&conn, t1, "2026-03-01", "Evidence for A", None, None).unwrap();
+        add_evidence(&conn, t1, "2026-03-02", "More evidence for A", None, None).unwrap();
+        add_evidence(&conn, t2, "2026-03-01", "Evidence for B", None, None).unwrap();
+        assert_eq!(count_evidence(&conn, t1).unwrap(), 2);
+        assert_eq!(count_evidence(&conn, t2).unwrap(), 1);
+    }
+
+    #[test]
+    fn list_evidence_respects_limit() {
+        let conn = setup_db();
+        let trend_id = add_trend(&conn, "Test Trend", "high", "stable", "medium", None, None, None, None).unwrap();
+        add_evidence(&conn, trend_id, "2026-03-01", "First", None, None).unwrap();
+        add_evidence(&conn, trend_id, "2026-03-02", "Second", None, None).unwrap();
+        add_evidence(&conn, trend_id, "2026-03-03", "Third", None, None).unwrap();
+        let all = list_evidence(&conn, trend_id, None).unwrap();
+        assert_eq!(all.len(), 3);
+        let limited = list_evidence(&conn, trend_id, Some(1)).unwrap();
+        assert_eq!(limited.len(), 1);
+        // Most recent first (ORDER BY date DESC)
+        assert_eq!(limited[0].evidence, "Third");
+    }
 }
