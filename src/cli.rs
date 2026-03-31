@@ -3487,6 +3487,13 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Routine workflow guidance: prioritized action items, pending predictions, triggered alerts, stale convictions, scenario shifts
+    #[command(after_help = "Single-call routine priority advisor for agents. Answers\n\"what should I focus on right now?\" by aggregating:\n\n  - Triggered alerts needing acknowledgment\n  - Pending predictions past target date needing scoring\n  - Stale convictions (7+ days without update)\n  - Recently-updated scenarios (last 24h)\n\nAction items are ranked by urgency (critical > high > medium > low)\nwith suggested CLI commands for each.\n\nDesigned for agent routines that need a single entry point\nto determine workflow priorities.\n\nSee also: analytics alerts triage, analytics morning-brief")]
+    Guidance {
+        /// Output as JSON for agent/script consumption (recommended)
+        #[arg(long)]
+        json: bool,
+    },
     /// Regime-asset flow correlation: cross-references regime state with asset class flows to detect power structure patterns
     #[command(name = "regime-flows", after_help = "Cross-references the current market regime with asset class flows to detect\npower structure patterns automatically. Monitors key ratios (gold/oil,\ncopper/gold, BTC/gold), safe-haven vs risk flows, energy complex signals,\nand defense sector tracking.\n\nDetects patterns: safe-haven rotation, geopolitical stress, inflationary pulse,\nrisk-on breakout, deflationary signal, dollar wrecking ball, energy crisis,\nand regime divergence.\n\nSee also: analytics macro regime, analytics correlations, analytics movers themes")]
     RegimeFlows {
@@ -7100,6 +7107,30 @@ mod tests {
         };
         let AnalyticsCommand::EveningBrief { json } = command else {
             panic!("expected EveningBrief");
+        };
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_guidance_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "guidance", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Guidance { json } = command else {
+            panic!("expected Guidance");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_guidance_no_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "guidance"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Guidance { json } = command else {
+            panic!("expected Guidance");
         };
         assert!(!json);
     }

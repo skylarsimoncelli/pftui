@@ -4072,6 +4072,9 @@ fn main() -> Result<()> {
             cli::AnalyticsCommand::EveningBrief { json } => {
                 commands::evening_brief::run(&backend, json)
             }
+            cli::AnalyticsCommand::Guidance { json } => {
+                commands::guidance::run(&backend, json)
+            }
             cli::AnalyticsCommand::RegimeFlows { json } => {
                 commands::regime_flows::run(&backend, json)
             }
