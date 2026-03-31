@@ -2,6 +2,16 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-31 — feat: `scripts/deploy.sh` — atomic deploy script
+
+New deploy script that eliminates "text file busy" errors during binary deployment. Uses atomic rename (cp to temp + mv) instead of direct `cp` over the running binary. Includes build, atomic install, service restart, and health verification. Supports `--skip-build` and `--dry-run` flags. Updates dev-agent routine Step 8 to use the script.
+
+**Files changed:**
+- `scripts/deploy.sh` — new file (atomic deploy script)
+- `agents/routines/dev-agent.md` — updated Step 8 to use deploy script
+
+**Tests:** 2176 pass (no change — scripts-only), clippy clean.
+
 ### 2026-03-31 — feat: `analytics power-flow conflicts` — FIC/MIC conflict monitor
 
 New `analytics power-flow conflicts` subcommand that cross-references defense sector ETFs with energy and VIX to produce a geopolitical conflict assessment. Addresses Medium-Timeframe Analyst feedback (85/88 Mar 31) requesting FIC/MIC power balance indicators for conflicts.
