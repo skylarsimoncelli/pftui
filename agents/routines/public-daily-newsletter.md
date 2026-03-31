@@ -407,5 +407,5 @@ git push origin master
 - **Challenge the consensus.** If all signals point one direction, build the opposing case with equal rigour.
 - **Cross-asset interdependencies are essential.** Show how themes connect, not just list them.
 - **Include the disclaimer** at the bottom.
-- **Maximum 25 minutes for the full run.** Steps 1-3 (ingest + research + write): 15 min. Step 4 (fact-check): 5 min. Steps 5-7 (PDF + commit + feedback): 5 min. If you run out of time, cut the report short, NOT the fact-check. A shorter accurate report beats a longer inaccurate one.
+- **Maximum 60 minutes for the full run.** Steps 1-3 (ingest + research + write): 35 min. Step 4 (fact-check): 15 min. Steps 5-7 (PDF + commit + feedback): 10 min. If you run out of time, cut the report short, NOT the fact-check. A shorter accurate report beats a longer inaccurate one.
 - **🔴 Steps 4 and 7 are NOT optional.** If you skip the fact-check or the FEEDBACK.csv entry, the run is a failure regardless of report quality. These steps exist because previous reports published CPI at 7.0% (actual: 2.4%) and GBP/USD at 1.152 (actual: 1.326). That cannot happen again.
