@@ -552,20 +552,34 @@ python3 /root/pftui/agents/intelligence-report/gen-report.py \
   "$(date +'%B %d, %Y')"
 ```
 
-### Step 3: Send to Telegram
+### Step 3: Deliver to Telegram
 
-Send the PDF to Skylar using the message tool:
+**Primary delivery (best-effort):** Try to send the PDF via the message tool:
 ```
 message(action="send", channel="telegram", target="8214825211",
         filePath="/root/.openclaw/workspace-finance/briefs/evening-$(date +%Y-%m-%d).pdf",
         caption="📊 Evening Analysis — $(date +'%a %b %d')")
 ```
 
-### Step 4: Reply with brief summary
+If this fails, do NOT treat the run as failed. The PDF is saved locally and can be sent later.
 
-After sending the PDF, your final reply (which gets announced via OpenClaw) should be a 2-3 sentence summary. Example: "Evening analysis delivered. Key finding: [one sentence]. Regime: [status]." This serves as the notification text. The PDF has the full analysis.
+### Step 4: Final reply (THIS IS YOUR DELIVERY FALLBACK)
 
-**IMPORTANT:** Do NOT reply with NO_REPLY. Your final reply IS the Telegram notification.
+Your final reply gets announced to Telegram via OpenClaw. This is your guaranteed delivery
+mechanism. Write a substantive summary that gives Skylar the key intelligence even without
+the PDF.
+
+Include:
+- Regime assessment (1 sentence)
+- Key cross-timeframe finding
+- Portfolio implication (approaching entry levels, conviction changes)
+- Prediction system health (trending up/down, lesson count)
+- What changed today vs yesterday
+- Top analyst disagreement
+
+This way, even if the PDF send fails, Skylar gets the evening intelligence.
+
+**IMPORTANT:** Do NOT reply with NO_REPLY. Your final reply IS the Telegram message.
 
 ## After Analysis
 
