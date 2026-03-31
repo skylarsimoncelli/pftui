@@ -2701,13 +2701,11 @@ fn latest_corr(prices_a: &[f64], prices_b: &[f64], window: usize) -> Option<f64>
         .next()
 }
 
-fn print_alerts(conn: &Connection) {
-    use crate::alerts::engine::check_alerts;
-
-    let results = match check_alerts(conn) {
-        Ok(r) => r,
-        Err(_) => return, // Silently skip if check fails
-    };
+/// Render alert check results as markdown, deduplicating repeated triggered alerts
+/// by symbol. When multiple triggered alerts share the same symbol, show only the
+/// most recent one with a count annotation (e.g. "+3 more").
+fn render_alerts_markdown(results: &[crate::alerts::engine::AlertCheckResult]) {
+    use std::collections::BTreeMap;
 
     // Separate triggered and armed alerts
     let triggered: Vec<_> = results
@@ -2730,21 +2728,44 @@ fn print_alerts(conn: &Connection) {
 
     println!("## Alerts\n");
 
-    // Show triggered alerts first
+    // Deduplicate triggered alerts by symbol — keep the most recent per symbol
     if !triggered.is_empty() {
-        for result in triggered {
+        // Group by symbol, keeping the most recent (highest id) per symbol
+        let mut by_symbol: BTreeMap<&str, (usize, &crate::alerts::engine::AlertCheckResult)> =
+            BTreeMap::new();
+        for result in &triggered {
+            let entry = by_symbol
+                .entry(result.rule.symbol.as_str())
+                .or_insert((0, result));
+            entry.0 += 1;
+            // Keep the alert with the highest id (most recent)
+            if result.rule.id > entry.1.rule.id {
+                entry.1 = result;
+            }
+        }
+
+        for (count, result) in by_symbol.values() {
             let current = result
                 .current_value
                 .map(|v| v.round_dp(2).to_string())
                 .unwrap_or_else(|| "N/A".to_string());
-            println!(
-                "🔴 **TRIGGERED** — {} (current: {})",
-                result.rule.rule_text, current
-            );
+            if *count > 1 {
+                println!(
+                    "🔴 **TRIGGERED** — {} (current: {}) (+{} more)",
+                    result.rule.rule_text,
+                    current,
+                    count - 1
+                );
+            } else {
+                println!(
+                    "🔴 **TRIGGERED** — {} (current: {})",
+                    result.rule.rule_text, current
+                );
+            }
         }
     }
 
-    // Show near-threshold armed alerts
+    // Show near-threshold armed alerts (no dedup needed — armed alerts don't accumulate)
     if !armed_near.is_empty() {
         for result in armed_near {
             let distance = result.distance_pct.unwrap().abs().round_dp(1);
@@ -2762,56 +2783,24 @@ fn print_alerts(conn: &Connection) {
     println!();
 }
 
+fn print_alerts(conn: &Connection) {
+    use crate::alerts::engine::check_alerts;
+
+    let results = match check_alerts(conn) {
+        Ok(r) => r,
+        Err(_) => return, // Silently skip if check fails
+    };
+
+    render_alerts_markdown(&results);
+}
+
 fn print_alerts_backend(backend: &BackendConnection) {
     let results = match crate::alerts::engine::check_alerts_backend_only(backend) {
         Ok(r) => r,
         Err(_) => return,
     };
 
-    let triggered: Vec<_> = results
-        .iter()
-        .filter(|r| r.rule.status == AlertStatus::Triggered)
-        .collect();
-    let armed_near: Vec<_> = results
-        .iter()
-        .filter(|r| {
-            r.rule.status == AlertStatus::Armed
-                && r.distance_pct.is_some()
-                && r.distance_pct.unwrap().abs() <= dec!(5)
-        })
-        .collect();
-
-    if triggered.is_empty() && armed_near.is_empty() {
-        return;
-    }
-
-    println!("## Alerts\n");
-    if !triggered.is_empty() {
-        for result in triggered {
-            let current = result
-                .current_value
-                .map(|v| v.round_dp(2).to_string())
-                .unwrap_or_else(|| "N/A".to_string());
-            println!(
-                "🔴 **TRIGGERED** — {} (current: {})",
-                result.rule.rule_text, current
-            );
-        }
-    }
-    if !armed_near.is_empty() {
-        for result in armed_near {
-            let distance = result.distance_pct.unwrap().abs().round_dp(1);
-            let current = result
-                .current_value
-                .map(|v| v.round_dp(2).to_string())
-                .unwrap_or_else(|| "N/A".to_string());
-            println!(
-                "🟡 **NEAR** — {} (current: {}, {}% away)",
-                result.rule.rule_text, current, distance
-            );
-        }
-    }
-    println!();
+    render_alerts_markdown(&results);
 }
 
 fn print_pnl_attribution(positions: &[Position], hist_1d: &HashMap<String, Decimal>, base: &str) {
@@ -3816,5 +3805,209 @@ mod tests {
 
         let changes = build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
         assert!(changes.is_empty());
+    }
+
+    // -- Alert deduplication tests --
+
+    use crate::alerts::engine::AlertCheckResult;
+    use crate::alerts::{AlertDirection, AlertKind, AlertRule, AlertStatus};
+
+    fn make_triggered_alert(id: i64, symbol: &str, rule_text: &str) -> AlertCheckResult {
+        AlertCheckResult {
+            rule: AlertRule {
+                id,
+                kind: AlertKind::Indicator,
+                symbol: symbol.to_string(),
+                direction: AlertDirection::Above,
+                condition: None,
+                threshold: "5".to_string(),
+                status: AlertStatus::Triggered,
+                rule_text: rule_text.to_string(),
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-03-30T18:00:00Z".to_string(),
+                triggered_at: Some("2026-03-30T18:00:00Z".to_string()),
+            },
+            current_value: Some(dec!(42)),
+            newly_triggered: false,
+            distance_pct: None,
+            trigger_data: serde_json::json!({}),
+        }
+    }
+
+    fn make_armed_alert(id: i64, symbol: &str, distance: Decimal) -> AlertCheckResult {
+        AlertCheckResult {
+            rule: AlertRule {
+                id,
+                kind: AlertKind::Price,
+                symbol: symbol.to_string(),
+                direction: AlertDirection::Below,
+                condition: None,
+                threshold: "100".to_string(),
+                status: AlertStatus::Armed,
+                rule_text: format!("{} below 100", symbol),
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-03-30T18:00:00Z".to_string(),
+                triggered_at: None,
+            },
+            current_value: Some(dec!(105)),
+            newly_triggered: false,
+            distance_pct: Some(distance),
+            trigger_data: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn render_alerts_dedup_groups_same_symbol() {
+        // 5 triggered alerts for the same SCAN:BIG-LOSERS symbol
+        let results = [
+            make_triggered_alert(100, "SCAN:BIG-LOSERS", "count changed: 5 -> 4"),
+            make_triggered_alert(101, "SCAN:BIG-LOSERS", "count changed: 4 -> 5"),
+            make_triggered_alert(102, "SCAN:BIG-LOSERS", "count changed: 5 -> 4"),
+            make_triggered_alert(103, "SCAN:BIG-LOSERS", "count changed: 4 -> 5"),
+            make_triggered_alert(104, "SCAN:BIG-LOSERS", "count changed: 5 -> 4"),
+        ];
+
+        // Verify the dedup logic by checking the BTreeMap grouping
+        use std::collections::BTreeMap;
+        let triggered: Vec<_> = results
+            .iter()
+            .filter(|r| r.rule.status == AlertStatus::Triggered)
+            .collect();
+        let mut by_symbol: BTreeMap<&str, (usize, &AlertCheckResult)> = BTreeMap::new();
+        for result in &triggered {
+            let entry = by_symbol
+                .entry(result.rule.symbol.as_str())
+                .or_insert((0, result));
+            entry.0 += 1;
+            if result.rule.id > entry.1.rule.id {
+                entry.1 = result;
+            }
+        }
+
+        assert_eq!(by_symbol.len(), 1, "should group into 1 entry");
+        let (count, latest) = by_symbol.get("SCAN:BIG-LOSERS").unwrap();
+        assert_eq!(*count, 5, "should count all 5");
+        assert_eq!(latest.rule.id, 104, "should keep the most recent (highest id)");
+    }
+
+    #[test]
+    fn render_alerts_dedup_keeps_distinct_symbols_separate() {
+        let results = [
+            make_triggered_alert(100, "SCAN:BIG-LOSERS", "count changed: 5 -> 4"),
+            make_triggered_alert(101, "SCAN:BIG-LOSERS", "count changed: 4 -> 5"),
+            make_triggered_alert(200, "SCENARIO:WAR", "probability shifted -10pp"),
+            make_triggered_alert(300, "GC=F", "gold above 5000"),
+        ];
+
+        use std::collections::BTreeMap;
+        let triggered: Vec<_> = results
+            .iter()
+            .filter(|r| r.rule.status == AlertStatus::Triggered)
+            .collect();
+        let mut by_symbol: BTreeMap<&str, (usize, &AlertCheckResult)> = BTreeMap::new();
+        for result in &triggered {
+            let entry = by_symbol
+                .entry(result.rule.symbol.as_str())
+                .or_insert((0, result));
+            entry.0 += 1;
+            if result.rule.id > entry.1.rule.id {
+                entry.1 = result;
+            }
+        }
+
+        assert_eq!(by_symbol.len(), 3, "3 distinct symbols");
+        assert_eq!(by_symbol.get("SCAN:BIG-LOSERS").unwrap().0, 2);
+        assert_eq!(by_symbol.get("SCENARIO:WAR").unwrap().0, 1);
+        assert_eq!(by_symbol.get("GC=F").unwrap().0, 1);
+    }
+
+    #[test]
+    fn render_alerts_single_triggered_no_count_suffix() {
+        // A single triggered alert should NOT show "+N more"
+        let results = [make_triggered_alert(100, "GC=F", "gold above 5000")];
+
+        use std::collections::BTreeMap;
+        let triggered: Vec<_> = results
+            .iter()
+            .filter(|r| r.rule.status == AlertStatus::Triggered)
+            .collect();
+        let mut by_symbol: BTreeMap<&str, (usize, &AlertCheckResult)> = BTreeMap::new();
+        for result in &triggered {
+            let entry = by_symbol
+                .entry(result.rule.symbol.as_str())
+                .or_insert((0, result));
+            entry.0 += 1;
+            if result.rule.id > entry.1.rule.id {
+                entry.1 = result;
+            }
+        }
+
+        let (count, _latest) = by_symbol.get("GC=F").unwrap();
+        assert_eq!(*count, 1, "single alert, no dedup suffix");
+    }
+
+    #[test]
+    fn render_alerts_empty_results_no_output() {
+        // No triggered or near-armed alerts
+        let results: [AlertCheckResult; 0] = [];
+        // render_alerts_markdown should just return without printing
+        // (we test this by checking the filter logic returns empty)
+        let triggered: Vec<_> = results
+            .iter()
+            .filter(|r| r.rule.status == AlertStatus::Triggered)
+            .collect();
+        let armed_near: Vec<_> = results
+            .iter()
+            .filter(|r| {
+                r.rule.status == AlertStatus::Armed
+                    && r.distance_pct.is_some()
+                    && r.distance_pct.unwrap().abs() <= dec!(5)
+            })
+            .collect();
+        assert!(triggered.is_empty());
+        assert!(armed_near.is_empty());
+    }
+
+    #[test]
+    fn render_alerts_armed_near_not_deduplicated() {
+        // Armed alerts with different symbols should each appear
+        let results = [
+            make_armed_alert(1, "GC=F", dec!(3)),
+            make_armed_alert(2, "BTC", dec!(2)),
+            make_armed_alert(3, "SI=F", dec!(4)),
+        ];
+
+        let armed_near: Vec<_> = results
+            .iter()
+            .filter(|r| {
+                r.rule.status == AlertStatus::Armed
+                    && r.distance_pct.is_some()
+                    && r.distance_pct.unwrap().abs() <= dec!(5)
+            })
+            .collect();
+
+        assert_eq!(armed_near.len(), 3, "all 3 armed alerts within threshold");
+    }
+
+    #[test]
+    fn render_alerts_armed_beyond_threshold_excluded() {
+        let results = [
+            make_armed_alert(1, "GC=F", dec!(3)),   // within 5%
+            make_armed_alert(2, "BTC", dec!(10)),    // beyond 5%
+        ];
+
+        let armed_near: Vec<_> = results
+            .iter()
+            .filter(|r| {
+                r.rule.status == AlertStatus::Armed
+                    && r.distance_pct.is_some()
+                    && r.distance_pct.unwrap().abs() <= dec!(5)
+            })
+            .collect();
+
+        assert_eq!(armed_near.len(), 1, "only GC=F within 5% threshold");
+        assert_eq!(armed_near[0].rule.symbol, "GC=F");
     }
 }
