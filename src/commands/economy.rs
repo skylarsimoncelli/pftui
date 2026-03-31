@@ -399,7 +399,8 @@ fn fred_previous_for_indicator(
 
     match fred_series {
         // Direct-value series: previous is the second-most-recent observation
-        "FEDFUNDS" | "UNRATE" | "ICSA" | "DGS10" | "T10Y2Y" | "GDP" | "PCE" | "JTSJOL" => {
+        "FEDFUNDS" | "UNRATE" | "ICSA" | "DGS10" | "T10Y2Y" | "GDP" | "GDPNOW"
+        | "A191RL1Q225SBEA" | "PCE" | "JTSJOL" => {
             let history = economic_cache::get_history_backend(backend, fred_series, 3).ok()?;
             if history.len() < 2 {
                 return None;
@@ -472,6 +473,8 @@ fn indicator_to_fred_series(indicator: &str) -> Option<&'static str> {
         "treasury_10y" => Some("DGS10"),
         "yield_spread_10y2y" => Some("T10Y2Y"),
         "gdp" => Some("GDP"),
+        "gdp_nowcast" => Some("GDPNOW"),
+        "gdp_growth_rate" => Some("A191RL1Q225SBEA"),
         "pce" => Some("PCE"),
         "jolts" => Some("JTSJOL"),
         "retail_sales" => Some("RSAFS"),
@@ -599,6 +602,8 @@ fn display_name(indicator: &str) -> &str {
         "treasury_10y" => "10Y Treasury Yield",
         "yield_spread_10y2y" => "10Y-2Y Yield Spread",
         "gdp" => "GDP",
+        "gdp_nowcast" => "GDP Nowcast (Atlanta Fed)",
+        "gdp_growth_rate" => "Real GDP Growth Rate",
         "pce" => "PCE",
         "jolts" => "JOLTS Job Openings",
         "retail_sales" => "Retail Sales",
@@ -622,6 +627,8 @@ fn indicator_metadata(indicator: &str) -> (&str, &str) {
         "initial_jobless_claims" => ("claims", "Initial Jobless Claims"),
         "ppi" => ("% YoY", "PPI (Producer Prices)"),
         "gdp" => ("billions USD", "Gross Domestic Product"),
+        "gdp_nowcast" => ("% annualized", "GDP Nowcast (Atlanta Fed GDPNow)"),
+        "gdp_growth_rate" => ("% annualized", "Real GDP Growth Rate (QoQ)"),
         "pce" => ("billions USD", "Personal Consumption Expenditures"),
         "jolts" => ("thousands", "JOLTS Job Openings"),
         "treasury_10y" => ("%", "10-Year Treasury Yield"),
@@ -659,6 +666,8 @@ fn merge_fred_only_indicators(
         ("DGS10", "treasury_10y"),
         ("T10Y2Y", "yield_spread_10y2y"),
         ("GDP", "gdp"),
+        ("GDPNOW", "gdp_nowcast"),
+        ("A191RL1Q225SBEA", "gdp_growth_rate"),
         ("PCE", "pce"),
         ("JTSJOL", "jolts"),
         ("DGORDER", "durable_goods"),
@@ -752,6 +761,11 @@ mod tests {
             Some("T10Y2Y")
         );
         assert_eq!(indicator_to_fred_series("gdp"), Some("GDP"));
+        assert_eq!(indicator_to_fred_series("gdp_nowcast"), Some("GDPNOW"));
+        assert_eq!(
+            indicator_to_fred_series("gdp_growth_rate"),
+            Some("A191RL1Q225SBEA")
+        );
         assert_eq!(indicator_to_fred_series("pce"), Some("PCE"));
         assert_eq!(indicator_to_fred_series("jolts"), Some("JTSJOL"));
         assert_eq!(indicator_to_fred_series("retail_sales"), Some("RSAFS"));
@@ -839,8 +853,21 @@ mod tests {
         assert_eq!(display_name("treasury_10y"), "10Y Treasury Yield");
         assert_eq!(display_name("yield_spread_10y2y"), "10Y-2Y Yield Spread");
         assert_eq!(display_name("gdp"), "GDP");
+        assert_eq!(display_name("gdp_nowcast"), "GDP Nowcast (Atlanta Fed)");
+        assert_eq!(display_name("gdp_growth_rate"), "Real GDP Growth Rate");
         assert_eq!(display_name("pce"), "PCE");
         assert_eq!(display_name("jolts"), "JOLTS Job Openings");
+    }
+
+    #[test]
+    fn indicator_metadata_covers_gdp_nowcast_and_growth() {
+        let (unit, name) = indicator_metadata("gdp_nowcast");
+        assert_eq!(unit, "% annualized");
+        assert!(name.contains("GDPNow"));
+
+        let (unit, name) = indicator_metadata("gdp_growth_rate");
+        assert_eq!(unit, "% annualized");
+        assert!(name.contains("GDP Growth"));
     }
 
     #[test]

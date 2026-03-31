@@ -2,6 +2,35 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-31 — feat: FRED GDPNow + Real GDP Growth Rate series for fresher GDP data
+
+Addresses Medium-Timeframe Analyst feedback about stale GDP data (181 days old, conf=low). The raw GDP series is quarterly and lags significantly. This adds two supplementary GDP series that provide much fresher reads:
+
+**1. `GDPNOW` — Atlanta Fed GDPNow real-time GDP estimate:**
+- Updated multiple times per quarter as new data releases (effectively weekly)
+- Shows current-quarter GDP growth estimate in % annualized
+- Agents now get a real-time GDP signal instead of waiting for the quarterly release
+- Registered as weekly frequency so staleness detection uses a 10-day window
+
+**2. `A191RL1Q225SBEA` — Real GDP Growth Rate (% change, QoQ annualized):**
+- Official BEA GDP growth rate from FRED — the actual number agents/analysts care about
+- Quarterly but more useful than raw GDP level (billions USD) for macro analysis
+- Previous/change tracking from FRED history for trend analysis
+
+Both new indicators flow through the full economy pipeline:
+- FRED fetch + cache on refresh
+- Economy command output with proper display names, units, and metadata
+- JSON output with confidence scoring and confidence reasons
+- Previous/change enrichment from FRED history
+- Cross-source discrepancy detection
+
+**Files changed:**
+- `src/data/fred.rs` — add `GDPNOW` and `A191RL1Q225SBEA` series (weekly + quarterly)
+- `src/data/economic.rs` — add `fred_to_indicator` mappings for both new series
+- `src/commands/economy.rs` — add `indicator_to_fred_series`, `display_name`, `indicator_metadata`, `merge_fred_only_indicators`, `fred_previous_for_indicator` for both new indicators; 2 new tests
+
+**Tests:** 2130 pass (+5 new), clippy clean.
+
 ### 2026-03-30 — feat: ISM PMI targeted extraction + FRED durable goods & consumer sentiment series
 
 Addresses Medium-Timeframe Analyst feedback (lowest overall scorer at 75%) about stale/low-confidence PMI and GDP data. Two improvements:

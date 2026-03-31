@@ -68,6 +68,18 @@ pub const FRED_SERIES: &[FredSeries] = &[
         frequency: Frequency::Quarterly,
     },
     FredSeries {
+        id: "GDPNOW",
+        name: "Atlanta Fed GDPNow Estimate",
+        unit: "% annualized",
+        frequency: Frequency::Weekly,
+    },
+    FredSeries {
+        id: "A191RL1Q225SBEA",
+        name: "Real GDP Growth Rate",
+        unit: "% annualized",
+        frequency: Frequency::Quarterly,
+    },
+    FredSeries {
         id: "PCE",
         name: "Personal Consumption Expenditures",
         unit: "billions_usd",
@@ -442,7 +454,7 @@ mod tests {
 
     #[test]
     fn test_fred_series_count() {
-        assert_eq!(FRED_SERIES.len(), 15);
+        assert_eq!(FRED_SERIES.len(), 17);
     }
 
     #[test]

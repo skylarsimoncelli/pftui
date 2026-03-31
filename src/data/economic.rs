@@ -91,6 +91,8 @@ pub fn fred_to_indicator(series_id: &str) -> Option<&'static str> {
         "DGS10" => Some("treasury_10y"),
         "T10Y2Y" => Some("yield_spread_10y2y"),
         "GDP" => Some("gdp"),
+        "GDPNOW" => Some("gdp_nowcast"),
+        "A191RL1Q225SBEA" => Some("gdp_growth_rate"),
         "PCE" => Some("pce"),
         "JTSJOL" => Some("jolts"),
         "RSAFS" => Some("retail_sales"),
@@ -621,6 +623,11 @@ mod tests {
         assert_eq!(fred_to_indicator("DGS10"), Some("treasury_10y"));
         assert_eq!(fred_to_indicator("T10Y2Y"), Some("yield_spread_10y2y"));
         assert_eq!(fred_to_indicator("GDP"), Some("gdp"));
+        assert_eq!(fred_to_indicator("GDPNOW"), Some("gdp_nowcast"));
+        assert_eq!(
+            fred_to_indicator("A191RL1Q225SBEA"),
+            Some("gdp_growth_rate")
+        );
         assert_eq!(fred_to_indicator("PCE"), Some("pce"));
         assert_eq!(fred_to_indicator("JTSJOL"), Some("jolts"));
         assert_eq!(fred_to_indicator("RSAFS"), Some("retail_sales"));
