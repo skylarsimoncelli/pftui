@@ -31,7 +31,7 @@ Pull the full analytical state. This is your raw material. Do NOT run manual web
 ```bash
 pftui data refresh
 pftui data futures --json
-pftui portfolio prices --json
+pftui data prices --json
 pftui analytics movers --json
 pftui analytics correlations latest --json
 pftui analytics macro regime current --json
@@ -394,7 +394,7 @@ git push origin master
 
 ## Rules
 
-- **🔴 ABSOLUTELY NO PERSONAL PORTFOLIO DATA.** No holdings, no positions, no P&L, no allocation percentages, no cost basis. This is public. Generic allocation FRAMEWORKS only.
+- **🔴 ABSOLUTELY NO PERSONAL PORTFOLIO DATA.** No holdings, no positions, no P&L, no allocation percentages, no cost basis. This is public. Generic allocation FRAMEWORKS only. Do NOT read SKYLAR.md, PORTFOLIO.md, or USER.md. Do NOT run `pftui portfolio summary`, `portfolio value`, `portfolio allocation`, `portfolio brief`, or any portfolio command that exposes holdings. The only portfolio command allowed is `pftui portfolio prices` (which just fetches market prices). If you accidentally ingest portfolio data, do NOT include it in the report.
 - **Professional tone.** Write for hedge fund analysts and macro investors.
 - **Data-backed everything.** Every claim needs evidence from pftui data or verified web sources.
 - **Balanced.** Bull AND bear cases for every asset. No cheerleading.
