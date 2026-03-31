@@ -2,6 +2,36 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-31 — feat: `analytics scenario timeline` — cross-scenario probability evolution
+
+New `analytics scenario timeline` subcommand that shows probability evolution for all active scenarios over time in a single view. Addresses Low-Timeframe Analyst feedback (85/80 Mar 31) requesting "scenario probability tracking over time."
+
+**What it does:**
+
+Queries `scenario_history` for all active scenarios and produces a daily-deduplicated timeline showing how each scenario's probability has changed. Includes net change over the period and sorts by current probability descending.
+
+**Features:**
+- `--days N` — limit lookback window (default: all history)
+- `--json` — structured JSON output with period bounds, per-scenario data points, and net change
+- Human-readable table output with per-scenario probability trajectory and change annotation
+- Daily deduplication (last entry per day wins) for clean timelines
+- Dual backend: SQLite and PostgreSQL
+
+**Agent consumption:**
+```
+pftui analytics scenario timeline --json              # Full history
+pftui analytics scenario timeline --days 14 --json    # Last 14 days
+pftui journal scenario timeline --days 7              # Via journal path
+```
+
+**Files changed:**
+- `src/db/scenarios.rs` — new `ScenarioTimeline`, `ScenarioTimelinePoint` structs, `get_all_timelines()`, `get_all_timelines_postgres()`, `get_all_timelines_backend()` + 5 tests
+- `src/commands/scenario.rs` — new `timeline` action with JSON and human-readable output
+- `src/cli.rs` — add `Timeline` variant to `AnalyticsScenarioCommand` and `JournalScenarioCommand` + 2 CLI parse tests
+- `src/main.rs` — wire `Timeline` dispatch for both analytics and journal paths
+
+**Tests:** 2183 pass (+7 new: 5 DB + 2 CLI parse), clippy clean.
+
 ### 2026-03-31 — feat: `scripts/deploy.sh` — atomic deploy script
 
 New deploy script that eliminates "text file busy" errors during binary deployment. Uses atomic rename (cp to temp + mv) instead of direct `cp` over the running binary. Includes build, atomic install, service restart, and health verification. Supports `--skip-build` and `--dry-run` flags. Updates dev-agent routine Step 8 to use the script.

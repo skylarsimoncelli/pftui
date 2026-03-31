@@ -861,6 +861,114 @@ pub fn get_history(
     Ok(history)
 }
 
+/// Timeline entry: a probability snapshot for a named scenario on a specific date.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScenarioTimelinePoint {
+    pub date: String,
+    pub probability: f64,
+}
+
+/// A scenario's probability trajectory over time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScenarioTimeline {
+    pub scenario_id: i64,
+    pub name: String,
+    pub current_probability: f64,
+    pub status: String,
+    pub phase: String,
+    pub data_points: Vec<ScenarioTimelinePoint>,
+    pub change: Option<f64>,
+}
+
+/// Get probability timelines for all active scenarios, optionally filtered to last N days.
+/// Returns one ScenarioTimeline per scenario, with daily-deduplicated data points (last entry per day).
+pub fn get_all_timelines(
+    conn: &Connection,
+    days: Option<u32>,
+) -> Result<Vec<ScenarioTimeline>> {
+    let scenarios_list = list_scenarios(conn, Some("active"))?;
+    let mut timelines = Vec::new();
+
+    for scenario in &scenarios_list {
+        let query = if let Some(d) = days {
+            format!(
+                "SELECT probability, recorded_at
+                 FROM scenario_history
+                 WHERE scenario_id = {}
+                   AND recorded_at >= datetime('now', '-{} days')
+                 ORDER BY id ASC",
+                scenario.id, d
+            )
+        } else {
+            format!(
+                "SELECT probability, recorded_at
+                 FROM scenario_history
+                 WHERE scenario_id = {}
+                 ORDER BY id ASC",
+                scenario.id
+            )
+        };
+
+        let mut stmt = conn.prepare(&query)?;
+        let rows: Vec<(f64, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Deduplicate to last entry per date (YYYY-MM-DD)
+        let mut day_map: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+        for (prob, recorded_at) in &rows {
+            // Extract YYYY-MM-DD from either "YYYY-MM-DDTHH:MM:SS" or "YYYY-MM-DD HH:MM:SS" formats
+            let date = if recorded_at.contains('T') {
+                recorded_at.split('T').next().unwrap_or(recorded_at)
+            } else if recorded_at.contains(' ') {
+                recorded_at.split(' ').next().unwrap_or(recorded_at)
+            } else {
+                recorded_at.as_str()
+            };
+            // BTreeMap insert overwrites, so last entry per day wins
+            day_map.insert(date.to_string(), *prob);
+        }
+
+        let data_points: Vec<ScenarioTimelinePoint> = day_map
+            .into_iter()
+            .map(|(date, probability)| ScenarioTimelinePoint { date, probability })
+            .collect();
+
+        let change = if data_points.len() >= 2 {
+            Some(data_points.last().unwrap().probability - data_points.first().unwrap().probability)
+        } else {
+            None
+        };
+
+        timelines.push(ScenarioTimeline {
+            scenario_id: scenario.id,
+            name: scenario.name.clone(),
+            current_probability: scenario.probability,
+            status: scenario.status.clone(),
+            phase: scenario.phase.clone(),
+            data_points,
+            change,
+        });
+    }
+
+    // Sort by current probability descending
+    timelines.sort_by(|a, b| b.current_probability.partial_cmp(&a.current_probability).unwrap_or(std::cmp::Ordering::Equal));
+
+    Ok(timelines)
+}
+
+pub fn get_all_timelines_backend(
+    backend: &BackendConnection,
+    days: Option<u32>,
+) -> Result<Vec<ScenarioTimeline>> {
+    query::dispatch(
+        backend,
+        |conn| get_all_timelines(conn, days),
+        |pool| get_all_timelines_postgres(pool, days),
+    )
+}
+
 pub fn add_scenario_backend(
     backend: &BackendConnection,
     name: &str,
@@ -2189,6 +2297,83 @@ fn get_history_postgres(
         .collect())
 }
 
+fn get_all_timelines_postgres(
+    pool: &PgPool,
+    days: Option<u32>,
+) -> Result<Vec<ScenarioTimeline>> {
+    ensure_tables_postgres(pool)?;
+    let scenarios_list = list_scenarios_postgres(pool, Some("active"))?;
+    let mut timelines = Vec::new();
+
+    for scenario in &scenarios_list {
+        let rows: Vec<(f64, String)> = if let Some(d) = days {
+            crate::db::pg_runtime::block_on(async {
+                sqlx::query_as(
+                    "SELECT probability, recorded_at::text
+                     FROM scenario_history
+                     WHERE scenario_id = $1
+                       AND recorded_at >= NOW() - make_interval(days => $2)
+                     ORDER BY id ASC",
+                )
+                .bind(scenario.id)
+                .bind(d as i32)
+                .fetch_all(pool)
+                .await
+            })?
+        } else {
+            crate::db::pg_runtime::block_on(async {
+                sqlx::query_as(
+                    "SELECT probability, recorded_at::text
+                     FROM scenario_history
+                     WHERE scenario_id = $1
+                     ORDER BY id ASC",
+                )
+                .bind(scenario.id)
+                .fetch_all(pool)
+                .await
+            })?
+        };
+
+        // Deduplicate to last entry per date
+        let mut day_map: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+        for (prob, recorded_at) in &rows {
+            let date = if recorded_at.contains('T') {
+                recorded_at.split('T').next().unwrap_or(recorded_at)
+            } else if recorded_at.contains(' ') {
+                recorded_at.split(' ').next().unwrap_or(recorded_at)
+            } else {
+                recorded_at.as_str()
+            };
+            day_map.insert(date.to_string(), *prob);
+        }
+
+        let data_points: Vec<ScenarioTimelinePoint> = day_map
+            .into_iter()
+            .map(|(date, probability)| ScenarioTimelinePoint { date, probability })
+            .collect();
+
+        let change = if data_points.len() >= 2 {
+            Some(data_points.last().unwrap().probability - data_points.first().unwrap().probability)
+        } else {
+            None
+        };
+
+        timelines.push(ScenarioTimeline {
+            scenario_id: scenario.id,
+            name: scenario.name.clone(),
+            current_probability: scenario.probability,
+            status: scenario.status.clone(),
+            phase: scenario.phase.clone(),
+            data_points,
+            change,
+        });
+    }
+
+    timelines.sort_by(|a, b| b.current_probability.partial_cmp(&a.current_probability).unwrap_or(std::cmp::Ordering::Equal));
+
+    Ok(timelines)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2351,6 +2536,136 @@ mod tests {
         )?;
         assert_eq!(count, 0, "9.9pp shift should not create alert");
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_all_timelines_empty() -> Result<()> {
+        let conn = test_db()?;
+        let timelines = get_all_timelines(&conn, None)?;
+        assert!(timelines.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_all_timelines_with_history() -> Result<()> {
+        let conn = test_db()?;
+
+        // Create two scenarios
+        let id1 = add_scenario(&conn, "Recession", 50.0, Some("test"), None, None, None)?;
+        let id2 = add_scenario(&conn, "Inflation", 70.0, Some("test2"), None, None, None)?;
+
+        // Add history entries
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id1, 40.0, "initial", "2026-03-01 12:00:00"],
+        )?;
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id1, 50.0, "updated", "2026-03-02 12:00:00"],
+        )?;
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id2, 65.0, "initial", "2026-03-01 12:00:00"],
+        )?;
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id2, 70.0, "updated", "2026-03-02 12:00:00"],
+        )?;
+
+        let timelines = get_all_timelines(&conn, None)?;
+        assert_eq!(timelines.len(), 2);
+
+        // Should be sorted by current probability descending (Inflation=70 first)
+        assert_eq!(timelines[0].name, "Inflation");
+        assert_eq!(timelines[1].name, "Recession");
+
+        // Check data points
+        assert_eq!(timelines[0].data_points.len(), 2);
+        assert!((timelines[0].data_points[0].probability - 65.0).abs() < 0.01);
+        assert!((timelines[0].data_points[1].probability - 70.0).abs() < 0.01);
+
+        // Check change
+        assert!((timelines[0].change.unwrap() - 5.0).abs() < 0.01);
+        assert!((timelines[1].change.unwrap() - 10.0).abs() < 0.01);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_all_timelines_deduplicates_same_day() -> Result<()> {
+        let conn = test_db()?;
+
+        let id = add_scenario(&conn, "Test", 60.0, None, None, None, None)?;
+
+        // Multiple entries on same day — should keep last
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id, 40.0, "morning", "2026-03-15 08:00:00"],
+        )?;
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id, 55.0, "evening", "2026-03-15 20:00:00"],
+        )?;
+
+        let timelines = get_all_timelines(&conn, None)?;
+        assert_eq!(timelines.len(), 1);
+        assert_eq!(timelines[0].data_points.len(), 1);
+        // Last entry of the day wins
+        assert!((timelines[0].data_points[0].probability - 55.0).abs() < 0.01);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_all_timelines_only_active() -> Result<()> {
+        let conn = test_db()?;
+
+        let id1 = add_scenario(&conn, "Active", 50.0, None, None, None, None)?;
+        let _id2 = add_scenario(&conn, "Resolved", 30.0, None, None, None, None)?;
+
+        // Resolve the second scenario
+        conn.execute(
+            "UPDATE scenarios SET status = 'resolved' WHERE id = ?",
+            params![_id2],
+        )?;
+
+        // Add history to both
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id1, 45.0, "test", "2026-03-01 12:00:00"],
+        )?;
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) VALUES (?1, ?2, ?3, ?4)",
+            params![_id2, 35.0, "test", "2026-03-01 12:00:00"],
+        )?;
+
+        let timelines = get_all_timelines(&conn, None)?;
+        // Only active scenario should appear
+        assert_eq!(timelines.len(), 1);
+        assert_eq!(timelines[0].name, "Active");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_timeline_struct_serialization() -> Result<()> {
+        let timeline = ScenarioTimeline {
+            scenario_id: 1,
+            name: "Test".to_string(),
+            current_probability: 75.0,
+            status: "active".to_string(),
+            phase: "hypothesis".to_string(),
+            data_points: vec![
+                ScenarioTimelinePoint { date: "2026-03-01".to_string(), probability: 50.0 },
+                ScenarioTimelinePoint { date: "2026-03-02".to_string(), probability: 75.0 },
+            ],
+            change: Some(25.0),
+        };
+        let json = serde_json::to_string(&timeline)?;
+        assert!(json.contains("\"name\":\"Test\""));
+        assert!(json.contains("\"change\":25.0"));
+        assert!(json.contains("\"data_points\""));
         Ok(())
     }
 }
