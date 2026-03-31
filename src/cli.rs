@@ -3604,6 +3604,16 @@ pub enum AnalyticsPowerFlowCommand {
         #[arg(long)]
         json: bool,
     },
+    /// FIC/MIC conflict monitor: cross-references defense (ITA, XAR, PPA) with energy (XLE, CL=F) and VIX during crisis regimes
+    #[command(after_help = "Cross-references defense sector ETFs (ITA, XAR, PPA, LMT, RTX) with\nenergy (XLE, CL=F, BZ=F) and VIX to produce a geopolitical conflict\nassessment.\n\nDetects conflict signals:\n  • Defense sector bid strength\n  • Oil supply-risk premium\n  • VIX fear regime\n  • Safe-haven gold bid\n  • Equity risk-off rotation\n\nIncludes a Defense/Energy ratio (ITA/XLE), composite conflict score (0-100),\nand cross-references logged FIC/MIC power flow events for structural context.\n\nExamples:\n  pftui analytics power-flow conflicts --json\n  pftui analytics power-flow conflicts --days 14\n\nSee also: analytics power-flow assess, analytics regime-flows, analytics crisis")]
+    Conflicts {
+        /// Number of days for power flow lookback (default: 30)
+        #[arg(long, default_value_t = 30)]
+        days: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -7281,6 +7291,46 @@ mod tests {
         };
         assert_eq!(days, 14);
         assert_eq!(complex.as_deref(), Some("FIC"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_power_flow_conflicts_defaults() {
+        let cli = Cli::parse_from(["pftui", "analytics", "power-flow", "conflicts"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::PowerFlow { command } = command else {
+            panic!("expected PowerFlow");
+        };
+        let AnalyticsPowerFlowCommand::Conflicts { days, json } = command else {
+            panic!("expected Conflicts");
+        };
+        assert_eq!(days, 30);
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_power_flow_conflicts_all_flags() {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "power-flow",
+            "conflicts",
+            "--days",
+            "14",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::PowerFlow { command } = command else {
+            panic!("expected PowerFlow");
+        };
+        let AnalyticsPowerFlowCommand::Conflicts { days, json } = command else {
+            panic!("expected Conflicts");
+        };
+        assert_eq!(days, 14);
         assert!(json);
     }
 

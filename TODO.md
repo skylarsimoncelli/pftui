@@ -14,7 +14,7 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **FIC/MIC power balance indicators for conflicts** — Medium-Timeframe Analyst (85/88 Mar 31) wants defense stocks vs oil tracking during geopolitical conflicts. Add defense sector ETFs (ITA, XAR, PPA) to `analytics regime-flows` or a new `analytics power-flow conflicts` subcommand that cross-references energy (XLE, CL=F) with defense (ITA) and VIX during crisis regimes. Files: `src/commands/regime_flows.rs`, `src/data/market_symbols.rs`.
+_(none)_
 
 
 ## P3 - Long Term
@@ -59,7 +59,8 @@ _(none)_
 6. ✅ ISM PMI targeted extraction (#481) — direct ISM data source
 7. ✅ FRED API failure resilience (#490) — retry with exponential backoff, cache fallback, staleness warnings
 8. ✅ PMI data discrepancy fix (#492) — context-aware extraction, broadened regex patterns, 17 new tests
+9. ✅ FIC/MIC conflict monitor (#494) — `analytics power-flow conflicts` with defense vs energy vs VIX cross-reference
 
-**Release status:** v0.23.0 eligible — 36 commits since v0.22.0, no P0 bugs, 2167 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios, PMI discrepancy fix.
+**Release status:** v0.23.0 eligible — 37 commits since v0.22.0, no P0 bugs, 2176 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios, PMI discrepancy fix, power-flow conflicts.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.

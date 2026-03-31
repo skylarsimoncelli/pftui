@@ -106,7 +106,7 @@ Color conventions: RSI >70 = red (overbought), <30 = green (oversold), 30-70 = n
 `regime/mod.rs` (9-signal scorer) · `regime/suggestions.rs` (portfolio suggestions)
 
 ### CLI Commands
-`commands/setup.rs` (wizard) · `commands/summary.rs` (--group-by, --period, --what-if) · `commands/export.rs` (JSON/CSV) · `commands/import.rs` (replace/merge) · `commands/history.rs` (--date) · `commands/brief.rs` · `commands/demo.rs` · `commands/snapshot.rs` · `commands/watchlist_cli.rs` · `commands/set_cash.rs` · `commands/refresh.rs` · `commands/daemon.rs` (always-on scheduler + heartbeat) · `commands/status.rs` (source freshness + daemon health) · `commands/value.rs`
+`commands/setup.rs` (wizard) · `commands/summary.rs` (--group-by, --period, --what-if) · `commands/export.rs` (JSON/CSV) · `commands/import.rs` (replace/merge) · `commands/history.rs` (--date) · `commands/brief.rs` · `commands/demo.rs` · `commands/snapshot.rs` · `commands/watchlist_cli.rs` · `commands/set_cash.rs` · `commands/refresh.rs` · `commands/daemon.rs` (always-on scheduler + heartbeat) · `commands/status.rs` (source freshness + daemon health) · `commands/value.rs` · `commands/power_flow_conflicts.rs` (FIC/MIC conflict monitor: defense vs energy vs VIX cross-reference)
 
 ### Shared Intelligence Contract
 

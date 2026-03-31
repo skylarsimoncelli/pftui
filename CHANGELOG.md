@@ -2,6 +2,45 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-31 — feat: `analytics power-flow conflicts` — FIC/MIC conflict monitor
+
+New `analytics power-flow conflicts` subcommand that cross-references defense sector ETFs with energy and VIX to produce a geopolitical conflict assessment. Addresses Medium-Timeframe Analyst feedback (85/88 Mar 31) requesting FIC/MIC power balance indicators for conflicts.
+
+**What it does:**
+
+Tracks five defense assets (ITA, XAR, PPA, LMT, RTX) against three energy assets (XLE, CL=F, BZ=F) with four context indicators (VIX, gold, DXY, S&P 500). Produces:
+
+1. **Sector snapshots** — per-asset price, 5d/20d change, directional classification for both defense and energy groups
+2. **Defense/Energy ratio (ITA/XLE)** — monitors whether capital is rotating into conflict beneficiaries vs energy supply plays
+3. **Five conflict signals** with composite scoring (0-100):
+   - Defense sector bid strength
+   - Oil supply-risk premium
+   - VIX fear regime (≥25 threshold)
+   - Safe-haven gold bid
+   - Equity risk-off rotation
+4. **Power flow context** — cross-references logged FIC/MIC power flow events, computes FIC vs MIC net balance, surfaces recent conflict-relevant events
+5. **Assessment** — alert level (high_alert/elevated/monitoring/low), summary narrative, portfolio implications
+
+**Also adds:**
+- Defense ETF symbols (ITA, XAR, PPA) to `asset_names.rs` with Fund category classification
+- 2 CLI parse tests for the new subcommand
+- 7 unit tests for signal detection, assessment logic, and helpers
+
+**Agent consumption:**
+```
+pftui analytics power-flow conflicts --json           # Full conflict assessment
+pftui analytics power-flow conflicts --days 14 --json # Custom lookback
+```
+
+**Files changed:**
+- `src/commands/power_flow_conflicts.rs` — new file (conflict monitor implementation + 7 tests)
+- `src/commands/mod.rs` — register new module
+- `src/cli.rs` — add `Conflicts` variant to `AnalyticsPowerFlowCommand` + 2 CLI parse tests
+- `src/main.rs` — wire `Conflicts` dispatch to `power_flow_conflicts::run()`
+- `src/models/asset_names.rs` — add ITA, XAR, PPA to name map + Fund category classification
+
+**Tests:** 2176 pass (+9 new), clippy clean.
+
 ### 2026-03-31 — fix: PMI data discrepancy — context-aware extraction + broadened patterns
 
 Fixes the PMI showing 30 vs forecast 51.2 discrepancy reported by Medium-Timeframe Analyst. Root cause was two independent issues:

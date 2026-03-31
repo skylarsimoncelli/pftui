@@ -115,6 +115,9 @@ static NAMES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
         ("ARKK", "ARK Innov"),
         ("XLE", "Energy ETF"),
         ("XLF", "Financial ETF"),
+        ("ITA", "Aerospace & Defense ETF"),
+        ("XAR", "S&P Aerospace & Defense ETF"),
+        ("PPA", "Aerospace & Defense ETF"),
         // Forex
         ("USDGBP=X", "USD/GBP"),
         ("USDEUR=X", "USD/EUR"),
@@ -266,6 +269,9 @@ pub fn infer_category(symbol: &str) -> AssetCategory {
             | "ARKK"
             | "XLE"
             | "XLF"
+            | "ITA"
+            | "XAR"
+            | "PPA"
             | "URA"
             | "URNM"
     ) {
