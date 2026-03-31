@@ -34,6 +34,17 @@ pub struct TrendEvidence {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrendEvidenceSummary {
+    pub trend_id: i64,
+    pub evidence_count: i64,
+    pub latest_date: Option<String>,
+    pub latest_evidence: Option<String>,
+    pub latest_direction_impact: Option<String>,
+    pub strengthens_count: i64,
+    pub weakens_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrendAssetImpact {
     pub id: i64,
     pub trend_id: i64,
@@ -562,6 +573,132 @@ pub fn list_evidence_backend(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+// Trend evidence summaries (for enriched trend list)
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Returns per-trend evidence summary: total count, latest date/text, strengthens/weakens breakdown.
+pub fn get_evidence_summaries(conn: &Connection) -> Result<Vec<TrendEvidenceSummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT
+            e.trend_id,
+            COUNT(*) AS evidence_count,
+            MAX(e.date) AS latest_date,
+            SUM(CASE WHEN e.direction_impact = 'strengthens' THEN 1 ELSE 0 END) AS strengthens_count,
+            SUM(CASE WHEN e.direction_impact = 'weakens' THEN 1 ELSE 0 END) AS weakens_count
+         FROM trend_evidence e
+         GROUP BY e.trend_id",
+    )?;
+
+    let base: Vec<(i64, i64, Option<String>, i64, i64)> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut results = Vec::with_capacity(base.len());
+    for (trend_id, evidence_count, latest_date, strengthens_count, weakens_count) in base {
+        // Fetch the latest evidence row for this trend
+        let (latest_evidence, latest_direction_impact) = if let Some(ref dt) = latest_date {
+            let mut detail_stmt = conn.prepare(
+                "SELECT evidence, direction_impact FROM trend_evidence
+                 WHERE trend_id = ? AND date = ? ORDER BY id DESC LIMIT 1",
+            )?;
+            let row = detail_stmt
+                .query_row(params![trend_id, dt], |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                })
+                .ok();
+            row.map_or((None, None), |(e, d)| (e, d))
+        } else {
+            (None, None)
+        };
+
+        results.push(TrendEvidenceSummary {
+            trend_id,
+            evidence_count,
+            latest_date,
+            latest_evidence,
+            latest_direction_impact,
+            strengthens_count,
+            weakens_count,
+        });
+    }
+    Ok(results)
+}
+
+fn get_evidence_summaries_postgres(pool: &PgPool) -> Result<Vec<TrendEvidenceSummary>> {
+    crate::db::pg_runtime::block_on(async {
+        // Use a CTE with ROW_NUMBER to get the latest evidence per trend in one query
+        let rows = sqlx::query(
+            "WITH ranked AS (
+                SELECT
+                    e.trend_id,
+                    e.date,
+                    e.evidence,
+                    e.direction_impact,
+                    ROW_NUMBER() OVER (PARTITION BY e.trend_id ORDER BY e.date DESC, e.id DESC) AS rn
+                FROM trend_evidence e
+            ), counts AS (
+                SELECT
+                    trend_id,
+                    COUNT(*) AS evidence_count,
+                    SUM(CASE WHEN direction_impact = 'strengthens' THEN 1 ELSE 0 END) AS strengthens_count,
+                    SUM(CASE WHEN direction_impact = 'weakens' THEN 1 ELSE 0 END) AS weakens_count
+                FROM trend_evidence
+                GROUP BY trend_id
+            )
+            SELECT
+                c.trend_id,
+                c.evidence_count,
+                r.date AS latest_date,
+                r.evidence AS latest_evidence,
+                r.direction_impact AS latest_direction_impact,
+                c.strengthens_count,
+                c.weakens_count
+            FROM counts c
+            LEFT JOIN ranked r ON c.trend_id = r.trend_id AND r.rn = 1",
+        )
+        .fetch_all(pool)
+        .await?;
+
+        let summaries: Vec<TrendEvidenceSummary> = rows
+            .iter()
+            .map(|r| TrendEvidenceSummary {
+                trend_id: r.get("trend_id"),
+                evidence_count: r.get("evidence_count"),
+                latest_date: r.get("latest_date"),
+                latest_evidence: r.get("latest_evidence"),
+                latest_direction_impact: r.get("latest_direction_impact"),
+                strengthens_count: r.get("strengthens_count"),
+                weakens_count: r.get("weakens_count"),
+            })
+            .collect();
+
+        Ok::<Vec<TrendEvidenceSummary>, sqlx::Error>(summaries)
+    })
+    .map_err(Into::into)
+}
+
+pub fn get_evidence_summaries_backend(
+    backend: &BackendConnection,
+) -> Result<Vec<TrendEvidenceSummary>> {
+    query::dispatch(
+        backend,
+        get_evidence_summaries,
+        get_evidence_summaries_postgres,
+    )
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 // Trend asset impact CRUD
 // ───────────────────────────────────────────────────────────────────────────────
 
@@ -862,4 +999,109 @@ pub fn list_all_impacts_backend(
     backend: &BackendConnection,
 ) -> Result<Vec<(Trend, TrendAssetImpact)>> {
     query::dispatch(backend, list_all_impacts, list_all_impacts_postgres)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_db() -> Result<Connection> {
+        let conn = Connection::open_in_memory()?;
+        crate::db::schema::run_migrations(&conn)?;
+        Ok(conn)
+    }
+
+    #[test]
+    fn test_evidence_summaries_empty() -> Result<()> {
+        let conn = test_db()?;
+        let summaries = get_evidence_summaries(&conn)?;
+        assert!(summaries.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_evidence_summaries_single_trend() -> Result<()> {
+        let conn = test_db()?;
+        let trend_id = add_trend(
+            &conn,
+            "AI Displacement",
+            "high",
+            "accelerating",
+            "high",
+            Some("ai"),
+            Some("Test trend"),
+            None,
+            None,
+        )?;
+
+        add_evidence(&conn, trend_id, "2026-03-01", "Evidence A", Some("strengthens"), Some("Reuters"))?;
+        add_evidence(&conn, trend_id, "2026-03-15", "Evidence B", Some("weakens"), Some("Bloomberg"))?;
+        add_evidence(&conn, trend_id, "2026-03-20", "Evidence C latest", Some("strengthens"), Some("CNBC"))?;
+
+        let summaries = get_evidence_summaries(&conn)?;
+        assert_eq!(summaries.len(), 1);
+
+        let s = &summaries[0];
+        assert_eq!(s.trend_id, trend_id);
+        assert_eq!(s.evidence_count, 3);
+        assert_eq!(s.latest_date.as_deref(), Some("2026-03-20"));
+        assert_eq!(s.latest_evidence.as_deref(), Some("Evidence C latest"));
+        assert_eq!(s.latest_direction_impact.as_deref(), Some("strengthens"));
+        assert_eq!(s.strengthens_count, 2);
+        assert_eq!(s.weakens_count, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_evidence_summaries_multiple_trends() -> Result<()> {
+        let conn = test_db()?;
+        let trend1 = add_trend(&conn, "Trend A", "high", "accelerating", "high", None, None, None, None)?;
+        let trend2 = add_trend(&conn, "Trend B", "medium", "stable", "medium", None, None, None, None)?;
+
+        add_evidence(&conn, trend1, "2026-03-01", "A evidence 1", Some("strengthens"), None)?;
+        add_evidence(&conn, trend1, "2026-03-10", "A evidence 2", Some("strengthens"), None)?;
+        add_evidence(&conn, trend2, "2026-03-05", "B evidence only", Some("weakens"), None)?;
+
+        let summaries = get_evidence_summaries(&conn)?;
+        assert_eq!(summaries.len(), 2);
+
+        let s1 = summaries.iter().find(|s| s.trend_id == trend1).unwrap();
+        assert_eq!(s1.evidence_count, 2);
+        assert_eq!(s1.strengthens_count, 2);
+        assert_eq!(s1.weakens_count, 0);
+        assert_eq!(s1.latest_date.as_deref(), Some("2026-03-10"));
+        assert_eq!(s1.latest_evidence.as_deref(), Some("A evidence 2"));
+
+        let s2 = summaries.iter().find(|s| s.trend_id == trend2).unwrap();
+        assert_eq!(s2.evidence_count, 1);
+        assert_eq!(s2.strengthens_count, 0);
+        assert_eq!(s2.weakens_count, 1);
+        assert_eq!(s2.latest_evidence.as_deref(), Some("B evidence only"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_evidence_summaries_no_direction_impact() -> Result<()> {
+        let conn = test_db()?;
+        let trend_id = add_trend(&conn, "Neutral Trend", "low", "stable", "low", None, None, None, None)?;
+
+        add_evidence(&conn, trend_id, "2026-03-01", "Neutral evidence", None, None)?;
+
+        let summaries = get_evidence_summaries(&conn)?;
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].strengthens_count, 0);
+        assert_eq!(summaries[0].weakens_count, 0);
+        assert_eq!(summaries[0].latest_evidence.as_deref(), Some("Neutral evidence"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_trend_with_no_evidence_excluded_from_summaries() -> Result<()> {
+        let conn = test_db()?;
+        add_trend(&conn, "Empty Trend", "high", "stable", "low", None, None, None, None)?;
+
+        let summaries = get_evidence_summaries(&conn)?;
+        assert!(summaries.is_empty(), "Trend with no evidence should not appear in summaries");
+        Ok(())
+    }
 }

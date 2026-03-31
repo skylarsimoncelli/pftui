@@ -2272,6 +2272,9 @@ pub enum AnalyticsTrendsCommand {
         status: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Include evidence summary (count, latest evidence, strengthens/weakens) per trend
+        #[arg(long = "with-evidence")]
+        with_evidence: bool,
         #[arg(long)]
         json: bool,
     },
@@ -7878,5 +7881,68 @@ mod tests {
         assert!(!list_scenarios);
         assert!(json);
         assert_eq!(scenario, Some("2008 GFC".to_string()));
+    }
+
+    #[test]
+    fn parse_trends_list_with_evidence() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "trends",
+            "list",
+            "--with-evidence",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Trends {
+                    command:
+                        AnalyticsTrendsCommand::List {
+                            with_evidence,
+                            json,
+                            timeframe,
+                            ..
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics trends list command");
+        };
+        assert!(with_evidence);
+        assert!(json);
+        assert!(timeframe.is_none());
+    }
+
+    #[test]
+    fn parse_trends_list_without_evidence() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "trends",
+            "list",
+            "--category",
+            "energy",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Trends {
+                    command:
+                        AnalyticsTrendsCommand::List {
+                            with_evidence,
+                            json,
+                            category,
+                            ..
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics trends list command");
+        };
+        assert!(!with_evidence);
+        assert!(json);
+        assert_eq!(category, Some("energy".to_string()));
     }
 }

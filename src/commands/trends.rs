@@ -2,6 +2,7 @@ use crate::db::backend::BackendConnection;
 use crate::db::trends;
 use anyhow::{bail, Result};
 use serde_json::json;
+use std::collections::HashMap;
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
@@ -273,6 +274,144 @@ pub fn run(
         }
         _ => bail!("Unknown action: {}. Use add, list, update, evidence-add, evidence-list, impact-add, impact-list, dashboard", action),
     }
+}
+
+/// Enriched trend list with evidence summaries inline.
+/// Called directly from main.rs when `--with-evidence` is set.
+#[allow(clippy::too_many_arguments)]
+pub fn run_list(
+    backend: &BackendConnection,
+    status: Option<&str>,
+    category: Option<&str>,
+    timeframe: Option<&str>,
+    direction: Option<&str>,
+    conviction: Option<&str>,
+    with_evidence: bool,
+    _limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let mut trends_list = trends::list_trends_backend(backend, status, category)?;
+
+    // Client-side filters for fields not supported by the DB query
+    if let Some(tf) = timeframe {
+        trends_list.retain(|t| t.timeframe.eq_ignore_ascii_case(tf));
+    }
+    if let Some(dir) = direction {
+        trends_list.retain(|t| t.direction.eq_ignore_ascii_case(dir));
+    }
+    if let Some(conv) = conviction {
+        trends_list.retain(|t| t.conviction.eq_ignore_ascii_case(conv));
+    }
+
+    if trends_list.is_empty() {
+        if json_output {
+            println!("{}", serde_json::to_string_pretty(&json!({ "trends": [] }))?);
+        } else {
+            println!("No trends found.");
+        }
+        return Ok(());
+    }
+
+    if !with_evidence {
+        // Delegate to the basic list in run()
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({ "trends": trends_list }))?
+            );
+        } else {
+            println!(
+                "{:<40} {:<10} {:<12} {:<10} {:<12} {:<10}",
+                "Name", "Timeframe", "Direction", "Conviction", "Category", "Status"
+            );
+            println!("{}", "─".repeat(100));
+            for t in trends_list {
+                println!(
+                    "{:<40} {:<10} {:<12} {:<10} {:<12} {:<10}",
+                    truncate(&t.name, 38),
+                    t.timeframe,
+                    t.direction,
+                    t.conviction,
+                    t.category.as_deref().unwrap_or("—"),
+                    t.status
+                );
+            }
+        }
+        return Ok(());
+    }
+
+    // Fetch evidence summaries and build a lookup map
+    let summaries = trends::get_evidence_summaries_backend(backend)?;
+    let summary_map: HashMap<i64, &trends::TrendEvidenceSummary> =
+        summaries.iter().map(|s| (s.trend_id, s)).collect();
+
+    if json_output {
+        let enriched: Vec<serde_json::Value> = trends_list
+            .iter()
+            .map(|t| {
+                let summary = summary_map.get(&t.id);
+                let mut val = serde_json::to_value(t).unwrap_or_default();
+                if let Some(s) = summary {
+                    val["evidence_count"] = json!(s.evidence_count);
+                    val["latest_evidence_date"] = json!(s.latest_date);
+                    val["latest_evidence"] = json!(s.latest_evidence);
+                    val["latest_evidence_impact"] = json!(s.latest_direction_impact);
+                    val["strengthens_count"] = json!(s.strengthens_count);
+                    val["weakens_count"] = json!(s.weakens_count);
+                } else {
+                    val["evidence_count"] = json!(0);
+                    val["latest_evidence_date"] = json!(null);
+                    val["latest_evidence"] = json!(null);
+                    val["latest_evidence_impact"] = json!(null);
+                    val["strengthens_count"] = json!(0);
+                    val["weakens_count"] = json!(0);
+                }
+                val
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "trends": enriched }))?
+        );
+    } else {
+        println!(
+            "{name:<32} {tf:<10} {dir:<12} {conv:<10} {evid:<6} {ratio:<8} {date:<12} Latest Evidence",
+            name = "Name",
+            tf = "Timeframe",
+            dir = "Direction",
+            conv = "Conviction",
+            evid = "Evid.",
+            ratio = "↑/↓",
+            date = "Last Date"
+        );
+        println!("{}", "─".repeat(130));
+
+        for t in &trends_list {
+            let summary = summary_map.get(&t.id);
+            let evidence_count = summary.map_or(0, |s| s.evidence_count);
+            let strengthens = summary.map_or(0, |s| s.strengthens_count);
+            let weakens = summary.map_or(0, |s| s.weakens_count);
+            let latest_date = summary
+                .and_then(|s| s.latest_date.as_deref())
+                .unwrap_or("—");
+            let latest_ev = summary
+                .and_then(|s| s.latest_evidence.as_deref())
+                .unwrap_or("—");
+
+            println!(
+                "{:<32} {:<10} {:<12} {:<10} {:<6} {:<8} {:<12} {}",
+                truncate(&t.name, 30),
+                t.timeframe,
+                t.direction,
+                t.conviction,
+                evidence_count,
+                format!("{}↑/{}↓", strengthens, weakens),
+                truncate(latest_date, 10),
+                truncate(latest_ev, 50),
+            );
+        }
+    }
+    Ok(())
 }
 
 fn truncate(s: &str, max: usize) -> String {
