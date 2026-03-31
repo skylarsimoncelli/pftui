@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-- [Feedback] **FRED API failure resilience** — Low-Timeframe Analyst (85/82 Mar 30) reported FRED API failures disrupting macro data flow. Add retry logic with exponential backoff, cache-hit fallback when FRED returns errors, and surface staleness warnings in `data economy --json` output so agents know when they're working with degraded data. Files: `src/data/fred.rs`, `src/commands/economy.rs`.
+_(none)_
 
 ## P2 - Coverage And Agent Consumption
 
@@ -47,7 +47,7 @@ _(none)_
 
 **Top 3 priorities based on feedback:**
 1. **Evening Analyst prediction quality** — lowest overall at 75%. Backtest shows 26.7% win rate. Not a tooling issue — the analytics pipeline is rated "excellent." The agent routine over-weights mean reversion. Consider adjusting evening-analysis routine to weight momentum signals more heavily.
-2. **FRED API resilience** — Low-Timeframe Analyst hit FRED failures disrupting macro data. Add retry/fallback/staleness warnings.
+2. ~~**FRED API resilience**~~ — SHIPPED (#490). Retry + cache fallback + staleness warnings.
 3. **PMI data discrepancy** — Medium-Timeframe Analyst noted PMI 30 vs forecast 51.2. Investigate ISM scraper accuracy.
 
 **Shipped since last review (Mar 30):**
@@ -57,6 +57,7 @@ _(none)_
 4. ✅ F58 complete (all 4 sub-items) — prediction accuracy backtesting
 5. ✅ stress-test --list-scenarios (#463) — Low-Timeframe Analyst request
 6. ✅ ISM PMI targeted extraction (#481) — direct ISM data source
+7. ✅ FRED API failure resilience (#490) — retry with exponential backoff, cache fallback, staleness warnings
 
 **Release status:** v0.23.0 eligible — 35 commits since v0.22.0, no P0 bugs, 2142 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios.
 

@@ -2,6 +2,41 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-31 — feat: FRED API failure resilience with retry, cache fallback, and staleness warnings
+
+Addresses Low-Timeframe Analyst feedback (85/82 Mar 30) about FRED API failures disrupting macro data flow. Three layers of resilience:
+
+**1. Exponential backoff retry (`src/data/fred.rs`):**
+- `get_with_retry()` wraps all FRED HTTP requests with 3 attempts
+- Backoff schedule: 500ms → 1s → 2s (max ~3.5s total)
+- Server errors (5xx) and network failures retry; client errors (4xx) fail fast
+- Applied to `fetch_series()` and `fetch_history()`
+
+**2. Cache fallback reporting (`src/commands/refresh.rs`):**
+- Failed series tracked and counted during refresh
+- Cache fallback usage reported in SourceResult detail field
+- Partial failures reported correctly (N updated, M failed → cache fallback)
+
+**3. Staleness warnings in `data economy --json` (`src/commands/economy.rs`):**
+- Per-indicator `staleness` object when FRED data exceeds expected freshness window
+- New top-level `data_quality` section:
+  - `fred_status`: healthy | partially_stale | degraded | unavailable
+  - `fresh_series` / `stale_series_count`: quick health metrics
+  - `stale_series`: array with series_id, name, data_date, age_days, expected_frequency
+
+**Agent consumption:**
+```
+pftui data economy --json | jq '.data_quality.fred_status'    # Quick health check
+pftui data economy --json | jq '.data_quality.stale_series'   # Which series are stale
+```
+
+**Files changed:**
+- `src/data/fred.rs` — add `get_with_retry()`, `MAX_RETRIES`, `BASE_RETRY_DELAY_MS`; update `fetch_series()` and `fetch_history()` to use retry
+- `src/commands/refresh.rs` — track failed series, report cache fallback in SourceResult
+- `src/commands/economy.rs` — add `compute_fred_data_quality()`, per-indicator staleness, `data_quality` in JSON output
+
+**Tests:** 2150 pass (+8 new), clippy clean.
+
 ### 2026-03-31 — feat: regime history date-range filtering + summary statistics
 
 Addresses Macro-Timeframe Analyst feedback (80/85 Mar 29) requesting historical regime transition data to track past crisis periods. The existing `analytics macro regime history` and `transitions` commands only supported `--limit`. Now they support full date-range queries and a new `summary` subcommand provides aggregate statistics.
