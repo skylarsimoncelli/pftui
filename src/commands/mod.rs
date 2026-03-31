@@ -35,6 +35,7 @@ pub mod export;
 pub mod fedwatch;
 pub mod futures;
 pub mod global;
+pub mod guidance;
 pub mod group;
 pub mod heatmap;
 pub mod history;
