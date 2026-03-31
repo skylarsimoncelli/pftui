@@ -10,34 +10,12 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-_(none)_
+- [Feedback] **FRED API failure resilience** — Low-Timeframe Analyst (85/82 Mar 30) reported FRED API failures disrupting macro data flow. Add retry logic with exponential backoff, cache-hit fallback when FRED returns errors, and surface staleness warnings in `data economy --json` output so agents know when they're working with degraded data. Files: `src/data/fred.rs`, `src/commands/economy.rs`.
 
 ## P2 - Coverage And Agent Consumption
 
-- [x] [Feedback] **Historical regime transition data** — Macro-Timeframe Analyst (80/85 Mar 29) wants historical regime transition data to track past crisis periods. Added `--from`/`--to` date-range filtering to `history` and `transitions` subcommands, plus new `summary` subcommand with per-regime stats and transition pair analysis. *(done: PR #486)*
-
-### F57: Timeframe Analyst Self-Awareness
-**Source:** Competitive research insight: the best multi-agent systems make their reasoning transparent and trackable.
-**Why:** The 4 timeframe analysts (LOW/MEDIUM/HIGH/MACRO) are the architecture. But right now their outputs are opaque text blobs in `agent_messages`. The evening synthesis reads them but there's no structured way to see where each analyst stands on each asset, track how their views evolve over time, or measure which analyst is most accurate at which task. Making the analysts' reasoning structured and queryable makes the whole system smarter.
-**Scope:**
-- [x] F57.1: New table `analyst_views` — analyst (low/medium/high/macro), asset, direction (bull/bear/neutral), conviction (-5 to +5), reasoning_summary, key_evidence, blind_spots, updated_at. Each analyst writes a structured view per asset on every run. *(done: PR #446)*
-- [x] F57.2: `analytics views portfolio-matrix --json` — portfolio-aware view matrix: all held + watched + viewed assets. Coverage stats in JSON. *(done: PR #450)*
-- [x] F57.3: `analytics views history --asset <SYM> --json` — how each analyst's view on an asset has evolved over time. Track conviction drift and flip points. *(done: PR #453)*
-- [x] F57.4: `analytics views divergence --json` — surface assets where analysts strongly disagree. LOW says bear -3 but HIGH says bull +4 = the interesting signal. Ranked by divergence magnitude. *(done: PR #457)*
-- [x] F57.5: `analytics views accuracy --json` — per-analyst accuracy. Which timeframe is best at short-term calls? Which catches structural turns? Feed this back into the synthesis layer so evening-analysis knows which analyst to weight more.
-- [x] F57.6: Agent routine integration — each timeframe analyst writes structured views via `analytics views set` after every run. Evening-analysis reads the view matrix before synthesis. Morning-brief includes a one-line divergence summary. *(done: PR #466)*
-**Effort:** 2 weeks. **Priority:** P2 — makes the existing architecture observable and self-improving.
-
-### F58: Prediction Accuracy Backtesting
-**Source:** Competitive research (ai-hedge-fund backtester, TradingAgents paper results).
-**Why:** pftui tracks prediction accuracy forward but can't replay decisions against historical data. The system has 231 predictions and growing. Backtesting would answer: "If I had followed the system's high-conviction calls, what would my returns be?" This closes the self-improvement feedback loop and validates (or invalidates) the entire agent architecture.
-**Scope:**
-- [x] F58.1: `analytics backtest predictions --json` — replay all scored predictions. For each: entry price at prediction date, exit price at target date, theoretical P&L if acted on at stated conviction level. *(done: PR #468)*
-- [x] F58.2: `analytics backtest report --json` — aggregate backtest results. Win rate by conviction level, by timeframe, by asset class, by source agent. Sharpe ratio equivalent for prediction-based strategy. *(done: PR #471)*
-- [x] F58.3: `analytics backtest agent --agent <name> --json` — per-agent accuracy breakdown. Which timeframe analyst produces the best predictions? *(done: PR #474)*
-- [x] F58.4: Agent routine integration — weekly self-review (macro-timeframe-analyst) includes backtest summary. Surface which conviction levels and which agents are most reliable. *(done: PR #478)*
-**Not in scope:** Full portfolio simulation, position sizing, transaction costs. V1 is prediction accuracy analysis only.
-**Effort:** 2-3 weeks. **Priority:** P2 — **COMPLETE.** All 4 sub-items shipped.
+- [Feedback] **FIC/MIC power balance indicators for conflicts** — Medium-Timeframe Analyst (85/88 Mar 31) wants defense stocks vs oil tracking during geopolitical conflicts. Add defense sector ETFs (ITA, XAR, PPA) to `analytics regime-flows` or a new `analytics power-flow conflicts` subcommand that cross-references energy (XLE, CL=F) with defense (ITA) and VIX during crisis regimes. Files: `src/commands/regime_flows.rs`, `src/data/market_symbols.rs`.
+- [Feedback] **PMI data discrepancy investigation** — Medium-Timeframe Analyst (85/88 Mar 31) noted PMI showing 30 vs forecast 51.2 — a 21-point gap suggesting data quality issue in ISM scraper or FRED mapping. Investigate whether ISM scraper (`src/data/ism.rs`) is pulling stale or misformatted values. Validate PMI plausibility range and add cross-source sanity checks.
 
 ## P3 - Long Term
 
@@ -57,29 +35,29 @@ _(none)_
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Evening Analyst | 88% | 85% | Mar 30 | ↑ (78→88 use, 75→85 overall. Major improvement! Consolidated evening-brief #416, debate mechanism, lesson extraction all landed. Main friction: situation engine empty without manual setup.) |
-| Medium-Timeframe Analyst | 85% | 75% | Mar 30 | ↓ overall (85→75). Stale indicator data. `data quotes` alias helped. **Lowest overall scorer — priority.** |
-| Low-Timeframe Analyst | 85% | 88% | Mar 29 | ↓ overall (90→88). Stable usefulness. Wants stress-test scenario discoverability. |
-| Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (new scorer. Wants scenarios + historical regime transitions.) |
-| High-Timeframe Analyst | 85% | 90% | Mar 26 | → (stable. Scenario suggest #366 shipped.) |
-| Morning Intelligence | 75% | 85% | Mar 28 | → (stable. Correlation break interpretation #412 shipped.) |
-| Morning Brief | 85% | 80% | Mar 29 | → (stable. Scenario tracking on promotion requested.) |
-| Alert Investigator | 85% | 80-82% | Mar 25-26 | → (stable, consistent.) |
-| Public Daily Report | 82% | 80% | Mar 28 | → (stable. Commodity coverage shipped.) |
-| Dev Agent | 92% | 94% | Mar 30 | → (stable high. F57.2-F57.3 shipped.) |
+| Evening Analyst | 78% | 75% | Mar 31 | ↓ (88→78 use, 85→75 overall. Backtest revealed 26.7% win rate — worst agent. Over-predicts mean reversion. This is a routine/strategy issue, not a tooling gap.) **Lowest overall scorer — priority.** |
+| Medium-Timeframe Analyst | 85% | 88% | Mar 31 | ↑ (85→85 use, 75→88 overall. Major recovery! FRED GDPNow + ISM PMI scraper addressed stale data. PMI discrepancy still noted.) |
+| Low-Timeframe Analyst | 85% | 82% | Mar 30 | ↓ (90→85 use, 85→82 overall. FRED API failures. stress-test --list-scenarios shipped.) |
+| Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable. Historical regime transitions shipped PR #486.) |
+| High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable.) |
+| Morning Intelligence | 75% | 85% | Mar 28 | → (stable.) |
+| Morning Brief | 85% | 82% | Mar 30 | → (stable.) |
+| Public Daily Report | 82% | 80% | Mar 28 | → (stable.) |
+| Dev Agent | 92% | 94% | Mar 31 | → (stable high.) |
 
 **Top 3 priorities based on feedback:**
-1. **Fresher indicator data** — Medium-Timeframe Analyst (lowest overall at 75%) needs less stale PMI/GDP. Improving FRED refresh or adding direct ISM source.
-2. **Stress-test scenario discoverability** — Low-Timeframe Analyst wants `--list-scenarios` flag.
-3. **F59: Capital Flow Tracking** — next major feature after F57/F58 completion.
+1. **Evening Analyst prediction quality** — lowest overall at 75%. Backtest shows 26.7% win rate. Not a tooling issue — the analytics pipeline is rated "excellent." The agent routine over-weights mean reversion. Consider adjusting evening-analysis routine to weight momentum signals more heavily.
+2. **FRED API resilience** — Low-Timeframe Analyst hit FRED failures disrupting macro data. Add retry/fallback/staleness warnings.
+3. **PMI data discrepancy** — Medium-Timeframe Analyst noted PMI 30 vs forecast 51.2. Investigate ISM scraper accuracy.
 
 **Shipped since last review (Mar 30):**
-1. ✅ Situation engine auto-populate (P1) — `analytics situation populate` derives timeframe scores from existing regime/scenario/trend/cycle data
-5. ✅ F58.4 backtest routine integration (#478) — all 4 analysts + evening-analysis now consume backtest accuracy data. **F58 complete.**
-2. ✅ F57.2 portfolio-matrix (#450) — `analytics views portfolio-matrix` with coverage stats
-3. ✅ F57.3 analyst view history (#453) — `analytics views history` with drift tracking
-4. ✅ F58.3 backtest agent (#474) — `analytics backtest agent --agent <name>` per-agent accuracy breakdown
+1. ✅ FRED GDPNow + Real GDP Growth Rate (#483) — fresher GDP data for Medium-Timeframe Analyst
+2. ✅ Regime history date-range filtering + summary (#486) — addresses Macro-Timeframe Analyst request
+3. ✅ F57 complete (all 6 sub-items) — timeframe analyst self-awareness
+4. ✅ F58 complete (all 4 sub-items) — prediction accuracy backtesting
+5. ✅ stress-test --list-scenarios (#463) — Low-Timeframe Analyst request
+6. ✅ ISM PMI targeted extraction (#481) — direct ISM data source
 
-**Release status:** v0.22.0 eligible — 48 commits since v0.21.0, no P0 bugs, 2115 tests passing, clippy clean. Features shipped: F55 complete, F56 complete, F57.1-F57.3, F58.1-F58.3, prediction lessons, catalyst linkage, adversarial debates, analyst views.
+**Release status:** v0.23.0 eligible — 35 commits since v0.22.0, no P0 bugs, 2142 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.
