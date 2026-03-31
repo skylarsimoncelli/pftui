@@ -3282,6 +3282,7 @@ fn main() -> Result<()> {
                     None,
                     None,
                     None,
+                    false,
                     json,
                 ),
                 cli::AnalyticsTrendsCommand::List {
@@ -3291,6 +3292,7 @@ fn main() -> Result<()> {
                     category,
                     status,
                     limit,
+                    verbose,
                     json,
                 } => commands::trends::run(
                     &backend,
@@ -3314,6 +3316,7 @@ fn main() -> Result<()> {
                     None,
                     None,
                     limit,
+                    verbose,
                     json,
                 ),
                 cli::AnalyticsTrendsCommand::Update {
@@ -3350,6 +3353,7 @@ fn main() -> Result<()> {
                     None,
                     None,
                     None,
+                    false,
                     json,
                 ),
                 cli::AnalyticsTrendsCommand::Dashboard { json } => commands::trends::run(
@@ -3374,6 +3378,7 @@ fn main() -> Result<()> {
                     None,
                     None,
                     None,
+                    false,
                     json,
                 ),
                 cli::AnalyticsTrendsCommand::Evidence { command } => match command {
@@ -3409,6 +3414,7 @@ fn main() -> Result<()> {
                             None,
                             None,
                             None,
+                            false,
                             json,
                         )
                     }
@@ -3435,6 +3441,7 @@ fn main() -> Result<()> {
                             None,
                             None,
                             limit,
+                            false,
                             json,
                         )
                     }
@@ -3470,6 +3477,7 @@ fn main() -> Result<()> {
                         mechanism.as_deref(),
                         impact_timeframe.as_deref(),
                         None,
+                        false,
                         json,
                     ),
                     cli::AnalyticsTrendsImpactCommand::List {
@@ -3499,6 +3507,7 @@ fn main() -> Result<()> {
                         None,
                         None,
                         limit,
+                        false,
                         json,
                     ),
                 },
