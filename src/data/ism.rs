@@ -104,11 +104,18 @@ async fn fetch_single_pmi(
 /// Also extracts previous month value from patterns like:
 ///   "compared to the reading of XX.X in January"
 ///   "from XX.X percent in January"
+///
+/// Number patterns accept round integers (e.g. "49 percent") and up to two
+/// decimal places (e.g. "49.15 percent") — not just "XX.X".
 fn extract_ism_pmi(text: &str) -> Option<(Decimal, Option<Decimal>)> {
+    // Common numeric pattern: 2-digit integer with optional 1-2 decimal places.
+    // Matches: 49, 49.1, 49.15, 52.4, 50.0
+    const NUM: &str = r"\d{2}(?:\.\d{1,2})?";
+
     // Strategy 1: ISM official format "PMI® registered XX.X percent"
     // or "PMI® at XX.X%" from title patterns
     let pmi_re = Regex::new(
-        r"(?i)(?:PMI[®]?\s+(?:registered|at)\s+(\d{2}\.\d)\s*(?:percent|%))"
+        &format!(r"(?i)(?:PMI[®]?\s+(?:registered|at)\s+({NUM})\s*(?:percent|%))")
     ).ok()?;
 
     if let Some(caps) = pmi_re.captures(text) {
@@ -118,9 +125,9 @@ fn extract_ism_pmi(text: &str) -> Option<(Decimal, Option<Decimal>)> {
     }
 
     // Strategy 2: Title patterns like "Manufacturing PMI® at 52.4%"
-    // or "PMI at 52.4; February 2026"
+    // or "PMI at 52.4; February 2026" or "PMI at 49"
     let title_re = Regex::new(
-        r"(?i)PMI[®]?\s+at\s+(\d{2}\.\d)"
+        &format!(r"(?i)PMI[®]?\s+at\s+({NUM})")
     ).ok()?;
 
     if let Some(caps) = title_re.captures(text) {
@@ -129,15 +136,15 @@ fn extract_ism_pmi(text: &str) -> Option<(Decimal, Option<Decimal>)> {
         return Some((value, previous));
     }
 
-    // Strategy 3: Financial data sites "Actual52.4" or "Actual: 52.4"
+    // Strategy 3: Financial data sites "Actual52.4" or "Actual: 52.4" or "Actual: 49"
     let actual_re = Regex::new(
-        r"(?i)Actual[:\s]*(\d{2}\.\d)"
+        &format!(r"(?i)Actual[:\s]*({NUM})")
     ).ok()?;
 
     if let Some(caps) = actual_re.captures(text) {
         let value = Decimal::from_str(caps.get(1)?.as_str()).ok()?;
         // Try to extract previous from "Previous" field
-        let prev_re = Regex::new(r"(?i)Previous[:\s·]*(\d{2}\.\d)").ok()?;
+        let prev_re = Regex::new(&format!(r"(?i)Previous[:\s·]*({NUM})")).ok()?;
         let previous = prev_re
             .captures(text)
             .and_then(|c| Decimal::from_str(c.get(1)?.as_str()).ok());
@@ -146,7 +153,7 @@ fn extract_ism_pmi(text: &str) -> Option<(Decimal, Option<Decimal>)> {
 
     // Strategy 4: Simple "slipped to XX.X" or "rose to XX.X" or "came in at XX.X"
     let narrative_re = Regex::new(
-        r"(?i)(?:slipped|rose|fell|increased|decreased|came\s+in|expanded|contracted)\s+to\s+(\d{2}\.\d)"
+        &format!(r"(?i)(?:slipped|rose|fell|increased|decreased|came\s+in|expanded|contracted)\s+to\s+({NUM})")
     ).ok()?;
 
     if let Some(caps) = narrative_re.captures(text) {
@@ -162,8 +169,9 @@ fn extract_ism_pmi(text: &str) -> Option<(Decimal, Option<Decimal>)> {
 fn extract_previous_pmi(text: &str) -> Option<Decimal> {
     // Pattern: "from XX.X [percent|%|in month]" or "compared to ... XX.X"
     // Also handles "from XX.X in January" without "percent" suffix
+    // Accepts round integers and 1-2 decimal places.
     let prev_re = Regex::new(
-        r"(?i)(?:from\s+|compared\s+to\s+(?:the\s+)?(?:reading\s+of\s+)?|down\s+from\s+|up\s+from\s+)(\d{2}\.\d)\s*(?:percent|%|in\s+\w+)?"
+        r"(?i)(?:from\s+|compared\s+to\s+(?:the\s+)?(?:reading\s+of\s+)?|down\s+from\s+|up\s+from\s+)(\d{2}(?:\.\d{1,2})?)\s*(?:percent|%|in\s+\w+)?"
     ).ok()?;
 
     prev_re
@@ -264,5 +272,58 @@ mod tests {
         let (value, previous) = extract_ism_pmi(text).unwrap();
         assert_eq!(value, dec!(52.4));
         assert_eq!(previous, Some(dec!(52.6)));
+    }
+
+    // --- Tests for broadened number patterns (round integers, 2-decimal) ---
+
+    #[test]
+    fn extracts_round_integer_registered() {
+        let text = "The Manufacturing PMI® registered 49 percent in March";
+        let (value, _) = extract_ism_pmi(text).unwrap();
+        assert_eq!(value, dec!(49));
+    }
+
+    #[test]
+    fn extracts_round_integer_at_format() {
+        let text = "ISM Manufacturing PMI® at 50%";
+        let (value, _) = extract_ism_pmi(text).unwrap();
+        assert_eq!(value, dec!(50));
+    }
+
+    #[test]
+    fn extracts_two_decimal_places() {
+        let text = "PMI® registered 49.15 percent in March 2026";
+        let (value, _) = extract_ism_pmi(text).unwrap();
+        assert_eq!(value, dec!(49.15));
+    }
+
+    #[test]
+    fn extracts_actual_round_integer() {
+        let text = "Latest ReleaseMar 30, 2026 · Actual49 · Forecast51.2 · Previous · 50.3";
+        let (value, previous) = extract_ism_pmi(text).unwrap();
+        assert_eq!(value, dec!(49));
+        assert_eq!(previous, Some(dec!(50.3)));
+    }
+
+    #[test]
+    fn extracts_narrative_round_integer() {
+        let text = "The ISM Manufacturing PMI fell to 49 in March from 50.3 in February";
+        let (value, previous) = extract_ism_pmi(text).unwrap();
+        assert_eq!(value, dec!(49));
+        assert_eq!(previous, Some(dec!(50.3)));
+    }
+
+    #[test]
+    fn extracts_previous_round_integer() {
+        let text = "registered 48.5 percent, down from 50 percent in February";
+        let prev = extract_previous_pmi(text);
+        assert_eq!(prev, Some(dec!(50)));
+    }
+
+    #[test]
+    fn extracts_previous_two_decimal() {
+        let text = "fell to 48.1 from 49.35 percent in December";
+        let prev = extract_previous_pmi(text);
+        assert_eq!(prev, Some(dec!(49.35)));
     }
 }
