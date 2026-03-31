@@ -22,6 +22,8 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::str::FromStr;
+use std::time::Duration;
+use tokio::time::sleep;
 
 /// Known FRED series IDs we track.
 pub const FRED_SERIES: &[FredSeries] = &[
@@ -180,6 +182,12 @@ struct RawObservation {
 
 const FRED_BASE_URL: &str = "https://api.stlouisfed.org/fred/series/observations";
 
+/// Maximum number of retry attempts for FRED API calls.
+const MAX_RETRIES: u32 = 3;
+
+/// Base delay for exponential backoff (doubled each retry).
+const BASE_RETRY_DELAY_MS: u64 = 500;
+
 /// Build a reqwest client with proper User-Agent.
 fn build_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
@@ -189,10 +197,47 @@ fn build_client() -> Result<reqwest::Client> {
         .map_err(Into::into)
 }
 
+/// Perform an HTTP GET with exponential backoff retry.
+///
+/// Retries on 5xx errors and network failures. Does NOT retry on 4xx
+/// (client errors like bad API key or invalid series).
+async fn get_with_retry(client: &reqwest::Client, url: &str) -> Result<reqwest::Response> {
+    let mut last_err = None;
+    for attempt in 0..MAX_RETRIES {
+        match client.get(url).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    return Ok(resp);
+                }
+                // Don't retry client errors (4xx) — they won't resolve
+                if status.is_client_error() {
+                    bail!("FRED API returned client error {} (not retryable)", status);
+                }
+                // Server error (5xx) — retry
+                last_err = Some(format!("FRED API returned server error {}", status));
+            }
+            Err(e) => {
+                last_err = Some(format!("FRED request failed: {}", e));
+            }
+        }
+        if attempt + 1 < MAX_RETRIES {
+            let delay = Duration::from_millis(BASE_RETRY_DELAY_MS * 2u64.pow(attempt));
+            sleep(delay).await;
+        }
+    }
+    bail!(
+        "{} (after {} retries)",
+        last_err.unwrap_or_else(|| "unknown error".to_string()),
+        MAX_RETRIES
+    );
+}
+
 /// Fetch the latest observations for a single FRED series.
 ///
 /// Returns up to `limit` most recent observations (default 10).
 /// The API key is required — pass it from config.
+/// Uses exponential backoff retry on server errors and network failures.
 pub async fn fetch_series(
     api_key: &str,
     series_id: &str,
@@ -205,15 +250,7 @@ pub async fn fetch_series(
         FRED_BASE_URL, series_id, api_key, limit
     );
 
-    let resp = client.get(&url).send().await?;
-
-    if !resp.status().is_success() {
-        bail!(
-            "FRED API returned status {} for series {}",
-            resp.status(),
-            series_id
-        );
-    }
+    let resp = get_with_retry(&client, &url).await?;
 
     let body: FredResponse = resp.json().await?;
 
@@ -248,6 +285,7 @@ pub async fn fetch_latest(api_key: &str, series_id: &str) -> Result<Option<FredO
 /// Fetch historical observations for a FRED series within a date range.
 ///
 /// Useful for sparklines and trend analysis.
+/// Uses exponential backoff retry on server errors and network failures.
 pub async fn fetch_history(
     api_key: &str,
     series_id: &str,
@@ -267,15 +305,7 @@ pub async fn fetch_history(
         end.format("%Y-%m-%d")
     );
 
-    let resp = client.get(&url).send().await?;
-
-    if !resp.status().is_success() {
-        bail!(
-            "FRED API returned status {} for series {} history",
-            resp.status(),
-            series_id
-        );
-    }
+    let resp = get_with_retry(&client, &url).await?;
 
     let body: FredResponse = resp.json().await?;
 
@@ -543,5 +573,64 @@ mod tests {
         ];
 
         assert!(detect_surprise(&observations).is_none());
+    }
+
+    #[test]
+    fn retry_constants_are_sane() {
+        // Use const blocks to satisfy clippy::assertions_on_constants
+        const {
+            assert!(MAX_RETRIES >= 2, "Should retry at least twice");
+            assert!(MAX_RETRIES <= 5, "Should not retry excessively");
+            assert!(BASE_RETRY_DELAY_MS >= 100, "Base delay should be >= 100ms");
+            assert!(BASE_RETRY_DELAY_MS <= 2000, "Base delay should be <= 2s");
+        }
+        // Runtime check: max total delay is reasonable (500 + 1000 + 2000 = 3500ms)
+        let max_total: u64 = (0..MAX_RETRIES).map(|i| BASE_RETRY_DELAY_MS * 2u64.pow(i)).sum();
+        assert!(max_total <= 10_000, "Total retry delay should be under 10s");
+    }
+
+    #[test]
+    fn test_is_stale_boundary_daily() {
+        // 3 days ago should NOT be stale (weekends/holidays buffer)
+        let three_days_ago = (Utc::now().date_naive() - chrono::Duration::days(3))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(!is_stale(&three_days_ago, Frequency::Daily));
+
+        // 4 days ago SHOULD be stale
+        let four_days_ago = (Utc::now().date_naive() - chrono::Duration::days(4))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(is_stale(&four_days_ago, Frequency::Daily));
+    }
+
+    #[test]
+    fn test_is_stale_boundary_weekly() {
+        // 10 days ago should NOT be stale
+        let ten_days_ago = (Utc::now().date_naive() - chrono::Duration::days(10))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(!is_stale(&ten_days_ago, Frequency::Weekly));
+
+        // 11 days ago SHOULD be stale
+        let eleven_days_ago = (Utc::now().date_naive() - chrono::Duration::days(11))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(is_stale(&eleven_days_ago, Frequency::Weekly));
+    }
+
+    #[test]
+    fn test_is_stale_boundary_quarterly() {
+        // 120 days ago should NOT be stale
+        let within = (Utc::now().date_naive() - chrono::Duration::days(120))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(!is_stale(&within, Frequency::Quarterly));
+
+        // 121 days ago SHOULD be stale
+        let beyond = (Utc::now().date_naive() - chrono::Duration::days(121))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(is_stale(&beyond, Frequency::Quarterly));
     }
 }

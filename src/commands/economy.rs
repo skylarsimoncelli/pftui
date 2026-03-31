@@ -94,9 +94,40 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                         "diff_pct": d.diff_pct.to_string(),
                     });
                 }
+
+                // Add staleness warning for FRED-sourced indicators
+                if let Some(fred_series_id) = indicator_to_fred_series(&r.indicator) {
+                    if let Some(cached) = fred_observations.iter().find(|o| o.series_id == fred_series_id) {
+                        if let Some(series_meta) = fred::series_by_id(fred_series_id) {
+                            let is_stale = fred::is_stale(&cached.date, series_meta.frequency);
+                            if is_stale {
+                                let age_days = chrono::NaiveDate::parse_from_str(&cached.date, "%Y-%m-%d")
+                                    .ok()
+                                    .map(|d| (chrono::Utc::now().date_naive() - d).num_days());
+                                obj["staleness"] = serde_json::json!({
+                                    "is_stale": true,
+                                    "data_date": cached.date,
+                                    "age_days": age_days,
+                                    "expected_frequency": format!("{:?}", series_meta.frequency).to_lowercase(),
+                                    "warning": format!(
+                                        "FRED data for {} is {} days old (expected {} updates)",
+                                        series_meta.name,
+                                        age_days.unwrap_or(0),
+                                        format!("{:?}", series_meta.frequency).to_lowercase()
+                                    ),
+                                });
+                            }
+                        }
+                    }
+                }
+
                 obj
             })
             .collect();
+
+        // Compute top-level data quality summary for agents
+        let fred_quality = compute_fred_data_quality(&fred_observations);
+
         let surprises: Vec<_> = macro_events
             .iter()
             .map(|event| {
@@ -119,6 +150,7 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
             serde_json::to_string_pretty(&serde_json::json!({
                 "indicators": indicators,
                 "macro_events": surprises,
+                "data_quality": fred_quality,
             }))?
         );
         return Ok(());
@@ -462,6 +494,57 @@ fn fred_previous_for_indicator(
 }
 
 /// Map economy indicator names to FRED series IDs for cross-referencing.
+/// Compute a top-level data quality summary for FRED data.
+///
+/// Agents use this to know at a glance whether FRED data is healthy
+/// or degraded, without checking every individual indicator's staleness.
+fn compute_fred_data_quality(
+    fred_observations: &[economic_cache::EconomicObservation],
+) -> serde_json::Value {
+    let total_series = fred::FRED_SERIES.len();
+    let cached_count = fred_observations.len();
+    let mut stale_series: Vec<serde_json::Value> = Vec::new();
+    let mut fresh_count = 0usize;
+
+    for series in fred::FRED_SERIES {
+        if let Some(obs) = fred_observations.iter().find(|o| o.series_id == series.id) {
+            if fred::is_stale(&obs.date, series.frequency) {
+                let age_days = chrono::NaiveDate::parse_from_str(&obs.date, "%Y-%m-%d")
+                    .ok()
+                    .map(|d| (chrono::Utc::now().date_naive() - d).num_days());
+                stale_series.push(serde_json::json!({
+                    "series_id": series.id,
+                    "name": series.name,
+                    "data_date": obs.date,
+                    "age_days": age_days,
+                    "expected_frequency": format!("{:?}", series.frequency).to_lowercase(),
+                }));
+            } else {
+                fresh_count += 1;
+            }
+        }
+    }
+
+    let status = if cached_count == 0 {
+        "unavailable"
+    } else if stale_series.is_empty() {
+        "healthy"
+    } else if stale_series.len() <= 3 {
+        "partially_stale"
+    } else {
+        "degraded"
+    };
+
+    serde_json::json!({
+        "fred_status": status,
+        "total_series": total_series,
+        "cached_series": cached_count,
+        "fresh_series": fresh_count,
+        "stale_series_count": stale_series.len(),
+        "stale_series": stale_series,
+    })
+}
+
 fn indicator_to_fred_series(indicator: &str) -> Option<&'static str> {
     match indicator {
         "fed_funds_rate" => Some("FEDFUNDS"),
@@ -962,5 +1045,78 @@ mod tests {
             count_sources_for_indicator("fed_funds_rate", &fred_obs, &rows),
             2
         );
+    }
+
+    #[test]
+    fn data_quality_healthy_when_all_fresh() {
+        use rust_decimal_macros::dec;
+        let today = chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        let obs: Vec<economic_cache::EconomicObservation> = fred::FRED_SERIES
+            .iter()
+            .map(|s| economic_cache::EconomicObservation {
+                series_id: s.id.to_string(),
+                date: today.clone(),
+                value: dec!(100),
+                fetched_at: "2026-03-31T00:00:00Z".to_string(),
+            })
+            .collect();
+
+        let quality = compute_fred_data_quality(&obs);
+        assert_eq!(quality["fred_status"], "healthy");
+        assert_eq!(quality["stale_series_count"], 0);
+        assert_eq!(quality["fresh_series"], fred::FRED_SERIES.len());
+    }
+
+    #[test]
+    fn data_quality_unavailable_when_empty() {
+        let obs: Vec<economic_cache::EconomicObservation> = vec![];
+        let quality = compute_fred_data_quality(&obs);
+        assert_eq!(quality["fred_status"], "unavailable");
+        assert_eq!(quality["cached_series"], 0);
+    }
+
+    #[test]
+    fn data_quality_partially_stale_with_old_data() {
+        use rust_decimal_macros::dec;
+        let today = chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        let old_date = "2020-01-01".to_string();
+        let mut obs: Vec<economic_cache::EconomicObservation> = fred::FRED_SERIES
+            .iter()
+            .map(|s| economic_cache::EconomicObservation {
+                series_id: s.id.to_string(),
+                date: today.clone(),
+                value: dec!(100),
+                fetched_at: "2026-03-31T00:00:00Z".to_string(),
+            })
+            .collect();
+        // Make one series stale
+        if let Some(first) = obs.first_mut() {
+            first.date = old_date;
+        }
+
+        let quality = compute_fred_data_quality(&obs);
+        assert_eq!(quality["stale_series_count"], 1);
+        // Status should be partially_stale (1 <= 3)
+        assert_eq!(quality["fred_status"], "partially_stale");
+    }
+
+    #[test]
+    fn data_quality_degraded_with_many_stale() {
+        use rust_decimal_macros::dec;
+        let old_date = "2020-01-01".to_string();
+        // All series are stale
+        let obs: Vec<economic_cache::EconomicObservation> = fred::FRED_SERIES
+            .iter()
+            .map(|s| economic_cache::EconomicObservation {
+                series_id: s.id.to_string(),
+                date: old_date.clone(),
+                value: dec!(100),
+                fetched_at: "2020-01-01T00:00:00Z".to_string(),
+            })
+            .collect();
+
+        let quality = compute_fred_data_quality(&obs);
+        assert_eq!(quality["fred_status"], "degraded");
+        assert!(quality["stale_series_count"].as_u64().unwrap() > 3);
     }
 }

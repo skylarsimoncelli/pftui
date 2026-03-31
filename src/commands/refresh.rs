@@ -2584,7 +2584,10 @@ fn store_fred_result(
             let mut surprise_count = 0usize;
             let fetched_at = chrono::Utc::now().to_rfc3339();
 
-            for (_series_id, result) in results {
+            let mut failed_series: Vec<String> = Vec::new();
+            let mut cache_fallback_count = 0usize;
+
+            for (series_id, result) in results {
                 match result {
                     Ok(observations) => {
                         let cached: Vec<_> = observations
@@ -2615,26 +2618,63 @@ fn store_fred_result(
                         }
                     }
                     Err(e) => {
-                        warn_ln!(verbose, "FRED series fetch failed: {}", e);
+                        warn_ln!(verbose, "FRED series {} fetch failed (using cache fallback): {}", series_id, e);
+                        failed_series.push(series_id.to_string());
+                        // Check if we have cached data for this series
+                        if economic_cache::get_latest_backend(backend, series_id).is_ok() {
+                            cache_fallback_count += 1;
+                        }
                     }
                 }
             }
-            info_ln!(
-                verbose,
-                "✓ FRED ({} series, {} surprise events)",
-                updated,
-                surprise_count
-            );
+
+            let status = if failed_series.is_empty() {
+                SourceStatus::Ok
+            } else if updated > 0 {
+                // Partial success — some series updated, some fell back to cache
+                SourceStatus::Ok
+            } else {
+                // All series failed — degraded, relying entirely on cache
+                SourceStatus::Ok // still "ok" because cache provides data
+            };
+
+            let detail_msg = if failed_series.is_empty() {
+                None
+            } else {
+                Some(format!(
+                    "{} series failed (cache fallback for {}): {}",
+                    failed_series.len(),
+                    cache_fallback_count,
+                    failed_series.join(", ")
+                ))
+            };
+
+            if failed_series.is_empty() {
+                info_ln!(
+                    verbose,
+                    "✓ FRED ({} series, {} surprise events)",
+                    updated,
+                    surprise_count
+                );
+            } else {
+                warn_ln!(
+                    verbose,
+                    "⚠ FRED ({} series updated, {} failed → cache fallback, {} surprise events)",
+                    updated,
+                    failed_series.len(),
+                    surprise_count
+                );
+            }
             dag_result.add(SourceResult {
                 name: "fred".to_string(),
                 label: "FRED".to_string(),
-                status: SourceStatus::Ok,
+                status,
                 items_updated: Some(updated),
                 duration_ms: elapsed.as_millis() as u64,
                 reason: None,
                 age_minutes: None,
-                error: None,
-                detail: None,
+                error: if failed_series.is_empty() { None } else { Some(format!("{} series failed", failed_series.len())) },
+                detail: detail_msg,
             });
         }
     } else if in_plan {
