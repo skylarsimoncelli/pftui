@@ -61,7 +61,8 @@ _(none)_
 8. ✅ PMI data discrepancy fix (#492) — context-aware extraction, broadened regex patterns, 17 new tests
 9. ✅ FIC/MIC conflict monitor (#494) — `analytics power-flow conflicts` with defense vs energy vs VIX cross-reference
 10. ✅ Trends list enrichment (#502) — evidence summary + asset impacts in `analytics trends list`, --verbose flag
+11. ✅ Analytics guidance (#505) — routine workflow priority advisor for agent routines
 
-**Release status:** v0.23.0 eligible — 38 commits since v0.22.0, no P0 bugs, 2189 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios, PMI discrepancy fix, power-flow conflicts, trends list enrichment.
+**Release status:** v0.23.0 eligible — 39 commits since v0.22.0, no P0 bugs, 2203 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios, PMI discrepancy fix, power-flow conflicts, trends list enrichment, analytics guidance.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.

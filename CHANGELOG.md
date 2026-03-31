@@ -2,6 +2,32 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-31 — feat: `analytics guidance` — routine workflow priority advisor
+
+New `analytics guidance` command — a single-call routine priority advisor for agent workflows. Answers "what should I focus on right now?" by aggregating pending actions into one prioritized payload.
+
+**What it aggregates:**
+- 🔴 **Critical:** Triggered alerts needing acknowledgment
+- 🟠 **High:** Pending predictions past target date needing scoring
+- 🟡 **Medium:** Recently-updated scenarios (last 24h)
+- 🟢 **Low:** Stale convictions (7+ days without update)
+
+Each action item includes a suggested CLI command. Summary counts provide quick triage.
+
+**Agent consumption:**
+```
+pftui analytics guidance --json          # Full JSON payload
+pftui analytics guidance                 # Human-readable terminal output
+```
+
+**Files changed:**
+- `src/commands/guidance.rs` — new command implementation (541 lines)
+- `src/cli.rs` — Guidance variant + 2 CLI parse tests
+- `src/commands/mod.rs` — module registration
+- `src/main.rs` — dispatch wiring
+
+**Tests:** 2203 pass (+14 new: 12 unit + 2 CLI parse), clippy clean.
+
 ### 2026-03-31 — feat: enrich `analytics trends list` with evidence summary and asset impacts
 
 Enriches `analytics trends list` so agents and humans get evidence and asset impact data in a single command, without running separate queries per trend. Addresses High-Timeframe Analyst feedback (Mar 30): "integrate HIGH trend evidence directly into trend list output for faster synthesis."
