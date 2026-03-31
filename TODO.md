@@ -14,9 +14,6 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **Fresher PMI/GDP data sources** — Medium-Timeframe Analyst (85/75 Mar 30) reports some indicators are stale. PMI and GDP sourced from Brave scraping have low confidence and may lag. Investigate adding ISM PMI direct source or increasing FRED refresh frequency for GDP/GDI. See `src/data/economic.rs`, `src/commands/economy.rs`.
-
-
 - [Feedback] **Historical regime transition data** — Macro-Timeframe Analyst (80/85 Mar 29) wants historical regime transition data to track past crisis periods. `analytics macro regime transitions` exists but may need richer historical context. Verify current coverage and add date-range filtering or summary stats if missing. See `src/commands/regime.rs`, `src/commands/regime_transitions.rs`.
 
 ### F57: Timeframe Analyst Self-Awareness
