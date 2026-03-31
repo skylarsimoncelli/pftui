@@ -2,6 +2,30 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-31 — fix: PMI data discrepancy — context-aware extraction + broadened patterns
+
+Fixes the PMI showing 30 vs forecast 51.2 discrepancy reported by Medium-Timeframe Analyst. Root cause was two independent issues:
+
+1. **ISM scraper regex too rigid** — patterns only matched `XX.X` format (e.g. `52.4`). Round integers (`49`, `50`) and two-decimal values (`49.15`) were silently rejected, causing ISM to return no data.
+
+2. **Generic Brave scraper too loose** — when ISM failed, PMI fell through to `extract_decimal_like()` which matched ANY number in search results. Stray numbers from dates ("March 30") in the 25-80 plausibility range were extracted as PMI values.
+
+**ISM scraper (`src/data/ism.rs`):**
+- Broadened all regex patterns from `\d{2}\.\d` to `\d{2}(?:\.\d{1,2})?`
+- Matches round integers, 1-decimal, and 2-decimal formats
+- Updated both value and previous-value extraction
+
+**Generic Brave scraper (`src/data/economic.rs`):**
+- New `extract_pmi_contextual()` replaces `extract_decimal_like` for PMI indicators
+- Five context-aware extraction strategies requiring PMI keywords near the number
+- Never falls through to blind decimal extraction
+
+**Files changed:**
+- `src/data/ism.rs` — broadened regex patterns, +7 tests
+- `src/data/economic.rs` — new `extract_pmi_contextual()`, +11 tests (including regression for "March 30" bug)
+
+**Tests:** 2167 pass (+17 new), clippy clean.
+
 ### 2026-03-31 — feat: FRED API failure resilience with retry, cache fallback, and staleness warnings
 
 Addresses Low-Timeframe Analyst feedback (85/82 Mar 30) about FRED API failures disrupting macro data flow. Three layers of resilience:

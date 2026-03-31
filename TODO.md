@@ -15,7 +15,7 @@ _(none)_
 ## P2 - Coverage And Agent Consumption
 
 - [Feedback] **FIC/MIC power balance indicators for conflicts** — Medium-Timeframe Analyst (85/88 Mar 31) wants defense stocks vs oil tracking during geopolitical conflicts. Add defense sector ETFs (ITA, XAR, PPA) to `analytics regime-flows` or a new `analytics power-flow conflicts` subcommand that cross-references energy (XLE, CL=F) with defense (ITA) and VIX during crisis regimes. Files: `src/commands/regime_flows.rs`, `src/data/market_symbols.rs`.
-- [Feedback] **PMI data discrepancy investigation** — Medium-Timeframe Analyst (85/88 Mar 31) noted PMI showing 30 vs forecast 51.2 — a 21-point gap suggesting data quality issue in ISM scraper or FRED mapping. Investigate whether ISM scraper (`src/data/ism.rs`) is pulling stale or misformatted values. Validate PMI plausibility range and add cross-source sanity checks.
+
 
 ## P3 - Long Term
 
@@ -48,7 +48,7 @@ _(none)_
 **Top 3 priorities based on feedback:**
 1. **Evening Analyst prediction quality** — lowest overall at 75%. Backtest shows 26.7% win rate. Not a tooling issue — the analytics pipeline is rated "excellent." The agent routine over-weights mean reversion. Consider adjusting evening-analysis routine to weight momentum signals more heavily.
 2. ~~**FRED API resilience**~~ — SHIPPED (#490). Retry + cache fallback + staleness warnings.
-3. **PMI data discrepancy** — Medium-Timeframe Analyst noted PMI 30 vs forecast 51.2. Investigate ISM scraper accuracy.
+3. ~~**PMI data discrepancy**~~ — SHIPPED (#492). Context-aware extraction + broadened regex patterns.
 
 **Shipped since last review (Mar 30):**
 1. ✅ FRED GDPNow + Real GDP Growth Rate (#483) — fresher GDP data for Medium-Timeframe Analyst
@@ -58,7 +58,8 @@ _(none)_
 5. ✅ stress-test --list-scenarios (#463) — Low-Timeframe Analyst request
 6. ✅ ISM PMI targeted extraction (#481) — direct ISM data source
 7. ✅ FRED API failure resilience (#490) — retry with exponential backoff, cache fallback, staleness warnings
+8. ✅ PMI data discrepancy fix (#492) — context-aware extraction, broadened regex patterns, 17 new tests
 
-**Release status:** v0.23.0 eligible — 35 commits since v0.22.0, no P0 bugs, 2142 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios.
+**Release status:** v0.23.0 eligible — 36 commits since v0.22.0, no P0 bugs, 2167 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios, PMI discrepancy fix.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.
