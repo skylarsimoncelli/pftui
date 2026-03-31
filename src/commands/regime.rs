@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::BTreeMap;
 
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_cached_price_backend;
@@ -180,6 +181,8 @@ pub fn run(
     backend: &BackendConnection,
     action: &str,
     limit: Option<usize>,
+    from: Option<&str>,
+    to: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
     match action {
@@ -209,7 +212,8 @@ pub fn run(
             }
         }
         "history" => {
-            let rows = regime_snapshots::get_history_backend(backend, limit)?;
+            let rows =
+                regime_snapshots::get_history_filtered_backend(backend, limit, from, to)?;
             if json_output {
                 println!(
                     "{}",
@@ -230,7 +234,8 @@ pub fn run(
             }
         }
         "transitions" => {
-            let rows = regime_snapshots::get_transitions_backend(backend, limit)?;
+            let rows =
+                regime_snapshots::get_transitions_filtered_backend(backend, limit, from, to)?;
             if json_output {
                 println!(
                     "{}",
@@ -245,10 +250,218 @@ pub fn run(
                 }
             }
         }
+        "summary" => {
+            run_summary(backend, from, to, json_output)?;
+        }
         other => anyhow::bail!(
-            "unknown regime action '{}'. Valid: current, history, transitions",
+            "unknown regime action '{}'. Valid: current, history, transitions, summary",
             other
         ),
+    }
+
+    Ok(())
+}
+
+/// Summary statistics for regime history: time in each regime, transition counts, durations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegimeSummary {
+    /// Total snapshots in the queried range.
+    pub total_snapshots: usize,
+    /// Total regime transitions detected.
+    pub total_transitions: usize,
+    /// Date range covered.
+    pub date_range: Option<DateRange>,
+    /// Per-regime breakdown: snapshots, percentage of time, avg confidence.
+    pub regimes: Vec<RegimeStats>,
+    /// Transition pairs with counts and examples.
+    pub transition_pairs: Vec<TransitionPair>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DateRange {
+    pub from: String,
+    pub to: String,
+    pub total_days: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegimeStats {
+    pub regime: String,
+    pub snapshot_count: usize,
+    pub percentage: f64,
+    pub avg_confidence: f64,
+    pub first_seen: String,
+    pub last_seen: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransitionPair {
+    pub from: String,
+    pub to: String,
+    pub count: usize,
+    pub last_occurred: String,
+}
+
+fn run_summary(
+    backend: &BackendConnection,
+    from: Option<&str>,
+    to: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let rows = regime_snapshots::get_history_filtered_backend(backend, None, from, to)?;
+
+    if rows.is_empty() {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "total_snapshots": 0,
+                    "total_transitions": 0,
+                    "regimes": [],
+                    "transition_pairs": []
+                }))?
+            );
+        } else {
+            println!("No regime data in the specified range.");
+        }
+        return Ok(());
+    }
+
+    // Rows are desc — reverse for chronological processing
+    let chronological: Vec<_> = rows.iter().rev().collect();
+
+    // Date range
+    let first_date = chronological
+        .first()
+        .map(|r| r.recorded_at.get(0..10).unwrap_or(&r.recorded_at).to_string())
+        .unwrap_or_default();
+    let last_date = chronological
+        .last()
+        .map(|r| r.recorded_at.get(0..10).unwrap_or(&r.recorded_at).to_string())
+        .unwrap_or_default();
+    let total_days = {
+        let d1 = chrono::NaiveDate::parse_from_str(&first_date, "%Y-%m-%d");
+        let d2 = chrono::NaiveDate::parse_from_str(&last_date, "%Y-%m-%d");
+        match (d1, d2) {
+            (Ok(a), Ok(b)) => (b - a).num_days().max(1),
+            _ => 1,
+        }
+    };
+
+    let date_range = Some(DateRange {
+        from: first_date,
+        to: last_date,
+        total_days,
+    });
+
+    // Per-regime stats
+    let mut regime_map: BTreeMap<String, (usize, f64, String, String)> = BTreeMap::new();
+    for r in &chronological {
+        let entry = regime_map
+            .entry(r.regime.clone())
+            .or_insert((0, 0.0, r.recorded_at.clone(), r.recorded_at.clone()));
+        entry.0 += 1;
+        entry.1 += r.confidence.unwrap_or(0.0);
+        // Update first/last seen
+        if r.recorded_at < entry.2 {
+            entry.2 = r.recorded_at.clone();
+        }
+        if r.recorded_at > entry.3 {
+            entry.3 = r.recorded_at.clone();
+        }
+    }
+
+    let total = chronological.len();
+    let mut regimes: Vec<RegimeStats> = regime_map
+        .into_iter()
+        .map(|(regime, (count, conf_sum, first, last))| RegimeStats {
+            regime,
+            snapshot_count: count,
+            percentage: (count as f64 / total as f64 * 100.0 * 10.0).round() / 10.0,
+            avg_confidence: if count > 0 {
+                (conf_sum / count as f64 * 100.0).round() / 100.0
+            } else {
+                0.0
+            },
+            first_seen: first.get(0..19).unwrap_or(&first).to_string(),
+            last_seen: last.get(0..19).unwrap_or(&last).to_string(),
+        })
+        .collect();
+    regimes.sort_by(|a, b| b.snapshot_count.cmp(&a.snapshot_count));
+
+    // Transition pairs
+    let mut pair_map: BTreeMap<(String, String), (usize, String)> = BTreeMap::new();
+    let mut transition_count = 0;
+    for i in 1..chronological.len() {
+        if chronological[i].regime != chronological[i - 1].regime {
+            transition_count += 1;
+            let key = (
+                chronological[i - 1].regime.clone(),
+                chronological[i].regime.clone(),
+            );
+            let entry = pair_map
+                .entry(key)
+                .or_insert((0, chronological[i].recorded_at.clone()));
+            entry.0 += 1;
+            if chronological[i].recorded_at > entry.1 {
+                entry.1 = chronological[i].recorded_at.clone();
+            }
+        }
+    }
+
+    let mut transition_pairs: Vec<TransitionPair> = pair_map
+        .into_iter()
+        .map(|((from, to), (count, last))| TransitionPair {
+            from,
+            to,
+            count,
+            last_occurred: last.get(0..19).unwrap_or(&last).to_string(),
+        })
+        .collect();
+    transition_pairs.sort_by(|a, b| b.count.cmp(&a.count));
+
+    let summary = RegimeSummary {
+        total_snapshots: total,
+        total_transitions: transition_count,
+        date_range,
+        regimes,
+        transition_pairs,
+    };
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+    } else {
+        println!("═══ Regime Summary ═══");
+        if let Some(ref dr) = summary.date_range {
+            println!("Period: {} to {} ({} days)", dr.from, dr.to, dr.total_days);
+        }
+        println!(
+            "Snapshots: {} | Transitions: {}",
+            summary.total_snapshots, summary.total_transitions
+        );
+        println!();
+
+        println!("── Time in Regime ──");
+        for r in &summary.regimes {
+            println!(
+                "  {:14} {:>4} snapshots ({:>5.1}%)  avg conf: {:.2}",
+                r.regime.to_uppercase(),
+                r.snapshot_count,
+                r.percentage,
+                r.avg_confidence
+            );
+        }
+        println!();
+
+        if !summary.transition_pairs.is_empty() {
+            println!("── Transition Pairs ──");
+            for t in &summary.transition_pairs {
+                println!(
+                    "  {} → {}  (×{}, last: {})",
+                    t.from, t.to, t.count, t.last_occurred
+                );
+            }
+        }
     }
 
     Ok(())
@@ -323,6 +536,24 @@ mod tests {
         BackendConnection::Sqlite { conn }
     }
 
+    /// Helper to insert a regime snapshot at a specific timestamp.
+    fn insert_snapshot(
+        backend: &BackendConnection,
+        regime: &str,
+        confidence: f64,
+        timestamp: &str,
+    ) {
+        let BackendConnection::Sqlite { conn } = backend else {
+            panic!("expected sqlite");
+        };
+        conn.execute(
+            "INSERT INTO regime_snapshots (regime, confidence, drivers, recorded_at)
+             VALUES (?, ?, NULL, ?)",
+            rusqlite::params![regime, confidence, timestamp],
+        )
+        .unwrap();
+    }
+
     #[test]
     fn run_set_stores_manual_regime_snapshot() {
         let conn = crate::db::open_in_memory();
@@ -343,5 +574,184 @@ mod tests {
         assert_eq!(current.regime, "risk-off");
         assert_eq!(current.confidence, Some(0.8));
         assert_eq!(current.drivers.as_deref(), Some("[\"manual override\"]"));
+    }
+
+    #[test]
+    fn history_filtered_by_from_date() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.7, "2026-03-25 10:00:00");
+        insert_snapshot(&backend, "crisis", 1.0, "2026-03-30 10:00:00");
+
+        let rows = regime_snapshots::get_history_filtered_backend(
+            &backend,
+            None,
+            Some("2026-03-25"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        // Desc order: crisis first, then risk-off
+        assert_eq!(rows[0].regime, "crisis");
+        assert_eq!(rows[1].regime, "risk-off");
+    }
+
+    #[test]
+    fn history_filtered_by_to_date() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.7, "2026-03-25 10:00:00");
+        insert_snapshot(&backend, "crisis", 1.0, "2026-03-30 10:00:00");
+
+        let rows = regime_snapshots::get_history_filtered_backend(
+            &backend,
+            None,
+            None,
+            Some("2026-03-25"),
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].regime, "risk-off");
+        assert_eq!(rows[1].regime, "risk-on");
+    }
+
+    #[test]
+    fn history_filtered_by_date_range() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.7, "2026-03-25 10:00:00");
+        insert_snapshot(&backend, "crisis", 1.0, "2026-03-30 10:00:00");
+
+        let rows = regime_snapshots::get_history_filtered_backend(
+            &backend,
+            None,
+            Some("2026-03-24"),
+            Some("2026-03-26"),
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].regime, "risk-off");
+    }
+
+    #[test]
+    fn transitions_filtered_by_date_range() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-22 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.7, "2026-03-25 10:00:00");
+        insert_snapshot(&backend, "crisis", 1.0, "2026-03-30 10:00:00");
+
+        // All transitions
+        let all = regime_snapshots::get_transitions_filtered_backend(
+            &backend,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        // Should be 3: crisis, risk-off, risk-on (deduplicated, desc order)
+        assert_eq!(all.len(), 3);
+
+        // Only from 2026-03-24 onwards: crisis and risk-off
+        let filtered = regime_snapshots::get_transitions_filtered_backend(
+            &backend,
+            None,
+            Some("2026-03-24"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].regime, "crisis");
+        assert_eq!(filtered[1].regime, "risk-off");
+    }
+
+    #[test]
+    fn summary_with_data() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-on", 0.85, "2026-03-21 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.7, "2026-03-25 10:00:00");
+        insert_snapshot(&backend, "crisis", 1.0, "2026-03-28 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.6, "2026-03-30 10:00:00");
+
+        // Run summary in JSON mode to verify output
+        run_summary(&backend, None, None, true).unwrap();
+    }
+
+    #[test]
+    fn summary_empty_data() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        run_summary(&backend, None, None, true).unwrap();
+    }
+
+    #[test]
+    fn summary_date_filtered() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.7, "2026-03-25 10:00:00");
+        insert_snapshot(&backend, "crisis", 1.0, "2026-03-30 10:00:00");
+
+        // Only from Mar 24 onwards
+        run_summary(&backend, Some("2026-03-24"), None, true).unwrap();
+    }
+
+    #[test]
+    fn summary_regime_stats_correct() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-on", 0.9, "2026-03-21 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.6, "2026-03-25 10:00:00");
+
+        let rows =
+            regime_snapshots::get_history_filtered_backend(&backend, None, None, None).unwrap();
+        let chronological: Vec<_> = rows.iter().rev().collect();
+        assert_eq!(chronological.len(), 3);
+
+        // Verify regime counts
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for r in &chronological {
+            *counts.entry(&r.regime).or_default() += 1;
+        }
+        assert_eq!(counts["risk-on"], 2);
+        assert_eq!(counts["risk-off"], 1);
+    }
+
+    #[test]
+    fn summary_transition_pairs_counted() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.7, "2026-03-22 10:00:00");
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-24 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.7, "2026-03-26 10:00:00");
+
+        let rows =
+            regime_snapshots::get_history_filtered_backend(&backend, None, None, None).unwrap();
+        let chronological: Vec<_> = rows.iter().rev().collect();
+
+        // Count transitions
+        let mut transitions = 0;
+        for i in 1..chronological.len() {
+            if chronological[i].regime != chronological[i - 1].regime {
+                transitions += 1;
+            }
+        }
+        assert_eq!(transitions, 3); // on→off, off→on, on→off
     }
 }

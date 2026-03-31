@@ -83,16 +83,46 @@ pub fn get_current(conn: &Connection) -> Result<Option<RegimeSnapshot>> {
 }
 
 pub fn get_history(conn: &Connection, limit: Option<usize>) -> Result<Vec<RegimeSnapshot>> {
+    get_history_filtered(conn, limit, None, None)
+}
+
+pub fn get_history_filtered(
+    conn: &Connection,
+    limit: Option<usize>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<Vec<RegimeSnapshot>> {
     let mut query = String::from(
         "SELECT id, regime, confidence, drivers, vix, dxy, yield_10y, oil, gold, btc, recorded_at
-         FROM regime_snapshots
-         ORDER BY recorded_at DESC",
+         FROM regime_snapshots",
     );
+    let mut conditions = Vec::new();
+    let mut param_values: Vec<String> = Vec::new();
+    if let Some(f) = from {
+        conditions.push(format!("recorded_at >= ?{}", param_values.len() + 1));
+        param_values.push(f.to_string());
+    }
+    if let Some(t) = to {
+        // Include the entire day by comparing with t + 1 day or using substr
+        conditions.push(format!(
+            "substr(recorded_at, 1, 10) <= ?{}",
+            param_values.len() + 1
+        ));
+        param_values.push(t.to_string());
+    }
+    if !conditions.is_empty() {
+        query.push_str(" WHERE ");
+        query.push_str(&conditions.join(" AND "));
+    }
+    query.push_str(" ORDER BY recorded_at DESC");
     if let Some(n) = limit {
         query.push_str(&format!(" LIMIT {}", n));
     }
     let mut stmt = conn.prepare(&query)?;
-    let rows = stmt.query_map([], RegimeSnapshot::from_row)?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(param_values.iter()),
+        RegimeSnapshot::from_row,
+    )?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);
@@ -178,18 +208,38 @@ pub fn get_history_backend(
     backend: &BackendConnection,
     limit: Option<usize>,
 ) -> Result<Vec<RegimeSnapshot>> {
+    get_history_filtered_backend(backend, limit, None, None)
+}
+
+pub fn get_history_filtered_backend(
+    backend: &BackendConnection,
+    limit: Option<usize>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<Vec<RegimeSnapshot>> {
     query::dispatch(
         backend,
-        |conn| get_history(conn, limit),
-        |pool| get_history_postgres(pool, limit),
+        |conn| get_history_filtered(conn, limit, from, to),
+        |pool| get_history_filtered_postgres(pool, limit, from, to),
     )
 }
 
+#[allow(dead_code)]
 pub fn get_transitions_backend(
     backend: &BackendConnection,
     limit: Option<usize>,
 ) -> Result<Vec<RegimeSnapshot>> {
-    let all = get_history_backend(backend, None)?;
+    get_transitions_filtered_backend(backend, limit, None, None)
+}
+
+pub fn get_transitions_filtered_backend(
+    backend: &BackendConnection,
+    limit: Option<usize>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<Vec<RegimeSnapshot>> {
+    // Get all history (with date filter applied), then extract transitions
+    let all = get_history_filtered_backend(backend, None, from, to)?;
     if all.is_empty() {
         return Ok(Vec::new());
     }
@@ -291,29 +341,60 @@ fn get_current_postgres(pool: &PgPool) -> Result<Option<RegimeSnapshot>> {
     Ok(row.map(from_pg_row))
 }
 
+#[allow(dead_code)]
 fn get_history_postgres(pool: &PgPool, limit: Option<usize>) -> Result<Vec<RegimeSnapshot>> {
-    let rows: Vec<RegimeRow> = if let Some(n) = limit {
-        crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, regime, confidence, drivers, vix, dxy, yield_10y, oil, gold, btc, recorded_at::text
-                 FROM regime_snapshots
-                 ORDER BY recorded_at DESC
-                 LIMIT $1",
-            )
-            .bind(n as i64)
-            .fetch_all(pool)
-            .await
-        })?
-    } else {
-        crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, regime, confidence, drivers, vix, dxy, yield_10y, oil, gold, btc, recorded_at::text
-                 FROM regime_snapshots
-                 ORDER BY recorded_at DESC",
-            )
-            .fetch_all(pool)
-            .await
-        })?
-    };
+    get_history_filtered_postgres(pool, limit, None, None)
+}
+
+fn get_history_filtered_postgres(
+    pool: &PgPool,
+    limit: Option<usize>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<Vec<RegimeSnapshot>> {
+    let from_owned = from.map(|s| s.to_string());
+    let to_owned = to.map(|s| s.to_string());
+    let limit_val = limit.map(|n| n as i64);
+
+    let rows: Vec<RegimeRow> = crate::db::pg_runtime::block_on(async {
+        // Build dynamic query based on filters
+        let mut query = String::from(
+            "SELECT id, regime, confidence, drivers, vix, dxy, yield_10y, oil, gold, btc, recorded_at::text
+             FROM regime_snapshots",
+        );
+        let mut conditions = Vec::new();
+        let mut param_idx = 1;
+        if from_owned.is_some() {
+            conditions.push(format!("recorded_at >= ${}::timestamptz", param_idx));
+            param_idx += 1;
+        }
+        if to_owned.is_some() {
+            conditions.push(format!(
+                "recorded_at::date <= ${}::date",
+                param_idx
+            ));
+            param_idx += 1;
+        }
+        if !conditions.is_empty() {
+            query.push_str(" WHERE ");
+            query.push_str(&conditions.join(" AND "));
+        }
+        query.push_str(" ORDER BY recorded_at DESC");
+        if limit_val.is_some() {
+            query.push_str(&format!(" LIMIT ${}", param_idx));
+        }
+
+        let mut q = sqlx::query_as::<_, RegimeRow>(&query);
+        if let Some(ref f) = from_owned {
+            q = q.bind(f);
+        }
+        if let Some(ref t) = to_owned {
+            q = q.bind(t);
+        }
+        if let Some(l) = limit_val {
+            q = q.bind(l);
+        }
+        q.fetch_all(pool).await
+    })?;
     Ok(rows.into_iter().map(from_pg_row).collect())
 }
