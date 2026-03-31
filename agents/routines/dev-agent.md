@@ -98,20 +98,17 @@ git pull
 
 After merging, build and deploy the release binary so the running system uses the new code:
 ```bash
-source "$HOME/.cargo/env"
 cd /root/pftui
-cargo build --release
-cp target/release/pftui /root/.cargo/bin/pftui
-# Restart systemd services (NOT screen — services are managed by systemd)
-sudo systemctl restart pftui-daemon pftui-mobile
-sleep 3
-sudo systemctl status pftui-daemon --no-pager | head -5
-sudo systemctl status pftui-mobile --no-pager | head -5
+scripts/deploy.sh
 ```
+
+The deploy script handles: `cargo build --release`, atomic binary install (avoids "text file busy" errors), service restart, and health verification. Options:
+- `scripts/deploy.sh --skip-build` — deploy existing binary without rebuilding
+- `scripts/deploy.sh --dry-run` — show what would happen without doing it
 
 This is mandatory. If you skip this step, the running system stays on the old binary and your changes have no effect.
 
-**Do NOT use screen.** Both services are managed by systemd. Always restart with `systemctl restart`.
+**Do NOT use screen.** Both services are managed by systemd. The deploy script uses `systemctl restart`.
 
 ## Step 9: Update TODO.md
 
