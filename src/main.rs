@@ -3997,6 +3997,9 @@ fn main() -> Result<()> {
                     complex.as_deref(),
                     json,
                 ),
+                cli::AnalyticsPowerFlowCommand::Conflicts { days, json } => {
+                    commands::power_flow_conflicts::run(&backend, days, json)
+                }
             },
             cli::AnalyticsCommand::NewsSentiment {
                 category,
