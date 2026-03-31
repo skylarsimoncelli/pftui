@@ -39,7 +39,7 @@ _(none)_
 | Medium-Timeframe Analyst | 85% | 88% | Mar 31 | ↑ (85→85 use, 75→88 overall. Major recovery! FRED GDPNow + ISM PMI scraper addressed stale data. PMI discrepancy still noted.) |
 | Low-Timeframe Analyst | 85% | 82% | Mar 30 | ↓ (90→85 use, 85→82 overall. FRED API failures. stress-test --list-scenarios shipped.) |
 | Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable. Historical regime transitions shipped PR #486.) |
-| High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable.) |
+| High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable. Trend evidence enrichment shipped #502.) |
 | Morning Intelligence | 75% | 85% | Mar 28 | → (stable.) |
 | Morning Brief | 85% | 82% | Mar 30 | → (stable.) |
 | Public Daily Report | 82% | 80% | Mar 28 | → (stable.) |
@@ -60,7 +60,8 @@ _(none)_
 7. ✅ FRED API failure resilience (#490) — retry with exponential backoff, cache fallback, staleness warnings
 8. ✅ PMI data discrepancy fix (#492) — context-aware extraction, broadened regex patterns, 17 new tests
 9. ✅ FIC/MIC conflict monitor (#494) — `analytics power-flow conflicts` with defense vs energy vs VIX cross-reference
+10. ✅ Trends list enrichment (#502) — evidence summary + asset impacts in `analytics trends list`, --verbose flag
 
-**Release status:** v0.23.0 eligible — 37 commits since v0.22.0, no P0 bugs, 2176 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios, PMI discrepancy fix, power-flow conflicts.
+**Release status:** v0.23.0 eligible — 38 commits since v0.22.0, no P0 bugs, 2189 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios, PMI discrepancy fix, power-flow conflicts, trends list enrichment.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.

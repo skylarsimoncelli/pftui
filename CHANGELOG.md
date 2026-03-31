@@ -2,6 +2,33 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-31 — feat: enrich `analytics trends list` with evidence summary and asset impacts
+
+Enriches `analytics trends list` so agents and humans get evidence and asset impact data in a single command, without running separate queries per trend. Addresses High-Timeframe Analyst feedback (Mar 30): "integrate HIGH trend evidence directly into trend list output for faster synthesis."
+
+**Default table** now shows three new columns: Evid# (total evidence count), Last Evid (most recent date), Impacts (↑N ↓N bullish/bearish counts).
+
+**JSON output** includes per-trend enrichment: `evidence_count`, `latest_evidence_date`, `recent_evidence` (last 3 entries), `asset_impacts` (bullish/bearish symbol arrays + total).
+
+**New `--verbose` flag** shows expanded inline output with direction symbols, descriptions, key signals, recent evidence entries with impact markers, and bullish/bearish asset symbols — the full picture in one command.
+
+**New DB function:** `count_evidence_backend()` — efficient COUNT query (SQLite + PostgreSQL) without fetching full rows.
+
+**Agent consumption:**
+```
+pftui analytics trends list --json                         # Enriched JSON with evidence + impacts
+pftui analytics trends list --verbose                      # Human-readable expanded view
+pftui analytics trends list --timeframe high --verbose     # Filtered + verbose
+```
+
+**Files changed:**
+- `src/cli.rs` — add `--verbose` flag to `AnalyticsTrendsCommand::List` + 2 CLI parse tests
+- `src/commands/trends.rs` — enriched list output (table, verbose, JSON modes)
+- `src/db/trends.rs` — new `count_evidence`/`count_evidence_postgres`/`count_evidence_backend` + 4 unit tests
+- `src/main.rs` — wire `verbose` parameter through all trends::run call sites
+
+**Tests:** 2189 pass (+6 new: 4 DB + 2 CLI parse), clippy clean.
+
 ### 2026-03-31 — feat: `analytics scenario timeline` — cross-scenario probability evolution
 
 New `analytics scenario timeline` subcommand that shows probability evolution for all active scenarios over time in a single view. Addresses Low-Timeframe Analyst feedback (85/80 Mar 31) requesting "scenario probability tracking over time."
