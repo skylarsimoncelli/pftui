@@ -432,6 +432,54 @@ tables, and analytical depth. This is not a Telegram message. This is a report.]
 was wrong or questionable. If everything checks out, say so in one line. If you
 found errors, list them. This keeps the public-facing product honest.]
 
+## Data Integrity Audit
+
+🔴 **This section is MANDATORY. It tracks accuracy trends and holds the system accountable.**
+
+This section reports on the accuracy of data sources across the public report pipeline.
+The goal is to identify systematic issues, track improvement over time, and flag recurring
+data source failures before they reach the public report.
+
+**Include ALL of the following:**
+
+### Accuracy Scorecard
+- Total data points fact-checked in today's public report: [X]
+- Accurate from the start (no correction needed): [Y] ([Z]%)
+- Corrected during fact-check (caught before publication): [A]
+- Errors that made it to publication (caught by evening review): [B]
+- **This week: [X]/[Y] data points accurate ([Z]%). Last week: [A]/[B] ([C]%). Trend: [improving/declining/flat].**
+
+### Data Source Error Tracking
+For each error found, report:
+- Which data source produced the error (pftui economy, pftui prices, agent-generated, etc.)
+- How many consecutive reports this error has appeared in
+- Whether the public report's own fact-check step (Step 4) caught it or missed it
+
+Example: "pftui data economy returned PPI at 3.2% YoY for the 5th consecutive report.
+Actual is 3.4% (BLS). The public report's fact-check step caught this on Apr 1 but
+missed it on Mar 28-31. Root cause: pftui economy data appears stale with no timestamp
+for agents to detect staleness."
+
+### Cumulative Accuracy Trend
+Pull historical accuracy data from FEEDBACK.csv:
+```bash
+grep "Public Daily Report" /root/pftui/FEEDBACK.csv
+```
+Report:
+- Rolling 7-day accuracy trend (from usefulness_pct and overall_pct scores)
+- Which error categories are recurring (PFTUI_STALE, AGENT_HALLUCINATION, etc.)
+- Whether the fact-check guardrails are catching errors that previously slipped through
+- Any NEW error types that appeared this week
+
+### System Health Assessment
+Rate the data pipeline health: 🟢 Healthy | 🟡 Degraded | 🔴 Broken
+- 🟢 if >90% of data points accurate from source and no recurring errors
+- 🟡 if 75-90% accurate or any error persists for 2+ consecutive reports
+- 🔴 if <75% accurate or any critical error (hallucinated events, >20% price errors)
+
+Flag specific action items: e.g., "pftui PPI data has been stale for 5+ days. This
+needs investigation at the data pipeline level, not just agent-level workarounds."
+
 ## What the Analysts Are Thinking
 
 [This is a section the public report cannot have. Summarise what each of the 4

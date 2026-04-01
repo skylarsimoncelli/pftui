@@ -310,13 +310,97 @@ verify it actually happened via `web_search`. Do not cite events you cannot veri
 If you find ANY inaccuracy, fix it in the markdown source file NOW. Do not proceed
 to PDF generation until the markdown is 100% accurate.
 
-### 4e: Record accuracy metrics
+### 4e: Known Bad Data Watchlist — MANDATORY Independent Verification
+
+🔴 **The following data points have a DOCUMENTED HISTORY of being wrong in pftui.**
+🔴 **You MUST verify EVERY ONE of these via `web_search` against authoritative sources.**
+🔴 **NEVER trust pftui alone for these. The web_search result is the ground truth.**
+
+**Watchlist (verify via web_search before using in the report):**
+
+| Data Point | Authoritative Source | Known Issue |
+|------------|---------------------|-------------|
+| CPI (YoY and MoM) | BLS (bls.gov) | Previous report stated 7.0% when actual was 2.4% |
+| PPI (YoY and MoM) | BLS (bls.gov) | pftui returned 3.2% for 4+ consecutive reports; actual was 3.4% |
+| Core PCE (YoY and MoM) | BEA (bea.gov) | Previous report fabricated a Core PCE release that hadn't happened |
+| NFP (nonfarm payrolls) | BLS (bls.gov) | Verify exact figure, not just approximate |
+| GDP (latest quarter) | BEA (bea.gov) | Verify quarter and revision status |
+| Fed funds rate | Federal Reserve (federalreserve.gov) | Verify current target range |
+| S&P 500 closing price | Yahoo Finance or CNBC | Mar 31 report used Friday's close (6,369) when Tuesday's was 6,528 |
+| Nasdaq closing price | Yahoo Finance or CNBC | Verify it's TODAY's close, not a stale value |
+| Dow closing price | Yahoo Finance or CNBC | Verify it's TODAY's close, not a stale value |
+| VIX close | Yahoo Finance or CBOE | Report stated 31+ when actual was 25.25 |
+| Any "first time since" / "worst since" / "best since" claim | Multiple web sources | See 4h below |
+
+**Procedure for each watchlist item:**
+1. Note what pftui returned
+2. Run `web_search` for the latest official value (e.g., "BLS PPI February 2026 YoY")
+3. If pftui disagrees with the authoritative source, **use the authoritative source**
+4. Log the discrepancy for Step 7 (FEEDBACK.csv)
+
+### 4f: Calendar Verification — MANDATORY Before Citing Any Economic Release
+
+🔴 **A previous report fabricated a Core PCE release as "today's catalyst" when the actual**
+🔴 **release was 9 days later. This is the most damaging type of error possible.**
+
+Before citing ANY economic data release as "today's", "this week's", "upcoming", or as a
+"catalyst":
+
+1. Check pftui's calendar:
+   ```bash
+   pftui data calendar --json
+   ```
+2. Cross-check the release date via `web_search` against the official source calendar:
+   - BLS releases: https://www.bls.gov/schedule/news_release/
+   - BEA releases: https://www.bea.gov/news/schedule
+   - Fed schedule: https://www.federalreserve.gov/newsevents/calendar.htm
+3. If the date cannot be confirmed by BOTH pftui AND an official source, **do not cite it**
+4. Verify the specific data being released (e.g., "February 2026 PCE" vs "January 2026 PCE")
+5. Check for market holidays that may shift release dates (e.g., Good Friday moved NFP)
+
+**Known calendar errors from previous reports:**
+- Core PCE cited as releasing Mar 31; actual release was Apr 9 (BEA)
+- NFP cited as Apr 4; actual was Apr 3 (Good Friday is Apr 3, not Apr 4)
+- Good Friday listed as Apr 4; actually Apr 3, 2026
+
+### 4g: Staleness Check — MANDATORY for pftui Economy Data
+
+🔴 **pftui's economy data has returned stale PPI values for 4+ consecutive reports.**
+
+For ANY data from `pftui data economy --json`:
+1. Check if the data includes an `updated_at`, `last_updated`, `date`, or equivalent timestamp
+2. If the data is **older than 48 hours**, flag it as potentially stale
+3. For any flagged stale data, verify the current value via `web_search` before using
+4. If pftui has no timestamp metadata, treat ALL economic data as unverified and cross-check
+   the most important figures (CPI, PPI, PCE, NFP, GDP) via web_search
+
+**If you detect stale data:** Note the specific command, the stale value, the correct value,
+and the age of the data. You will need this for the FEEDBACK.csv entry in Step 7.
+
+### 4h: Historical Claim Verification — MANDATORY for All Superlatives
+
+🔴 **Every "first since", "worst since", "best since", "highest since", "lowest since" claim**
+🔴 **must be verified via `web_search`. These are high-visibility claims that destroy**
+🔴 **credibility if wrong.**
+
+For EVERY historical superlative in the report:
+1. Identify the exact claim (e.g., "worst day since May 2024", "first close above $100 since July 2022")
+2. Run `web_search` to verify the claim against financial news sources
+3. If the claim cannot be independently verified, **remove it or soften the language**
+   (e.g., change "worst since X" to "significant decline" unless you can confirm the comparison)
+4. Pay special attention to:
+   - The comparison date (is it actually the right historical reference point?)
+   - The metric being compared (close vs intraday, daily vs weekly, etc.)
+   - Whether there was an intermediate occurrence that invalidates the "first since" claim
+
+### 4i: Record accuracy metrics
 Write down (you will need these for Step 7):
 - Total data points checked
 - How many were accurate from the start
 - How many you had to correct
 - How many came from pftui vs web search
 - Which specific pftui data points were wrong
+- **For each error, classify by source** (see Step 7 for categories)
 
 ## Step 5: Generate Final PDF
 
@@ -361,7 +445,7 @@ git push origin master
 
 🔴 **THIS STEP IS MANDATORY. DO NOT SKIP IT.**
 
-Append a row to `/root/pftui/FEEDBACK.csv` using your accuracy metrics from Step 4e.
+Append a row to `/root/pftui/FEEDBACK.csv` using your accuracy metrics from Step 4i.
 
 Format: `date,reviewer,usefulness_pct,overall_pct,category,severity,description`
 
@@ -375,12 +459,30 @@ Format: `date,reviewer,usefulness_pct,overall_pct,category,severity,description`
   (2) how many data points needed correction, (3) which specific pftui data points
   were inaccurate (list them), (4) any pftui commands that returned stale or wrong data.
 
+### Error Categorization (MANDATORY)
+
+🔴 **Every error in the description field MUST be categorized by source using these prefixes:**
+
+- `PFTUI_STALE: <command> returned <wrong value>, actual <correct value>, data age <X days>`
+  — Use when pftui returned outdated data (e.g., PPI stuck at old value)
+- `PFTUI_MISSING: needed <data>, not available in pftui, had to web_search`
+  — Use when pftui didn't have data you needed
+- `AGENT_HALLUCINATION: <what was fabricated> — agent cited non-existent <event/data>`
+  — Use when the agent invented data or events (e.g., fabricated Core PCE release)
+- `CALENDAR_ERROR: <event> listed as <wrong date>, actual <correct date>`
+  — Use for wrong release dates or market holiday errors
+- `PRICE_STALE: <symbol> returned <old price from date X>, actual close was <correct>`
+  — Use when price data was from a prior session (e.g., Friday's close on Tuesday's report)
+
+**When pftui economy data is stale**, also add a suggested fix line:
+`SUGGESTED FIX: pftui data economy should show last_updated timestamp per indicator so agents can detect staleness`
+
 If you had to web_search for data that pftui SHOULD have provided, note it as:
 `SUGGESTED SOURCE: <what data> via <where to get it>`.
 
-Example:
+Example with categorized errors:
 ```
-2026-03-30,Public Daily Report,72,78,data-accuracy,info,"pftui-sourced: 55%. Web-search: 30%. Agent-generated: 15%. Checked 47 data points. 3 corrected: CPI was 7.0% (actual 2.4%), GBP/USD was 1.152 (actual 1.326), PPI was 3.2% (actual 3.4%). pftui economy --json returned stale CPI. SUGGESTED SOURCE: prediction market probabilities via Polymarket API."
+2026-04-01,Public Daily Report,65,70,data-accuracy,high,"pftui-sourced: 40%. Web-search: 35%. Agent-generated: 25%. Checked 52 data points. 5 corrected. PFTUI_STALE: pftui data economy --json returned PPI 3.2% YoY, actual 3.4% (BLS), data appears 30+ days stale. PRICE_STALE: S&P 500 returned 6369 (Friday close), actual Tuesday close was 6528.52. PRICE_STALE: VIX returned 31+ (prior day), actual close 25.25. AGENT_HALLUCINATION: Core PCE release cited as Mar 31 catalyst — Feb 2026 PCE not released until Apr 9 (BEA). CALENDAR_ERROR: NFP listed as Apr 4, actual Apr 3 (Good Friday is Apr 3 not Apr 4). SUGGESTED FIX: pftui data economy should show last_updated timestamp per indicator so agents can detect staleness. SUGGESTED SOURCE: BEA release calendar via bea.gov/news/schedule."
 ```
 
 Commit the FEEDBACK.csv update:
