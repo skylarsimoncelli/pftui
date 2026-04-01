@@ -3687,6 +3687,16 @@ pub enum AnalyticsBacktestCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Automated diagnostics: pattern detection, bias analysis, and actionable recommendations
+    #[command(after_help = "Analyses backtest data to identify systematic prediction problems.\nDetects: poor win rates, asset class weaknesses, conviction miscalibration,\nmean-reversion bias, loss magnitude asymmetry, losing streaks, and overtrading.\n\nEach finding includes severity (critical/warning/info), a detailed explanation\nof what the data shows, and a specific actionable recommendation.\n\nOptional --agent filter narrows analysis to a single agent.\n\nExamples:\n  pftui analytics backtest diagnostics --json\n  pftui analytics backtest diagnostics --agent evening-analyst --json\n  pftui analytics backtest diagnostics\n\nSee also: analytics backtest report, analytics backtest agent")]
+    Diagnostics {
+        /// Filter to a specific agent (optional — analyses all agents if omitted)
+        #[arg(long)]
+        agent: Option<String>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -7693,6 +7703,46 @@ mod tests {
         };
         assert_eq!(agent, "macro-timeframe");
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_backtest_diagnostics_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "backtest", "diagnostics", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Backtest { command } = command else {
+            panic!("expected Backtest");
+        };
+        let AnalyticsBacktestCommand::Diagnostics { agent, json } = command else {
+            panic!("expected Diagnostics");
+        };
+        assert!(agent.is_none());
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_backtest_diagnostics_with_agent() {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "backtest",
+            "diagnostics",
+            "--agent",
+            "evening-analyst",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Backtest { command } = command else {
+            panic!("expected Backtest");
+        };
+        let AnalyticsBacktestCommand::Diagnostics { agent, json } = command else {
+            panic!("expected Diagnostics");
+        };
+        assert_eq!(agent.as_deref(), Some("evening-analyst"));
+        assert!(json);
     }
 
     #[test]
