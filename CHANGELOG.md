@@ -2,6 +2,29 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-04-01 — feat: `--only` and `--skip` flags for selective `data refresh`
+
+Agents and users can now run partial refreshes instead of always hitting all 17 data sources:
+
+**New flags:**
+- `pftui data refresh --only prices` — refresh price data only
+- `pftui data refresh --only prices,news_rss,sentiment` — refresh specific sources
+- `pftui data refresh --skip worldbank,bls,cot` — skip slow/failing sources
+- `pftui data refresh --only news` — convenience alias for `news_rss` + `news_brave`
+
+`--only` and `--skip` are mutually exclusive (enforced by clap). Unknown source names produce a clear error listing all valid sources. Works with `--json` for agent consumption.
+
+**Valid sources:** prices, predictions, fedwatch, news_rss, news_brave, news (alias), cot, sentiment, calendar, economy, fred, bls, worldbank, comex, onchain, analytics, alerts, cleanup.
+
+Leverages existing `RefreshPlan` infrastructure (already used by the daemon scheduler). Agent routines can now be more targeted — e.g., morning brief only refreshes prices + news, macro analyst only refreshes economy + fred.
+
+**Files changed:**
+- `src/cli.rs` — `--only`/`--skip` args on `Refresh` variant + 5 CLI parse tests
+- `src/commands/refresh.rs` — `RefreshPlan::from_only()`, `from_skip()`, `none()`, `set_source()`, `ALL_SOURCE_NAMES` + 8 unit tests
+- `src/main.rs` — dispatch wiring for plan-based refresh
+
+**Tests:** 2260 pass (+13 new: 5 CLI parse + 8 RefreshPlan unit), clippy clean.
+
 ### 2026-04-01 — feat: `predictions add` subcommand for analytics/data predictions
 
 Agents can now create predictions directly from the `analytics predictions` and `data predictions` namespaces — no need to know that creation lives under `journal prediction add`.
