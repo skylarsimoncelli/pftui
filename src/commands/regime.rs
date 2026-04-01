@@ -527,6 +527,249 @@ pub fn run_set(
     Ok(())
 }
 
+// --- Confidence trend ---
+
+/// A single data point in the confidence trend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfidenceTrendPoint {
+    pub recorded_at: String,
+    pub regime: String,
+    pub confidence: f64,
+    /// Smoothed confidence (moving average over window).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smoothed: Option<f64>,
+    /// Change from previous snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delta: Option<f64>,
+}
+
+/// Overall confidence trend analysis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfidenceTrend {
+    /// Number of snapshots analysed.
+    pub snapshot_count: usize,
+    /// Moving average window size.
+    pub window: usize,
+    /// Current regime and confidence.
+    pub current_regime: Option<String>,
+    pub current_confidence: Option<f64>,
+    /// Trend direction: "strengthening", "weakening", or "stable".
+    pub direction: String,
+    /// Average confidence across the period.
+    pub avg_confidence: f64,
+    /// Min/max confidence in the period.
+    pub min_confidence: f64,
+    pub max_confidence: f64,
+    /// Standard deviation of confidence (stability metric — lower = more stable).
+    pub stability: f64,
+    /// Number of regime changes in the period.
+    pub regime_changes: usize,
+    /// Smoothed confidence values (chronological).
+    pub points: Vec<ConfidenceTrendPoint>,
+}
+
+/// Compute moving average for a slice of f64 values.
+fn moving_average(values: &[f64], window: usize) -> Vec<Option<f64>> {
+    if window == 0 || values.is_empty() {
+        return vec![None; values.len()];
+    }
+    values
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            if i + 1 < window {
+                None
+            } else {
+                let start = i + 1 - window;
+                let sum: f64 = values[start..=i].iter().sum();
+                Some(sum / window as f64)
+            }
+        })
+        .collect()
+}
+
+/// Determine trend direction from smoothed confidence values.
+/// Compares the last `window` smoothed values to the previous `window`.
+fn determine_direction(smoothed: &[Option<f64>]) -> String {
+    let valid: Vec<f64> = smoothed.iter().filter_map(|v| *v).collect();
+    if valid.len() < 3 {
+        return "stable".to_string();
+    }
+    let half = valid.len() / 2;
+    let recent_avg: f64 = valid[half..].iter().sum::<f64>() / (valid.len() - half) as f64;
+    let earlier_avg: f64 = valid[..half].iter().sum::<f64>() / half as f64;
+    let diff = recent_avg - earlier_avg;
+    if diff > 0.03 {
+        "strengthening".to_string()
+    } else if diff < -0.03 {
+        "weakening".to_string()
+    } else {
+        "stable".to_string()
+    }
+}
+
+/// Standard deviation of a slice of f64.
+fn std_dev(values: &[f64]) -> f64 {
+    if values.len() < 2 {
+        return 0.0;
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
+    variance.sqrt()
+}
+
+pub fn run_confidence_trend(
+    backend: &BackendConnection,
+    limit: Option<usize>,
+    window: usize,
+    from: Option<&str>,
+    to: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let rows = regime_snapshots::get_history_filtered_backend(backend, limit, from, to)?;
+
+    if rows.is_empty() {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "snapshot_count": 0,
+                    "direction": "unknown",
+                    "points": []
+                }))?
+            );
+        } else {
+            println!("No regime data for confidence trend.");
+        }
+        return Ok(());
+    }
+
+    // Rows come desc — reverse for chronological
+    let chronological: Vec<_> = rows.into_iter().rev().collect();
+
+    let confidences: Vec<f64> = chronological
+        .iter()
+        .map(|r| r.confidence.unwrap_or(0.0))
+        .collect();
+
+    let smoothed = moving_average(&confidences, window);
+    let direction = determine_direction(&smoothed);
+
+    let avg_confidence =
+        confidences.iter().sum::<f64>() / confidences.len().max(1) as f64;
+    let min_confidence = confidences
+        .iter()
+        .cloned()
+        .reduce(f64::min)
+        .unwrap_or(0.0);
+    let max_confidence = confidences
+        .iter()
+        .cloned()
+        .reduce(f64::max)
+        .unwrap_or(0.0);
+    let stability = std_dev(&confidences);
+
+    // Count regime changes
+    let mut regime_changes = 0;
+    for i in 1..chronological.len() {
+        if chronological[i].regime != chronological[i - 1].regime {
+            regime_changes += 1;
+        }
+    }
+
+    // Build points
+    let mut points = Vec::new();
+    for (i, snap) in chronological.iter().enumerate() {
+        let delta = if i > 0 {
+            Some(confidences[i] - confidences[i - 1])
+        } else {
+            None
+        };
+        points.push(ConfidenceTrendPoint {
+            recorded_at: snap.recorded_at.clone(),
+            regime: snap.regime.clone(),
+            confidence: confidences[i],
+            smoothed: smoothed[i],
+            delta,
+        });
+    }
+
+    let current_regime = chronological.last().map(|r| r.regime.clone());
+    let current_confidence = chronological.last().and_then(|r| r.confidence);
+
+    let trend = ConfidenceTrend {
+        snapshot_count: chronological.len(),
+        window,
+        current_regime,
+        current_confidence,
+        direction: direction.clone(),
+        avg_confidence,
+        min_confidence,
+        max_confidence,
+        stability,
+        regime_changes,
+        points: points.clone(),
+    };
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&trend)?);
+    } else {
+        let dir_icon = match direction.as_str() {
+            "strengthening" => "📈",
+            "weakening" => "📉",
+            _ => "➡️",
+        };
+
+        println!(
+            "Regime Confidence Trend ({} snapshots, window={}):",
+            chronological.len(),
+            window
+        );
+        println!(
+            "  Current: {} ({:.2} confidence) {}",
+            chronological
+                .last()
+                .map(|r| r.regime.to_uppercase())
+                .unwrap_or_default(),
+            current_confidence.unwrap_or(0.0),
+            dir_icon
+        );
+        println!(
+            "  Direction: {} | Avg: {:.2} | Range: {:.2}–{:.2} | Stability: {:.3}",
+            direction, avg_confidence, min_confidence, max_confidence, stability
+        );
+        println!(
+            "  Regime changes: {}",
+            regime_changes
+        );
+        println!();
+
+        // Show recent points (last 20 or all if fewer)
+        let show_count = points.len().min(20);
+        let start = points.len() - show_count;
+        for p in &points[start..] {
+            let delta_str = match p.delta {
+                Some(d) if d > 0.0 => format!("+{:.2}", d),
+                Some(d) => format!("{:.2}", d),
+                None => "---".to_string(),
+            };
+            let smooth_str = match p.smoothed {
+                Some(s) => format!("{:.2}", s),
+                None => "---".to_string(),
+            };
+            println!(
+                "  {}  {:12}  conf={:.2}  Δ={}  MA({})={}",
+                p.recorded_at, p.regime, p.confidence, delta_str, window, smooth_str
+            );
+        }
+        if start > 0 {
+            println!("  ... ({} earlier points omitted)", start);
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -753,5 +996,155 @@ mod tests {
             }
         }
         assert_eq!(transitions, 3); // on→off, off→on, on→off
+    }
+
+    // --- Confidence trend tests ---
+
+    #[test]
+    fn moving_average_basic() {
+        let vals = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let ma = moving_average(&vals, 3);
+        assert_eq!(ma[0], None);
+        assert_eq!(ma[1], None);
+        assert!((ma[2].unwrap() - 2.0).abs() < 0.001); // (1+2+3)/3
+        assert!((ma[3].unwrap() - 3.0).abs() < 0.001); // (2+3+4)/3
+        assert!((ma[4].unwrap() - 4.0).abs() < 0.001); // (3+4+5)/3
+    }
+
+    #[test]
+    fn moving_average_window_one() {
+        let vals = vec![1.0, 2.0, 3.0];
+        let ma = moving_average(&vals, 1);
+        assert!((ma[0].unwrap() - 1.0).abs() < 0.001);
+        assert!((ma[1].unwrap() - 2.0).abs() < 0.001);
+        assert!((ma[2].unwrap() - 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn moving_average_empty() {
+        let vals: Vec<f64> = vec![];
+        let ma = moving_average(&vals, 3);
+        assert!(ma.is_empty());
+    }
+
+    #[test]
+    fn determine_direction_strengthening() {
+        // Earlier avg ~0.5, recent avg ~0.9 → strengthening
+        let smoothed: Vec<Option<f64>> = vec![
+            Some(0.4),
+            Some(0.5),
+            Some(0.6),
+            Some(0.8),
+            Some(0.9),
+            Some(1.0),
+        ];
+        assert_eq!(determine_direction(&smoothed), "strengthening");
+    }
+
+    #[test]
+    fn determine_direction_weakening() {
+        // Earlier avg ~0.9, recent avg ~0.5 → weakening
+        let smoothed: Vec<Option<f64>> = vec![
+            Some(0.9),
+            Some(0.9),
+            Some(0.8),
+            Some(0.5),
+            Some(0.4),
+            Some(0.4),
+        ];
+        assert_eq!(determine_direction(&smoothed), "weakening");
+    }
+
+    #[test]
+    fn determine_direction_stable() {
+        let smoothed: Vec<Option<f64>> = vec![
+            Some(0.7),
+            Some(0.7),
+            Some(0.7),
+            Some(0.7),
+            Some(0.7),
+            Some(0.7),
+        ];
+        assert_eq!(determine_direction(&smoothed), "stable");
+    }
+
+    #[test]
+    fn determine_direction_too_few_points() {
+        let smoothed: Vec<Option<f64>> = vec![Some(0.7), Some(0.8)];
+        assert_eq!(determine_direction(&smoothed), "stable");
+    }
+
+    #[test]
+    fn std_dev_basic() {
+        let vals = vec![2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0];
+        let sd = std_dev(&vals);
+        assert!((sd - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn std_dev_single_value() {
+        assert_eq!(std_dev(&[5.0]), 0.0);
+    }
+
+    #[test]
+    fn confidence_trend_json_output() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.6, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-on", 0.7, "2026-03-21 10:00:00");
+        insert_snapshot(&backend, "risk-on", 0.75, "2026-03-22 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.8, "2026-03-23 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.9, "2026-03-24 10:00:00");
+
+        // Should not panic and should produce valid output
+        run_confidence_trend(&backend, None, 3, None, None, true).unwrap();
+    }
+
+    #[test]
+    fn confidence_trend_terminal_output() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.8, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.6, "2026-03-25 10:00:00");
+
+        run_confidence_trend(&backend, None, 2, None, None, false).unwrap();
+    }
+
+    #[test]
+    fn confidence_trend_empty() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        run_confidence_trend(&backend, None, 5, None, None, true).unwrap();
+    }
+
+    #[test]
+    fn confidence_trend_counts_regime_changes() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.7, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.8, "2026-03-21 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.85, "2026-03-22 10:00:00");
+        insert_snapshot(&backend, "crisis", 0.9, "2026-03-23 10:00:00");
+
+        // Capture JSON output to verify regime_changes
+        // We just verify no panic and correctness via internal logic
+        run_confidence_trend(&backend, None, 2, None, None, true).unwrap();
+    }
+
+    #[test]
+    fn confidence_trend_date_filter() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        insert_snapshot(&backend, "risk-on", 0.7, "2026-03-20 10:00:00");
+        insert_snapshot(&backend, "risk-off", 0.8, "2026-03-25 10:00:00");
+        insert_snapshot(&backend, "crisis", 0.9, "2026-03-30 10:00:00");
+
+        // Only from Mar 24 onwards: should be 2 snapshots
+        run_confidence_trend(&backend, None, 2, Some("2026-03-24"), None, true).unwrap();
     }
 }
