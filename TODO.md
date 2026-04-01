@@ -66,7 +66,9 @@ _(none)_
 13. ✅ Data calendar add/remove + geopolitical catalysts (#511) — agents can insert custom events
 14. ✅ Portfolio status (#514) — consolidated snapshot: allocation + value + daily P&L + unrealized in one call
 15. ✅ Predictions add alias (#516) — `analytics predictions add` / `data predictions add` for agent discoverability
+16. ✅ Selective data refresh (#518) — `--only`/`--skip` flags for targeted refreshes
+17. ✅ Benchmark comparison (#520) — `portfolio performance --vs SPY` now works (was accepted but ignored)
 
-**Release status:** v0.23.0 tagged. 35+ commits since tag, no P0 bugs, 2247 tests passing, clippy clean.
+**Release status:** v0.23.0 tagged. 37+ commits since tag, no P0 bugs, 2267 tests passing, clippy clean.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.
