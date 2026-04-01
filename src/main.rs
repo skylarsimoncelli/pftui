@@ -2911,6 +2911,20 @@ fn main() -> Result<()> {
                             json,
                         )
                     }
+                    cli::AnalyticsMacroRegimeCommand::ConfidenceTrend {
+                        limit,
+                        window,
+                        from,
+                        to,
+                        json,
+                    } => commands::regime::run_confidence_trend(
+                        &backend,
+                        limit,
+                        window,
+                        from.as_deref(),
+                        to.as_deref(),
+                        json,
+                    ),
                 },
             },
             cli::AnalyticsCommand::Alignment {

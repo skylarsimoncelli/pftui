@@ -2566,6 +2566,24 @@ pub enum AnalyticsMacroRegimeCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Confidence trend: how regime confidence has evolved over time with direction and stability
+    #[command(name = "confidence-trend", after_help = "Shows how regime confidence has evolved over time. Computes a moving average\n(default 5-point) to smooth noise, identifies the trend direction\n(strengthening, weakening, stable), and calculates stability metrics.\n\nUseful for detecting whether the current regime is consolidating or about to\ntransition. A declining confidence trend often precedes regime changes.\n\nExamples:\n  pftui analytics macro regime confidence-trend --json\n  pftui analytics macro regime confidence-trend --window 10 --from 2026-03-01\n  pftui analytics macro regime confidence-trend --limit 50\n\nSee also: analytics macro regime history, analytics regime-transitions")]
+    ConfidenceTrend {
+        /// Number of recent snapshots to include (default: all in range)
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Moving average window size (default: 5)
+        #[arg(long, default_value = "5")]
+        window: usize,
+        /// Filter: only include snapshots on or after this date (YYYY-MM-DD)
+        #[arg(long)]
+        from: Option<String>,
+        /// Filter: only include snapshots on or before this date (YYYY-MM-DD)
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -5718,6 +5736,91 @@ mod tests {
         assert_eq!(from.as_deref(), Some("2026-03-01"));
         assert_eq!(to.as_deref(), Some("2026-03-31"));
         assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_regime_confidence_trend() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "regime",
+            "confidence-trend",
+            "--window",
+            "10",
+            "--from",
+            "2026-03-01",
+            "--limit",
+            "50",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Regime {
+                            command:
+                                AnalyticsMacroRegimeCommand::ConfidenceTrend {
+                                    limit,
+                                    window,
+                                    from,
+                                    to,
+                                    json,
+                                },
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro regime confidence-trend command");
+        };
+
+        assert_eq!(limit, Some(50));
+        assert_eq!(window, 10);
+        assert_eq!(from.as_deref(), Some("2026-03-01"));
+        assert!(to.is_none());
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_regime_confidence_trend_defaults() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "regime",
+            "confidence-trend",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Regime {
+                            command:
+                                AnalyticsMacroRegimeCommand::ConfidenceTrend {
+                                    limit,
+                                    window,
+                                    from,
+                                    to,
+                                    json,
+                                },
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro regime confidence-trend command");
+        };
+
+        assert!(limit.is_none());
+        assert_eq!(window, 5); // default
+        assert!(from.is_none());
+        assert!(to.is_none());
+        assert!(!json);
     }
 
     #[test]
