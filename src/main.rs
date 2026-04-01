@@ -4153,6 +4153,9 @@ fn main() -> Result<()> {
                 cli::AnalyticsBacktestCommand::Agent { agent, json } => {
                     commands::backtest::run_agent(&backend, &agent, json)
                 }
+                cli::AnalyticsBacktestCommand::Diagnostics { agent, json } => {
+                    commands::backtest::run_diagnostics(&backend, agent.as_deref(), json)
+                }
             },
         },
     };

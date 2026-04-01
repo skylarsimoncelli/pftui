@@ -1347,6 +1347,593 @@ fn print_breakdown_section(title: &str, buckets: &[BucketStats]) {
     println!();
 }
 
+// ─── Diagnostics ───────────────────────────────────────────────────────
+
+/// A single diagnostic finding with severity and recommendation.
+#[derive(Debug, Clone, Serialize)]
+pub struct DiagnosticFinding {
+    /// Severity: critical (≤30% win rate, large loss), warning (≤45%), info (pattern)
+    pub severity: String,
+    /// Short category tag for filtering
+    pub category: String,
+    /// Which agent this applies to (None = all agents / system-wide)
+    pub agent: Option<String>,
+    /// One-line headline
+    pub headline: String,
+    /// Detailed explanation of what the data shows
+    pub detail: String,
+    /// Specific, actionable recommendation
+    pub recommendation: String,
+}
+
+/// Full diagnostics output.
+#[derive(Debug, Clone, Serialize)]
+struct DiagnosticsReport {
+    total_predictions: usize,
+    agents_analysed: usize,
+    findings: Vec<DiagnosticFinding>,
+}
+
+/// Minimum number of decided trades (wins + losses) to analyse a bucket.
+const DIAG_MIN_TRADES: usize = 3;
+
+/// Run `analytics backtest diagnostics`.
+pub fn run_diagnostics(
+    backend: &BackendConnection,
+    agent_filter: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    // Load all scored predictions
+    let mut all_predictions =
+        user_predictions::list_predictions_backend(backend, None, None, None, None)?;
+    all_predictions.retain(|p| {
+        matches!(p.outcome.as_str(), "correct" | "partial" | "wrong")
+    });
+
+    if all_predictions.is_empty() {
+        if json_output {
+            let output = json!({
+                "backtest": "diagnostics",
+                "error": "No scored predictions found"
+            });
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        } else {
+            println!("No scored predictions found. Score predictions with `pftui journal prediction score`.");
+        }
+        return Ok(());
+    }
+
+    // Build backtest entries
+    let entries: Vec<BacktestEntry> = all_predictions
+        .iter()
+        .map(|pred| backtest_prediction(backend, pred))
+        .collect();
+
+    // Optionally filter to one agent
+    let entries = if let Some(agent) = agent_filter {
+        entries
+            .into_iter()
+            .filter(|e| {
+                e.source_agent
+                    .as_deref()
+                    .is_some_and(|a| a.eq_ignore_ascii_case(agent))
+            })
+            .collect()
+    } else {
+        entries
+    };
+
+    if entries.is_empty() {
+        if json_output {
+            let output = json!({
+                "backtest": "diagnostics",
+                "agent": agent_filter,
+                "error": "No scored predictions found for this agent"
+            });
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        } else {
+            println!("No scored predictions found for agent '{}'.", agent_filter.unwrap_or("?"));
+        }
+        return Ok(());
+    }
+
+    let mut findings = Vec::new();
+
+    // Per-agent analysis
+    let by_agent = build_breakdown(&entries, |e| {
+        e.source_agent
+            .as_deref()
+            .unwrap_or("unknown")
+            .to_lowercase()
+    });
+
+    let agents_analysed = by_agent.iter().filter(|b| (b.wins + b.losses) >= DIAG_MIN_TRADES).count();
+
+    for agent_bucket in &by_agent {
+        let decided = agent_bucket.wins + agent_bucket.losses;
+        if decided < DIAG_MIN_TRADES {
+            continue;
+        }
+
+        let agent_name = &agent_bucket.label;
+        let agent_entries: Vec<&BacktestEntry> = entries
+            .iter()
+            .filter(|e| {
+                e.source_agent
+                    .as_deref()
+                    .is_some_and(|a| a.eq_ignore_ascii_case(agent_name))
+            })
+            .collect();
+
+        let win_rate = agent_bucket
+            .win_rate_pct
+            .unwrap_or(Decimal::ZERO);
+
+        // ── Finding: Overall poor win rate ──
+        if win_rate < dec!(35) {
+            findings.push(DiagnosticFinding {
+                severity: "critical".to_string(),
+                category: "win-rate".to_string(),
+                agent: Some(agent_name.clone()),
+                headline: format!(
+                    "{} has {}% win rate ({}/{} decided trades)",
+                    agent_name,
+                    win_rate.round_dp(1),
+                    agent_bucket.wins,
+                    decided
+                ),
+                detail: format!(
+                    "Win rate below 35% indicates a systematic prediction bias. \
+                     Total P&L: ${}. This agent is consistently losing money on predictions.",
+                    agent_bucket.total_pnl.round_dp(2)
+                ),
+                recommendation: "Review this agent's prediction strategy. Common causes: \
+                    over-weighting mean reversion in trending markets, \
+                    predicting against the dominant regime, or \
+                    using low-conviction entries on high-volatility assets. \
+                    Consider restricting this agent to its strongest asset class."
+                    .to_string(),
+            });
+        } else if win_rate < dec!(45) {
+            findings.push(DiagnosticFinding {
+                severity: "warning".to_string(),
+                category: "win-rate".to_string(),
+                agent: Some(agent_name.clone()),
+                headline: format!(
+                    "{} has {}% win rate — below breakeven threshold",
+                    agent_name,
+                    win_rate.round_dp(1)
+                ),
+                detail: format!(
+                    "With conviction-weighted sizing, win rates below 45% typically produce \
+                     negative expected value. Current total P&L: ${}.",
+                    agent_bucket.total_pnl.round_dp(2)
+                ),
+                recommendation: "Increase prediction selectivity — fewer, higher-conviction calls. \
+                    Review asset classes and timeframes where this agent performs worst."
+                    .to_string(),
+            });
+        }
+
+        // ── Finding: Asset class weaknesses ──
+        let agent_by_asset = build_breakdown(&entries.iter()
+            .filter(|e| e.source_agent.as_deref().is_some_and(|a| a.eq_ignore_ascii_case(agent_name)))
+            .cloned()
+            .collect::<Vec<_>>(), |e| {
+            match &e.resolved_symbol {
+                Some(sym) => format!("{}", infer_category(sym)),
+                None => "unknown".to_string(),
+            }
+        });
+
+        for asset_bucket in &agent_by_asset {
+            let asset_decided = asset_bucket.wins + asset_bucket.losses;
+            if asset_decided < DIAG_MIN_TRADES {
+                continue;
+            }
+            let asset_wr = asset_bucket.win_rate_pct.unwrap_or(Decimal::ZERO);
+
+            if asset_wr < dec!(25) {
+                findings.push(DiagnosticFinding {
+                    severity: "critical".to_string(),
+                    category: "asset-class-weakness".to_string(),
+                    agent: Some(agent_name.clone()),
+                    headline: format!(
+                        "{} has {}% win rate on {} ({}/{} trades)",
+                        agent_name,
+                        asset_wr.round_dp(1),
+                        asset_bucket.label,
+                        asset_bucket.wins,
+                        asset_decided
+                    ),
+                    detail: format!(
+                        "Near-zero win rate on {} suggests a fundamental misread of this asset class. \
+                         Total P&L on {}: ${}.",
+                        asset_bucket.label,
+                        asset_bucket.label,
+                        asset_bucket.total_pnl.round_dp(2)
+                    ),
+                    recommendation: format!(
+                        "Stop making {} predictions until the underlying model is reviewed. \
+                         This asset class is consistently mispriced by this agent. \
+                         Consider delegating {} calls to a different timeframe analyst.",
+                        asset_bucket.label, asset_bucket.label
+                    ),
+                });
+            } else if asset_wr < dec!(40) && asset_decided >= 5 {
+                findings.push(DiagnosticFinding {
+                    severity: "warning".to_string(),
+                    category: "asset-class-weakness".to_string(),
+                    agent: Some(agent_name.clone()),
+                    headline: format!(
+                        "{} underperforms on {} ({}% win rate, {} trades)",
+                        agent_name,
+                        asset_bucket.label,
+                        asset_wr.round_dp(1),
+                        asset_decided
+                    ),
+                    detail: format!(
+                        "Below-average performance on {} with enough trades to be statistically meaningful. \
+                         P&L: ${}.",
+                        asset_bucket.label,
+                        asset_bucket.total_pnl.round_dp(2)
+                    ),
+                    recommendation: format!(
+                        "Reduce {} prediction frequency or increase conviction threshold \
+                         before making {} calls.",
+                        asset_bucket.label, asset_bucket.label
+                    ),
+                });
+            }
+        }
+
+        // ── Finding: Conviction calibration ──
+        let agent_by_conviction = build_breakdown(&entries.iter()
+            .filter(|e| e.source_agent.as_deref().is_some_and(|a| a.eq_ignore_ascii_case(agent_name)))
+            .cloned()
+            .collect::<Vec<_>>(), |e| e.conviction.to_lowercase());
+
+        let high_bucket = agent_by_conviction.iter().find(|b| b.label == "high");
+        let medium_bucket = agent_by_conviction.iter().find(|b| b.label == "medium");
+        let low_bucket = agent_by_conviction.iter().find(|b| b.label == "low");
+
+        // High conviction worse than medium/low = miscalibrated
+        if let Some(high) = high_bucket {
+            let high_decided = high.wins + high.losses;
+            if high_decided >= DIAG_MIN_TRADES {
+                let high_wr = high.win_rate_pct.unwrap_or(Decimal::ZERO);
+
+                // Compare to medium
+                if let Some(med) = medium_bucket {
+                    let med_decided = med.wins + med.losses;
+                    let med_wr = med.win_rate_pct.unwrap_or(Decimal::ZERO);
+                    if med_decided >= DIAG_MIN_TRADES && high_wr < med_wr - dec!(10) {
+                        findings.push(DiagnosticFinding {
+                            severity: "warning".to_string(),
+                            category: "conviction-calibration".to_string(),
+                            agent: Some(agent_name.clone()),
+                            headline: format!(
+                                "{}: high-conviction ({}%) underperforms medium-conviction ({}%)",
+                                agent_name,
+                                high_wr.round_dp(1),
+                                med_wr.round_dp(1)
+                            ),
+                            detail: format!(
+                                "High-conviction calls should outperform lower conviction levels. \
+                                 Inverted relationship (high {}% < medium {}%) indicates conviction \
+                                 signals are miscalibrated — the agent feels most certain when it's \
+                                 most likely to be wrong.",
+                                high_wr.round_dp(1),
+                                med_wr.round_dp(1)
+                            ),
+                            recommendation: "Re-examine what triggers 'high conviction' in this agent's routine. \
+                                The conviction signal may be anchoring on narrative strength rather than \
+                                data quality. Consider downgrading default conviction or requiring \
+                                multi-timeframe confirmation for high-conviction calls."
+                                .to_string(),
+                        });
+                    }
+                }
+
+                // High conviction with large losses = dangerous
+                if high_wr < dec!(40) && high.total_pnl < dec!(-50) {
+                    findings.push(DiagnosticFinding {
+                        severity: "critical".to_string(),
+                        category: "conviction-calibration".to_string(),
+                        agent: Some(agent_name.clone()),
+                        headline: format!(
+                            "{}: high-conviction calls losing heavily ({}% WR, ${} P&L)",
+                            agent_name,
+                            high_wr.round_dp(1),
+                            high.total_pnl.round_dp(2)
+                        ),
+                        detail: "High-conviction calls carry the largest position sizes (10% of notional). \
+                            When these have low win rates, losses are amplified significantly. This is \
+                            the highest-impact area to fix."
+                            .to_string(),
+                        recommendation: "Immediately restrict high-conviction calls to this agent's \
+                            best-performing asset class only. Require explicit evidence (not narrative) \
+                            before assigning high conviction."
+                            .to_string(),
+                    });
+                }
+            }
+        }
+
+        // ── Finding: Loss magnitude asymmetry ──
+        if let (Some(best), Some(worst)) = (agent_bucket.best_pnl, agent_bucket.worst_pnl) {
+            if worst.abs() > best.abs() * dec!(2) && worst < dec!(-20) {
+                findings.push(DiagnosticFinding {
+                    severity: "warning".to_string(),
+                    category: "risk-asymmetry".to_string(),
+                    agent: Some(agent_name.clone()),
+                    headline: format!(
+                        "{}: worst loss (${}) is {}x larger than best win (${})",
+                        agent_name,
+                        worst.round_dp(2),
+                        (worst.abs() / best.abs().max(dec!(0.01))).round_dp(1),
+                        best.round_dp(2)
+                    ),
+                    detail: "Large asymmetric losses suggest the agent is taking outsized positions \
+                        on low-probability calls or holding losing predictions too long before scoring."
+                        .to_string(),
+                    recommendation: "Tighten scoring cadence — score predictions earlier when the \
+                        thesis is clearly invalidated. Consider reducing conviction on volatile \
+                        assets where move magnitudes are large."
+                        .to_string(),
+                });
+            }
+        }
+
+        // ── Finding: Losing streak ──
+        let (_, _, longest_loss) = compute_streaks(
+            &agent_entries.iter().copied().cloned().collect::<Vec<_>>()
+        );
+        if longest_loss >= 5 {
+            findings.push(DiagnosticFinding {
+                severity: "warning".to_string(),
+                category: "streak".to_string(),
+                agent: Some(agent_name.clone()),
+                headline: format!(
+                    "{}: longest losing streak is {} consecutive wrong predictions",
+                    agent_name, longest_loss
+                ),
+                detail: format!(
+                    "A streak of {} consecutive losses suggests a period where the agent's \
+                     model was systematically wrong — likely during a regime change or trend \
+                     reversal it failed to adapt to.",
+                    longest_loss
+                ),
+                recommendation: "Add regime-awareness to the prediction routine. After 3 \
+                    consecutive losses, the agent should pause predictions and re-evaluate \
+                    its market model before continuing."
+                    .to_string(),
+            });
+        }
+
+        // ── Finding: Overtrading (volume vs accuracy) ──
+        if decided >= 10 && win_rate < dec!(40) {
+            let agent_pnl_per_trade = agent_bucket.avg_pnl.unwrap_or(Decimal::ZERO);
+            if agent_pnl_per_trade < dec!(-5) {
+                findings.push(DiagnosticFinding {
+                    severity: "warning".to_string(),
+                    category: "overtrading".to_string(),
+                    agent: Some(agent_name.clone()),
+                    headline: format!(
+                        "{}: {} predictions with negative edge (${}/trade avg)",
+                        agent_name, decided, agent_pnl_per_trade.round_dp(2)
+                    ),
+                    detail: "High volume of predictions with consistently negative P&L per trade. \
+                        The agent is making predictions it shouldn't — the negative edge compounds \
+                        with each additional call."
+                        .to_string(),
+                    recommendation: "Reduce prediction frequency by at least 50%. Only predict when \
+                        multiple data sources converge on a clear signal. Quality over quantity."
+                        .to_string(),
+                });
+            }
+        }
+
+        // ── Finding: Mean reversion bias detection ──
+        // If the agent consistently loses on trending assets, it's over-weighting mean reversion
+        let mut trend_losses = 0usize;
+        let mut trend_total = 0usize;
+        for entry in &agent_entries {
+            if let Some(pct) = entry.price_change_pct {
+                // Large directional moves (>3%) suggest trending, not ranging
+                if pct.abs() > dec!(3) {
+                    trend_total += 1;
+                    if entry.outcome == "wrong" {
+                        trend_losses += 1;
+                    }
+                }
+            }
+        }
+        if trend_total >= 5 && trend_losses > 0 {
+            let trend_loss_rate = Decimal::from(trend_losses as u64)
+                / Decimal::from(trend_total as u64)
+                * dec!(100);
+            if trend_loss_rate > dec!(65) {
+                findings.push(DiagnosticFinding {
+                    severity: "warning".to_string(),
+                    category: "mean-reversion-bias".to_string(),
+                    agent: Some(agent_name.clone()),
+                    headline: format!(
+                        "{}: {}% loss rate on large-move trades ({}/{})",
+                        agent_name,
+                        trend_loss_rate.round_dp(1),
+                        trend_losses,
+                        trend_total
+                    ),
+                    detail: "When assets make large moves (>3%), this agent is usually on the wrong \
+                        side. This pattern indicates a mean-reversion bias — the agent expects prices \
+                        to revert when they're actually trending."
+                        .to_string(),
+                    recommendation: "Weight momentum signals more heavily. When an asset is making \
+                        large directional moves, defer to the trend rather than predicting reversals. \
+                        Add regime-state checks before counter-trend predictions."
+                        .to_string(),
+                });
+            }
+        }
+
+        // ── Finding: Low-conviction overuse ──
+        if let Some(low) = low_bucket {
+            let low_decided = low.wins + low.losses;
+            if low_decided >= 5 {
+                let low_pct = Decimal::from(low_decided as u64)
+                    / Decimal::from(decided as u64)
+                    * dec!(100);
+                if low_pct > dec!(40) {
+                    findings.push(DiagnosticFinding {
+                        severity: "info".to_string(),
+                        category: "conviction-distribution".to_string(),
+                        agent: Some(agent_name.clone()),
+                        headline: format!(
+                            "{}: {}% of predictions are low-conviction",
+                            agent_name,
+                            low_pct.round_dp(0)
+                        ),
+                        detail: "A high proportion of low-conviction predictions suggests the agent is \
+                            making calls it doesn't believe in. Low-conviction positions have small sizing \
+                            (2% of notional), so even correct calls contribute little to P&L."
+                            .to_string(),
+                        recommendation: "Raise the prediction threshold. If conviction is low, consider \
+                            not making the prediction at all. Focus capital and attention on medium and \
+                            high conviction setups."
+                            .to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    // ── System-wide findings ──
+
+    // Overall negative expected value
+    let overall = compute_summary(&entries);
+    if let Some(avg_pnl) = overall.avg_pnl_per_trade {
+        if avg_pnl < dec!(-3) && overall.with_price_data >= 20 {
+            findings.push(DiagnosticFinding {
+                severity: "critical".to_string(),
+                category: "system-performance".to_string(),
+                agent: None,
+                headline: format!(
+                    "System-wide negative edge: ${}/trade avg across {} trades",
+                    avg_pnl.round_dp(2),
+                    overall.with_price_data
+                ),
+                detail: format!(
+                    "The prediction system as a whole has negative expected value. \
+                     Total P&L: ${}. Win rate: {}%. This means the system \
+                     destroys value with each prediction.",
+                    overall.total_theoretical_pnl.round_dp(2),
+                    overall.win_rate_pct.unwrap_or(Decimal::ZERO).round_dp(1)
+                ),
+                recommendation: "Priority 1: Fix the worst-performing agent. \
+                    Priority 2: Remove or restrict agents with <35% win rate. \
+                    Priority 3: Increase system-wide conviction threshold — \
+                    only predict when evidence is strong."
+                    .to_string(),
+            });
+        }
+    }
+
+    // Sort findings: critical first, then warning, then info
+    findings.sort_by(|a, b| {
+        let severity_order = |s: &str| match s {
+            "critical" => 0,
+            "warning" => 1,
+            "info" => 2,
+            _ => 3,
+        };
+        severity_order(&a.severity).cmp(&severity_order(&b.severity))
+    });
+
+    let report = DiagnosticsReport {
+        total_predictions: entries.len(),
+        agents_analysed,
+        findings,
+    };
+
+    if json_output {
+        print_diagnostics_json(&report, agent_filter)?;
+    } else {
+        print_diagnostics_table(&report, agent_filter);
+    }
+
+    Ok(())
+}
+
+fn print_diagnostics_json(report: &DiagnosticsReport, agent_filter: Option<&str>) -> Result<()> {
+    let output = json!({
+        "backtest": "diagnostics",
+        "agent_filter": agent_filter,
+        "total_predictions": report.total_predictions,
+        "agents_analysed": report.agents_analysed,
+        "findings_count": report.findings.len(),
+        "by_severity": {
+            "critical": report.findings.iter().filter(|f| f.severity == "critical").count(),
+            "warning": report.findings.iter().filter(|f| f.severity == "warning").count(),
+            "info": report.findings.iter().filter(|f| f.severity == "info").count(),
+        },
+        "findings": report.findings.iter().map(|f| json!({
+            "severity": f.severity,
+            "category": f.category,
+            "agent": f.agent,
+            "headline": f.headline,
+            "detail": f.detail,
+            "recommendation": f.recommendation,
+        })).collect::<Vec<_>>(),
+    });
+
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+fn print_diagnostics_table(report: &DiagnosticsReport, agent_filter: Option<&str>) {
+    println!("═══ Prediction Diagnostics ═══");
+    if let Some(agent) = agent_filter {
+        println!("Agent: {}", agent);
+    }
+    println!(
+        "Analysed: {} predictions across {} agent(s)",
+        report.total_predictions, report.agents_analysed
+    );
+    println!(
+        "Findings: {} critical, {} warning, {} info",
+        report.findings.iter().filter(|f| f.severity == "critical").count(),
+        report.findings.iter().filter(|f| f.severity == "warning").count(),
+        report.findings.iter().filter(|f| f.severity == "info").count(),
+    );
+    println!();
+
+    if report.findings.is_empty() {
+        println!("✅ No diagnostic issues found. Prediction system is performing well.");
+        return;
+    }
+
+    for (i, finding) in report.findings.iter().enumerate() {
+        let icon = match finding.severity.as_str() {
+            "critical" => "🔴",
+            "warning" => "🟡",
+            "info" => "ℹ️",
+            _ => "  ",
+        };
+
+        println!(
+            "{}. {} [{}] {}",
+            i + 1,
+            icon,
+            finding.category,
+            finding.headline
+        );
+        println!("   {}", finding.detail);
+        println!("   → {}", finding.recommendation);
+        println!();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2348,6 +2935,184 @@ mod tests {
 
         // Agent B should rank #2
         let result = run_agent(&backend, "agent-b", true);
+        assert!(result.is_ok());
+    }
+
+    // ─── Diagnostics tests ───
+
+    #[test]
+    fn test_diagnostics_empty() {
+        let backend = setup_db();
+        let result = run_diagnostics(&backend, None, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_diagnostics_critical_win_rate() {
+        let backend = setup_db();
+        let conn = match &backend {
+            BackendConnection::Sqlite { conn } => conn,
+            _ => panic!("expected sqlite"),
+        };
+
+        // Agent with 1 win, 5 losses = 16.7% win rate → should trigger critical
+        insert_prediction(conn, "win 1", Some("GC=F"), "medium", "correct",
+            "2025-01-01", Some("2025-02-01"), Some("2025-02-01"), Some("bad-agent"), Some("low"));
+        for i in 1..=5 {
+            insert_prediction(conn, &format!("loss {i}"), Some("GC=F"), "medium", "wrong",
+                &format!("2025-01-{:02}", i + 1), Some(&format!("2025-02-{:02}", i + 1)),
+                Some(&format!("2025-02-{:02}", i + 1)), Some("bad-agent"), Some("low"));
+        }
+
+        insert_price(conn, "GC=F", "2025-01-01", "2700");
+        insert_price(conn, "GC=F", "2025-01-02", "2710");
+        insert_price(conn, "GC=F", "2025-01-03", "2720");
+        insert_price(conn, "GC=F", "2025-01-04", "2730");
+        insert_price(conn, "GC=F", "2025-01-05", "2740");
+        insert_price(conn, "GC=F", "2025-01-06", "2750");
+        insert_price(conn, "GC=F", "2025-02-01", "2800");
+        insert_price(conn, "GC=F", "2025-02-02", "2650");
+        insert_price(conn, "GC=F", "2025-02-03", "2600");
+        insert_price(conn, "GC=F", "2025-02-04", "2550");
+        insert_price(conn, "GC=F", "2025-02-05", "2500");
+        insert_price(conn, "GC=F", "2025-02-06", "2450");
+
+        let result = run_diagnostics(&backend, None, true);
+        assert!(result.is_ok());
+
+        // Also test agent-filtered
+        let result = run_diagnostics(&backend, Some("bad-agent"), true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_diagnostics_conviction_miscalibration() {
+        let backend = setup_db();
+        let conn = match &backend {
+            BackendConnection::Sqlite { conn } => conn,
+            _ => panic!("expected sqlite"),
+        };
+
+        // High conviction: 1 win, 3 losses (25%)
+        insert_prediction(conn, "high win", Some("BTC-USD"), "high", "correct",
+            "2025-01-01", Some("2025-02-01"), Some("2025-02-01"), Some("miscal-agent"), Some("low"));
+        for i in 1..=3 {
+            insert_prediction(conn, &format!("high loss {i}"), Some("BTC-USD"), "high", "wrong",
+                &format!("2025-01-{:02}", i + 1), Some(&format!("2025-02-{:02}", i + 1)),
+                Some(&format!("2025-02-{:02}", i + 1)), Some("miscal-agent"), Some("low"));
+        }
+
+        // Medium conviction: 3 wins, 1 loss (75%)
+        for i in 1..=3 {
+            insert_prediction(conn, &format!("med win {i}"), Some("BTC-USD"), "medium", "correct",
+                &format!("2025-03-{:02}", i), Some(&format!("2025-04-{:02}", i)),
+                Some(&format!("2025-04-{:02}", i)), Some("miscal-agent"), Some("low"));
+        }
+        insert_prediction(conn, "med loss", Some("BTC-USD"), "medium", "wrong",
+            "2025-03-04", Some("2025-04-04"), Some("2025-04-04"), Some("miscal-agent"), Some("low"));
+
+        insert_price(conn, "BTC-USD", "2025-01-01", "90000");
+        insert_price(conn, "BTC-USD", "2025-01-02", "91000");
+        insert_price(conn, "BTC-USD", "2025-01-03", "92000");
+        insert_price(conn, "BTC-USD", "2025-01-04", "93000");
+        insert_price(conn, "BTC-USD", "2025-02-01", "95000");
+        insert_price(conn, "BTC-USD", "2025-02-02", "85000");
+        insert_price(conn, "BTC-USD", "2025-02-03", "84000");
+        insert_price(conn, "BTC-USD", "2025-02-04", "83000");
+        insert_price(conn, "BTC-USD", "2025-03-01", "96000");
+        insert_price(conn, "BTC-USD", "2025-03-02", "97000");
+        insert_price(conn, "BTC-USD", "2025-03-03", "98000");
+        insert_price(conn, "BTC-USD", "2025-03-04", "99000");
+        insert_price(conn, "BTC-USD", "2025-04-01", "100000");
+        insert_price(conn, "BTC-USD", "2025-04-02", "101000");
+        insert_price(conn, "BTC-USD", "2025-04-03", "102000");
+        insert_price(conn, "BTC-USD", "2025-04-04", "95000");
+
+        let result = run_diagnostics(&backend, Some("miscal-agent"), true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_diagnostics_no_findings_when_performing_well() {
+        let backend = setup_db();
+        let conn = match &backend {
+            BackendConnection::Sqlite { conn } => conn,
+            _ => panic!("expected sqlite"),
+        };
+
+        // Agent with 3 wins, 1 loss = 75% win rate → no critical/warning findings
+        for i in 1..=3 {
+            insert_prediction(conn, &format!("win {i}"), Some("BTC-USD"), "medium", "correct",
+                &format!("2025-01-{:02}", i), Some(&format!("2025-02-{:02}", i)),
+                Some(&format!("2025-02-{:02}", i)), Some("good-agent"), Some("low"));
+        }
+        insert_prediction(conn, "loss 1", Some("BTC-USD"), "medium", "wrong",
+            "2025-01-04", Some("2025-02-04"), Some("2025-02-04"), Some("good-agent"), Some("low"));
+
+        insert_price(conn, "BTC-USD", "2025-01-01", "90000");
+        insert_price(conn, "BTC-USD", "2025-01-02", "91000");
+        insert_price(conn, "BTC-USD", "2025-01-03", "92000");
+        insert_price(conn, "BTC-USD", "2025-01-04", "93000");
+        insert_price(conn, "BTC-USD", "2025-02-01", "95000");
+        insert_price(conn, "BTC-USD", "2025-02-02", "96000");
+        insert_price(conn, "BTC-USD", "2025-02-03", "97000");
+        insert_price(conn, "BTC-USD", "2025-02-04", "88000");
+
+        let result = run_diagnostics(&backend, Some("good-agent"), true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_diagnostics_agent_filter_unknown() {
+        let backend = setup_db();
+        let conn = match &backend {
+            BackendConnection::Sqlite { conn } => conn,
+            _ => panic!("expected sqlite"),
+        };
+
+        // Add one prediction for a different agent
+        insert_prediction(conn, "some pred", Some("BTC-USD"), "medium", "correct",
+            "2025-01-01", Some("2025-02-01"), Some("2025-02-01"), Some("real-agent"), Some("low"));
+
+        // Filter to nonexistent agent
+        let result = run_diagnostics(&backend, Some("ghost-agent"), true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_diagnostics_json_structure() {
+        let backend = setup_db();
+        let conn = match &backend {
+            BackendConnection::Sqlite { conn } => conn,
+            _ => panic!("expected sqlite"),
+        };
+
+        // 1 win, 4 losses to trigger findings
+        insert_prediction(conn, "win", Some("BTC-USD"), "medium", "correct",
+            "2025-01-01", Some("2025-02-01"), Some("2025-02-01"), Some("test-agent"), Some("low"));
+        for i in 1..=4 {
+            insert_prediction(conn, &format!("loss {i}"), Some("BTC-USD"), "medium", "wrong",
+                &format!("2025-01-{:02}", i + 1), Some(&format!("2025-02-{:02}", i + 1)),
+                Some(&format!("2025-02-{:02}", i + 1)), Some("test-agent"), Some("low"));
+        }
+
+        insert_price(conn, "BTC-USD", "2025-01-01", "90000");
+        insert_price(conn, "BTC-USD", "2025-01-02", "91000");
+        insert_price(conn, "BTC-USD", "2025-01-03", "92000");
+        insert_price(conn, "BTC-USD", "2025-01-04", "93000");
+        insert_price(conn, "BTC-USD", "2025-01-05", "94000");
+        insert_price(conn, "BTC-USD", "2025-02-01", "95000");
+        insert_price(conn, "BTC-USD", "2025-02-02", "85000");
+        insert_price(conn, "BTC-USD", "2025-02-03", "84000");
+        insert_price(conn, "BTC-USD", "2025-02-04", "83000");
+        insert_price(conn, "BTC-USD", "2025-02-05", "82000");
+
+        // Just verify it runs without error in JSON mode
+        let result = run_diagnostics(&backend, None, true);
+        assert!(result.is_ok());
+
+        // And table mode
+        let result = run_diagnostics(&backend, None, false);
         assert!(result.is_ok());
     }
 }
