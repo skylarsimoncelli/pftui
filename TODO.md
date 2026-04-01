@@ -35,15 +35,15 @@ _(none)_
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Evening Analyst | 78% | 75% | Mar 31 | ↓ (88→78 use, 85→75 overall. Backtest revealed 26.7% win rate — worst agent. Over-predicts mean reversion. This is a routine/strategy issue, not a tooling gap.) **Lowest overall scorer — priority.** |
-| Medium-Timeframe Analyst | 85% | 88% | Mar 31 | ↑ (85→85 use, 75→88 overall. Major recovery! FRED GDPNow + ISM PMI scraper addressed stale data. PMI discrepancy still noted.) |
+| Evening Analyst | 72% | 68% | Apr 1 | ↓ (78→72 use, 75→68 overall. `portfolio status` not found — now SHIPPED #514. Backtest still shows worst win rate. This remains a routine/strategy issue.) **Lowest overall scorer — priority.** |
+| Medium-Timeframe Analyst | 85% | 90% | Apr 1 | ↑ (85→85 use, 88→90 overall. Iran deadline tracking feedback addressed — calendar add/remove #511 shipped.) |
 | Low-Timeframe Analyst | 85% | 82% | Mar 30 | ↓ (90→85 use, 85→82 overall. FRED API failures. stress-test --list-scenarios shipped.) |
 | Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable. Historical regime transitions shipped PR #486.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable. Trend evidence enrichment shipped #502.) |
 | Morning Intelligence | 75% | 85% | Mar 28 | → (stable.) |
 | Morning Brief | 85% | 82% | Mar 30 | → (stable.) |
 | Public Daily Report | 82% | 80% | Mar 28 | → (stable.) |
-| Dev Agent | 92% | 94% | Mar 31 | → (stable high.) |
+| Dev Agent | 92% | 94% | Apr 1 | → (stable high.) |
 
 **Top 3 priorities based on feedback:**
 1. **Evening Analyst prediction quality** — lowest overall at 75%. Backtest shows 26.7% win rate. Not a tooling issue — the analytics pipeline is rated "excellent." The agent routine over-weights mean reversion. Consider adjusting evening-analysis routine to weight momentum signals more heavily.
@@ -62,7 +62,10 @@ _(none)_
 9. ✅ FIC/MIC conflict monitor (#494) — `analytics power-flow conflicts` with defense vs energy vs VIX cross-reference
 10. ✅ Trends list enrichment (#502) — evidence summary + asset impacts in `analytics trends list`, --verbose flag
 11. ✅ Analytics guidance (#505) — routine workflow priority advisor for agent routines
+12. ✅ Brief alert dedup (#508) — grouped repeated triggered alerts by symbol
+13. ✅ Data calendar add/remove + geopolitical catalysts (#511) — agents can insert custom events
+14. ✅ Portfolio status (#514) — consolidated snapshot: allocation + value + daily P&L + unrealized in one call
 
-**Release status:** v0.23.0 eligible — 39 commits since v0.22.0, no P0 bugs, 2203 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios, PMI discrepancy fix, power-flow conflicts, trends list enrichment, analytics guidance.
+**Release status:** v0.23.0 eligible — 42+ commits since v0.22.0, no P0 bugs, 2244 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios, PMI discrepancy fix, power-flow conflicts, trends list enrichment, analytics guidance, alert dedup, geopolitical catalysts, portfolio status.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.
