@@ -895,7 +895,12 @@ fn main() -> Result<()> {
         Some(Command::Journal { command }) => run_agent_journal(&backend, command),
 
         Some(Command::Data { command }) => match command {
-            cli::DataCommand::Refresh { notify, json } => {
+            cli::DataCommand::Refresh {
+                notify,
+                json,
+                only,
+                skip,
+            } => {
                 if cached_only {
                     if json {
                         println!("{{\"error\": \"cached-only mode enabled\"}}");
@@ -903,10 +908,19 @@ fn main() -> Result<()> {
                         println!("Cached-only mode enabled; skipping refresh network calls.");
                     }
                     Ok(())
-                } else if json {
-                    commands::refresh::run_json(&backend, &config, notify)
                 } else {
-                    commands::refresh::run(&backend, &config, notify)
+                    let plan = if !only.is_empty() {
+                        commands::refresh::RefreshPlan::from_only(&only)?
+                    } else if !skip.is_empty() {
+                        commands::refresh::RefreshPlan::from_skip(&skip)?
+                    } else {
+                        commands::refresh::RefreshPlan::full()
+                    };
+                    if json {
+                        commands::refresh::run_json_with_plan(&backend, &config, notify, &plan)
+                    } else {
+                        commands::refresh::run_with_plan(&backend, &config, notify, &plan)
+                    }
                 }
             }
             cli::DataCommand::Status { json, .. } => commands::status::run_backend(&backend, json),
