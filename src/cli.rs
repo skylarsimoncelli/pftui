@@ -1020,6 +1020,12 @@ pub enum PortfolioOpportunityCommand {
 
 #[derive(Subcommand)]
 pub enum PortfolioCommand {
+    /// Consolidated portfolio snapshot: allocation, value, daily P&L, and unrealized gain in one call
+    Status {
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
     /// Portfolio summary to stdout (default when no subcommand is provided)
     Summary {
         /// Group output by a field (e.g. "category")
@@ -3947,6 +3953,30 @@ mod tests {
                 assert_eq!(target.as_deref(), Some("300"));
             }
             _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_portfolio_status() {
+        let cli =
+            Cli::try_parse_from(["pftui", "portfolio", "status", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command: Some(PortfolioCommand::Status { json }),
+            }) => assert!(json),
+            _ => panic!("expected portfolio status command"),
+        }
+    }
+
+    #[test]
+    fn parses_portfolio_status_no_json() {
+        let cli =
+            Cli::try_parse_from(["pftui", "portfolio", "status"]).unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command: Some(PortfolioCommand::Status { json }),
+            }) => assert!(!json),
+            _ => panic!("expected portfolio status command"),
         }
     }
 

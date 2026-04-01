@@ -2,6 +2,32 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-04-01 — feat: `portfolio status` — consolidated portfolio snapshot for agents
+
+New `portfolio status` command — a single-call consolidated portfolio snapshot combining allocation, value, daily P&L, and unrealized gain/loss. Agents get everything they need in one command instead of running `summary` + `allocation` + `daily-pnl` + `unrealized` separately.
+
+**New command:**
+- `pftui portfolio status --json` — full JSON payload with total value, unrealized gain, daily P&L, category breakdown, and per-position detail
+- `pftui portfolio status` — human-readable formatted table
+
+**JSON payload includes:**
+- `total_value`, `total_unrealized_gain`, `total_unrealized_gain_pct`, `total_daily_pnl`, `total_daily_pnl_pct`
+- `categories[]` — per-category allocation, value, daily change, position count
+- `positions[]` — per-position symbol, category, allocation %, current price/value, quantity, avg cost, unrealized gain/%, daily change/%
+- `date`, `currency`, `position_count`
+
+**Supports:** Full mode (transaction-based) and percentage mode (allocation-based). Cash positions auto-priced at 1.0. Daily P&L computed from yesterday's cached price history.
+
+**Addresses:** Evening Analyst feedback (Apr 1) — "`portfolio status --json` should return current allocation and P&L data consistently."
+
+**Files changed:**
+- `src/commands/portfolio_status.rs` — new command implementation (~450 lines)
+- `src/commands/mod.rs` — module registration
+- `src/cli.rs` — `Status` variant in `PortfolioCommand` + 2 CLI parse tests
+- `src/main.rs` — dispatch wiring
+
+**Tests:** 2244 pass (+12 new: 10 unit + 2 CLI parse), clippy clean.
+
 ### 2026-04-01 — feat: `data calendar add/remove` + geopolitical catalyst category
 
 Converts `data calendar` from a flat command to a subcommand group (`list`, `add`, `remove`). Agents can now insert custom geopolitical deadlines, trade events, and other catalysts into the calendar database, where they automatically flow into `analytics catalysts` ranking.
