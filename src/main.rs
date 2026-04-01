@@ -3232,6 +3232,7 @@ fn main() -> Result<()> {
                 Some(cli::AnalyticsCorrelationsCommand::Breaks {
                     threshold,
                     limit,
+                    severity,
                     seed_alerts,
                     cooldown,
                     json,
@@ -3239,6 +3240,7 @@ fn main() -> Result<()> {
                     &backend,
                     threshold,
                     limit,
+                    severity.as_deref(),
                     seed_alerts,
                     cooldown,
                     json,

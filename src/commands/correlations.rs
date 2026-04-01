@@ -449,10 +449,13 @@ pub fn compute_and_store_default_snapshots_backend(backend: &BackendConnection) 
 
 /// List correlation break pairs: where |corr_7d − corr_90d| >= threshold.
 /// Optionally seed recurring technical alerts for each break pair.
+/// Optional severity filter: "severe", "moderate", or "minor".
+#[allow(clippy::too_many_arguments)]
 pub fn run_breaks(
     backend: &BackendConnection,
     threshold: f64,
     limit: usize,
+    severity_filter: Option<&str>,
     seed_alerts: bool,
     cooldown: i64,
     json: bool,
@@ -460,9 +463,40 @@ pub fn run_breaks(
     if threshold <= 0.0 || threshold > 1.0 {
         anyhow::bail!("--threshold must be between 0.0 (exclusive) and 1.0 (inclusive)");
     }
+    if let Some(sev) = severity_filter {
+        let valid = ["severe", "moderate", "minor"];
+        if !valid.contains(&sev) {
+            anyhow::bail!(
+                "Invalid --severity '{}'. Use: severe, moderate, minor.",
+                sev
+            );
+        }
+    }
 
     // Compute all pairs at 90d window (we need both 7d and 90d values)
-    let pairs = compute_breaks_backend(backend, threshold, limit)?;
+    // Use a higher internal limit when filtering by severity, since we filter after
+    let internal_limit = if severity_filter.is_some() {
+        500
+    } else {
+        limit
+    };
+    let mut pairs = compute_breaks_backend(backend, threshold, internal_limit)?;
+
+    // Apply severity filter if requested
+    if let Some(sev) = severity_filter {
+        pairs.retain(|bp| {
+            let abs_delta = bp.break_delta.abs();
+            let pair_severity = if abs_delta >= 0.70 {
+                "severe"
+            } else if abs_delta >= 0.50 {
+                "moderate"
+            } else {
+                "minor"
+            };
+            pair_severity == sev
+        });
+        pairs.truncate(limit);
+    }
 
     if seed_alerts && !pairs.is_empty() {
         let existing = db_alerts::list_alerts_backend(backend)?;
@@ -503,38 +537,79 @@ pub fn run_breaks(
         }
     }
 
+    // Build enriched break entries with interpretation
+    let enriched: Vec<_> = pairs
+        .iter()
+        .map(|bp| {
+            let interp = interpret_break(bp);
+            (bp, interp)
+        })
+        .collect();
+
     if json {
         let output = serde_json::json!({
             "threshold": threshold,
-            "breaks": pairs.iter().map(|bp| serde_json::json!({
+            "severity_filter": severity_filter,
+            "breaks": enriched.iter().map(|(bp, interp)| serde_json::json!({
                 "symbol_a": bp.symbol_a,
                 "symbol_b": bp.symbol_b,
                 "corr_7d": bp.corr_7d,
                 "corr_90d": bp.corr_90d,
                 "break_delta": bp.break_delta,
+                "severity": interp.severity,
+                "interpretation": interp.interpretation,
+                "signal": interp.signal,
             })).collect::<Vec<_>>(),
-            "count": pairs.len(),
+            "count": enriched.len(),
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else if pairs.is_empty() {
-        println!(
-            "No correlation breaks detected at threshold {:.2}. All pairs are stable.",
-            threshold
-        );
+    } else if enriched.is_empty() {
+        if let Some(sev) = severity_filter {
+            println!(
+                "No {} correlation breaks detected at threshold {:.2}.",
+                sev, threshold
+            );
+        } else {
+            println!(
+                "No correlation breaks detected at threshold {:.2}. All pairs are stable.",
+                threshold
+            );
+        }
     } else {
-        println!("Correlation Breaks (|7d − 90d| ≥ {:.2})", threshold);
+        let header = if let Some(sev) = severity_filter {
+            format!(
+                "Correlation Breaks — {} only (|7d − 90d| ≥ {:.2})",
+                sev, threshold
+            )
+        } else {
+            format!("Correlation Breaks (|7d − 90d| ≥ {:.2})", threshold)
+        };
+        println!("{header}");
         println!();
-        println!("{:<22} {:>8} {:>8} {:>10}", "Pair", "7d", "90d", "Break Δ");
-        println!("{}", "─".repeat(52));
-        for bp in &pairs {
+        println!(
+            "{:<22} {:>8} {:>8} {:>10}  {:<10}",
+            "Pair", "7d", "90d", "Break Δ", "Severity"
+        );
+        println!("{}", "─".repeat(64));
+        for (bp, interp) in &enriched {
             let pair = format!("{}-{}", bp.symbol_a, bp.symbol_b);
             println!(
-                "{:<22} {:>8} {:>8} {:>10}",
+                "{:<22} {:>8} {:>8} {:>10}  {:<10}",
                 truncate(&pair, 22),
                 fmt_opt(bp.corr_7d),
                 fmt_opt(bp.corr_90d),
                 format!("{:+.2}", bp.break_delta),
+                severity_badge(&interp.severity),
             );
+        }
+        // Print interpretation details below the table
+        println!();
+        for (bp, interp) in &enriched {
+            let pair = format!("{}/{}", bp.symbol_a, bp.symbol_b);
+            println!("  {} [{}]", pair, severity_badge(&interp.severity));
+            println!("    {}", interp.interpretation);
+            println!("    → {}", interp.signal);
+            println!();
         }
     }
 
@@ -1271,6 +1346,15 @@ pub fn run_latest_with_impact(
     Ok(())
 }
 
+fn severity_badge(severity: &str) -> &'static str {
+    match severity {
+        "severe" => "🔴 SEVERE",
+        "moderate" => "🟡 MODERATE",
+        "minor" => "🟢 MINOR",
+        _ => "UNKNOWN",
+    }
+}
+
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
@@ -1446,7 +1530,7 @@ mod tests {
 
         let backend = BackendConnection::Sqlite { conn };
         // Run breaks with seed-alerts
-        run_breaks(&backend, 0.10, 20, true, 240, false).unwrap();
+        run_breaks(&backend, 0.10, 20, None, true, 240, false).unwrap();
 
         let alerts = db_alerts::list_alerts_backend(&backend).unwrap();
         let corr_alerts: Vec<_> = alerts
@@ -1503,8 +1587,8 @@ mod tests {
 
         let backend = BackendConnection::Sqlite { conn };
         // Seed twice — second run should not duplicate
-        run_breaks(&backend, 0.10, 20, true, 240, false).unwrap();
-        run_breaks(&backend, 0.10, 20, true, 240, false).unwrap();
+        run_breaks(&backend, 0.10, 20, None, true, 240, false).unwrap();
+        run_breaks(&backend, 0.10, 20, None, true, 240, false).unwrap();
 
         let alerts = db_alerts::list_alerts_backend(&backend).unwrap();
         let corr_alerts: Vec<_> = alerts
@@ -1789,5 +1873,67 @@ mod tests {
         };
         let interp = interpret_break(&brk);
         assert!(interp.interpretation.contains("intensifying") || interp.interpretation.contains("diverging"));
+    }
+
+    #[test]
+    fn test_severity_classification_severe() {
+        let brk = CorrelationBreak {
+            symbol_a: "BTC-USD".to_string(),
+            symbol_b: "GC=F".to_string(),
+            corr_7d: Some(0.80),
+            corr_90d: Some(0.05),
+            break_delta: 0.75,
+        };
+        let interp = interpret_break(&brk);
+        assert_eq!(interp.severity, "severe");
+    }
+
+    #[test]
+    fn test_severity_classification_moderate() {
+        let brk = CorrelationBreak {
+            symbol_a: "BTC-USD".to_string(),
+            symbol_b: "^GSPC".to_string(),
+            corr_7d: Some(0.60),
+            corr_90d: Some(0.05),
+            break_delta: 0.55,
+        };
+        let interp = interpret_break(&brk);
+        assert_eq!(interp.severity, "moderate");
+    }
+
+    #[test]
+    fn test_severity_classification_minor() {
+        let brk = CorrelationBreak {
+            symbol_a: "GC=F".to_string(),
+            symbol_b: "SI=F".to_string(),
+            corr_7d: Some(0.70),
+            corr_90d: Some(0.40),
+            break_delta: 0.30,
+        };
+        let interp = interpret_break(&brk);
+        assert_eq!(interp.severity, "minor");
+    }
+
+    #[test]
+    fn test_severity_badge_formatting() {
+        assert_eq!(severity_badge("severe"), "🔴 SEVERE");
+        assert_eq!(severity_badge("moderate"), "🟡 MODERATE");
+        assert_eq!(severity_badge("minor"), "🟢 MINOR");
+        assert_eq!(severity_badge("unknown"), "UNKNOWN");
+    }
+
+    #[test]
+    fn test_interpret_break_has_all_fields() {
+        let brk = CorrelationBreak {
+            symbol_a: "GC=F".to_string(),
+            symbol_b: "DX-Y.NYB".to_string(),
+            corr_7d: Some(0.30),
+            corr_90d: Some(-0.40),
+            break_delta: 0.70,
+        };
+        let interp = interpret_break(&brk);
+        assert!(!interp.severity.is_empty());
+        assert!(!interp.interpretation.is_empty());
+        assert!(!interp.signal.is_empty());
     }
 }
