@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-01 — feat: enrich correlation breaks with severity ranking, interpretation, and signal (#531)
+
+- What: `analytics correlations breaks` now includes severity classification (severe/moderate/minor), human-readable interpretation, and positioning signal for each break pair. New `--severity` filter enables agents to scan for specific severity levels.
+- Why: Low-Timeframe Analyst feedback (Apr 1): "Would benefit from correlation break severity ranking." The breaks command sorted by |delta| but didn't surface the severity tier, interpretation text, or positioning signal that `interpret_break()` generates. Agents had to call the situation room separately for enriched break data.
+- JSON output: `severity`, `interpretation`, `signal` fields on each break + `severity_filter` at top level. Terminal output: severity badges (🔴/🟡/🟢) in table + interpretation details below.
+- Usage: `pftui analytics correlations breaks --json`, `pftui analytics correlations breaks --severity severe --json`, `pftui analytics correlations breaks --severity moderate --threshold 0.40 --json`
+- Files: `src/commands/correlations.rs` (run_breaks enrichment + severity_badge + 5 unit tests), `src/cli.rs` (--severity flag + 2 CLI parse tests), `src/main.rs` (dispatch wiring)
+- Tests: 2290 tests passing (+7 new: 5 unit + 2 CLI parse). Clippy clean.
+
 ### 2026-04-01 — feat: add support/resistance levels to watchlist items in portfolio brief (#528)
 
 - What: Watchlist items in `portfolio brief --json` now include nearest support and resistance levels (`levels` field with `ActionableLevelPair`), matching the levels data already present on portfolio positions.

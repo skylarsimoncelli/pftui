@@ -69,7 +69,10 @@ _(none)_
 16. ✅ Selective data refresh (#518) — `--only`/`--skip` flags for targeted refreshes
 17. ✅ Benchmark comparison (#520) — `portfolio performance --vs SPY` now works (was accepted but ignored)
 18. ✅ Signals severity/direction filters (#523) — `--severity` now works for technical signals (was broken), `--direction` filter added
+19. ✅ Backtest diagnostics (#525) — automated pattern detection for prediction quality issues
+20. ✅ Watchlist levels in brief (#528) — support/resistance levels for watchlist items in portfolio brief JSON
+21. ✅ Correlation break severity ranking (#531) — severity/interpretation/signal enrichment + `--severity` filter on `analytics correlations breaks`
 
-**Release status:** v0.23.0 tagged. 37+ commits since tag, no P0 bugs, 2267 tests passing, clippy clean.
+**Release status:** v0.23.0 tagged. 40+ commits since tag, no P0 bugs, 2290 tests passing, clippy clean.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.
