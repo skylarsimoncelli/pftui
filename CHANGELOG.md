@@ -1,5 +1,15 @@
 # Changelog
 
+### 2026-04-01 — Implement --vs benchmark comparison for portfolio performance (#520)
+
+- What: The `--vs` flag on `portfolio performance` was accepted by the CLI but completely ignored (all internal functions received it as `_vs_benchmark`). Now it actually works: fetches benchmark symbol's price history from the local DB, computes returns for each standard period (1D, 1W, 1M, MTD, QTD, YTD, inception) using date-aligned lookups, and shows side-by-side comparison with alpha (portfolio return minus benchmark return).
+- Why: Portfolio performance without benchmark context is incomplete. Agents and users need to know whether their portfolio's return is good or bad relative to a standard benchmark like SPY or BTC. This was listed in the product vision under "Portfolio Analytics → Benchmark comparison."
+- Terminal output: Shows 3-column table (Portfolio / Benchmark / Alpha) when `--vs` is provided. Works with `--since` too, showing benchmark return and alpha for the custom period.
+- JSON output: Adds `benchmark` object with `symbol`, `returns` (1d/1w/1m/ytd/inception), and `alpha` objects when `--vs` is provided.
+- Graceful degradation: If benchmark symbol has no price history, warns on stderr and continues without benchmark data.
+- Files: `src/commands/performance.rs` (BenchmarkPrices struct, load_benchmark, updated print_standard_returns/print_since/print_json)
+- Tests: 7 new tests (benchmark construction, price lookup, return between dates, negative returns, no-history graceful fallback for terminal/JSON/since). Total: 2267 tests passing. Clippy clean.
+
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
 ### 2026-04-01 — feat: `--only` and `--skip` flags for selective `data refresh`
