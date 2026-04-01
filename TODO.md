@@ -72,7 +72,8 @@ _(none)_
 19. ✅ Backtest diagnostics (#525) — automated pattern detection for prediction quality issues
 20. ✅ Watchlist levels in brief (#528) — support/resistance levels for watchlist items in portfolio brief JSON
 21. ✅ Correlation break severity ranking (#531) — severity/interpretation/signal enrichment + `--severity` filter on `analytics correlations breaks`
+22. ✅ Alert portfolio impact scoring (#533) — portfolio allocation context in triage dashboard, per-tier exposure summary, impact-sorted within urgency tiers
 
-**Release status:** v0.23.0 tagged. 40+ commits since tag, no P0 bugs, 2290 tests passing, clippy clean.
+**Release status:** v0.23.0 tagged. 40+ commits since tag, no P0 bugs, 2294 tests passing, clippy clean.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.

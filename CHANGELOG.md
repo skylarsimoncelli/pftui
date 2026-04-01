@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-01 — feat: add portfolio impact scoring to alert triage dashboard (#533)
+
+- What: `analytics alerts triage` now includes portfolio allocation context for each alert. New `portfolio_impact_pct` field shows the allocation % of each alert's symbol. New `portfolio_exposure` summary shows total portfolio % covered by alerts in each urgency tier (critical/high/watch/low), deduplicated by symbol. Within each urgency tier, alerts are sorted by portfolio impact descending (highest allocation first). Terminal output shows `[X% portfolio]` tags and portfolio exposure summary line.
+- Why: Low-Timeframe Analyst feedback (Apr 1): "alert prioritization by portfolio impact." Previously, triage sorted purely by urgency tier — an alert on a watchlist item with 0% allocation appeared equal to an alert on BTC (20% allocation). Now agents can prioritize by actual portfolio exposure.
+- JSON output: `portfolio_exposure` object (critical_pct, high_pct, watch_pct, low_pct, total_covered_pct) on dashboard, `portfolio_impact_pct` and `in_portfolio` on each alert entry. `portfolio_impact_pct` omitted from JSON when None (watchlist/external symbols).
+- Usage: `pftui analytics alerts triage --json` (same command, enriched output)
+- Files: `src/commands/alerts.rs` (TriageEntry + TriageDashboard + PortfolioExposure structs, build_allocation_map, compute_portfolio_exposure, format_impact_tag, updated build_triage + run_triage terminal output)
+- Tests: 2294 tests passing (+4 new: serialization with/without impact, exposure computation with dedup, format_impact_tag). Clippy clean.
+
 ### 2026-04-01 — feat: enrich correlation breaks with severity ranking, interpretation, and signal (#531)
 
 - What: `analytics correlations breaks` now includes severity classification (severe/moderate/minor), human-readable interpretation, and positioning signal for each break pair. New `--severity` filter enables agents to scan for specific severity levels.
