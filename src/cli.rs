@@ -854,6 +854,47 @@ pub enum DataPredictionsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Add a personal prediction (convenience alias for `journal prediction add`)
+    #[command(
+        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`.\n\nTimeframe accepts: low, medium, high, macro (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
+    )]
+    Add {
+        /// The prediction claim text
+        #[arg(long, required = true)]
+        claim: String,
+
+        /// Asset symbol (e.g. BTC-USD, GC=F, TSLA)
+        #[arg(long)]
+        symbol: Option<String>,
+
+        /// Conviction level: high, medium, low
+        #[arg(long)]
+        conviction: Option<String>,
+
+        /// Analytics timeframe: low, medium, high, macro (aliases: short=low, long=high)
+        #[arg(long)]
+        timeframe: Option<String>,
+
+        /// Confidence score: 0.0 to 1.0
+        #[arg(long)]
+        confidence: Option<f64>,
+
+        /// Source agent name (e.g. low-timeframe, evening-analyst)
+        #[arg(long = "source-agent")]
+        source_agent: Option<String>,
+
+        /// Target date for evaluation (YYYY-MM-DD)
+        #[arg(long)]
+        target_date: Option<String>,
+
+        /// Criteria for determining if the prediction was correct
+        #[arg(long = "resolution-criteria")]
+        resolution_criteria: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -6989,6 +7030,135 @@ mod tests {
                 assert!(contract.is_none());
             }
             _ => panic!("expected unmap subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_analytics_predictions_add() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "predictions",
+            "add",
+            "--claim",
+            "BTC above 100k by June",
+            "--symbol",
+            "BTC-USD",
+            "--timeframe",
+            "medium",
+            "--conviction",
+            "high",
+            "--confidence",
+            "0.75",
+            "--source-agent",
+            "low-timeframe",
+            "--target-date",
+            "2026-06-30",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics command");
+        };
+        let AnalyticsCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Add {
+                claim,
+                symbol,
+                conviction,
+                timeframe,
+                confidence,
+                source_agent,
+                target_date,
+                json,
+                ..
+            }) => {
+                assert_eq!(claim, "BTC above 100k by June");
+                assert_eq!(symbol.as_deref(), Some("BTC-USD"));
+                assert_eq!(conviction.as_deref(), Some("high"));
+                assert_eq!(timeframe.as_deref(), Some("medium"));
+                assert_eq!(confidence, Some(0.75));
+                assert_eq!(source_agent.as_deref(), Some("low-timeframe"));
+                assert_eq!(target_date.as_deref(), Some("2026-06-30"));
+                assert!(json);
+            }
+            _ => panic!("expected add subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_add() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "add",
+            "--claim",
+            "Gold breaks 3000",
+            "--timeframe",
+            "high",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Add {
+                claim,
+                timeframe,
+                json,
+                symbol,
+                ..
+            }) => {
+                assert_eq!(claim, "Gold breaks 3000");
+                assert_eq!(timeframe.as_deref(), Some("high"));
+                assert!(json);
+                assert!(symbol.is_none());
+            }
+            _ => panic!("expected add subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_predictions_add_minimal() {
+        // Minimum required: just --claim
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "predictions",
+            "add",
+            "--claim",
+            "VIX spikes above 30",
+        ])
+        .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics command");
+        };
+        let AnalyticsCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Add {
+                claim,
+                timeframe,
+                confidence,
+                conviction,
+                json,
+                ..
+            }) => {
+                assert_eq!(claim, "VIX spikes above 30");
+                assert!(timeframe.is_none());
+                assert!(confidence.is_none());
+                assert!(conviction.is_none());
+                assert!(!json);
+            }
+            _ => panic!("expected add subcommand"),
         }
     }
 
