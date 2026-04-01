@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-04-01 — feat: `analytics backtest diagnostics` — automated pattern detection and recommendations (#525)
+
+- What: New `analytics backtest diagnostics` subcommand that analyses backtest data to identify systematic prediction problems and generate actionable recommendations. Detects 8 pattern categories: poor win rates, asset class weaknesses, conviction miscalibration, mean reversion bias, loss magnitude asymmetry, losing streaks, overtrading, and system-wide negative expected value. Each finding includes severity (critical/warning/info), detailed explanation, and specific actionable recommendation. Optional `--agent` filter narrows analysis to a single agent.
+- Why: Evening Analyst has 26.7% win rate with 0% on commodities and 83.3% loss rate on large-move trades, but the existing `backtest report` and `backtest agent` commands only show statistics without diagnosing causes or recommending fixes. The diagnostics command automatically surfaces patterns like mean-reversion bias, conviction miscalibration, and overtrading — giving agents a concrete self-improvement tool. Addresses Evening Analyst feedback (Mar 31, Apr 1) and the broader need for prediction system self-calibration.
+- Usage: `pftui analytics backtest diagnostics --json`, `pftui analytics backtest diagnostics --agent evening-analyst --json`, `pftui analytics backtest diagnostics`
+- Files: `src/commands/backtest.rs` (DiagnosticFinding struct, run_diagnostics, print_diagnostics_json/table + 5 unit tests), `src/cli.rs` (Diagnostics variant + 2 CLI parse tests), `src/main.rs` (dispatch wiring)
+- Tests: 2280 tests passing (+8 new: 5 backtest diagnostics unit + 2 CLI parse + 1 agent filter). Clippy clean.
+
 ### 2026-04-01 — Fix --severity filter and add --direction filter to analytics signals (#523)
 
 - What: The `--severity` flag on `analytics signals` was accepted by the CLI but only applied to cross-timeframe signals — technical signals were returned unfiltered. Now `--severity` properly filters technical signals at the DB level. Additionally, a new `--direction` flag enables filtering by `bullish` or `bearish` for faster scanning.
