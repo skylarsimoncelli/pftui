@@ -65,7 +65,8 @@ _(none)_
 12. ✅ Brief alert dedup (#508) — grouped repeated triggered alerts by symbol
 13. ✅ Data calendar add/remove + geopolitical catalysts (#511) — agents can insert custom events
 14. ✅ Portfolio status (#514) — consolidated snapshot: allocation + value + daily P&L + unrealized in one call
+15. ✅ Predictions add alias (#516) — `analytics predictions add` / `data predictions add` for agent discoverability
 
-**Release status:** v0.23.0 eligible — 42+ commits since v0.22.0, no P0 bugs, 2244 tests passing, clippy clean. Features shipped: F57.4-F57.6, F58 complete, regime history filtering, GDPNow, ISM PMI scraper, stress-test --list-scenarios, PMI discrepancy fix, power-flow conflicts, trends list enrichment, analytics guidance, alert dedup, geopolitical catalysts, portfolio status.
+**Release status:** v0.23.0 tagged. 35+ commits since tag, no P0 bugs, 2247 tests passing, clippy clean.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.

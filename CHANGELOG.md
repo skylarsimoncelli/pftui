@@ -2,6 +2,26 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-04-01 — feat: `predictions add` subcommand for analytics/data predictions
+
+Agents can now create predictions directly from the `analytics predictions` and `data predictions` namespaces — no need to know that creation lives under `journal prediction add`.
+
+**New commands:**
+- `pftui analytics predictions add --claim "BTC above 100k" --timeframe medium --symbol BTC-USD --json`
+- `pftui data predictions add --claim "Gold breaks 3000" --timeframe high --conviction high --json`
+
+**All flags supported:** `--claim` (required), `--symbol`, `--conviction`, `--timeframe`, `--confidence`, `--source-agent`, `--target-date`, `--resolution-criteria`, `--json`.
+
+Convenience alias — delegates to the same `commands::predict::run` handler as `journal prediction add`.
+
+**Addresses:** Low-Timeframe Analyst feedback (Mar 30) — "add pftui analytics predictions create command for structured prediction logging."
+
+**Files changed:**
+- `src/cli.rs` — `Add` variant on `DataPredictionsCommand` + 3 CLI parse tests
+- `src/main.rs` — dispatch wiring to `commands::predict::run`
+
+**Tests:** 2247 pass (+3 new CLI parse tests), clippy clean.
+
 ### 2026-04-01 — feat: `portfolio status` — consolidated portfolio snapshot for agents
 
 New `portfolio status` command — a single-call consolidated portfolio snapshot combining allocation, value, daily P&L, and unrealized gain/loss. Agents get everything they need in one command instead of running `summary` + `allocation` + `daily-pnl` + `unrealized` separately.
