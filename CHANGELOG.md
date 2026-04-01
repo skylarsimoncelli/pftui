@@ -2,6 +2,36 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-04-01 — feat: `data calendar add/remove` + geopolitical catalyst category
+
+Converts `data calendar` from a flat command to a subcommand group (`list`, `add`, `remove`). Agents can now insert custom geopolitical deadlines, trade events, and other catalysts into the calendar database, where they automatically flow into `analytics catalysts` ranking.
+
+**New commands:**
+- `pftui data calendar add --date 2026-04-06 --name "Iran Hormuz Deadline" --impact high --type geopolitical` — inserts custom events
+- `pftui data calendar remove --date 2026-04-06 --name "Iran Hormuz Deadline"` — removes events by date+name
+- `pftui data calendar list --type geopolitical --json` — lists with new `--type` filter
+
+**Geopolitical catalyst intelligence:**
+- New `"geopolitical"` event_type alongside `"economic"` and `"earnings"`
+- Category auto-detection from keywords: iran, hormuz, brics, sanctions, war, tariff, embargo, nato, taiwan, etc.
+- Geopolitical events score at policy-level macro significance (highest tier)
+- Smart proxy assets: conflict events → CL=F, GC=F, DXY, XLE, ITA, BTC-USD; summit events → GC=F, DXY, SPY, BTC-USD, CL=F
+- Scenario linking: geopolitical category matches war/conflict/sanctions/escalation keywords (score 3+)
+- Direction inference: peace/de-escalation → "opposing"; war/conflict/escalation → "confirming"
+- Prediction market linking: geopolitical events get 3x match bonus to Geopolitics-category predictions
+- DB layer: new `delete_event_by_name_backend()` for SQLite + PostgreSQL
+
+**Addresses:** Medium-Timeframe Analyst feedback (Apr 1) — "Add Iran deadline tracking to catalysts feed."
+
+**Files changed:**
+- `src/cli.rs` — new `CalendarCommand` enum (list/add/remove subcommands), 5 CLI parse tests
+- `src/commands/calendar.rs` — rewritten: dispatch + list/add/remove handlers, type filter, DB merge, 6 tests
+- `src/analytics/catalysts.rs` — geopolitical category detection, proxy assets, macro scoring, scenario scoring, direction inference, prediction matching, 9 tests
+- `src/db/calendar_cache.rs` — `delete_event_by_name`/`delete_event_by_name_backend`/`delete_event_by_name_postgres`, 3 tests
+- `src/main.rs` — dispatch wiring for CalendarCommand
+
+**Tests:** 2232 pass (+23 new: 5 CLI parse + 6 calendar command + 9 catalyst geopolitical + 3 DB), clippy clean.
+
 ### 2026-03-31 — fix: deduplicate triggered alerts in portfolio brief
 
 Groups repeated triggered alerts by symbol in the markdown `portfolio brief` output. When multiple triggered alerts share the same symbol (e.g. scan alerts oscillating between thresholds), shows only the most recent one with a count annotation ("+N more") instead of listing every individual alert.
