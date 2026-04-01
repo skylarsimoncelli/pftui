@@ -61,6 +61,7 @@ pub mod opportunity;
 pub mod options;
 pub mod performance;
 pub mod portfolio;
+pub mod portfolio_status;
 pub mod power_flow;
 pub mod power_flow_conflicts;
 pub mod predict;

@@ -1189,6 +1189,9 @@ fn main() -> Result<()> {
         },
         Some(Command::Portfolio { command }) => match command {
             None => commands::summary::run(&backend, &config, None, None, None, true, false),
+            Some(cli::PortfolioCommand::Status { json }) => {
+                commands::portfolio_status::run(&backend, &config, json)
+            }
             Some(cli::PortfolioCommand::Summary {
                 group_by,
                 period,
