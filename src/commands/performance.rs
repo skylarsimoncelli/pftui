@@ -2,10 +2,13 @@ use anyhow::{bail, Result};
 use chrono::{Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::collections::HashMap;
 
 use crate::config::Config;
 use crate::db::backend::BackendConnection;
+use crate::db::price_history::get_history_backend;
 use crate::db::snapshots::{get_all_portfolio_snapshots_backend, PortfolioSnapshot};
+use crate::models::price::HistoryRecord;
 
 /// Compute the return percentage between two values.
 fn return_pct(start: Decimal, end: Decimal) -> Option<Decimal> {
@@ -55,6 +58,60 @@ fn fmt_dollar(change: Option<Decimal>, currency: &str) -> String {
     }
 }
 
+/// Benchmark price data indexed by date for fast lookups.
+struct BenchmarkPrices {
+    symbol: String,
+    /// Date string → close price
+    by_date: HashMap<String, Decimal>,
+}
+
+impl BenchmarkPrices {
+    /// Build from price history records.
+    fn from_history(symbol: &str, records: &[HistoryRecord]) -> Self {
+        let mut by_date = HashMap::new();
+        for rec in records {
+            by_date.insert(rec.date.clone(), rec.close);
+        }
+        Self {
+            symbol: symbol.to_string(),
+            by_date,
+        }
+    }
+
+    /// Get the close price at or before a target date (most recent available).
+    fn price_at_or_before(&self, target: &str) -> Option<Decimal> {
+        // First try exact match
+        if let Some(price) = self.by_date.get(target) {
+            return Some(*price);
+        }
+        // Otherwise find the most recent date <= target
+        self.by_date
+            .iter()
+            .filter(|(date, _)| date.as_str() <= target)
+            .max_by(|(a, _), (b, _)| a.cmp(b))
+            .map(|(_, price)| *price)
+    }
+
+    /// Compute benchmark return between two dates.
+    fn return_between(&self, start_date: &str, end_date: &str) -> Option<Decimal> {
+        let start = self.price_at_or_before(start_date)?;
+        let end = self.price_at_or_before(end_date)?;
+        return_pct(start, end)
+    }
+}
+
+/// Load benchmark price data from the database.
+fn load_benchmark(
+    backend: &BackendConnection,
+    symbol: &str,
+) -> Result<Option<BenchmarkPrices>> {
+    let records = get_history_backend(backend, symbol, 365)?;
+    if records.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(BenchmarkPrices::from_history(symbol, &records)))
+}
+
 pub fn run(
     backend: &BackendConnection,
     config: &Config,
@@ -73,17 +130,48 @@ pub fn run(
         return Ok(());
     }
 
+    // Load benchmark data if requested
+    let benchmark = if let Some(sym) = vs_benchmark {
+        match load_benchmark(backend, sym)? {
+            Some(b) => Some(b),
+            None => {
+                eprintln!(
+                    "Warning: no price history found for benchmark '{}'. Run `pftui data refresh` to fetch it.",
+                    sym
+                );
+                eprintln!("Showing portfolio returns without benchmark comparison.");
+                eprintln!();
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let latest = all_snapshots.last().unwrap();
     let earliest = all_snapshots.first().unwrap();
 
     if json {
-        return print_json(config, &all_snapshots, since, period, vs_benchmark, &today);
+        return print_json(
+            config,
+            &all_snapshots,
+            since,
+            period,
+            benchmark.as_ref(),
+            &today,
+        );
     }
 
     // If --since is provided, show custom period return
     if let Some(since_date) = since {
         validate_date(since_date)?;
-        return print_since(config, &all_snapshots, since_date, latest, vs_benchmark);
+        return print_since(
+            config,
+            &all_snapshots,
+            since_date,
+            latest,
+            benchmark.as_ref(),
+        );
     }
 
     // If --period is provided, show return series
@@ -98,7 +186,7 @@ pub fn run(
         earliest,
         &today,
         config,
-        vs_benchmark,
+        benchmark.as_ref(),
     )
 }
 
@@ -118,7 +206,7 @@ fn print_standard_returns(
     earliest: &PortfolioSnapshot,
     today: &NaiveDate,
     config: &Config,
-    _vs_benchmark: Option<&str>,
+    benchmark: Option<&BenchmarkPrices>,
 ) -> Result<()> {
     let current_value = latest.total_value;
 
@@ -175,36 +263,66 @@ fn print_standard_returns(
         earliest.date,
         snapshots.len()
     );
+    if let Some(bm) = benchmark {
+        println!("  Benchmark: {}", bm.symbol);
+    }
     println!();
 
-    println!("  {:<16} {:>12} {:>18}", "Period", "Return", "Change");
-    println!("  {}", "─".repeat(48));
-
-    let periods: Vec<(&str, Option<Decimal>)> = vec![
-        ("1 Day", val_1d),
-        ("1 Week", val_1w),
-        ("1 Month", val_1m),
-        ("MTD", val_mtd),
-        ("QTD", val_qtd),
-        ("YTD", val_ytd),
-        ("Since Inception", val_inception),
+    // Period definitions with their start dates for benchmark lookup
+    let inception_date = earliest.date.clone();
+    let period_defs: Vec<(&str, Option<Decimal>, &str)> = vec![
+        ("1 Day", val_1d, &d1),
+        ("1 Week", val_1w, &w1),
+        ("1 Month", val_1m, &m1),
+        ("MTD", val_mtd, &mtd),
+        ("QTD", val_qtd, &qtd),
+        ("YTD", val_ytd, &ytd),
+        ("Since Inception", val_inception, &inception_date),
     ];
 
-    for (label, start_val) in &periods {
-        let ret = start_val.and_then(|sv| return_pct(sv, current_value));
-        let change = start_val.map(|sv| current_value - sv);
+    if benchmark.is_some() {
         println!(
-            "  {:<16} {:>12} {:>18}",
-            label,
-            fmt_return(ret),
-            fmt_dollar(change, &config.base_currency)
+            "  {:<16} {:>12} {:>12} {:>12}",
+            "Period", "Portfolio", "Benchmark", "Alpha"
         );
+        println!("  {}", "─".repeat(54));
+    } else {
+        println!("  {:<16} {:>12} {:>18}", "Period", "Return", "Change");
+        println!("  {}", "─".repeat(48));
+    }
+
+    let latest_date = &latest.date;
+    for (label, start_val, start_date) in &period_defs {
+        let port_ret = start_val.and_then(|sv| return_pct(sv, current_value));
+
+        if let Some(bm) = benchmark {
+            let bm_ret = bm.return_between(start_date, latest_date);
+            let alpha = match (port_ret, bm_ret) {
+                (Some(p), Some(b)) => Some(p - b),
+                _ => None,
+            };
+            println!(
+                "  {:<16} {:>12} {:>12} {:>12}",
+                label,
+                fmt_return(port_ret),
+                fmt_return(bm_ret),
+                fmt_return(alpha),
+            );
+        } else {
+            let change = start_val.map(|sv| current_value - sv);
+            println!(
+                "  {:<16} {:>12} {:>18}",
+                label,
+                fmt_return(port_ret),
+                fmt_dollar(change, &config.base_currency)
+            );
+        }
     }
 
     println!();
-    let unavailable: Vec<&str> = periods
+    let unavailable: Vec<&str> = period_defs
         .iter()
-        .filter_map(|(label, start_val)| {
+        .filter_map(|(label, start_val, _)| {
             if start_val.is_none() {
                 Some(*label)
             } else {
@@ -235,7 +353,7 @@ fn print_since(
     snapshots: &[PortfolioSnapshot],
     since_date: &str,
     latest: &PortfolioSnapshot,
-    _vs_benchmark: Option<&str>,
+    benchmark: Option<&BenchmarkPrices>,
 ) -> Result<()> {
     let start_snap = snapshot_at_or_before(snapshots, since_date);
     let current_value = latest.total_value;
@@ -260,6 +378,19 @@ fn print_since(
                 fmt_dollar(Some(change), &config.base_currency)
             );
             println!("  Return:        {}", fmt_return(ret));
+
+            // Benchmark comparison
+            if let Some(bm) = benchmark {
+                let bm_ret = bm.return_between(&snap.date, &latest.date);
+                let alpha = match (ret, bm_ret) {
+                    (Some(p), Some(b)) => Some(p - b),
+                    _ => None,
+                };
+                println!();
+                println!("  Benchmark ({}):", bm.symbol);
+                println!("    Return:      {}", fmt_return(bm_ret));
+                println!("    Alpha:       {}", fmt_return(alpha));
+            }
 
             // Show intermediate snapshots if available
             let period_snaps: Vec<&PortfolioSnapshot> = snapshots
@@ -419,7 +550,7 @@ fn print_json(
     snapshots: &[PortfolioSnapshot],
     since: Option<&str>,
     _period: Option<&str>,
-    _vs_benchmark: Option<&str>,
+    benchmark: Option<&BenchmarkPrices>,
     today: &NaiveDate,
 ) -> Result<()> {
     let latest = snapshots.last().unwrap();
@@ -480,8 +611,57 @@ fn print_json(
         String::new()
     };
 
+    // Build benchmark block
+    let benchmark_block = if let Some(bm) = benchmark {
+        let latest_date = &latest.date;
+        let bm_1d = bm.return_between(&d1, latest_date);
+        let bm_1w = bm.return_between(&w1, latest_date);
+        let bm_1m = bm.return_between(&m1, latest_date);
+        let bm_ytd = bm.return_between(&ytd, latest_date);
+        let bm_inception = bm.return_between(&earliest.date, latest_date);
+
+        // Compute alpha (portfolio return - benchmark return)
+        let alpha_1d = match (ret_1d, bm_1d) {
+            (Some(p), Some(b)) => Some(p - b),
+            _ => None,
+        };
+        let alpha_1w = match (ret_1w, bm_1w) {
+            (Some(p), Some(b)) => Some(p - b),
+            _ => None,
+        };
+        let alpha_1m = match (ret_1m, bm_1m) {
+            (Some(p), Some(b)) => Some(p - b),
+            _ => None,
+        };
+        let alpha_ytd = match (ret_ytd, bm_ytd) {
+            (Some(p), Some(b)) => Some(p - b),
+            _ => None,
+        };
+        let alpha_inception = match (ret_inception, bm_inception) {
+            (Some(p), Some(b)) => Some(p - b),
+            _ => None,
+        };
+
+        format!(
+            r#","benchmark":{{"symbol":"{}","returns":{{"1d":{},"1w":{},"1m":{},"ytd":{},"inception":{}}},"alpha":{{"1d":{},"1w":{},"1m":{},"ytd":{},"inception":{}}}}}"#,
+            bm.symbol,
+            fmt_dec(bm_1d),
+            fmt_dec(bm_1w),
+            fmt_dec(bm_1m),
+            fmt_dec(bm_ytd),
+            fmt_dec(bm_inception),
+            fmt_dec(alpha_1d),
+            fmt_dec(alpha_1w),
+            fmt_dec(alpha_1m),
+            fmt_dec(alpha_ytd),
+            fmt_dec(alpha_inception),
+        )
+    } else {
+        String::new()
+    };
+
     println!(
-        r#"{{"current_value":{:.2},"currency":"{}","as_of":"{}","tracking_since":"{}","snapshots":{},"returns":{{"1d":{},"1w":{},"1m":{},"ytd":{},"inception":{}}}{}}}"#,
+        r#"{{"current_value":{:.2},"currency":"{}","as_of":"{}","tracking_since":"{}","snapshots":{},"returns":{{"1d":{},"1w":{},"1m":{},"ytd":{},"inception":{}}}{}{}}}"#,
         current_value,
         config.base_currency,
         latest.date,
@@ -493,6 +673,7 @@ fn print_json(
         fmt_dec(ret_ytd),
         fmt_dec(ret_inception),
         since_block,
+        benchmark_block,
     );
 
     Ok(())
@@ -790,5 +971,204 @@ mod tests {
 
         let start = snapshot_for_period(&snapshots, "2026-03-01").unwrap();
         assert_eq!(start.date, "2026-03-06");
+    }
+
+    // -- Benchmark tests --
+
+    #[test]
+    fn test_benchmark_prices_from_history() {
+        let records = vec![
+            HistoryRecord {
+                date: "2026-02-01".into(),
+                close: dec!(450),
+                volume: Some(100000),
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-02-15".into(),
+                close: dec!(460),
+                volume: Some(120000),
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-01".into(),
+                close: dec!(470),
+                volume: Some(110000),
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
+
+        let bm = BenchmarkPrices::from_history("SPY", &records);
+        assert_eq!(bm.symbol, "SPY");
+        assert_eq!(bm.by_date.len(), 3);
+        assert_eq!(bm.price_at_or_before("2026-03-01"), Some(dec!(470)));
+    }
+
+    #[test]
+    fn test_benchmark_price_at_or_before() {
+        let records = vec![
+            HistoryRecord {
+                date: "2026-02-01".into(),
+                close: dec!(450),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-02-15".into(),
+                close: dec!(460),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-01".into(),
+                close: dec!(470),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
+
+        let bm = BenchmarkPrices::from_history("SPY", &records);
+
+        // Exact match
+        assert_eq!(bm.price_at_or_before("2026-02-15"), Some(dec!(460)));
+
+        // Between dates — should get Feb 15 price
+        assert_eq!(bm.price_at_or_before("2026-02-20"), Some(dec!(460)));
+
+        // Before all dates — should return None
+        assert_eq!(bm.price_at_or_before("2026-01-01"), None);
+
+        // After all dates — should get latest
+        assert_eq!(bm.price_at_or_before("2026-04-01"), Some(dec!(470)));
+    }
+
+    #[test]
+    fn test_benchmark_return_between() {
+        let records = vec![
+            HistoryRecord {
+                date: "2026-02-01".into(),
+                close: dec!(400),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-01".into(),
+                close: dec!(440),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
+
+        let bm = BenchmarkPrices::from_history("SPY", &records);
+
+        // 400 → 440 = +10%
+        let ret = bm.return_between("2026-02-01", "2026-03-01");
+        assert_eq!(ret, Some(dec!(10)));
+
+        // No data for start date → None
+        let ret = bm.return_between("2025-01-01", "2026-03-01");
+        assert_eq!(ret, None);
+    }
+
+    #[test]
+    fn test_benchmark_return_between_negative() {
+        let records = vec![
+            HistoryRecord {
+                date: "2026-02-01".into(),
+                close: dec!(500),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-01".into(),
+                close: dec!(475),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
+
+        let bm = BenchmarkPrices::from_history("SPY", &records);
+
+        // 500 → 475 = -5%
+        let ret = bm.return_between("2026-02-01", "2026-03-01");
+        assert_eq!(ret, Some(dec!(-5)));
+    }
+
+    #[test]
+    fn test_performance_with_benchmark_no_history() {
+        // When benchmark has no price history, should run without error
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        use crate::db::snapshots::upsert_portfolio_snapshot;
+        upsert_portfolio_snapshot(&conn, "2026-02-01", dec!(100000), dec!(20000), dec!(80000))
+            .unwrap();
+        upsert_portfolio_snapshot(&conn, "2026-03-01", dec!(110000), dec!(20000), dec!(90000))
+            .unwrap();
+
+        let backend = to_backend(conn);
+        // SPY has no price history in this in-memory DB
+        let result = run(&backend, &config, None, None, Some("SPY"), false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_performance_with_benchmark_json() {
+        // When benchmark has no price history, JSON should work without benchmark block
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        use crate::db::snapshots::upsert_portfolio_snapshot;
+        upsert_portfolio_snapshot(&conn, "2026-02-01", dec!(100000), dec!(20000), dec!(80000))
+            .unwrap();
+        upsert_portfolio_snapshot(&conn, "2026-03-01", dec!(110000), dec!(20000), dec!(90000))
+            .unwrap();
+
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, None, Some("SPY"), true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_performance_since_with_benchmark_no_history() {
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        use crate::db::snapshots::upsert_portfolio_snapshot;
+        upsert_portfolio_snapshot(&conn, "2026-02-01", dec!(100000), dec!(20000), dec!(80000))
+            .unwrap();
+        upsert_portfolio_snapshot(&conn, "2026-03-01", dec!(110000), dec!(20000), dec!(90000))
+            .unwrap();
+
+        let backend = to_backend(conn);
+        let result = run(
+            &backend,
+            &config,
+            Some("2026-02-01"),
+            None,
+            Some("SPY"),
+            false,
+        );
+        assert!(result.is_ok());
     }
 }
