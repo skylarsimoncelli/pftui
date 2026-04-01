@@ -371,6 +371,7 @@ pub enum DashboardCommand {
 #[derive(Subcommand)]
 pub enum DataCommand {
     /// Fetch and cache current prices for tracked symbols
+    #[command(after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n\n--only and --skip are mutually exclusive.")]
     Refresh {
         /// Send OS notification for newly triggered alerts
         #[arg(long)]
@@ -378,6 +379,12 @@ pub enum DataCommand {
         /// Output structured JSON metrics instead of human-readable text
         #[arg(long)]
         json: bool,
+        /// Run only these sources (comma-separated). Mutually exclusive with --skip.
+        #[arg(long, conflicts_with = "skip", value_delimiter = ',')]
+        only: Vec<String>,
+        /// Skip these sources (comma-separated). Mutually exclusive with --only.
+        #[arg(long, conflicts_with = "only", value_delimiter = ',')]
+        skip: Vec<String>,
     },
     /// Show data freshness status for all cached sources
     Status {
@@ -8330,6 +8337,76 @@ mod tests {
             panic!("expected list");
         };
         assert_eq!(event_type.as_deref(), Some("geopolitical"));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_refresh_only_single_source() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "data", "refresh", "--only", "prices"]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Refresh { only, skip, .. } = command else {
+            panic!("expected refresh");
+        };
+        assert_eq!(only, vec!["prices"]);
+        assert!(skip.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn parse_refresh_only_multiple_sources() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui", "data", "refresh", "--only", "prices,news_rss,sentiment",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Refresh { only, skip, .. } = command else {
+            panic!("expected refresh");
+        };
+        assert_eq!(only, vec!["prices", "news_rss", "sentiment"]);
+        assert!(skip.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn parse_refresh_skip_sources() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui", "data", "refresh", "--skip", "worldbank,bls",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Refresh { only, skip, .. } = command else {
+            panic!("expected refresh");
+        };
+        assert!(only.is_empty());
+        assert_eq!(skip, vec!["worldbank", "bls"]);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_refresh_only_and_skip_conflict() {
+        let result = Cli::try_parse_from([
+            "pftui", "data", "refresh", "--only", "prices", "--skip", "bls",
+        ]);
+        assert!(result.is_err(), "--only and --skip should conflict");
+    }
+
+    #[test]
+    fn parse_refresh_only_with_json() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui", "data", "refresh", "--only", "prices", "--json",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Refresh { only, json, .. } = command else {
+            panic!("expected refresh");
+        };
+        assert_eq!(only, vec!["prices"]);
         assert!(json);
         Ok(())
     }

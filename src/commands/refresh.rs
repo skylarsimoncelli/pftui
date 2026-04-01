@@ -88,6 +88,28 @@ pub struct RefreshPlan {
 }
 
 impl RefreshPlan {
+    /// All known source names, used for validation.
+    pub const ALL_SOURCE_NAMES: &'static [&'static str] = &[
+        "prices",
+        "predictions",
+        "fedwatch",
+        "news_rss",
+        "news_brave",
+        "news",
+        "cot",
+        "sentiment",
+        "calendar",
+        "economy",
+        "fred",
+        "bls",
+        "worldbank",
+        "comex",
+        "onchain",
+        "analytics",
+        "alerts",
+        "cleanup",
+    ];
+
     pub fn full() -> Self {
         Self {
             prices: true,
@@ -108,6 +130,82 @@ impl RefreshPlan {
             alerts: true,
             cleanup: true,
         }
+    }
+
+    /// All sources disabled — used as a starting point for `--only`.
+    pub fn none() -> Self {
+        Self {
+            prices: false,
+            predictions: false,
+            fedwatch: false,
+            news_rss: false,
+            news_brave: false,
+            cot: false,
+            sentiment: false,
+            calendar: false,
+            economy: false,
+            fred: false,
+            bls: false,
+            worldbank: false,
+            comex: false,
+            onchain: false,
+            analytics: false,
+            alerts: false,
+            cleanup: false,
+        }
+    }
+
+    /// Build a plan that only enables the named sources.
+    /// Returns an error if any source name is unrecognised.
+    pub fn from_only(sources: &[String]) -> anyhow::Result<Self> {
+        let mut plan = Self::none();
+        for name in sources {
+            plan.set_source(name.trim(), true)?;
+        }
+        Ok(plan)
+    }
+
+    /// Build a full plan minus the named sources.
+    /// Returns an error if any source name is unrecognised.
+    pub fn from_skip(sources: &[String]) -> anyhow::Result<Self> {
+        let mut plan = Self::full();
+        for name in sources {
+            plan.set_source(name.trim(), false)?;
+        }
+        Ok(plan)
+    }
+
+    /// Set a source by name. "news" is a convenience alias for both news_rss + news_brave.
+    fn set_source(&mut self, name: &str, enabled: bool) -> anyhow::Result<()> {
+        match name {
+            "prices" => self.prices = enabled,
+            "predictions" => self.predictions = enabled,
+            "fedwatch" => self.fedwatch = enabled,
+            "news_rss" => self.news_rss = enabled,
+            "news_brave" => self.news_brave = enabled,
+            "news" => {
+                self.news_rss = enabled;
+                self.news_brave = enabled;
+            }
+            "cot" => self.cot = enabled,
+            "sentiment" => self.sentiment = enabled,
+            "calendar" => self.calendar = enabled,
+            "economy" => self.economy = enabled,
+            "fred" => self.fred = enabled,
+            "bls" => self.bls = enabled,
+            "worldbank" => self.worldbank = enabled,
+            "comex" => self.comex = enabled,
+            "onchain" => self.onchain = enabled,
+            "analytics" => self.analytics = enabled,
+            "alerts" => self.alerts = enabled,
+            "cleanup" => self.cleanup = enabled,
+            _ => anyhow::bail!(
+                "Unknown refresh source '{}'. Valid sources: {}",
+                name,
+                Self::ALL_SOURCE_NAMES.join(", ")
+            ),
+        }
+        Ok(())
     }
 
     pub fn selected_task_names(&self) -> Vec<&'static str> {
@@ -723,9 +821,24 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
     run_with_output(backend, config, notify, true, &RefreshPlan::full())
 }
 
-/// Run refresh and output structured JSON metrics.
-pub fn run_json(backend: &BackendConnection, config: &Config, notify: bool) -> Result<()> {
-    let result = run_pipeline(backend, config, notify, false, &RefreshPlan::full())?;
+/// Run refresh with a custom plan (verbose human output).
+pub fn run_with_plan(
+    backend: &BackendConnection,
+    config: &Config,
+    notify: bool,
+    plan: &RefreshPlan,
+) -> Result<()> {
+    run_with_output(backend, config, notify, true, plan)
+}
+
+/// Run refresh with a custom plan and output structured JSON metrics.
+pub fn run_json_with_plan(
+    backend: &BackendConnection,
+    config: &Config,
+    notify: bool,
+    plan: &RefreshPlan,
+) -> Result<()> {
+    let result = run_pipeline(backend, config, notify, false, plan)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
 }
@@ -4053,5 +4166,88 @@ mod tests {
     fn parse_timestamp_flexible_returns_none_on_garbage() {
         assert!(parse_timestamp_flexible("not-a-timestamp").is_none());
         assert!(parse_timestamp_flexible("").is_none());
+    }
+
+    #[test]
+    fn refresh_plan_full_enables_all() {
+        let plan = RefreshPlan::full();
+        assert!(plan.prices);
+        assert!(plan.predictions);
+        assert!(plan.news_rss);
+        assert!(plan.news_brave);
+        assert!(plan.cot);
+        assert!(plan.worldbank);
+        assert!(plan.analytics);
+        assert!(plan.cleanup);
+        assert_eq!(plan.selected_task_names().len(), 17);
+    }
+
+    #[test]
+    fn refresh_plan_none_disables_all() {
+        let plan = RefreshPlan::none();
+        assert!(!plan.prices);
+        assert!(!plan.predictions);
+        assert!(!plan.news_rss);
+        assert!(!plan.analytics);
+        assert!(plan.selected_task_names().is_empty());
+    }
+
+    #[test]
+    fn refresh_plan_from_only_prices() {
+        let plan = RefreshPlan::from_only(&["prices".to_string()]).unwrap();
+        assert!(plan.prices);
+        assert!(!plan.predictions);
+        assert!(!plan.news_rss);
+        assert!(!plan.analytics);
+        assert_eq!(plan.selected_task_names(), vec!["prices"]);
+    }
+
+    #[test]
+    fn refresh_plan_from_only_multiple() {
+        let plan =
+            RefreshPlan::from_only(&["prices".to_string(), "news_rss".to_string(), "alerts".to_string()])
+                .unwrap();
+        assert!(plan.prices);
+        assert!(plan.news_rss);
+        assert!(plan.alerts);
+        assert!(!plan.predictions);
+        assert!(!plan.cot);
+        assert_eq!(plan.selected_task_names().len(), 3);
+    }
+
+    #[test]
+    fn refresh_plan_from_only_news_alias() {
+        let plan = RefreshPlan::from_only(&["news".to_string()]).unwrap();
+        assert!(plan.news_rss);
+        assert!(plan.news_brave);
+        assert!(!plan.prices);
+        assert_eq!(plan.selected_task_names().len(), 2);
+    }
+
+    #[test]
+    fn refresh_plan_from_skip_sources() {
+        let plan = RefreshPlan::from_skip(&["worldbank".to_string(), "bls".to_string()]).unwrap();
+        assert!(plan.prices);
+        assert!(plan.predictions);
+        assert!(!plan.worldbank);
+        assert!(!plan.bls);
+        assert_eq!(plan.selected_task_names().len(), 15);
+    }
+
+    #[test]
+    fn refresh_plan_from_only_unknown_source_errors() {
+        let result = RefreshPlan::from_only(&["nonexistent".to_string()]);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Unknown refresh source"));
+        assert!(err_msg.contains("nonexistent"));
+    }
+
+    #[test]
+    fn refresh_plan_from_skip_unknown_source_errors() {
+        let result = RefreshPlan::from_skip(&["bogus".to_string()]);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Unknown refresh source"));
     }
 }
