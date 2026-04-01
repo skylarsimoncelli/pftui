@@ -3291,6 +3291,9 @@ pub enum AnalyticsCommand {
         signal_type: Option<String>,
         #[arg(long)]
         severity: Option<String>,
+        /// Filter by direction: "bullish" or "bearish"
+        #[arg(long)]
+        direction: Option<String>,
         /// Filter signal source: "technical" (per-symbol), "timeframe" (cross-layer), or "all" (default)
         #[arg(long, default_value = "all")]
         source: String,
@@ -6049,6 +6052,71 @@ mod tests {
 
         assert_eq!(source, "all");
         assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_signals_direction_filter() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "signals",
+            "--direction",
+            "bullish",
+            "--severity",
+            "critical",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Signals {
+                    direction,
+                    severity,
+                    json,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics signals command");
+        };
+
+        assert_eq!(direction.as_deref(), Some("bullish"));
+        assert_eq!(severity.as_deref(), Some("critical"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_signals_direction_with_symbol() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "signals",
+            "--symbol",
+            "BTC-USD",
+            "--direction",
+            "bearish",
+            "--source",
+            "technical",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Signals {
+                    symbol,
+                    direction,
+                    source,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics signals command");
+        };
+
+        assert_eq!(symbol.as_deref(), Some("BTC-USD"));
+        assert_eq!(direction.as_deref(), Some("bearish"));
+        assert_eq!(source, "technical");
     }
 
     #[test]
