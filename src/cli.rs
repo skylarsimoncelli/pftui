@@ -2204,6 +2204,9 @@ pub enum AnalyticsCorrelationsCommand {
         /// Maximum number of break pairs to show
         #[arg(long, default_value = "20")]
         limit: usize,
+        /// Filter by severity: severe (|Δ|≥0.70), moderate (≥0.50), minor (<0.50)
+        #[arg(long)]
+        severity: Option<String>,
         /// Auto-create recurring technical correlation_break alerts for each detected break pair
         #[arg(long = "seed-alerts")]
         seed_alerts: bool,
@@ -8526,6 +8529,61 @@ mod tests {
         };
         assert_eq!(only, vec!["prices"]);
         assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_correlations_breaks_severity_filter() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "correlations",
+            "breaks",
+            "--severity",
+            "severe",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Correlations {
+            command: Some(AnalyticsCorrelationsCommand::Breaks { severity, json, .. }),
+            ..
+        } = command
+        else {
+            panic!("expected correlations breaks");
+        };
+        assert_eq!(severity.as_deref(), Some("severe"));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_correlations_breaks_no_severity() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "correlations",
+            "breaks",
+            "--threshold",
+            "0.50",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Correlations {
+            command: Some(AnalyticsCorrelationsCommand::Breaks {
+                severity,
+                threshold,
+                ..
+            }),
+            ..
+        } = command
+        else {
+            panic!("expected correlations breaks");
+        };
+        assert!(severity.is_none());
+        assert!((threshold - 0.50).abs() < f64::EPSILON);
         Ok(())
     }
 }
