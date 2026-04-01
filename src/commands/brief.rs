@@ -118,6 +118,8 @@ struct WatchlistItemJson {
     daily_change_pct: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     technicals: Option<TechnicalSnapshotJson>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    levels: Option<ActionableLevelPair>,
 }
 
 #[derive(Serialize)]
@@ -695,6 +697,8 @@ fn get_watchlist_json_backend(
                     sma_20: None,
                     sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
                 });
+            let levels = current_price
+                .and_then(|p| get_nearest_levels_json_backend(backend, &w.symbol, p));
             WatchlistItemJson {
                 symbol: w.symbol.clone(),
                 name: resolve_name(&w.symbol),
@@ -702,6 +706,7 @@ fn get_watchlist_json_backend(
                 current_price: current_price.map(|p| p.to_string()),
                 daily_change_pct: daily_change_pct.map(|p| p.round_dp(2).to_string()),
                 technicals: technicals_json,
+                levels,
             }
         })
         .collect())
@@ -961,6 +966,9 @@ fn get_watchlist_json(
                     sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
                 });
 
+            let levels = current_price
+                .and_then(|p| get_nearest_levels_json(conn, &w.symbol, p));
+
             WatchlistItemJson {
                 symbol: w.symbol.clone(),
                 name: resolve_name(&w.symbol),
@@ -968,6 +976,7 @@ fn get_watchlist_json(
                 current_price: current_price.map(|p| p.to_string()),
                 daily_change_pct: daily_change_pct.map(|p| p.round_dp(2).to_string()),
                 technicals: technicals_json,
+                levels,
             }
         })
         .collect();
@@ -4009,5 +4018,141 @@ mod tests {
 
         assert_eq!(armed_near.len(), 1, "only GC=F within 5% threshold");
         assert_eq!(armed_near[0].rule.symbol, "GC=F");
+    }
+
+    #[test]
+    fn watchlist_item_json_includes_levels_field() {
+        use crate::analytics::levels::{ActionableLevel, ActionableLevelPair};
+
+        let item = WatchlistItemJson {
+            symbol: "TSLA".to_string(),
+            name: "Tesla Inc".to_string(),
+            category: "equity".to_string(),
+            current_price: Some("250.00".to_string()),
+            daily_change_pct: Some("2.50".to_string()),
+            technicals: None,
+            levels: Some(ActionableLevelPair {
+                support: Some(ActionableLevel {
+                    symbol: "TSLA".to_string(),
+                    level_type: "support".to_string(),
+                    price: 240.0,
+                    strength: 0.75,
+                    source_method: "swing".to_string(),
+                    timeframe: "1d".to_string(),
+                    notes: Some("Swing low (tested 2x)".to_string()),
+                    computed_at: "2026-04-01".to_string(),
+                    distance_pct: 4.0,
+                }),
+                resistance: Some(ActionableLevel {
+                    symbol: "TSLA".to_string(),
+                    level_type: "resistance".to_string(),
+                    price: 270.0,
+                    strength: 0.8,
+                    source_method: "swing".to_string(),
+                    timeframe: "1d".to_string(),
+                    notes: Some("Swing high (tested 1x)".to_string()),
+                    computed_at: "2026-04-01".to_string(),
+                    distance_pct: 8.0,
+                }),
+            }),
+        };
+
+        let json = serde_json::to_value(&item).unwrap();
+        assert!(json.get("levels").is_some(), "levels field should be present when populated");
+        let levels = json.get("levels").unwrap();
+        assert!(levels.get("support").is_some());
+        assert!(levels.get("resistance").is_some());
+        assert_eq!(
+            levels["support"]["price"].as_f64().unwrap(),
+            240.0
+        );
+        assert_eq!(
+            levels["resistance"]["price"].as_f64().unwrap(),
+            270.0
+        );
+    }
+
+    #[test]
+    fn watchlist_item_json_omits_levels_when_none() {
+        let item = WatchlistItemJson {
+            symbol: "AAPL".to_string(),
+            name: "Apple Inc".to_string(),
+            category: "equity".to_string(),
+            current_price: Some("180.00".to_string()),
+            daily_change_pct: None,
+            technicals: None,
+            levels: None,
+        };
+
+        let json = serde_json::to_value(&item).unwrap();
+        assert!(
+            json.get("levels").is_none(),
+            "levels field should be omitted when None (skip_serializing_if)"
+        );
+    }
+
+    #[test]
+    fn watchlist_levels_in_brief_json_integration() {
+        use crate::db::technical_levels::TechnicalLevelRecord;
+
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        // Add a watchlist item
+        crate::db::watchlist::add_to_watchlist(&conn, "NVDA", AssetCategory::Equity).unwrap();
+
+        // Insert a price
+        use crate::db::price_cache::upsert_price;
+        use crate::models::price::PriceQuote;
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "NVDA".to_string(),
+                price: dec!(800),
+                currency: "USD".to_string(),
+                source: "test".to_string(),
+                fetched_at: "2026-04-01T00:00:00Z".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: None,
+            },
+        )
+        .unwrap();
+
+        // Insert technical levels for the watchlist symbol
+        crate::db::technical_levels::upsert_levels(
+            &conn,
+            "NVDA",
+            &[
+                TechnicalLevelRecord {
+                    id: None,
+                    symbol: "NVDA".to_string(),
+                    level_type: "support".to_string(),
+                    price: 750.0,
+                    strength: 0.8,
+                    source_method: "swing".to_string(),
+                    timeframe: "1d".to_string(),
+                    notes: Some("Swing low".to_string()),
+                    computed_at: "2026-04-01T00:00:00Z".to_string(),
+                },
+                TechnicalLevelRecord {
+                    id: None,
+                    symbol: "NVDA".to_string(),
+                    level_type: "resistance".to_string(),
+                    price: 850.0,
+                    strength: 0.7,
+                    source_method: "swing".to_string(),
+                    timeframe: "1d".to_string(),
+                    notes: Some("Swing high".to_string()),
+                    computed_at: "2026-04-01T00:00:00Z".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+
+        // Run brief in JSON mode — should succeed with watchlist levels populated
+        let result = run_internal(&conn, &config, true, false, false);
+        assert!(result.is_ok());
     }
 }
