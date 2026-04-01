@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-04-01 — feat: add support/resistance levels to watchlist items in portfolio brief (#528)
+
+- What: Watchlist items in `portfolio brief --json` now include nearest support and resistance levels (`levels` field with `ActionableLevelPair`), matching the levels data already present on portfolio positions.
+- Why: Morning-brief feedback (Apr 1): "Could improve with more specific entry/exit levels." Agents consuming the brief JSON had levels for 7 portfolio positions but not the 44 watchlist items, requiring per-symbol `analytics levels` calls for entry/exit context on watched assets.
+- Both SQLite and Postgres backends wired. `skip_serializing_if` omits field when no levels exist.
+- Files: `src/commands/brief.rs` (WatchlistItemJson + get_watchlist_json + get_watchlist_json_backend)
+- Tests: 2283 tests passing (+3 new: serialization with/without levels, integration test). Clippy clean.
+
 ### 2026-04-01 — feat: `analytics backtest diagnostics` — automated pattern detection and recommendations (#525)
 
 - What: New `analytics backtest diagnostics` subcommand that analyses backtest data to identify systematic prediction problems and generate actionable recommendations. Detects 8 pattern categories: poor win rates, asset class weaknesses, conviction miscalibration, mean reversion bias, loss magnitude asymmetry, losing streaks, overtrading, and system-wide negative expected value. Each finding includes severity (critical/warning/info), detailed explanation, and specific actionable recommendation. Optional `--agent` filter narrows analysis to a single agent.
