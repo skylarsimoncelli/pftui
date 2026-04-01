@@ -1664,11 +1664,13 @@ fn run_signals(
 /// Combined signal view: cross-timeframe signals, per-symbol technical signals, or both.
 ///
 /// `source` can be "technical", "timeframe", or "all" (default).
+#[allow(clippy::too_many_arguments)]
 pub fn run_signals_combined(
     backend: &BackendConnection,
     symbol: Option<&str>,
     signal_type: Option<&str>,
     severity: Option<&str>,
+    direction: Option<&str>,
     source: &str,
     limit: Option<usize>,
     json_output: bool,
@@ -1691,10 +1693,17 @@ pub fn run_signals_combined(
         Vec::new()
     };
 
-    // Per-symbol technical signals
+    // Per-symbol technical signals (severity + direction now filter at DB level)
     let tech_signals = if show_technical {
-        crate::db::technical_signals::list_signals_backend(backend, symbol, signal_type, Some(lim))
-            .unwrap_or_default()
+        crate::db::technical_signals::list_signals_filtered_backend(
+            backend,
+            symbol,
+            signal_type,
+            severity,
+            direction,
+            Some(lim),
+        )
+        .unwrap_or_default()
     } else {
         Vec::new()
     };
