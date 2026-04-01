@@ -219,6 +219,9 @@ fn event_category(event: &CalendarEvent) -> String {
     if event.event_type.eq_ignore_ascii_case("earnings") {
         return "earnings".to_string();
     }
+    if event.event_type.eq_ignore_ascii_case("geopolitical") {
+        return "geopolitical".to_string();
+    }
 
     let lower = event.name.to_ascii_lowercase();
     if contains_any(&lower, &["fomc", "fed", "rate", "central bank"]) {
@@ -231,6 +234,14 @@ fn event_category(event: &CalendarEvent) -> String {
         "growth".to_string()
     } else if contains_any(&lower, &["oil", "opec", "inventory", "crude"]) {
         "commodities".to_string()
+    } else if contains_any(
+        &lower,
+        &[
+            "iran", "hormuz", "brics", "sanctions", "war", "conflict", "tariff", "embargo",
+            "summit", "treaty", "geopolitical", "nato", "taiwan", "annexation",
+        ],
+    ) {
+        "geopolitical".to_string()
     } else {
         event.event_type.to_ascii_lowercase()
     }
@@ -279,6 +290,15 @@ fn proxy_assets_for_event(name: &str) -> &'static [&'static str] {
         &["SPY", "QQQ", "CL=F", "HG=F", "IWM"]
     } else if contains_any(&lower, &["oil", "opec", "inventory", "crude"]) {
         &["CL=F", "XLE", "CADUSD=X"]
+    } else if contains_any(
+        &lower,
+        &[
+            "iran", "hormuz", "war", "conflict", "sanctions", "tariff", "embargo",
+        ],
+    ) {
+        &["CL=F", "GC=F", "DXY", "XLE", "ITA", "BTC-USD"]
+    } else if contains_any(&lower, &["brics", "summit", "treaty", "nato", "taiwan"]) {
+        &["GC=F", "DXY", "SPY", "BTC-USD", "CL=F"]
     } else {
         &["SPY", "QQQ", "DXY"]
     }
@@ -339,7 +359,7 @@ fn macro_significance(
     };
 
     score += match category {
-        "policy" | "inflation" | "labor" | "growth" => 4,
+        "policy" | "inflation" | "labor" | "growth" | "geopolitical" => 4,
         "commodities" | "earnings" => 2,
         _ => 1,
     };
@@ -579,6 +599,54 @@ fn category_scenario_score(category: &str, scenario_name: &str, scenario_text: &
             }
             score
         }
+        "geopolitical" => {
+            let mut score = 0;
+            if contains_any(
+                &lower_text,
+                &[
+                    "war",
+                    "conflict",
+                    "iran",
+                    "hormuz",
+                    "sanctions",
+                    "tariff",
+                    "geopolitical",
+                    "brics",
+                    "nato",
+                    "taiwan",
+                    "embargo",
+                    "military",
+                    "invasion",
+                    "escalation",
+                ],
+            ) {
+                score += 3;
+            }
+            if contains_any(
+                &lower_text,
+                &[
+                    "oil",
+                    "gold",
+                    "commodity",
+                    "energy",
+                    "defense",
+                    "risk-off",
+                    "safe-haven",
+                    "flight",
+                ],
+            ) {
+                score += 2;
+            }
+            if contains_any(
+                &lower_name,
+                &[
+                    "war", "iran", "conflict", "sanctions", "tariff", "taiwan", "brics",
+                ],
+            ) {
+                score += 1;
+            }
+            score
+        }
         _ => 0,
     }
 }
@@ -638,6 +706,24 @@ fn infer_catalyst_direction(
                 "mixed"
             }
         }
+        "geopolitical" => {
+            // Check peace/de-escalation first (more specific than escalation substring match)
+            if contains_any(
+                &lower_text,
+                &["peace", "de-escalation", "diplomacy", "truce", "ceasefire"],
+            ) {
+                "opposing" // peace developments oppose conflict scenarios
+            } else if contains_any(
+                &lower_text,
+                &[
+                    "war", "conflict", "iran", "hormuz", "escalation", "invasion", "sanctions",
+                ],
+            ) {
+                "confirming" // geopolitical escalation confirms conflict/war scenarios
+            } else {
+                "mixed"
+            }
+        }
         _ => "mixed",
     }
 }
@@ -668,6 +754,7 @@ fn link_predictions(event: &CalendarEvent, predictions: &[PredictionMarket]) -> 
 fn category_match_score(event: &CalendarEvent, category: MarketCategory) -> usize {
     match (event_category(event).as_str(), category) {
         ("policy" | "inflation" | "labor" | "growth", MarketCategory::Economics) => 2,
+        ("geopolitical", MarketCategory::Geopolitics) => 3,
         ("commodities", MarketCategory::Geopolitics) => 1,
         ("earnings", MarketCategory::AI) => 1,
         _ => 0,
@@ -1047,5 +1134,148 @@ mod tests {
         assert!(json.contains("\"name\":\"Inflation Spike\""));
         assert!(json.contains("\"direction\":\"confirming\""));
         assert!(json.contains("\"relevance\":\"strong\""));
+    }
+
+    #[test]
+    fn geopolitical_event_type_categorized_correctly() {
+        let event = CalendarEvent {
+            id: 1,
+            date: "2026-04-06".to_string(),
+            name: "Iran Hormuz Strait Deadline".to_string(),
+            impact: "high".to_string(),
+            previous: None,
+            forecast: None,
+            event_type: "geopolitical".to_string(),
+            symbol: None,
+            fetched_at: "2026-04-01".to_string(),
+        };
+        assert_eq!(event_category(&event), "geopolitical");
+    }
+
+    #[test]
+    fn geopolitical_keywords_detected_in_economic_event() {
+        let event = CalendarEvent {
+            id: 2,
+            date: "2026-05-01".to_string(),
+            name: "BRICS Summit Opening".to_string(),
+            impact: "medium".to_string(),
+            previous: None,
+            forecast: None,
+            event_type: "economic".to_string(),
+            symbol: None,
+            fetched_at: "2026-04-01".to_string(),
+        };
+        assert_eq!(event_category(&event), "geopolitical");
+    }
+
+    #[test]
+    fn geopolitical_proxy_assets_include_oil_and_gold() {
+        let proxies = proxy_assets_for_event("Iran Hormuz Strait Deadline");
+        assert!(
+            proxies.contains(&"CL=F"),
+            "Iran event should proxy to oil"
+        );
+        assert!(
+            proxies.contains(&"GC=F"),
+            "Iran event should proxy to gold"
+        );
+    }
+
+    #[test]
+    fn geopolitical_macro_significance_scores_high() {
+        let event = CalendarEvent {
+            id: 3,
+            date: "2026-04-06".to_string(),
+            name: "Iran Hormuz Strait Deadline".to_string(),
+            impact: "high".to_string(),
+            previous: None,
+            forecast: None,
+            event_type: "geopolitical".to_string(),
+            symbol: None,
+            fetched_at: "2026-04-01".to_string(),
+        };
+        let score = macro_significance(&event, "geopolitical", "this-week", 1, 0);
+        // high impact (9) + geopolitical category (4) + this-week (1) + 1 scenario link + 0 predictions = 15
+        assert_eq!(score, 15);
+    }
+
+    #[test]
+    fn geopolitical_scenario_score_matches_war_scenarios() {
+        let score = category_scenario_score(
+            "geopolitical",
+            "Iran-US Conflict Escalation",
+            "military conflict in Hormuz Strait disrupts oil flows, gold safe-haven demand surges",
+        );
+        // Should match: "conflict" and "hormuz" keywords (3), "oil" and "gold" (2), "iran" and "conflict" in name (1) = 6
+        assert!(
+            score >= 5,
+            "geopolitical should strongly link to war scenarios: got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn geopolitical_direction_confirms_war_scenarios() {
+        let direction = infer_catalyst_direction(
+            "geopolitical",
+            "Iran Escalation",
+            "war conflict iran hormuz military escalation",
+        );
+        assert_eq!(direction, "confirming");
+    }
+
+    #[test]
+    fn geopolitical_direction_opposes_peace_scenarios() {
+        let direction = infer_catalyst_direction(
+            "geopolitical",
+            "Diplomatic Resolution",
+            "peace de-escalation diplomacy truce negotiations",
+        );
+        assert_eq!(direction, "opposing");
+    }
+
+    #[test]
+    fn geopolitical_prediction_match_scores_high() {
+        let event = CalendarEvent {
+            id: 4,
+            date: "2026-04-06".to_string(),
+            name: "Iran Hormuz Deadline".to_string(),
+            impact: "high".to_string(),
+            previous: None,
+            forecast: None,
+            event_type: "geopolitical".to_string(),
+            symbol: None,
+            fetched_at: "2026-04-01".to_string(),
+        };
+        let score = category_match_score(&event, MarketCategory::Geopolitics);
+        assert_eq!(score, 3, "geopolitical events should strongly match geopolitics predictions");
+    }
+
+    #[test]
+    fn geopolitical_event_in_report() {
+        let conn = crate::db::open_in_memory();
+        let today = Utc::now().date_naive();
+
+        db::calendar_cache::upsert_event(
+            &conn,
+            &today.format("%Y-%m-%d").to_string(),
+            "Iran Hormuz Strait Deadline",
+            "high",
+            None,
+            None,
+            "geopolitical",
+            None,
+        )
+        .unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        let report = build_report_backend(&backend, CatalystWindow::Today).unwrap();
+        assert_eq!(report.catalysts.len(), 1);
+        assert_eq!(report.catalysts[0].category, "geopolitical");
+        assert!(
+            report.catalysts[0].score > 10,
+            "geopolitical high-impact event should score >10: got {}",
+            report.catalysts[0].score
+        );
     }
 }

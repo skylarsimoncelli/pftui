@@ -432,19 +432,19 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Show upcoming economic calendar events
+    /// Manage economic/geopolitical calendar events
+    ///
+    /// List upcoming events or add custom catalysts (geopolitical deadlines, trade events, etc.)
+    /// that flow into the analytics catalysts ranking system.
+    ///
+    /// Examples:
+    ///   pftui data calendar list --days 14 --impact high --json
+    ///   pftui data calendar add --date 2026-04-06 --name "Iran Hormuz Strait Deadline" --impact high --type geopolitical
+    ///   pftui data calendar add --date 2026-05-01 --name "BRICS Summit" --impact medium --type geopolitical
+    ///   pftui data calendar remove --date 2026-04-06 --name "Iran Hormuz Strait Deadline"
     Calendar {
-        /// Number of days to look ahead (default: 7)
-        #[arg(long, default_value = "7")]
-        days: i64,
-
-        /// Filter by impact level: high, medium, low
-        #[arg(long)]
-        impact: Option<String>,
-
-        /// Output as JSON for agent/script consumption
-        #[arg(long)]
-        json: bool,
+        #[command(subcommand)]
+        command: CalendarCommand,
     },
     /// Interpret cached COT positioning using percentile and z-score context
     Cot {
@@ -622,6 +622,80 @@ pub enum DataAlertsRedirect {
         recent: bool,
         #[arg(long, default_value = "24")]
         recent_hours: i64,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum CalendarCommand {
+    /// List upcoming calendar events (default behavior)
+    ///
+    /// Shows economic releases, earnings, and geopolitical catalysts.
+    List {
+        /// Number of days to look ahead (default: 7)
+        #[arg(long, default_value = "7")]
+        days: i64,
+
+        /// Filter by impact level: high, medium, low
+        #[arg(long)]
+        impact: Option<String>,
+
+        /// Filter by event type: economic, earnings, geopolitical
+        #[arg(long = "type")]
+        event_type: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add a custom calendar event (geopolitical deadline, trade event, etc.)
+    ///
+    /// Custom events flow into `analytics catalysts` ranking alongside economic releases.
+    ///
+    /// Examples:
+    ///   pftui data calendar add --date 2026-04-06 --name "Iran Hormuz Strait Deadline" --impact high --type geopolitical
+    ///   pftui data calendar add --date 2026-05-01 --name "BRICS Summit" --impact medium --type geopolitical
+    ///   pftui data calendar add --date 2026-04-15 --name "AAPL Earnings" --impact high --type earnings --symbol AAPL
+    Add {
+        /// Event date in YYYY-MM-DD format
+        #[arg(long)]
+        date: String,
+
+        /// Event name/description
+        #[arg(long)]
+        name: String,
+
+        /// Impact level: high, medium, low
+        #[arg(long, default_value = "high")]
+        impact: String,
+
+        /// Event type: economic, earnings, geopolitical
+        #[arg(long = "type", default_value = "geopolitical")]
+        event_type: String,
+
+        /// Associated symbol (e.g. AAPL for earnings)
+        #[arg(long)]
+        symbol: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a calendar event by date and name
+    ///
+    /// Examples:
+    ///   pftui data calendar remove --date 2026-04-06 --name "Iran Hormuz Strait Deadline"
+    Remove {
+        /// Event date in YYYY-MM-DD format
+        #[arg(long)]
+        date: String,
+
+        /// Event name (must match exactly)
+        #[arg(long)]
+        name: String,
+
+        /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
     },
@@ -7945,6 +8019,118 @@ mod tests {
         };
         assert!(!verbose);
         assert_eq!(timeframe.as_deref(), Some("high"));
+        Ok(())
+    }
+
+    #[test]
+    fn parse_calendar_list() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "data", "calendar", "list", "--days", "14", "--impact", "high", "--json"]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Calendar { command } = command else {
+            panic!("expected calendar");
+        };
+        let CalendarCommand::List { days, impact, event_type, json } = command else {
+            panic!("expected list");
+        };
+        assert_eq!(days, 14);
+        assert_eq!(impact.as_deref(), Some("high"));
+        assert!(event_type.is_none());
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_calendar_add_geopolitical() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui", "data", "calendar", "add",
+            "--date", "2026-04-06",
+            "--name", "Iran Hormuz Deadline",
+            "--impact", "high",
+            "--type", "geopolitical",
+            "--json",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Calendar { command } = command else {
+            panic!("expected calendar");
+        };
+        let CalendarCommand::Add { date, name, impact, event_type, symbol, json } = command else {
+            panic!("expected add");
+        };
+        assert_eq!(date, "2026-04-06");
+        assert_eq!(name, "Iran Hormuz Deadline");
+        assert_eq!(impact, "high");
+        assert_eq!(event_type, "geopolitical");
+        assert!(symbol.is_none());
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_calendar_remove() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui", "data", "calendar", "remove",
+            "--date", "2026-04-06",
+            "--name", "Iran Hormuz Deadline",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Calendar { command } = command else {
+            panic!("expected calendar");
+        };
+        let CalendarCommand::Remove { date, name, json } = command else {
+            panic!("expected remove");
+        };
+        assert_eq!(date, "2026-04-06");
+        assert_eq!(name, "Iran Hormuz Deadline");
+        assert!(!json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_calendar_add_with_symbol() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui", "data", "calendar", "add",
+            "--date", "2026-04-15",
+            "--name", "AAPL Earnings",
+            "--impact", "high",
+            "--type", "earnings",
+            "--symbol", "AAPL",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Calendar { command } = command else {
+            panic!("expected calendar");
+        };
+        let CalendarCommand::Add { date, name, event_type, symbol, .. } = command else {
+            panic!("expected add");
+        };
+        assert_eq!(date, "2026-04-15");
+        assert_eq!(name, "AAPL Earnings");
+        assert_eq!(event_type, "earnings");
+        assert_eq!(symbol.as_deref(), Some("AAPL"));
+        Ok(())
+    }
+
+    #[test]
+    fn parse_calendar_list_with_type_filter() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "data", "calendar", "list", "--type", "geopolitical", "--json"]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Calendar { command } = command else {
+            panic!("expected calendar");
+        };
+        let CalendarCommand::List { event_type, json, .. } = command else {
+            panic!("expected list");
+        };
+        assert_eq!(event_type.as_deref(), Some("geopolitical"));
+        assert!(json);
         Ok(())
     }
 }

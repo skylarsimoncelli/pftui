@@ -301,6 +301,39 @@ fn get_events_by_impact_postgres(
         .collect())
 }
 
+/// Delete a specific event by date and name.
+pub fn delete_event_by_name(conn: &Connection, date: &str, name: &str) -> Result<usize> {
+    let rows = conn.execute(
+        "DELETE FROM calendar_events WHERE date = ?1 AND name = ?2",
+        params![date, name],
+    )?;
+    Ok(rows)
+}
+
+/// Delete a specific event by date and name (backend dispatch).
+pub fn delete_event_by_name_backend(
+    backend: &BackendConnection,
+    date: &str,
+    name: &str,
+) -> Result<usize> {
+    query::dispatch(
+        backend,
+        |conn| delete_event_by_name(conn, date, name),
+        |pool| delete_event_by_name_postgres(pool, date, name),
+    )
+}
+
+fn delete_event_by_name_postgres(pool: &PgPool, date: &str, name: &str) -> Result<usize> {
+    let deleted = crate::db::pg_runtime::block_on(async {
+        sqlx::query("DELETE FROM calendar_events WHERE date = $1 AND name = $2")
+            .bind(date)
+            .bind(name)
+            .execute(pool)
+            .await
+    })?;
+    Ok(deleted.rows_affected() as usize)
+}
+
 fn delete_old_events_postgres(pool: &PgPool, before_date: &str) -> Result<usize> {
     let deleted = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM calendar_events WHERE date < $1")
@@ -408,5 +441,67 @@ mod tests {
         let events = get_upcoming_events(&conn, "2026-01-01", 10).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].name, "New Event");
+    }
+
+    #[test]
+    fn test_delete_event_by_name() {
+        let conn = setup_test_db();
+        upsert_event(
+            &conn,
+            "2026-04-06",
+            "Iran Hormuz Deadline",
+            "high",
+            None,
+            None,
+            "geopolitical",
+            None,
+        )
+        .unwrap();
+        upsert_event(
+            &conn,
+            "2026-04-06",
+            "FOMC Rate Decision",
+            "high",
+            None,
+            None,
+            "economic",
+            None,
+        )
+        .unwrap();
+
+        let deleted = delete_event_by_name(&conn, "2026-04-06", "Iran Hormuz Deadline").unwrap();
+        assert_eq!(deleted, 1);
+
+        let events = get_upcoming_events(&conn, "2026-04-01", 10).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].name, "FOMC Rate Decision");
+    }
+
+    #[test]
+    fn test_delete_event_by_name_nonexistent() {
+        let conn = setup_test_db();
+        let deleted = delete_event_by_name(&conn, "2026-04-06", "Does Not Exist").unwrap();
+        assert_eq!(deleted, 0);
+    }
+
+    #[test]
+    fn test_upsert_geopolitical_event() {
+        let conn = setup_test_db();
+        upsert_event(
+            &conn,
+            "2026-04-06",
+            "Iran Hormuz Strait Deadline",
+            "high",
+            None,
+            None,
+            "geopolitical",
+            None,
+        )
+        .unwrap();
+
+        let events = get_upcoming_events(&conn, "2026-04-01", 10).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "geopolitical");
+        assert_eq!(events[0].impact, "high");
     }
 }
