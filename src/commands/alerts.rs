@@ -3,7 +3,9 @@ use chrono::{DateTime, Local, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::fmt;
+use std::str::FromStr;
 
 use crate::alerts::engine::{check_alerts_backend_only, AlertCheckResult};
 use crate::alerts::rules::parse_rule;
@@ -15,6 +17,7 @@ use crate::db::price_cache;
 use crate::db::technical_levels;
 use crate::db::triggered_alerts as triggered_alerts_db;
 use crate::models::asset::AssetCategory;
+use crate::models::position::compute_positions;
 use crate::models::transaction::TxType;
 
 /// Run the alerts CLI subcommand.
@@ -871,6 +874,11 @@ pub struct TriageEntry {
     pub triggered_at: Option<String>,
     pub condition: Option<String>,
     pub recurring: bool,
+    /// Portfolio allocation % for this alert's symbol (None = not held / watchlist only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub portfolio_impact_pct: Option<String>,
+    /// Whether this alert's symbol is in the portfolio (true) vs watchlist/external (false).
+    pub in_portfolio: bool,
 }
 
 /// Per-kind group summary.
@@ -893,8 +901,25 @@ pub struct TriageDashboard {
     pub watch_count: usize,
     pub low_count: usize,
     pub acknowledged_count: usize,
+    /// Total portfolio allocation % covered by alerts in each urgency tier.
+    pub portfolio_exposure: PortfolioExposure,
     pub by_kind: Vec<KindGroup>,
     pub alerts: Vec<TriageEntry>,
+}
+
+/// Portfolio allocation exposure by urgency tier.
+#[derive(Debug, Clone, Serialize)]
+pub struct PortfolioExposure {
+    /// Sum of portfolio allocation % for critical-tier alerts (deduplicated by symbol).
+    pub critical_pct: String,
+    /// Sum of portfolio allocation % for high-tier alerts (deduplicated by symbol).
+    pub high_pct: String,
+    /// Sum of portfolio allocation % for watch-tier alerts (deduplicated by symbol).
+    pub watch_pct: String,
+    /// Sum of portfolio allocation % for low-tier alerts (deduplicated by symbol).
+    pub low_pct: String,
+    /// Total portfolio % with at least one alert (deduplicated by symbol).
+    pub total_covered_pct: String,
 }
 
 /// Classify an alert check result into an urgency tier.
@@ -922,9 +947,49 @@ fn classify_urgency(r: &AlertCheckResult) -> Option<TriageUrgency> {
     }
 }
 
+/// Build a symbol → allocation_pct map from current portfolio positions.
+fn build_allocation_map(backend: &BackendConnection) -> HashMap<String, Decimal> {
+    let txs = crate::db::transactions::list_transactions_backend(backend).unwrap_or_default();
+    if txs.is_empty() {
+        // Try percentage-mode allocations
+        let allocs =
+            crate::db::allocations::list_allocations_backend(backend).unwrap_or_default();
+        return allocs
+            .into_iter()
+            .filter(|a| a.category != AssetCategory::Cash)
+            .map(|a| (a.symbol.to_uppercase(), a.allocation_pct))
+            .collect();
+    }
+
+    let cached = price_cache::get_all_cached_prices_backend(backend).unwrap_or_default();
+    let mut prices: HashMap<String, Decimal> = cached
+        .into_iter()
+        .map(|q| (q.symbol.clone(), q.price))
+        .collect();
+
+    // Ensure cash assets price at 1.0
+    for tx in &txs {
+        if tx.category == AssetCategory::Cash {
+            prices.insert(tx.symbol.clone(), Decimal::ONE);
+        }
+    }
+
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
+    let positions = compute_positions(&txs, &prices, &fx_rates);
+
+    positions
+        .into_iter()
+        .filter_map(|p| {
+            p.allocation_pct
+                .map(|alloc| (p.symbol.to_uppercase(), alloc))
+        })
+        .collect()
+}
+
 /// Build and return the triage dashboard.
 pub fn build_triage(backend: &BackendConnection) -> Result<TriageDashboard> {
     let results = check_alerts_backend_only(backend)?;
+    let alloc_map = build_allocation_map(backend);
 
     let mut entries: Vec<TriageEntry> = Vec::new();
     let mut acknowledged_count: usize = 0;
@@ -952,6 +1017,10 @@ pub fn build_triage(backend: &BackendConnection) -> Result<TriageDashboard> {
             TriageUrgency::Low => entry.4 += 1,
         }
 
+        let symbol_upper = r.rule.symbol.to_uppercase();
+        let alloc = alloc_map.get(&symbol_upper).copied();
+        let in_portfolio = alloc.is_some();
+
         entries.push(TriageEntry {
             id: r.rule.id,
             urgency,
@@ -970,11 +1039,27 @@ pub fn build_triage(backend: &BackendConnection) -> Result<TriageDashboard> {
             triggered_at: r.rule.triggered_at.clone(),
             condition: r.rule.condition.clone(),
             recurring: r.rule.recurring,
+            portfolio_impact_pct: alloc.map(|a| a.round_dp(2).to_string()),
+            in_portfolio,
         });
     }
 
-    // Sort entries: Critical first, then High, Watch, Low
-    entries.sort_by(|a, b| a.urgency.cmp(&b.urgency));
+    // Sort entries: urgency first, then portfolio impact (highest first) within each tier
+    entries.sort_by(|a, b| {
+        a.urgency.cmp(&b.urgency).then_with(|| {
+            let a_impact: Decimal = a
+                .portfolio_impact_pct
+                .as_ref()
+                .and_then(|s| Decimal::from_str(s).ok())
+                .unwrap_or_default();
+            let b_impact: Decimal = b
+                .portfolio_impact_pct
+                .as_ref()
+                .and_then(|s| Decimal::from_str(s).ok())
+                .unwrap_or_default();
+            b_impact.cmp(&a_impact) // descending — highest impact first
+        })
+    });
 
     let critical_count = entries
         .iter()
@@ -1005,6 +1090,9 @@ pub fn build_triage(backend: &BackendConnection) -> Result<TriageDashboard> {
         })
         .collect();
 
+    // Compute portfolio exposure by urgency tier (deduplicated by symbol)
+    let portfolio_exposure = compute_portfolio_exposure(&entries, &alloc_map);
+
     Ok(TriageDashboard {
         total: entries.len(),
         critical_count,
@@ -1012,9 +1100,72 @@ pub fn build_triage(backend: &BackendConnection) -> Result<TriageDashboard> {
         watch_count,
         low_count,
         acknowledged_count,
+        portfolio_exposure,
         by_kind,
         alerts: entries,
     })
+}
+
+/// Compute portfolio allocation exposure by urgency tier (deduplicated by symbol).
+fn compute_portfolio_exposure(
+    entries: &[TriageEntry],
+    alloc_map: &HashMap<String, Decimal>,
+) -> PortfolioExposure {
+    use std::collections::HashSet;
+
+    let mut critical_symbols = HashSet::new();
+    let mut high_symbols = HashSet::new();
+    let mut watch_symbols = HashSet::new();
+    let mut low_symbols = HashSet::new();
+    let mut all_symbols = HashSet::new();
+
+    for e in entries {
+        let sym = e.symbol.to_uppercase();
+        if alloc_map.contains_key(&sym) {
+            all_symbols.insert(sym.clone());
+            match e.urgency {
+                TriageUrgency::Critical => {
+                    critical_symbols.insert(sym);
+                }
+                TriageUrgency::High => {
+                    high_symbols.insert(sym);
+                }
+                TriageUrgency::Watch => {
+                    watch_symbols.insert(sym);
+                }
+                TriageUrgency::Low => {
+                    low_symbols.insert(sym);
+                }
+            }
+        }
+    }
+
+    let sum_alloc = |symbols: &HashSet<String>| -> Decimal {
+        symbols
+            .iter()
+            .filter_map(|s| alloc_map.get(s))
+            .copied()
+            .sum()
+    };
+
+    let fmt = |d: Decimal| d.round_dp(2).to_string();
+
+    PortfolioExposure {
+        critical_pct: fmt(sum_alloc(&critical_symbols)),
+        high_pct: fmt(sum_alloc(&high_symbols)),
+        watch_pct: fmt(sum_alloc(&watch_symbols)),
+        low_pct: fmt(sum_alloc(&low_symbols)),
+        total_covered_pct: fmt(sum_alloc(&all_symbols)),
+    }
+}
+
+/// Format a compact portfolio impact tag for terminal display.
+/// Returns " [20.5% portfolio]" for held assets, "" for watchlist/external.
+fn format_impact_tag(e: &TriageEntry) -> String {
+    match &e.portfolio_impact_pct {
+        Some(pct) => format!(" [{}% portfolio]", pct),
+        None => String::new(),
+    }
 }
 
 /// Run the triage dashboard CLI command.
@@ -1041,6 +1192,15 @@ pub fn run_triage(backend: &BackendConnection, json: bool) -> Result<()> {
         dashboard.acknowledged_count
     );
 
+    // Portfolio exposure summary
+    let pe = &dashboard.portfolio_exposure;
+    if pe.total_covered_pct != "0" && pe.total_covered_pct != "0.00" {
+        println!(
+            "Portfolio exposure: {}% covered | 🔴 {}% | 🟠 {}% | 🟡 {}% | 🟢 {}%\n",
+            pe.total_covered_pct, pe.critical_pct, pe.high_pct, pe.watch_pct, pe.low_pct
+        );
+    }
+
     // By-kind breakdown
     if !dashboard.by_kind.is_empty() {
         println!("BY KIND:");
@@ -1063,7 +1223,8 @@ pub fn run_triage(backend: &BackendConnection, json: bool) -> Result<()> {
         println!("🔴 CRITICAL — Newly Triggered ({}):\n", critical.len());
         for e in &critical {
             let current = e.current_value.as_deref().unwrap_or("N/A");
-            println!("  🔴 [#{}] {} — current: {}", e.id, e.rule_text, current);
+            let impact = format_impact_tag(e);
+            println!("  🔴 [#{}] {} — current: {}{}", e.id, e.rule_text, current, impact);
         }
         println!();
     }
@@ -1082,9 +1243,10 @@ pub fn run_triage(backend: &BackendConnection, json: bool) -> Result<()> {
         for e in &high {
             let current = e.current_value.as_deref().unwrap_or("N/A");
             let triggered = e.triggered_at.as_deref().unwrap_or("unknown");
+            let impact = format_impact_tag(e);
             println!(
-                "  🟠 [#{}] {} — current: {} (triggered: {})",
-                e.id, e.rule_text, current, triggered
+                "  🟠 [#{}] {} — current: {} (triggered: {}){}",
+                e.id, e.rule_text, current, triggered, impact
             );
         }
         println!();
@@ -1108,9 +1270,10 @@ pub fn run_triage(backend: &BackendConnection, json: bool) -> Result<()> {
                 .as_ref()
                 .map(|d| format!("({}% to target)", d))
                 .unwrap_or_default();
+            let impact = format_impact_tag(e);
             println!(
-                "  🟡 [#{}] {} — current: {} {}",
-                e.id, e.rule_text, current, dist
+                "  🟡 [#{}] {} — current: {} {}{}",
+                e.id, e.rule_text, current, dist, impact
             );
         }
         println!();
@@ -1131,9 +1294,10 @@ pub fn run_triage(backend: &BackendConnection, json: bool) -> Result<()> {
                 .as_ref()
                 .map(|d| format!("({}% to target)", d))
                 .unwrap_or_default();
+            let impact = format_impact_tag(e);
             println!(
-                "  🟢 [#{}] {} — current: {} {}",
-                e.id, e.rule_text, current, dist
+                "  🟢 [#{}] {} — current: {} {}{}",
+                e.id, e.rule_text, current, dist, impact
             );
         }
         println!();
@@ -2035,11 +2199,205 @@ mod tests {
             triggered_at: Some("2026-03-28".into()),
             condition: None,
             recurring: false,
+            portfolio_impact_pct: Some("20.50".into()),
+            in_portfolio: true,
         };
         let json_str = serde_json::to_string(&entry).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed["urgency"], "critical");
         assert_eq!(parsed["kind"], "price");
         assert_eq!(parsed["symbol"], "BTC");
+        assert_eq!(parsed["portfolio_impact_pct"], "20.50");
+        assert_eq!(parsed["in_portfolio"], true);
+    }
+
+    #[test]
+    fn test_triage_entry_no_portfolio_impact_omits_field() {
+        let entry = TriageEntry {
+            id: 2,
+            urgency: TriageUrgency::Watch,
+            kind: "price".into(),
+            symbol: "TSLA".into(),
+            rule_text: "TSLA above 300".into(),
+            status: "armed".into(),
+            current_value: Some("280".into()),
+            threshold: "300".into(),
+            direction: "above".into(),
+            distance_pct: Some("3.50".into()),
+            triggered_at: None,
+            condition: None,
+            recurring: false,
+            portfolio_impact_pct: None,
+            in_portfolio: false,
+        };
+        let json_str = serde_json::to_string(&entry).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert!(parsed.get("portfolio_impact_pct").is_none());
+        assert_eq!(parsed["in_portfolio"], false);
+    }
+
+    #[test]
+    fn test_portfolio_exposure_computation() {
+        let alloc_map: HashMap<String, Decimal> = vec![
+            ("BTC-USD".to_string(), Decimal::from_str("20.50").unwrap()),
+            ("GC=F".to_string(), Decimal::from_str("15.30").unwrap()),
+        ]
+        .into_iter()
+        .collect();
+
+        let entries = vec![
+            TriageEntry {
+                id: 1,
+                urgency: TriageUrgency::Critical,
+                kind: "price".into(),
+                symbol: "BTC-USD".into(),
+                rule_text: "BTC above 100000".into(),
+                status: "triggered".into(),
+                current_value: Some("105000".into()),
+                threshold: "100000".into(),
+                direction: "above".into(),
+                distance_pct: None,
+                triggered_at: None,
+                condition: None,
+                recurring: false,
+                portfolio_impact_pct: Some("20.50".into()),
+                in_portfolio: true,
+            },
+            TriageEntry {
+                id: 2,
+                urgency: TriageUrgency::Watch,
+                kind: "price".into(),
+                symbol: "GC=F".into(),
+                rule_text: "Gold above 3500".into(),
+                status: "armed".into(),
+                current_value: Some("3400".into()),
+                threshold: "3500".into(),
+                direction: "above".into(),
+                distance_pct: Some("2.94".into()),
+                triggered_at: None,
+                condition: None,
+                recurring: false,
+                portfolio_impact_pct: Some("15.30".into()),
+                in_portfolio: true,
+            },
+            TriageEntry {
+                id: 3,
+                urgency: TriageUrgency::Low,
+                kind: "price".into(),
+                symbol: "TSLA".into(),
+                rule_text: "TSLA above 400".into(),
+                status: "armed".into(),
+                current_value: Some("280".into()),
+                threshold: "400".into(),
+                direction: "above".into(),
+                distance_pct: Some("42.86".into()),
+                triggered_at: None,
+                condition: None,
+                recurring: false,
+                portfolio_impact_pct: None,
+                in_portfolio: false,
+            },
+        ];
+
+        let exposure = compute_portfolio_exposure(&entries, &alloc_map);
+        assert_eq!(exposure.critical_pct, "20.50");
+        assert_eq!(exposure.high_pct, "0");
+        assert_eq!(exposure.watch_pct, "15.30");
+        assert_eq!(exposure.low_pct, "0");
+        assert_eq!(exposure.total_covered_pct, "35.80");
+    }
+
+    #[test]
+    fn test_portfolio_exposure_deduplicates_symbols() {
+        let alloc_map: HashMap<String, Decimal> = vec![(
+            "BTC-USD".to_string(),
+            Decimal::from_str("20.00").unwrap(),
+        )]
+        .into_iter()
+        .collect();
+
+        // Two alerts for the same symbol in the same tier
+        let entries = vec![
+            TriageEntry {
+                id: 1,
+                urgency: TriageUrgency::Critical,
+                kind: "price".into(),
+                symbol: "BTC-USD".into(),
+                rule_text: "BTC above 100000".into(),
+                status: "triggered".into(),
+                current_value: Some("105000".into()),
+                threshold: "100000".into(),
+                direction: "above".into(),
+                distance_pct: None,
+                triggered_at: None,
+                condition: None,
+                recurring: false,
+                portfolio_impact_pct: Some("20.00".into()),
+                in_portfolio: true,
+            },
+            TriageEntry {
+                id: 2,
+                urgency: TriageUrgency::Critical,
+                kind: "technical".into(),
+                symbol: "BTC-USD".into(),
+                rule_text: "BTC RSI overbought".into(),
+                status: "triggered".into(),
+                current_value: Some("75".into()),
+                threshold: "70".into(),
+                direction: "above".into(),
+                distance_pct: None,
+                triggered_at: None,
+                condition: None,
+                recurring: false,
+                portfolio_impact_pct: Some("20.00".into()),
+                in_portfolio: true,
+            },
+        ];
+
+        let exposure = compute_portfolio_exposure(&entries, &alloc_map);
+        // Should be 20%, not 40% — deduplicated by symbol
+        assert_eq!(exposure.critical_pct, "20.00");
+        assert_eq!(exposure.total_covered_pct, "20.00");
+    }
+
+    #[test]
+    fn test_format_impact_tag() {
+        let entry_with_impact = TriageEntry {
+            id: 1,
+            urgency: TriageUrgency::Critical,
+            kind: "price".into(),
+            symbol: "BTC".into(),
+            rule_text: "test".into(),
+            status: "triggered".into(),
+            current_value: None,
+            threshold: "100000".into(),
+            direction: "above".into(),
+            distance_pct: None,
+            triggered_at: None,
+            condition: None,
+            recurring: false,
+            portfolio_impact_pct: Some("20.50".into()),
+            in_portfolio: true,
+        };
+        assert_eq!(format_impact_tag(&entry_with_impact), " [20.50% portfolio]");
+
+        let entry_no_impact = TriageEntry {
+            id: 2,
+            urgency: TriageUrgency::Low,
+            kind: "price".into(),
+            symbol: "TSLA".into(),
+            rule_text: "test".into(),
+            status: "armed".into(),
+            current_value: None,
+            threshold: "400".into(),
+            direction: "above".into(),
+            distance_pct: None,
+            triggered_at: None,
+            condition: None,
+            recurring: false,
+            portfolio_impact_pct: None,
+            in_portfolio: false,
+        };
+        assert_eq!(format_impact_tag(&entry_no_impact), "");
     }
 }
