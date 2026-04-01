@@ -1,5 +1,15 @@
 # Changelog
 
+### 2026-04-01 — feat: regime confidence-trend subcommand with moving average, direction, and stability metrics (#536)
+
+- What: New `analytics macro regime confidence-trend` subcommand showing how regime confidence has evolved over time. Computes moving average (configurable `--window`, default 5), trend direction (strengthening/weakening/stable based on recent vs earlier smoothed averages), stability metric (standard deviation), and per-point deltas. Date filtering via `--from`/`--to`/`--limit`.
+- Why: Low-Timeframe Analyst feedback (Apr 1): "Would benefit from regime confidence trend over time." A declining confidence trend often precedes regime transitions — this gives agents a quantitative signal for when the current regime is consolidating or about to flip. Completes all three items from the Apr 1 17:03 feedback (severity ranking #531, portfolio impact #533, confidence trend #536).
+- JSON output: Full `ConfidenceTrend` struct with `snapshot_count`, `window`, `current_regime`, `current_confidence`, `direction`, `avg_confidence`, `min_confidence`, `max_confidence`, `stability`, `regime_changes`, and `points` array (each with `recorded_at`, `regime`, `confidence`, `smoothed`, `delta`).
+- Terminal output: Summary line (current regime, confidence, direction icon) + stats (avg, range, stability, regime changes) + recent points table with deltas and MA values.
+- Usage: `pftui analytics macro regime confidence-trend --json`, `pftui analytics macro regime confidence-trend --window 10 --from 2026-03-01`, `pftui analytics macro regime confidence-trend --limit 50`
+- Files: `src/cli.rs` (ConfidenceTrend variant + 2 CLI parse tests), `src/commands/regime.rs` (run_confidence_trend + 5 helpers: moving_average, determine_direction, std_dev, ConfidenceTrend/ConfidenceTrendPoint structs + 14 unit tests), `src/main.rs` (dispatch wiring)
+- Tests: 2310 tests passing (+16 new: 5 moving_average, 4 direction detection, 2 std_dev, 5 integration). Clippy clean. CI 4/4 green.
+
 ### 2026-04-01 — feat: add portfolio impact scoring to alert triage dashboard (#533)
 
 - What: `analytics alerts triage` now includes portfolio allocation context for each alert. New `portfolio_impact_pct` field shows the allocation % of each alert's symbol. New `portfolio_exposure` summary shows total portfolio % covered by alerts in each urgency tier (critical/high/watch/low), deduplicated by symbol. Within each urgency tier, alerts are sorted by portfolio impact descending (highest allocation first). Terminal output shows `[X% portfolio]` tags and portfolio exposure summary line.
