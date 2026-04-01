@@ -37,7 +37,7 @@ _(none)_
 |--------|-----------|---------|------|-------|
 | Evening Analyst | 72% | 68% | Apr 1 | ↓ (78→72 use, 75→68 overall. `portfolio status` not found — now SHIPPED #514. Backtest still shows worst win rate. This remains a routine/strategy issue.) **Lowest overall scorer — priority.** |
 | Medium-Timeframe Analyst | 85% | 90% | Apr 1 | ↑ (85→85 use, 88→90 overall. Iran deadline tracking feedback addressed — calendar add/remove #511 shipped.) |
-| Low-Timeframe Analyst | 85% | 82% | Mar 30 | ↓ (90→85 use, 85→82 overall. FRED API failures. stress-test --list-scenarios shipped.) |
+| Low-Timeframe Analyst | 85% | 88% | Apr 1 | ↑ (85→85 use, 82→88 overall. Signals severity/direction filter shipped #523.) |
 | Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable. Historical regime transitions shipped PR #486.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable. Trend evidence enrichment shipped #502.) |
 | Morning Intelligence | 75% | 85% | Mar 28 | → (stable.) |
@@ -68,6 +68,7 @@ _(none)_
 15. ✅ Predictions add alias (#516) — `analytics predictions add` / `data predictions add` for agent discoverability
 16. ✅ Selective data refresh (#518) — `--only`/`--skip` flags for targeted refreshes
 17. ✅ Benchmark comparison (#520) — `portfolio performance --vs SPY` now works (was accepted but ignored)
+18. ✅ Signals severity/direction filters (#523) — `--severity` now works for technical signals (was broken), `--direction` filter added
 
 **Release status:** v0.23.0 tagged. 37+ commits since tag, no P0 bugs, 2267 tests passing, clippy clean.
 

@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-01 — Fix --severity filter and add --direction filter to analytics signals (#523)
+
+- What: The `--severity` flag on `analytics signals` was accepted by the CLI but only applied to cross-timeframe signals — technical signals were returned unfiltered. Now `--severity` properly filters technical signals at the DB level. Additionally, a new `--direction` flag enables filtering by `bullish` or `bearish` for faster scanning.
+- Why: Low-Timeframe Analyst feedback requested "ability to filter technical signals by severity/symbol for faster scanning." The severity bug meant agents using `--severity critical` still received all signals. The direction filter enables quick separation of bullish vs bearish signals during triage.
+- New DB functions: `list_signals_filtered` (SQLite) + `list_signals_filtered_postgres` + `list_signals_filtered_backend` with severity and direction parameters. Original `list_signals` unchanged for backward compatibility.
+- Usage: `pftui analytics signals --severity critical --json`, `pftui analytics signals --direction bullish --json`, `pftui analytics signals --symbol BTC-USD --severity critical --direction bearish --source technical --json`
+- Files: `src/db/technical_signals.rs` (filtered query functions), `src/commands/analytics.rs` (pass filters through), `src/cli.rs` (--direction flag + 2 CLI parse tests), `src/main.rs` (dispatch wiring)
+- Tests: 2272 tests passing (+5 new: 3 DB unit + 2 CLI parse). Clippy clean.
+
 ### 2026-04-01 — Implement --vs benchmark comparison for portfolio performance (#520)
 
 - What: The `--vs` flag on `portfolio performance` was accepted by the CLI but completely ignored (all internal functions received it as `_vs_benchmark`). Now it actually works: fetches benchmark symbol's price history from the local DB, computes returns for each standard period (1D, 1W, 1M, MTD, QTD, YTD, inception) using date-aligned lookups, and shows side-by-side comparison with alpha (portfolio return minus benchmark return).
