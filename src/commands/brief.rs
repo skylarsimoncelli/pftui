@@ -29,6 +29,8 @@ use crate::models::asset_names::resolve_name;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
 use crate::commands::scan::{compute_scan_highlights, compute_scan_highlights_sqlite, ScanHighlight};
+use crate::db::scenario_contract_mappings;
+use crate::db::scenarios::Scenario;
 
 // ==================== Agent JSON Structures ====================
 
@@ -69,6 +71,41 @@ struct AgentBrief {
     overnight_changes: Vec<OvernightChangeJson>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     scan_highlights: Vec<ScanHighlight>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    scenarios: Vec<ScenarioSummaryJson>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    calibration: Option<CalibrationSummaryJson>,
+}
+
+/// Compact scenario summary for the brief payload.
+#[derive(Debug, Clone, Serialize)]
+struct ScenarioSummaryJson {
+    name: String,
+    probability: f64,
+    phase: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    updated_at: String,
+}
+
+/// Compact prediction-market calibration summary for the brief payload.
+#[derive(Debug, Clone, Serialize)]
+struct CalibrationSummaryJson {
+    total_mappings: usize,
+    significant_divergences: usize,
+    mean_abs_divergence_pp: f64,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    entries: Vec<CalibrationEntryJson>,
+}
+
+/// One scenario ↔ contract calibration entry.
+#[derive(Debug, Clone, Serialize)]
+struct CalibrationEntryJson {
+    scenario_name: String,
+    scenario_pct: f64,
+    market_pct: f64,
+    divergence_pp: f64,
+    significant: bool,
 }
 
 #[derive(Serialize)]
@@ -447,6 +484,12 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     // Scan highlights: big movers, trackline breaches, divergent gainers
     let scan_highlights = compute_scan_highlights_sqlite(conn).unwrap_or_default();
 
+    // Scenarios: active macro scenarios with probabilities
+    let scenarios = build_scenarios_json_sqlite(conn);
+
+    // Calibration: scenario vs prediction market divergences
+    let calibration = build_calibration_json_sqlite(conn);
+
     let brief = AgentBrief {
         timestamp,
         portfolio: portfolio_summary,
@@ -467,6 +510,8 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
         technical_signals: technical_signals_json,
         overnight_changes,
         scan_highlights,
+        scenarios,
+        calibration,
     };
 
     let json = serde_json::to_string_pretty(&brief)?;
@@ -648,6 +693,12 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
     // Scan highlights: big movers, trackline breaches, divergent gainers
     let scan_highlights = compute_scan_highlights(backend).unwrap_or_default();
 
+    // Scenarios: active macro scenarios with probabilities
+    let scenarios = build_scenarios_json_backend(backend);
+
+    // Calibration: scenario vs prediction market divergences
+    let calibration = build_calibration_json_backend(backend);
+
     let brief = AgentBrief {
         timestamp,
         portfolio: portfolio_summary,
@@ -668,6 +719,8 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
         technical_signals: technical_signals_json,
         overnight_changes,
         scan_highlights,
+        scenarios,
+        calibration,
     };
     println!("{}", serde_json::to_string_pretty(&brief)?);
     Ok(())
@@ -2959,6 +3012,96 @@ fn format_category(cat: &AssetCategory) -> &'static str {
     }
 }
 
+// ── Scenario + Calibration helpers ──────────────────────────────────
+
+fn build_scenarios_json_sqlite(conn: &Connection) -> Vec<ScenarioSummaryJson> {
+    let scenarios = crate::db::scenarios::list_scenarios(conn, Some("active")).unwrap_or_default();
+    scenarios_to_summary(scenarios)
+}
+
+fn build_scenarios_json_backend(backend: &BackendConnection) -> Vec<ScenarioSummaryJson> {
+    let scenarios =
+        crate::db::scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
+    scenarios_to_summary(scenarios)
+}
+
+fn scenarios_to_summary(scenarios: Vec<Scenario>) -> Vec<ScenarioSummaryJson> {
+    let mut out: Vec<ScenarioSummaryJson> = scenarios
+        .into_iter()
+        .map(|s| ScenarioSummaryJson {
+            name: s.name,
+            probability: s.probability,
+            phase: s.phase,
+            description: s.description,
+            updated_at: s.updated_at,
+        })
+        .collect();
+    // Sort by probability descending for quick scanning
+    out.sort_by(|a, b| {
+        b.probability
+            .partial_cmp(&a.probability)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out
+}
+
+fn build_calibration_json_backend(backend: &BackendConnection) -> Option<CalibrationSummaryJson> {
+    let mappings = scenario_contract_mappings::list_enriched_backend(backend).ok()?;
+    build_calibration_from_mappings(&mappings)
+}
+
+fn build_calibration_json_sqlite(conn: &Connection) -> Option<CalibrationSummaryJson> {
+    let mappings = scenario_contract_mappings::list_enriched(conn).ok()?;
+    build_calibration_from_mappings(&mappings)
+}
+
+fn build_calibration_from_mappings(
+    mappings: &[scenario_contract_mappings::EnrichedMapping],
+) -> Option<CalibrationSummaryJson> {
+    if mappings.is_empty() {
+        return None;
+    }
+    let threshold = 15.0_f64;
+    let mut entries: Vec<CalibrationEntryJson> = mappings
+        .iter()
+        .map(|m| {
+            let scenario_pct = m.scenario_probability;
+            let market_pct = m.contract_probability * 100.0;
+            let divergence = scenario_pct - market_pct;
+            let abs_div = divergence.abs();
+            CalibrationEntryJson {
+                scenario_name: m.scenario_name.clone(),
+                scenario_pct,
+                market_pct: (market_pct * 100.0).round() / 100.0,
+                divergence_pp: (divergence * 100.0).round() / 100.0,
+                significant: abs_div > threshold,
+            }
+        })
+        .collect();
+    // Sort by absolute divergence descending
+    entries.sort_by(|a, b| {
+        b.divergence_pp
+            .abs()
+            .partial_cmp(&a.divergence_pp.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let significant_count = entries.iter().filter(|e| e.significant).count();
+    let abs_divs: Vec<f64> = entries.iter().map(|e| e.divergence_pp.abs()).collect();
+    let mean_abs = if abs_divs.is_empty() {
+        0.0
+    } else {
+        ((abs_divs.iter().sum::<f64>() / abs_divs.len() as f64) * 100.0).round() / 100.0
+    };
+
+    Some(CalibrationSummaryJson {
+        total_mappings: entries.len(),
+        significant_divergences: significant_count,
+        mean_abs_divergence_pp: mean_abs,
+        entries,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4206,6 +4349,8 @@ mod tests {
             technical_signals: vec![],
             overnight_changes: vec![],
             scan_highlights: vec![highlight],
+            scenarios: vec![],
+            calibration: None,
         };
         let json = serde_json::to_string(&brief).unwrap();
         assert!(json.contains("scan_highlights"), "scan_highlights should appear when non-empty");
@@ -4243,11 +4388,143 @@ mod tests {
             technical_signals: vec![],
             overnight_changes: vec![],
             scan_highlights: vec![],
+            scenarios: vec![],
+            calibration: None,
         };
         let json = serde_json::to_string(&brief).unwrap();
         assert!(
             !json.contains("scan_highlights"),
             "scan_highlights should be omitted from JSON when empty"
         );
+        assert!(
+            !json.contains("scenarios"),
+            "scenarios should be omitted from JSON when empty"
+        );
+        assert!(
+            !json.contains("calibration"),
+            "calibration should be omitted from JSON when None"
+        );
+    }
+
+    #[test]
+    fn scenarios_to_summary_sorts_by_probability() {
+        let scenarios = vec![
+            Scenario {
+                id: 1,
+                name: "Low Prob".to_string(),
+                probability: 15.0,
+                description: Some("Low".to_string()),
+                asset_impact: None,
+                triggers: None,
+                historical_precedent: None,
+                status: "active".to_string(),
+                created_at: "2026-04-01".to_string(),
+                updated_at: "2026-04-01".to_string(),
+                phase: "hypothesis".to_string(),
+                resolved_at: None,
+                resolution_notes: None,
+            },
+            Scenario {
+                id: 2,
+                name: "High Prob".to_string(),
+                probability: 90.0,
+                description: Some("High".to_string()),
+                asset_impact: None,
+                triggers: None,
+                historical_precedent: None,
+                status: "active".to_string(),
+                created_at: "2026-04-01".to_string(),
+                updated_at: "2026-04-01".to_string(),
+                phase: "active".to_string(),
+                resolved_at: None,
+                resolution_notes: None,
+            },
+        ];
+        let result = scenarios_to_summary(scenarios);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "High Prob");
+        assert_eq!(result[0].probability, 90.0);
+        assert_eq!(result[1].name, "Low Prob");
+        assert_eq!(result[1].probability, 15.0);
+    }
+
+    #[test]
+    fn scenarios_to_summary_empty() {
+        let result = scenarios_to_summary(vec![]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn scenario_summary_json_serialization() {
+        let s = ScenarioSummaryJson {
+            name: "Test".to_string(),
+            probability: 42.0,
+            phase: "hypothesis".to_string(),
+            description: Some("A test scenario".to_string()),
+            updated_at: "2026-04-02".to_string(),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"probability\":42.0"));
+        assert!(json.contains("\"phase\":\"hypothesis\""));
+    }
+
+    #[test]
+    fn calibration_from_mappings_empty() {
+        let result = build_calibration_from_mappings(&[]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn calibration_from_mappings_with_data() {
+        let mappings = vec![
+            scenario_contract_mappings::EnrichedMapping {
+                mapping_id: 1,
+                scenario_id: 1,
+                scenario_name: "Recession".to_string(),
+                scenario_probability: 80.0,
+                contract_id: "c1".to_string(),
+                contract_question: "Will there be a recession?".to_string(),
+                contract_category: "economics".to_string(),
+                contract_probability: 0.40, // 40%
+                divergence_pp: 40.0,
+            },
+            scenario_contract_mappings::EnrichedMapping {
+                mapping_id: 2,
+                scenario_id: 2,
+                scenario_name: "Rate Cut".to_string(),
+                scenario_probability: 50.0,
+                contract_id: "c2".to_string(),
+                contract_question: "Will Fed cut?".to_string(),
+                contract_category: "economics".to_string(),
+                contract_probability: 0.48, // 48%
+                divergence_pp: 2.0,
+            },
+        ];
+        let result = build_calibration_from_mappings(&mappings).unwrap();
+        assert_eq!(result.total_mappings, 2);
+        assert_eq!(result.significant_divergences, 1); // 80-40=40pp is > 15
+        // Sorted by abs divergence desc: Recession (40pp) before Rate Cut (2pp)
+        assert_eq!(result.entries[0].scenario_name, "Recession");
+        assert!(result.entries[0].significant);
+        assert_eq!(result.entries[1].scenario_name, "Rate Cut");
+        assert!(!result.entries[1].significant);
+    }
+
+    #[test]
+    fn calibration_entry_json_divergence_sign() {
+        let mappings = vec![scenario_contract_mappings::EnrichedMapping {
+            mapping_id: 1,
+            scenario_id: 1,
+            scenario_name: "Underestimate".to_string(),
+            scenario_probability: 20.0,
+            contract_id: "c1".to_string(),
+            contract_question: "Test?".to_string(),
+            contract_category: "economics".to_string(),
+            contract_probability: 0.60, // 60% → divergence = 20 - 60 = -40pp
+            divergence_pp: -40.0,
+        }];
+        let result = build_calibration_from_mappings(&mappings).unwrap();
+        assert!(result.entries[0].divergence_pp < 0.0);
+        assert!(result.entries[0].significant);
     }
 }
