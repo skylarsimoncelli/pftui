@@ -7,7 +7,7 @@ use crate::analytics::impact;
 use crate::analytics::situation::{self, TimeframeScore};
 use crate::db;
 use crate::db::backend::BackendConnection;
-use crate::db::{convictions, power_flows, regime_snapshots, scenarios, trends, watchlist};
+use crate::db::{analyst_views, convictions, power_flows, regime_snapshots, scenarios, trends, watchlist};
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 
@@ -16,10 +16,39 @@ pub struct SynthesisReport {
     pub generated_at: String,
     pub strongest_alignment: Vec<AlignmentState>,
     pub highest_confidence_divergence: Vec<DivergenceState>,
+    pub conviction_matrix: Vec<ConvictionMatrixEntry>,
     pub constraint_flows: Vec<ConstraintState>,
     pub power_structure: Option<PowerStructureContext>,
     pub unresolved_tensions: Vec<SynthesisNote>,
     pub watch_tomorrow: Vec<WatchTomorrowCandidate>,
+}
+
+/// Per-asset conviction scores from each timeframe analyst (-5 to +5).
+/// Eliminates the need to cross-reference `analytics views matrix` separately.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConvictionMatrixEntry {
+    pub symbol: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub low: Option<ConvictionDetail>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub medium: Option<ConvictionDetail>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub high: Option<ConvictionDetail>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub macro_view: Option<ConvictionDetail>,
+    pub net_conviction: i64,
+    pub alignment: String,
+}
+
+/// A single analyst's conviction on an asset.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConvictionDetail {
+    pub direction: String,
+    pub conviction: i64,
+    pub reasoning: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -102,6 +131,7 @@ pub fn build_report_backend(backend: &BackendConnection) -> Result<SynthesisRepo
     let rows = build_alignment_rows_backend(backend)?;
     let strongest_alignment = strongest_alignment(&rows);
     let divergences = highest_confidence_divergence(&rows);
+    let conviction_matrix = build_conviction_matrix(backend);
     let constraint_flows = constraint_flows(&inputs.timeframes);
     let power_structure = build_power_structure(backend, &constraint_flows);
     let unresolved_tensions =
@@ -112,6 +142,7 @@ pub fn build_report_backend(backend: &BackendConnection) -> Result<SynthesisRepo
         generated_at: chrono::Utc::now().to_rfc3339(),
         strongest_alignment,
         highest_confidence_divergence: divergences,
+        conviction_matrix,
         constraint_flows,
         power_structure,
         unresolved_tensions,
@@ -675,6 +706,80 @@ fn watch_tomorrow_candidates(
     Ok(candidates)
 }
 
+fn build_conviction_matrix(backend: &BackendConnection) -> Vec<ConvictionMatrixEntry> {
+    let views = analyst_views::list_views_backend(backend, None, None, None).unwrap_or_default();
+
+    // Group views by asset
+    let mut by_asset: HashMap<String, Vec<analyst_views::AnalystView>> = HashMap::new();
+    for view in views {
+        by_asset
+            .entry(view.asset.to_uppercase())
+            .or_default()
+            .push(view);
+    }
+
+    let mut entries: Vec<ConvictionMatrixEntry> = by_asset
+        .into_iter()
+        .map(|(symbol, views)| {
+            let mut low = None;
+            let mut medium = None;
+            let mut high = None;
+            let mut macro_view = None;
+
+            for view in &views {
+                let detail = ConvictionDetail {
+                    direction: view.direction.clone(),
+                    conviction: view.conviction,
+                    reasoning: view.reasoning_summary.clone(),
+                    updated_at: Some(view.updated_at.clone()),
+                };
+                match view.analyst.as_str() {
+                    "low" => low = Some(detail),
+                    "medium" => medium = Some(detail),
+                    "high" => high = Some(detail),
+                    "macro" => macro_view = Some(detail),
+                    _ => {}
+                }
+            }
+
+            let net_conviction: i64 = views.iter().map(|v| v.conviction).sum();
+
+            let bull_count = views.iter().filter(|v| v.conviction > 0).count();
+            let bear_count = views.iter().filter(|v| v.conviction < 0).count();
+            let alignment = if bull_count > 0 && bear_count == 0 {
+                "aligned-bull".to_string()
+            } else if bear_count > 0 && bull_count == 0 {
+                "aligned-bear".to_string()
+            } else if bull_count > 0 && bear_count > 0 {
+                "divergent".to_string()
+            } else {
+                "neutral".to_string()
+            };
+
+            ConvictionMatrixEntry {
+                name: resolve_name(&symbol),
+                symbol,
+                low,
+                medium,
+                high,
+                macro_view,
+                net_conviction,
+                alignment,
+            }
+        })
+        .collect();
+
+    // Sort by absolute net conviction descending (strongest signals first)
+    entries.sort_by(|a, b| {
+        b.net_conviction
+            .abs()
+            .cmp(&a.net_conviction.abs())
+            .then_with(|| a.symbol.cmp(&b.symbol))
+    });
+
+    entries
+}
+
 fn discover_symbols(backend: &BackendConnection) -> Vec<String> {
     let mut symbols: BTreeSet<String> = BTreeSet::new();
     if let Ok(rows) = db::transactions::get_unique_symbols_backend(backend) {
@@ -1161,5 +1266,154 @@ mod tests {
             }],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn conviction_matrix_empty_without_analyst_views() {
+        let conn = crate::db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        seed_synthesis_fixture(&backend);
+
+        let report = build_report_backend(&backend).unwrap();
+        assert!(
+            report.conviction_matrix.is_empty(),
+            "conviction_matrix should be empty when no analyst views exist"
+        );
+    }
+
+    #[test]
+    fn conviction_matrix_populated_with_analyst_views() {
+        let conn = crate::db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        seed_synthesis_fixture(&backend);
+
+        // Add analyst views
+        analyst_views::upsert_view_backend(
+            &backend, "low", "BTC", "bear", -2,
+            "Short-term bearish on momentum",
+            Some("RSI overbought"), Some("Could spike on ETF news"),
+        ).unwrap();
+        analyst_views::upsert_view_backend(
+            &backend, "medium", "BTC", "bull", 3,
+            "Medium-term bullish on halving cycle",
+            Some("COT positioning favorable"), Some("Regulation risk"),
+        ).unwrap();
+        analyst_views::upsert_view_backend(
+            &backend, "high", "BTC", "bull", 4,
+            "Long-term structural demand",
+            Some("Institutional adoption"), Some("Quantum computing risk"),
+        ).unwrap();
+
+        let report = build_report_backend(&backend).unwrap();
+        assert!(
+            !report.conviction_matrix.is_empty(),
+            "conviction_matrix should have entries"
+        );
+        let btc = report
+            .conviction_matrix
+            .iter()
+            .find(|e| e.symbol == "BTC")
+            .expect("BTC should be in conviction_matrix");
+        assert_eq!(btc.low.as_ref().unwrap().conviction, -2);
+        assert_eq!(btc.medium.as_ref().unwrap().conviction, 3);
+        assert_eq!(btc.high.as_ref().unwrap().conviction, 4);
+        assert!(btc.macro_view.is_none());
+        assert_eq!(btc.net_conviction, 5); // -2 + 3 + 4 = 5
+        assert_eq!(btc.alignment, "divergent"); // has both bull and bear
+    }
+
+    #[test]
+    fn conviction_matrix_aligned_bear() {
+        let conn = crate::db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        seed_synthesis_fixture(&backend);
+
+        analyst_views::upsert_view_backend(
+            &backend, "low", "TSLA", "bear", -3,
+            "Bearish", Some("ev"), Some("bs"),
+        ).unwrap();
+        analyst_views::upsert_view_backend(
+            &backend, "medium", "TSLA", "bear", -2,
+            "Bearish medium", Some("ev"), Some("bs"),
+        ).unwrap();
+
+        let report = build_report_backend(&backend).unwrap();
+        let tsla = report
+            .conviction_matrix
+            .iter()
+            .find(|e| e.symbol == "TSLA")
+            .expect("TSLA should be in conviction_matrix");
+        assert_eq!(tsla.alignment, "aligned-bear");
+        assert_eq!(tsla.net_conviction, -5);
+    }
+
+    #[test]
+    fn conviction_matrix_sorted_by_absolute_net() {
+        let conn = crate::db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        seed_synthesis_fixture(&backend);
+
+        analyst_views::upsert_view_backend(
+            &backend, "low", "BTC", "bull", 1,
+            "Weak bull", Some("ev"), Some("bs"),
+        ).unwrap();
+        analyst_views::upsert_view_backend(
+            &backend, "low", "GC=F", "bull", 5,
+            "Strong bull", Some("ev"), Some("bs"),
+        ).unwrap();
+        analyst_views::upsert_view_backend(
+            &backend, "medium", "GC=F", "bull", 4,
+            "Medium bull", Some("ev"), Some("bs"),
+        ).unwrap();
+
+        let report = build_report_backend(&backend).unwrap();
+        assert!(report.conviction_matrix.len() >= 2);
+        // GC=F net=9 should come before BTC net=1
+        let gc_pos = report
+            .conviction_matrix
+            .iter()
+            .position(|e| e.symbol == "GC=F")
+            .unwrap();
+        let btc_pos = report
+            .conviction_matrix
+            .iter()
+            .position(|e| e.symbol == "BTC")
+            .unwrap();
+        assert!(
+            gc_pos < btc_pos,
+            "GC=F (net 9) should rank before BTC (net 1)"
+        );
+    }
+
+    #[test]
+    fn conviction_matrix_serializes_to_json() {
+        let entry = ConvictionMatrixEntry {
+            symbol: "BTC".to_string(),
+            name: "Bitcoin".to_string(),
+            low: Some(ConvictionDetail {
+                direction: "bear".to_string(),
+                conviction: -2,
+                reasoning: "Short-term bearish".to_string(),
+                updated_at: Some("2026-04-01".to_string()),
+            }),
+            medium: None,
+            high: Some(ConvictionDetail {
+                direction: "bull".to_string(),
+                conviction: 4,
+                reasoning: "Long-term bullish".to_string(),
+                updated_at: None,
+            }),
+            macro_view: None,
+            net_conviction: 2,
+            alignment: "divergent".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"conviction\":-2"));
+        assert!(json.contains("\"conviction\":4"));
+        assert!(json.contains("\"net_conviction\":2"));
+        assert!(json.contains("\"alignment\":\"divergent\""));
+        // medium and macro_view should be absent (skip_serializing_if)
+        assert!(!json.contains("\"medium\""));
+        assert!(!json.contains("\"macro_view\""));
     }
 }

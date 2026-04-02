@@ -1,5 +1,15 @@
 # Changelog
 
+### 2026-04-02 — feat: conviction matrix in synthesis report — per-asset analyst conviction scores inline
+
+- What: `analytics synthesis` now includes a `conviction_matrix` section showing actual analyst conviction scores (-5 to +5) from the F57 analyst views system, per asset per timeframe (LOW/MEDIUM/HIGH/MACRO). Includes net conviction, alignment classification (aligned-bull/aligned-bear/divergent/neutral), reasoning summaries, and timestamps.
+- Why: Medium-Timeframe Analyst feedback (Apr 2): "pftui synthesis command would be helpful to auto-generate multi-timeframe alignment summary. Current manual correlation of conviction scores across timeframes is time-consuming." Previously required separate `analytics views matrix` call and manual cross-referencing with synthesis output.
+- JSON output: New `conviction_matrix` array on `SynthesisReport` with `ConvictionMatrixEntry` objects. Each entry has optional `low`/`medium`/`high`/`macro_view` `ConvictionDetail` (direction, conviction, reasoning, updated_at), plus `net_conviction` and `alignment`. Sorted by absolute net conviction descending. `skip_serializing_if` omits absent timeframes.
+- Terminal output: Formatted table with asset, LOW/MED/HIGH/MACRO scores, net conviction, and alignment icon (🟢/🔴/🟡/⚪).
+- Usage: `pftui analytics synthesis --json` (same command, enriched output), `pftui analytics synthesis` (table view)
+- Files: `src/analytics/synthesis.rs` (ConvictionMatrixEntry, ConvictionDetail structs, build_conviction_matrix fn, analyst_views import, 5 new tests), `src/commands/analytics.rs` (terminal rendering for conviction matrix)
+- Tests: 2315 tests passing (+5 new: empty matrix, populated with views, aligned-bear, sorted by absolute net, JSON serialization). Clippy clean.
+
 ### 2026-04-01 — feat: regime confidence-trend subcommand with moving average, direction, and stability metrics (#536)
 
 - What: New `analytics macro regime confidence-trend` subcommand showing how regime confidence has evolved over time. Computes moving average (configurable `--window`, default 5), trend direction (strengthening/weakening/stable based on recent vs earlier smoothed averages), stability metric (standard deviation), and per-point deltas. Date filtering via `--from`/`--to`/`--limit`.
