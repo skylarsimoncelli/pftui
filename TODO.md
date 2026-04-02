@@ -59,7 +59,8 @@ _(none)_
 5. ✅ Stale cache warning (#552) + auto-refresh (#557) + per-symbol staleness (#559)
 6. ✅ Scenario probabilities + calibration in brief (#562) — addresses morning-brief-cron feedback (Apr 2)
 7. ✅ Correlation break enrichment in brief (#564) — severity/interpretation/signal on breaks (addresses Low-Timeframe Analyst Apr 1)
+8. ✅ Fix silently ignored --timeframe/--direction/--conviction/--limit filters on trends list (#566) — agents filtering by timeframe now get correct results
 
-**Release status:** v0.24.0 tagged Apr 2. 78 commits since v0.23.0, no P0 bugs, 2373 tests passing, clippy clean.
+**Release status:** v0.24.0 tagged Apr 2. 80 commits since v0.23.0, no P0 bugs, 2380 tests passing, clippy clean.
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.
