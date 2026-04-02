@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use crate::alerts::AlertStatus;
 use crate::commands::correlations;
+pub use crate::commands::scan::ScanHighlight;
 use crate::db;
 use crate::db::backend::BackendConnection;
 use crate::models::asset_names::resolve_name;
@@ -24,7 +25,11 @@ pub struct SituationSnapshot {
     pub risk_matrix: Vec<RiskState>,
     pub cross_timeframe: Vec<CrossTimeframeState>,
     pub correlation_breaks: Vec<CorrelationBreakState>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub scan_highlights: Vec<ScanHighlight>,
 }
+
+
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CorrelationBreakState {
@@ -197,7 +202,8 @@ pub struct CorrelationState {
 pub fn build_snapshot_backend(backend: &BackendConnection) -> Result<SituationSnapshot> {
     let inputs = collect_inputs_backend(backend)?;
     let correlation_breaks = compute_correlation_breaks(backend);
-    Ok(build_snapshot(&inputs, &correlation_breaks))
+    let scan_highlights = compute_scan_highlights_backend(backend);
+    Ok(build_snapshot(&inputs, &correlation_breaks, &scan_highlights))
 }
 
 fn compute_correlation_breaks(backend: &BackendConnection) -> Vec<CorrelationBreakState> {
@@ -229,6 +235,11 @@ fn compute_correlation_breaks(backend: &BackendConnection) -> Vec<CorrelationBre
             .collect(),
         Err(_) => Vec::new(),
     }
+}
+
+/// Compute scan highlights for the Situation Room.
+fn compute_scan_highlights_backend(backend: &BackendConnection) -> Vec<ScanHighlight> {
+    crate::commands::scan::compute_scan_highlights(backend).unwrap_or_default()
 }
 
 pub fn collect_inputs_backend(backend: &BackendConnection) -> Result<SituationInputs> {
@@ -407,6 +418,7 @@ pub fn collect_inputs_backend(backend: &BackendConnection) -> Result<SituationIn
 pub fn build_snapshot(
     inputs: &SituationInputs,
     correlation_breaks: &[CorrelationBreakState],
+    scan_highlights: &[ScanHighlight],
 ) -> SituationSnapshot {
     let average_score = average_timeframe_score(&inputs.timeframes);
     let mut watch_now = situation_watch_now(inputs, average_score);
@@ -504,6 +516,7 @@ pub fn build_snapshot(
         risk_matrix,
         cross_timeframe,
         correlation_breaks: correlation_breaks.to_vec(),
+        scan_highlights: scan_highlights.to_vec(),
     }
 }
 
@@ -965,6 +978,7 @@ mod tests {
                 correlations: Vec::new(),
             },
             &[],
+            &[],
         );
 
         assert_eq!(snapshot.headline, "Situation Stable");
@@ -974,6 +988,7 @@ mod tests {
         assert_eq!(snapshot.alert_summary.total, 0);
         assert_eq!(snapshot.alert_summary.triggered, 0);
         assert!(snapshot.correlation_breaks.is_empty());
+        assert!(snapshot.scan_highlights.is_empty());
     }
 
     #[test]
@@ -1044,7 +1059,7 @@ mod tests {
             scenarios: Vec::new(),
             convictions: Vec::new(),
             correlations: Vec::new(),
-        }, &[]);
+        }, &[], &[]);
 
         assert!(!snapshot.watch_now.is_empty());
         assert_eq!(snapshot.watch_now[0].severity, "critical");
@@ -1107,6 +1122,7 @@ mod tests {
                 correlations: Vec::new(),
             },
             &breaks,
+            &[],
         );
 
         // Correlation breaks should appear in watch_now
@@ -1155,6 +1171,7 @@ mod tests {
                 correlations: Vec::new(),
             },
             &[],
+            &[],
         );
 
         assert!(snapshot.correlation_breaks.is_empty());
@@ -1164,6 +1181,89 @@ mod tests {
                 .iter()
                 .any(|item| item.title.contains("correlation break")),
             "No correlation break insight when no breaks exist"
+        );
+    }
+
+    #[test]
+    fn scan_highlights_included_in_snapshot() {
+        use crate::commands::scan::ScanHighlight;
+        let highlights = vec![
+            ScanHighlight {
+                symbol: "BTC-USD".to_string(),
+                name: "Bitcoin".to_string(),
+                scan_type: "big_mover".to_string(),
+                detail: "+5.2% daily change".to_string(),
+                value_pct: Some(5.2),
+                severity: "elevated".to_string(),
+            },
+            ScanHighlight {
+                symbol: "AAPL".to_string(),
+                name: "Apple Inc".to_string(),
+                scan_type: "trackline_breach".to_string(),
+                detail: "Below SMA50 (gap -3.1%)".to_string(),
+                value_pct: Some(-3.1),
+                severity: "normal".to_string(),
+            },
+        ];
+        let snapshot = build_snapshot(
+            &SituationInputs {
+                position_count: 0,
+                positions: Vec::new(),
+                timeframes: Vec::new(),
+                regime: None,
+                sentiment: Vec::new(),
+                latest_timeframe_signal: None,
+                technical_signal_count: 0,
+                triggered_alert_count: 0,
+                armed_alert_count: 0,
+                acknowledged_alert_count: 0,
+                recent_triggered_alerts: Vec::new(),
+                market_pulse: Vec::new(),
+                stale_sources: 0,
+                scenarios: Vec::new(),
+                convictions: Vec::new(),
+                correlations: Vec::new(),
+            },
+            &[],
+            &highlights,
+        );
+
+        assert_eq!(snapshot.scan_highlights.len(), 2);
+        assert_eq!(snapshot.scan_highlights[0].symbol, "BTC-USD");
+        assert_eq!(snapshot.scan_highlights[0].scan_type, "big_mover");
+        assert_eq!(snapshot.scan_highlights[1].symbol, "AAPL");
+        assert_eq!(snapshot.scan_highlights[1].scan_type, "trackline_breach");
+    }
+
+    #[test]
+    fn scan_highlights_omitted_from_json_when_empty() {
+        let snapshot = build_snapshot(
+            &SituationInputs {
+                position_count: 0,
+                positions: Vec::new(),
+                timeframes: Vec::new(),
+                regime: None,
+                sentiment: Vec::new(),
+                latest_timeframe_signal: None,
+                technical_signal_count: 0,
+                triggered_alert_count: 0,
+                armed_alert_count: 0,
+                acknowledged_alert_count: 0,
+                recent_triggered_alerts: Vec::new(),
+                market_pulse: Vec::new(),
+                stale_sources: 0,
+                scenarios: Vec::new(),
+                convictions: Vec::new(),
+                correlations: Vec::new(),
+            },
+            &[],
+            &[],
+        );
+
+        let json = serde_json::to_string(&snapshot).unwrap();
+        assert!(
+            !json.contains("scan_highlights"),
+            "scan_highlights should be omitted from JSON when empty"
         );
     }
 }

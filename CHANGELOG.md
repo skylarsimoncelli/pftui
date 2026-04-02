@@ -1,5 +1,15 @@
 # Changelog
 
+### 2026-04-02 — feat: scan highlights embedded in Situation Room
+
+- What: Added `scan_highlights` section to the Situation Room (`analytics situation`) that automatically surfaces notable portfolio scan results — big daily movers (|change| ≥ 3%), trackline breaches (price below SMA50/SMA200), and divergent gainers (total gain ≥ 20%) — directly in the dashboard. Agents no longer need a separate `analytics scan` call to see key technical flags.
+- Why: Agent feedback (Apr 1): "Would benefit from direct scan results in situation view." Previously, assembling a complete situation picture required `analytics situation` + `analytics scan --trackline-breaches` + `analytics scan --filter "change_1d > 3"` — three separate calls. Now it's one call.
+- JSON output: `scan_highlights` array on `SituationSnapshot` with `symbol`, `name`, `scan_type` (big_mover/trackline_breach/divergent_gainer), `detail`, `value_pct`, `severity`. Array omitted from JSON when empty (`skip_serializing_if`).
+- Terminal output: New "SCAN HIGHLIGHTS" section between Correlation Breaks and Alerts, with severity emoji (🔴/🟡/🟢) and scan type tags (MOVER/BREACH/GAINER).
+- Implementation: New `ScanHighlight` struct and `compute_scan_highlights()` pub function in `scan.rs` reusing `load_rows_backend()`. Severity thresholds: big_mover critical ≥ 7%, elevated ≥ 5%, normal ≥ 3%; trackline_breach elevated when below SMA200, normal when below SMA50 only. Results severity-sorted and capped at 10.
+- Files: `src/commands/scan.rs` (+295: `ScanHighlight` struct, `compute_scan_highlights()`, `severity_rank()`, 7 new tests), `src/analytics/situation.rs` (+104: `scan_highlights` field on `SituationSnapshot`, `compute_scan_highlights_backend()` wrapper, updated `build_snapshot` signature, 2 new tests), `src/commands/analytics.rs` (+20: terminal rendering for scan highlights section), `src/mobile/server.rs` (+1: pass empty scan_highlights to mobile situation payload)
+- Tests: 2332 passing (+7 new: scan_highlight_big_mover_flagged, scan_highlight_trackline_breach_flagged, scan_highlight_severity_sorting, scan_highlight_capped_at_10, scan_highlight_json_serialization, scan_highlights_included_in_snapshot, scan_highlights_omitted_from_json_when_empty). Clippy clean.
+
 ### 2026-04-02 — feat: unified market snapshot endpoint — prices + sentiment + regime in one call
 
 - What: New `analytics market-snapshot` command consolidating portfolio/market prices, news sentiment scoring, and regime context into a single JSON payload. Replaces three separate agent calls (`data prices --market`, `analytics news-sentiment`, `analytics regime-flows`) with one command.

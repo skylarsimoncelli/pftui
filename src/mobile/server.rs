@@ -941,7 +941,7 @@ fn situation_payload(
         scenarios: Vec::new(),
         convictions: Vec::new(),
         correlations: Vec::new(),
-    }, &[]);
+    }, &[], &[]);
 
     MobileSituationResponse {
         headline: snapshot.headline.clone(),
