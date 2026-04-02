@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-02 — feat: enrich correlation breaks in brief with severity/interpretation/signal
+
+- What: `portfolio brief --json` correlation breaks now include `severity` (severe/moderate/minor), `interpretation` (human-readable explanation of what the break means), and `signal` (positioning suggestion) on each `active_breaks` entry. Terminal output shows severity emoji badges (🔴/🟡/🟢) and interpretation text.
+- Why: Low-Timeframe Analyst feedback (Apr 1): "automatic correlation break alerts in morning brief." Previously agents got raw break deltas but needed a separate `analytics correlations breaks` call to understand severity and implications. Now the brief is self-contained — agents get actionable break context in one call.
+- Implementation: Reuses `correlations::interpret_break()` via thin `to_correlations_break()` adapter that maps brief-internal `CorrelationBreak` to `correlations::CorrelationBreak`. No logic duplication. Both SQLite and BackendConnection terminal print paths enriched.
+- Files: `src/commands/brief.rs` (+144: import, `to_correlations_break()` adapter, enriched `correlation_summary_to_json()`, enriched `print_correlation_summary()`/`print_correlation_summary_backend()`, 5 new tests)
+- Tests: 2373 passing (+5 new: correlation_break_json_includes_severity, correlation_break_json_moderate_severity, correlation_break_json_minor_severity, correlation_break_json_preserves_existing_fields, to_correlations_break_maps_fields_correctly). Clippy clean.
+- **Additive JSON change:** New fields added to existing `active_breaks` entries. Existing parsers unaffected.
+
 ### 2026-04-02 — feat: scenario probabilities + prediction market calibration in portfolio brief
 
 - What: `portfolio brief --json` now includes `scenarios` and `calibration` fields. Active macro scenarios (sorted by probability descending) and prediction market calibration data (scenario vs Polymarket divergences) are embedded directly in the brief payload.
