@@ -957,6 +957,19 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
 
+        // Migrate PPI series from PPIACO (All Commodities) to PPIFIS (Final Demand).
+        // PPIFIS matches the headline PPI figure reported by BLS.
+        // PPIACO and PPIFIS have different index levels, so we can't copy values —
+        // just delete PPIACO data and let the next FRED refresh populate PPIFIS.
+        sqlx::query("DELETE FROM economic_cache WHERE series_id = 'PPIACO'")
+            .execute(pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM macro_events WHERE series_id = 'PPIACO'")
+            .execute(pool)
+            .await
+            .ok();
+
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())

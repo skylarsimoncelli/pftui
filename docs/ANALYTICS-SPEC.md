@@ -135,7 +135,7 @@ Key change: **one new tab [6] Analytics** absorbs portfolio-level analysis. Ever
 **What:** Expand Economy tab [4] into a full macro intelligence dashboard. Add DXY, VIX, 10Y yield, fed funds rate, CPI, PPI, gold/silver ratio, oil. Cache via FRED API (free, no key needed for basic series) and Yahoo Finance.
 
 **Financial engineering:**
-- **FRED series:** DGS10 (10Y yield), FEDFUNDS (fed funds rate), CPIAUCSL (CPI), PPIACO (PPI), UNRATE (unemployment), T10Y2Y (yield curve spread), VIXCLS (VIX — also available from Yahoo)
+- **FRED series:** DGS10 (10Y yield), FEDFUNDS (fed funds rate), CPIAUCSL (CPI), PPIFIS (PPI Final Demand), UNRATE (unemployment), T10Y2Y (yield curve spread), VIXCLS (VIX — also available from Yahoo)
 - **Yahoo series:** DX-Y.NYB (DXY), ^VIX, CL=F (oil WTI), HG=F (copper)
 - **Derived:** Gold/silver ratio = GC=F / SI=F. Real rate = 10Y yield - CPI YoY. Yield curve = 10Y - 2Y.
 - **Update frequency:** FRED data is daily/monthly depending on series. Cache aggressively — most macro data doesn't change intraday. `pftui refresh` fetches these alongside asset prices.

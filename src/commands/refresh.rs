@@ -306,6 +306,12 @@ fn collect_symbols(
         seen.entry(item.yahoo_symbol).or_insert(cat);
     }
 
+    // Market overview symbols (S&P 500, Dow, Nasdaq, Russell 2000, etc.)
+    // These are used by the markets view, morning briefs, and agents.
+    for item in crate::tui::views::markets::market_symbols() {
+        seen.entry(item.yahoo_symbol).or_insert(item.category);
+    }
+
     // Sector ETFs (XLE, XLK, etc.) — needed for `pftui sector` command
     for (symbol, _name) in crate::commands::sector::SECTOR_ETFS {
         seen.entry(symbol.to_string())

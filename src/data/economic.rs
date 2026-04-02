@@ -88,7 +88,7 @@ pub fn fred_to_indicator(series_id: &str) -> Option<&'static str> {
         // ISM PMI is proprietary, not available on FRED
         "ICSA" => Some("initial_jobless_claims"),
         "CPIAUCSL" => Some("cpi"),
-        "PPIACO" => Some("ppi"),
+        "PPIFIS" => Some("ppi"),
         "DGS10" => Some("treasury_10y"),
         "T10Y2Y" => Some("yield_spread_10y2y"),
         "GDP" => Some("gdp"),
@@ -675,7 +675,7 @@ mod tests {
         assert_eq!(fred_to_indicator("NAPM"), None);
         assert_eq!(fred_to_indicator("ICSA"), Some("initial_jobless_claims"));
         assert_eq!(fred_to_indicator("CPIAUCSL"), Some("cpi"));
-        assert_eq!(fred_to_indicator("PPIACO"), Some("ppi"));
+        assert_eq!(fred_to_indicator("PPIFIS"), Some("ppi"));
         assert_eq!(fred_to_indicator("DGS10"), Some("treasury_10y"));
         assert_eq!(fred_to_indicator("T10Y2Y"), Some("yield_spread_10y2y"));
         assert_eq!(fred_to_indicator("GDP"), Some("gdp"));

@@ -255,7 +255,7 @@ fn print_json(
     let fred_indicators: &[(&str, &str)] = &[
         ("fed_funds", "FEDFUNDS"),
         ("cpi", "CPIAUCSL"),
-        ("ppi", "PPIACO"),
+        ("ppi", "PPIFIS"),
         ("unemployment", "UNRATE"),
         ("yield_spread_10y2y", "T10Y2Y"),
     ];
@@ -480,7 +480,7 @@ fn print_terminal(
         let fred_display: &[(&str, &str, &str)] = &[
             ("Fed Funds Rate", "FEDFUNDS", "%"),
             ("CPI (Index)", "CPIAUCSL", ""),
-            ("PPI (Index)", "PPIACO", ""),
+            ("PPI (Index)", "PPIFIS", ""),
             ("Unemployment", "UNRATE", "%"),
         ];
         for (name, series_id, unit) in fred_display {
@@ -791,7 +791,7 @@ mod tests {
             ("DGS10", "2026-03-03", dec!(4.07)),
             ("FEDFUNDS", "2026-02-01", dec!(4.33)),
             ("CPIAUCSL", "2026-01-01", dec!(315.5)),
-            ("PPIACO", "2026-01-01", dec!(152.17)),
+            ("PPIFIS", "2026-01-01", dec!(152.17)),
             ("UNRATE", "2026-01-01", dec!(4.0)),
             ("T10Y2Y", "2026-03-03", dec!(0.20)),
         ];

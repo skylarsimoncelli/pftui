@@ -272,7 +272,7 @@ fn detect_fred_discrepancies(
             // derived values — these are not directly comparable.
             if fred_indicator == "PAYEMS"
                 || fred_indicator == "CPIAUCSL"
-                || fred_indicator == "PPIACO"
+                || fred_indicator == "PPIFIS"
             {
                 continue;
             }
@@ -319,12 +319,12 @@ fn fred_value_for_indicator(
 ) -> Option<(rust_decimal::Decimal, String)> {
     let fred_series = indicator_to_fred_series(indicator)?;
 
-    // PAYEMS (total employment), CPIAUCSL (CPI index), PPIACO (PPI index),
+    // PAYEMS (total employment), CPIAUCSL (CPI index), PPIFIS (PPI index),
     // RSAFS (retail sales level), and INDPRO (industrial production index)
     // are raw levels, not the derived values agents expect.
     // Skip these — they need historical computation via fred_derived_value_for_indicator.
     match fred_series {
-        "PAYEMS" | "CPIAUCSL" | "PPIACO" | "RSAFS" | "INDPRO" => return None,
+        "PAYEMS" | "CPIAUCSL" | "PPIFIS" | "RSAFS" | "INDPRO" => return None,
         _ => {}
     }
 
@@ -335,7 +335,7 @@ fn fred_value_for_indicator(
 /// Compute a FRED-derived economy value that requires historical data.
 /// For PAYEMS: month-over-month change (NFP jobs added).
 /// For CPIAUCSL: year-over-year percentage change (CPI inflation rate).
-/// For PPIACO: year-over-year percentage change (PPI inflation rate).
+/// For PPIFIS: year-over-year percentage change (PPI inflation rate).
 /// For RSAFS: month-over-month percentage change (retail sales growth).
 /// For INDPRO: year-over-year percentage change (industrial production growth).
 fn fred_derived_value_for_indicator(
@@ -372,9 +372,9 @@ fn fred_derived_value_for_indicator(
                 ((latest.value / year_ago.value) - Decimal::ONE) * Decimal::from(100);
             Some((yoy.round_dp(1), latest.date.clone()))
         }
-        "PPIACO" => {
+        "PPIFIS" => {
             // PPI: compute YoY% from FRED history (need 13+ months)
-            let history = economic_cache::get_history_backend(backend, "PPIACO", 14).ok()?;
+            let history = economic_cache::get_history_backend(backend, "PPIFIS", 14).ok()?;
             if history.len() < 13 {
                 return None;
             }
@@ -453,7 +453,7 @@ fn fred_previous_for_indicator(
             Some((prev_mom, current_mom - prev_mom))
         }
         // CPI/PPI/INDPRO: previous is the prior month's YoY%
-        "CPIAUCSL" | "PPIACO" | "INDPRO" => {
+        "CPIAUCSL" | "PPIFIS" | "INDPRO" => {
             let history = economic_cache::get_history_backend(backend, fred_series, 15).ok()?;
             if history.len() < 14 {
                 return None;
@@ -552,7 +552,7 @@ fn indicator_to_fred_series(indicator: &str) -> Option<&'static str> {
         "nfp" => Some("PAYEMS"),
         "initial_jobless_claims" => Some("ICSA"),
         "cpi" => Some("CPIAUCSL"),
-        "ppi" => Some("PPIACO"),
+        "ppi" => Some("PPIFIS"),
         "treasury_10y" => Some("DGS10"),
         "yield_spread_10y2y" => Some("T10Y2Y"),
         "gdp" => Some("GDP"),
@@ -837,7 +837,7 @@ mod tests {
             Some("ICSA")
         );
         assert_eq!(indicator_to_fred_series("cpi"), Some("CPIAUCSL"));
-        assert_eq!(indicator_to_fred_series("ppi"), Some("PPIACO"));
+        assert_eq!(indicator_to_fred_series("ppi"), Some("PPIFIS"));
         assert_eq!(indicator_to_fred_series("treasury_10y"), Some("DGS10"));
         assert_eq!(
             indicator_to_fred_series("yield_spread_10y2y"),
