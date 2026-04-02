@@ -36,7 +36,7 @@ _(none)_
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
 | Evening Analyst | 72% | 68% | Apr 1 | ↓ (78→72 use, 75→68 overall. `portfolio status` not found — now SHIPPED #514. Backtest still shows worst win rate. This remains a routine/strategy issue.) **Lowest overall scorer — priority.** |
-| Medium-Timeframe Analyst | 85% | 90% | Apr 1 | ↑ (85→85 use, 88→90 overall. Iran deadline tracking feedback addressed — calendar add/remove #511 shipped.) |
+| Medium-Timeframe Analyst | 75% | 80% | Apr 2 | ↓ (85→75 use, 90→80 overall. Synthesis conviction matrix shipped #540 — addresses manual cross-timeframe conviction correlation.) |
 | Low-Timeframe Analyst | 85% | 88% | Apr 1 | ↑ (85→85 use, 82→88 overall. Signals severity/direction filter shipped #523.) |
 | Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable. Historical regime transitions shipped PR #486.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable. Trend evidence enrichment shipped #502.) |
@@ -73,7 +73,9 @@ _(none)_
 20. ✅ Watchlist levels in brief (#528) — support/resistance levels for watchlist items in portfolio brief JSON
 21. ✅ Correlation break severity ranking (#531) — severity/interpretation/signal enrichment + `--severity` filter on `analytics correlations breaks`
 22. ✅ Alert portfolio impact scoring (#533) — portfolio allocation context in triage dashboard, per-tier exposure summary, impact-sorted within urgency tiers
+23. ✅ Regime confidence-trend (#536) — moving average, direction, stability for regime confidence evolution
+24. ✅ Synthesis conviction matrix (#540) — per-asset analyst conviction scores inline in synthesis report
 
-**Release status:** v0.23.0 tagged. 40+ commits since tag, no P0 bugs, 2294 tests passing, clippy clean.
+**Release status:** v0.23.0 tagged. 40+ commits since tag, no P0 bugs, 2315 tests passing, clippy clean.
 
 **GitHub stars:** 8 — Homebrew Core requires 50+.
