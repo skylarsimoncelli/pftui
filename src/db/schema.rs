@@ -1178,5 +1178,15 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_scm_contract ON scenario_contract_mappings(contract_id);",
     )?;
 
+    // Migrate PPI series from PPIACO (All Commodities) to PPIFIS (Final Demand).
+    // PPIFIS matches the headline PPI figure reported by BLS.
+    // PPIACO and PPIFIS have different index levels, so we can't copy values —
+    // just delete PPIACO data and let the next FRED refresh populate PPIFIS.
+    conn.execute_batch(
+        "DELETE FROM economic_cache WHERE series_id = 'PPIACO';
+         DELETE FROM macro_events WHERE series_id = 'PPIACO';",
+    )
+    .ok(); // Ignore errors (table may not exist on first run, or data already migrated)
+
     Ok(())
 }

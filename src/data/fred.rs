@@ -8,7 +8,7 @@
 //! - DGS10: 10-Year Treasury Constant Maturity Rate (daily)
 //! - FEDFUNDS: Effective Federal Funds Rate (monthly)
 //! - CPIAUCSL: Consumer Price Index for All Urban Consumers (monthly)
-//! - PPIACO: Producer Price Index - All Commodities (monthly)
+//! - PPIFIS: Producer Price Index - Final Demand (monthly)
 //! - UNRATE: Unemployment Rate (monthly)
 //! - T10Y2Y: 10-Year Treasury Minus 2-Year Treasury (daily, yield curve spread)
 //! - RSAFS: Advance Retail Sales (monthly)
@@ -46,7 +46,7 @@ pub const FRED_SERIES: &[FredSeries] = &[
         frequency: Frequency::Monthly,
     },
     FredSeries {
-        id: "PPIACO",
+        id: "PPIFIS",
         name: "Producer Price Index (PPI)",
         unit: "index",
         frequency: Frequency::Monthly,
