@@ -10,12 +10,11 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-_(none)_
+- [Feedback] Investigate `data prices`/`data quotes` returning empty output — Evening Analysis (Apr 2, 82/80) reports endpoints returned empty despite implementation existing. May be a config/DB issue or missing price cache. Check `prices_cache` table state and `data refresh --only prices` flow.
 
 ## P2 - Coverage And Agent Consumption
 
-_(none)_
-
+- [Feedback] Unified market snapshot endpoint — Evening Analysis (Apr 2, 82/80): "would benefit from a unified market snapshot endpoint combining prices+sentiment+flows in one call." Consider `analytics market-snapshot --json` consolidating `data prices --market`, `analytics news-sentiment`, and regime flows into one payload.
 
 ## P3 - Long Term
 
@@ -35,47 +34,26 @@ _(none)_
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Evening Analyst | 72% | 68% | Apr 1 | ↓ (78→72 use, 75→68 overall. `portfolio status` not found — now SHIPPED #514. Backtest still shows worst win rate. This remains a routine/strategy issue.) **Lowest overall scorer — priority.** |
-| Medium-Timeframe Analyst | 75% | 80% | Apr 2 | ↓ (85→75 use, 90→80 overall. Synthesis conviction matrix shipped #540 — addresses manual cross-timeframe conviction correlation.) |
-| Low-Timeframe Analyst | 85% | 88% | Apr 1 | ↑ (85→85 use, 82→88 overall. Signals severity/direction filter shipped #523.) |
-| Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable. Historical regime transitions shipped PR #486.) |
+| Evening Analyst | 72% | 68% | Apr 1 | ↓ (78→72 use, 75→68 overall. Backtest shows 26.7% win rate — this is a routine/strategy issue, not tooling. `portfolio status` shipped #514.) **Lowest overall scorer — priority.** |
+| Medium-Timeframe Analyst | 75% | 80% | Apr 2 | ↓ (85→75 use, 90→80 overall. Synthesis conviction matrix shipped #540.) |
+| Evening Analysis | 82% | 80% | Apr 2 | → (new tester entry. `data prices` empty — P1 investigation needed. Wants unified market snapshot.) |
+| Low-Timeframe Analyst | 85% | 82% | Apr 1 | → (stable. Correlation break severity #531, alert impact #533, regime confidence-trend #536 all shipped.) |
+| Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable. Historical regime transitions shipped #486.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable. Trend evidence enrichment shipped #502.) |
 | Morning Intelligence | 75% | 85% | Mar 28 | → (stable.) |
-| Morning Brief | 85% | 82% | Mar 30 | → (stable.) |
+| Morning Brief | 85% | 80% | Apr 1 | → (stable. Watchlist levels in brief shipped #528.) |
 | Public Daily Report | 82% | 80% | Mar 28 | → (stable.) |
-| Dev Agent | 92% | 94% | Apr 1 | → (stable high.) |
+| Dev Agent | 92% | 94% | Apr 2 | → (stable high.) |
 
 **Top 3 priorities based on feedback:**
-1. **Evening Analyst prediction quality** — lowest overall at 75%. Backtest shows 26.7% win rate. Not a tooling issue — the analytics pipeline is rated "excellent." The agent routine over-weights mean reversion. Consider adjusting evening-analysis routine to weight momentum signals more heavily.
-2. ~~**FRED API resilience**~~ — SHIPPED (#490). Retry + cache fallback + staleness warnings.
-3. ~~**PMI data discrepancy**~~ — SHIPPED (#492). Context-aware extraction + broadened regex patterns.
+1. **Evening Analyst prediction quality** — lowest overall at 68%. Backtest shows 26.7% win rate. Not a tooling issue — the analytics pipeline is rated "excellent." The agent routine over-weights mean reversion. Backtest diagnostics (#525) now surfaces this automatically.
+2. **`data prices`/`data quotes` empty output** — P1 investigation. Evening Analysis (Apr 2) reports empty output. May be cache/refresh timing issue.
+3. **Medium-Timeframe usability drop** — 85→75 usefulness. Conviction matrix shipped (#540) addresses the main request. Monitor next review.
 
-**Shipped since last review (Mar 30):**
-1. ✅ FRED GDPNow + Real GDP Growth Rate (#483) — fresher GDP data for Medium-Timeframe Analyst
-2. ✅ Regime history date-range filtering + summary (#486) — addresses Macro-Timeframe Analyst request
-3. ✅ F57 complete (all 6 sub-items) — timeframe analyst self-awareness
-4. ✅ F58 complete (all 4 sub-items) — prediction accuracy backtesting
-5. ✅ stress-test --list-scenarios (#463) — Low-Timeframe Analyst request
-6. ✅ ISM PMI targeted extraction (#481) — direct ISM data source
-7. ✅ FRED API failure resilience (#490) — retry with exponential backoff, cache fallback, staleness warnings
-8. ✅ PMI data discrepancy fix (#492) — context-aware extraction, broadened regex patterns, 17 new tests
-9. ✅ FIC/MIC conflict monitor (#494) — `analytics power-flow conflicts` with defense vs energy vs VIX cross-reference
-10. ✅ Trends list enrichment (#502) — evidence summary + asset impacts in `analytics trends list`, --verbose flag
-11. ✅ Analytics guidance (#505) — routine workflow priority advisor for agent routines
-12. ✅ Brief alert dedup (#508) — grouped repeated triggered alerts by symbol
-13. ✅ Data calendar add/remove + geopolitical catalysts (#511) — agents can insert custom events
-14. ✅ Portfolio status (#514) — consolidated snapshot: allocation + value + daily P&L + unrealized in one call
-15. ✅ Predictions add alias (#516) — `analytics predictions add` / `data predictions add` for agent discoverability
-16. ✅ Selective data refresh (#518) — `--only`/`--skip` flags for targeted refreshes
-17. ✅ Benchmark comparison (#520) — `portfolio performance --vs SPY` now works (was accepted but ignored)
-18. ✅ Signals severity/direction filters (#523) — `--severity` now works for technical signals (was broken), `--direction` filter added
-19. ✅ Backtest diagnostics (#525) — automated pattern detection for prediction quality issues
-20. ✅ Watchlist levels in brief (#528) — support/resistance levels for watchlist items in portfolio brief JSON
-21. ✅ Correlation break severity ranking (#531) — severity/interpretation/signal enrichment + `--severity` filter on `analytics correlations breaks`
-22. ✅ Alert portfolio impact scoring (#533) — portfolio allocation context in triage dashboard, per-tier exposure summary, impact-sorted within urgency tiers
-23. ✅ Regime confidence-trend (#536) — moving average, direction, stability for regime confidence evolution
-24. ✅ Synthesis conviction matrix (#540) — per-asset analyst conviction scores inline in synthesis report
+**Shipped since last review (Apr 1):**
+1. ✅ Synthesis conviction matrix (#540) — per-asset analyst conviction scores inline in synthesis
+2. ✅ Time-bomb test fix (#544) — dynamic dates in power_flows tests
 
-**Release status:** v0.23.0 tagged. 40+ commits since tag, no P0 bugs, 2315 tests passing, clippy clean.
+**Release status:** v0.24.0 tagged Apr 2. 71 commits since v0.23.0, no P0 bugs, 2315 tests passing, clippy clean.
 
-**GitHub stars:** 8 — Homebrew Core requires 50+.
+**GitHub stars:** 9 — Homebrew Core requires 50+.
