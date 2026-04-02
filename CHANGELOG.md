@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-04-02 — fix: use dynamic dates in power_flows tests to prevent time-bomb failures (#544)
+
+- What: Fixed 4 failing tests in `db::power_flows` that used hardcoded date `2026-03-25`, which fell outside the 7-day date filter window after April 1. Added `today()` helper using `chrono::Utc::now()` so test data always falls within the query window.
+- Why: `list_power_flows()` filters with `date >= date('now', '-N days')`. Hardcoded dates become stale as the clock advances — classic time-bomb test pattern. Tests started failing April 2.
+- Tests fixed: `test_add_and_list_power_flows`, `test_filter_by_complex`, `test_filter_by_direction`, `test_target_complex_filter_includes_entries`. All 2315 tests passing. Clippy clean.
+
 ### 2026-04-02 — feat: conviction matrix in synthesis report — per-asset analyst conviction scores inline
 
 - What: `analytics synthesis` now includes a `conviction_matrix` section showing actual analyst conviction scores (-5 to +5) from the F57 analyst views system, per asset per timeframe (LOW/MEDIUM/HIGH/MACRO). Includes net conviction, alignment classification (aligned-bull/aligned-bear/divergent/neutral), reasoning summaries, and timestamps.
