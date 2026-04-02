@@ -1,5 +1,15 @@
 # Changelog
 
+### 2026-04-02 — feat: scenario probabilities + prediction market calibration in portfolio brief
+
+- What: `portfolio brief --json` now includes `scenarios` and `calibration` fields. Active macro scenarios (sorted by probability descending) and prediction market calibration data (scenario vs Polymarket divergences) are embedded directly in the brief payload.
+- Why: Morning-brief-cron feedback (Apr 2): "Could improve scenario probability tracking and add prediction market calibration section." Previously agents needed separate `analytics scenario list` and `analytics calibration` calls to assemble this alongside the brief.
+- JSON output: `scenarios` array with `name`, `probability`, `phase`, `description`, `updated_at` per scenario. `calibration` object with `total_mappings`, `significant_divergences`, `mean_abs_divergence_pp`, and `entries` array (each with `scenario_name`, `scenario_pct`, `market_pct`, `divergence_pp`, `significant`). Both fields omitted from JSON when empty/null (`skip_serializing_if`).
+- Implementation: New helper functions for both SQLite and BackendConnection paths. `scenarios_to_summary()` converts + sorts. `build_calibration_from_mappings()` computes divergences with 15pp significance threshold. Reuses existing `db::scenarios::list_scenarios*` and `db::scenario_contract_mappings::list_enriched*`.
+- Files: `src/commands/brief.rs` (+277: 4 new structs, 6 helper fns, 6 new tests)
+- Tests: 2368 passing (+6 new: scenarios_to_summary_sorts_by_probability, scenarios_to_summary_empty, scenario_summary_json_serialization, calibration_from_mappings_empty, calibration_from_mappings_with_data, calibration_entry_json_divergence_sign). Clippy clean.
+- **Additive JSON change:** New fields use `skip_serializing_if` so existing parsers are unaffected.
+
 ### 2026-04-02 — feat: per-symbol staleness on data prices and analytics market-snapshot
 
 - What: `data prices --json` and `analytics market-snapshot --json` now include per-symbol staleness indicators. Each price row gains `stale` (boolean, omitted when false) and `age_hours` (float, omitted when fresh) fields. The `staleness_warning` object gains `stale_count`, `total_count`, and `stale_symbols` (list of individually stale symbol names). A new staleness warning is now also emitted when the global cache is fresh but individual symbols are stale/missing.
