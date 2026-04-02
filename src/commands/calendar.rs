@@ -8,31 +8,57 @@ use crate::db::backend::BackendConnection;
 use crate::db::calendar_cache;
 
 /// Dispatch calendar subcommands.
-pub fn dispatch(backend: &BackendConnection, command: CalendarCommand) -> Result<()> {
+///
+/// When no subcommand is given (`pftui data calendar --json`), defaults to `list`
+/// using the top-level flags. When `list` is explicit, subcommand flags take
+/// precedence over top-level flags.
+pub fn dispatch(
+    backend: &BackendConnection,
+    command: Option<CalendarCommand>,
+    top_days: i64,
+    top_impact: Option<String>,
+    top_event_type: Option<String>,
+    top_json: bool,
+) -> Result<()> {
     match command {
-        CalendarCommand::List {
+        None => run_list(
+            backend,
+            top_days,
+            top_impact.as_deref(),
+            top_event_type.as_deref(),
+            top_json,
+        ),
+        Some(CalendarCommand::List {
             days,
             impact,
             event_type,
             json,
-        } => run_list(backend, days, impact.as_deref(), event_type.as_deref(), json),
-        CalendarCommand::Add {
+        }) => run_list(
+            backend,
+            days,
+            impact.or(top_impact).as_deref(),
+            event_type.or(top_event_type).as_deref(),
+            json || top_json,
+        ),
+        Some(CalendarCommand::Add {
             date,
             name,
             impact,
             event_type,
             symbol,
             json,
-        } => run_add(
+        }) => run_add(
             backend,
             &date,
             &name,
             &impact,
             &event_type,
             symbol.as_deref(),
-            json,
+            json || top_json,
         ),
-        CalendarCommand::Remove { date, name, json } => run_remove(backend, &date, &name, json),
+        Some(CalendarCommand::Remove { date, name, json }) => {
+            run_remove(backend, &date, &name, json || top_json)
+        }
     }
 }
 

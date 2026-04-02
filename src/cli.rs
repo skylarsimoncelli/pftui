@@ -441,17 +441,34 @@ pub enum DataCommand {
     },
     /// Manage economic/geopolitical calendar events
     ///
-    /// List upcoming events or add custom catalysts (geopolitical deadlines, trade events, etc.)
-    /// that flow into the analytics catalysts ranking system.
+    /// Without a subcommand, lists upcoming events (same as `calendar list`).
+    /// Use `add`/`remove` subcommands to manage custom catalysts (geopolitical deadlines,
+    /// trade events, etc.) that flow into the analytics catalysts ranking system.
     ///
     /// Examples:
+    ///   pftui data calendar --json                  # list (default)
     ///   pftui data calendar list --days 14 --impact high --json
     ///   pftui data calendar add --date 2026-04-06 --name "Iran Hormuz Strait Deadline" --impact high --type geopolitical
-    ///   pftui data calendar add --date 2026-05-01 --name "BRICS Summit" --impact medium --type geopolitical
     ///   pftui data calendar remove --date 2026-04-06 --name "Iran Hormuz Strait Deadline"
     Calendar {
         #[command(subcommand)]
-        command: CalendarCommand,
+        command: Option<CalendarCommand>,
+
+        /// Number of days to look ahead (default: 7)
+        #[arg(long, default_value = "7")]
+        days: i64,
+
+        /// Filter by impact level: high, medium, low
+        #[arg(long)]
+        impact: Option<String>,
+
+        /// Filter by event type: economic, earnings, geopolitical
+        #[arg(long = "type")]
+        event_type: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
     },
     /// Interpret cached COT positioning using percentile and z-score context
     Cot {
@@ -8557,15 +8574,54 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Calendar { command } = command else {
+        let DataCommand::Calendar { command, .. } = command else {
             panic!("expected calendar");
         };
-        let CalendarCommand::List { days, impact, event_type, json } = command else {
+        let Some(CalendarCommand::List { days, impact, event_type, json }) = command else {
             panic!("expected list");
         };
         assert_eq!(days, 14);
         assert_eq!(impact.as_deref(), Some("high"));
         assert!(event_type.is_none());
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_calendar_default_list() -> Result<()> {
+        // `pftui data calendar --json` should parse with no subcommand (defaults to list)
+        let cli = Cli::parse_from(["pftui", "data", "calendar", "--json"]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Calendar { command, days, impact, event_type, json } = command else {
+            panic!("expected calendar");
+        };
+        assert!(command.is_none());
+        assert_eq!(days, 7); // default
+        assert!(impact.is_none());
+        assert!(event_type.is_none());
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_calendar_default_list_with_filters() -> Result<()> {
+        // `pftui data calendar --days 14 --impact high --type geopolitical --json`
+        let cli = Cli::parse_from([
+            "pftui", "data", "calendar",
+            "--days", "14", "--impact", "high", "--type", "geopolitical", "--json",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Calendar { command, days, impact, event_type, json } = command else {
+            panic!("expected calendar");
+        };
+        assert!(command.is_none());
+        assert_eq!(days, 14);
+        assert_eq!(impact.as_deref(), Some("high"));
+        assert_eq!(event_type.as_deref(), Some("geopolitical"));
         assert!(json);
         Ok(())
     }
@@ -8583,10 +8639,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Calendar { command } = command else {
+        let DataCommand::Calendar { command, .. } = command else {
             panic!("expected calendar");
         };
-        let CalendarCommand::Add { date, name, impact, event_type, symbol, json } = command else {
+        let Some(CalendarCommand::Add { date, name, impact, event_type, symbol, json }) = command else {
             panic!("expected add");
         };
         assert_eq!(date, "2026-04-06");
@@ -8608,10 +8664,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Calendar { command } = command else {
+        let DataCommand::Calendar { command, .. } = command else {
             panic!("expected calendar");
         };
-        let CalendarCommand::Remove { date, name, json } = command else {
+        let Some(CalendarCommand::Remove { date, name, json }) = command else {
             panic!("expected remove");
         };
         assert_eq!(date, "2026-04-06");
@@ -8633,10 +8689,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Calendar { command } = command else {
+        let DataCommand::Calendar { command, .. } = command else {
             panic!("expected calendar");
         };
-        let CalendarCommand::Add { date, name, event_type, symbol, .. } = command else {
+        let Some(CalendarCommand::Add { date, name, event_type, symbol, .. }) = command else {
             panic!("expected add");
         };
         assert_eq!(date, "2026-04-15");
@@ -8652,10 +8708,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Calendar { command } = command else {
+        let DataCommand::Calendar { command, .. } = command else {
             panic!("expected calendar");
         };
-        let CalendarCommand::List { event_type, json, .. } = command else {
+        let Some(CalendarCommand::List { event_type, json, .. }) = command else {
             panic!("expected list");
         };
         assert_eq!(event_type.as_deref(), Some("geopolitical"));
