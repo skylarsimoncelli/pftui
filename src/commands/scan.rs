@@ -855,9 +855,20 @@ pub struct ScanHighlight {
 /// Results are severity-sorted and capped at 10 entries.
 pub fn compute_scan_highlights(backend: &BackendConnection) -> Result<Vec<ScanHighlight>> {
     let rows = load_rows_backend(backend, None)?;
+    Ok(highlights_from_rows(&rows))
+}
+
+/// SQLite-only variant for callers that only have a `&Connection`.
+pub fn compute_scan_highlights_sqlite(conn: &Connection) -> Result<Vec<ScanHighlight>> {
+    let rows = load_rows(conn, None)?;
+    Ok(highlights_from_rows(&rows))
+}
+
+/// Core highlight computation from pre-loaded scan rows.
+fn highlights_from_rows(rows: &[ScanRow]) -> Vec<ScanHighlight> {
     let mut highlights: Vec<ScanHighlight> = Vec::new();
 
-    for row in &rows {
+    for row in rows {
         // 1. Big movers: |change_1d| >= 3%
         if let Some(change) = row.change_1d {
             let abs_change = change.abs();
@@ -947,7 +958,7 @@ pub fn compute_scan_highlights(backend: &BackendConnection) -> Result<Vec<ScanHi
     });
     highlights.truncate(10);
 
-    Ok(highlights)
+    highlights
 }
 
 fn severity_rank(severity: &str) -> u8 {
@@ -1319,5 +1330,85 @@ mod tests {
         };
         let json2 = serde_json::to_string(&highlight_no_val).unwrap();
         assert!(!json2.contains("value_pct"));
+    }
+
+    #[test]
+    fn compute_scan_highlights_sqlite_matches_backend() {
+        // Verify the SQLite-direct path produces the same results as the backend path.
+        let conn = open_in_memory();
+        crate::db::transactions::insert_transaction(
+            &conn,
+            &crate::models::transaction::NewTransaction {
+                symbol: "TSLA".to_string(),
+                category: crate::models::asset::AssetCategory::Equity,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: Decimal::from(10),
+                price_per: Decimal::from(200),
+                currency: "USD".to_string(),
+                date: "2026-01-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        price_cache::upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "TSLA".to_string(),
+                price: Decimal::from(214),
+                currency: "USD".to_string(),
+                fetched_at: "2026-04-02T00:00:00Z".to_string(),
+                source: "test".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: Some(Decimal::from(200)),
+            },
+        )
+        .unwrap();
+
+        // SQLite-direct path
+        let sqlite_highlights = compute_scan_highlights_sqlite(&conn).unwrap();
+        // Should have a big_mover (214 vs 200 = +7%)
+        assert!(
+            sqlite_highlights
+                .iter()
+                .any(|h| h.symbol == "TSLA" && h.scan_type == "big_mover"),
+            "TSLA should be flagged as big_mover via SQLite path"
+        );
+        let tsla = sqlite_highlights
+            .iter()
+            .find(|h| h.symbol == "TSLA" && h.scan_type == "big_mover")
+            .unwrap();
+        assert_eq!(tsla.severity, "critical"); // >= 7%
+    }
+
+    #[test]
+    fn highlights_from_rows_empty_input() {
+        let highlights = highlights_from_rows(&[]);
+        assert!(highlights.is_empty());
+    }
+
+    #[test]
+    fn highlights_from_rows_filters_small_moves() {
+        // A 2% move should NOT produce a highlight
+        let rows = vec![ScanRow {
+            symbol: "AAPL".to_string(),
+            name: "Apple".to_string(),
+            category: "Equity".to_string(),
+            quantity: Some(dec!(10)),
+            current_price: Some(dec!(150)),
+            current_value: Some(dec!(1500)),
+            change_1d: Some(dec!(2)),
+            gain_pct: Some(dec!(5)),
+            allocation_pct: Some(dec!(10)),
+            sma50: None,
+            sma200: None,
+            sma50_gap_pct: None,
+            sma200_gap_pct: None,
+            trackline_breach: "none".to_string(),
+            trackline_breach_count: Decimal::ZERO,
+        }];
+        let highlights = highlights_from_rows(&rows);
+        assert!(highlights.is_empty(), "2% move and 5% gain should not trigger any highlight");
     }
 }
