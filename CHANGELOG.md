@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-04-02 — feat: scan highlights in portfolio brief JSON output
+
+- What: `portfolio brief --json` now includes a `scan_highlights` field surfacing big movers (≥3% daily change), trackline breaches (below SMA50/200), and divergent gainers (≥20% total gain) directly in the brief payload.
+- Why: Agents previously needed a separate `analytics scan` call to get scan flags. Now they arrive in the same brief JSON, matching how scan highlights were already embedded in the Situation Room (#550). Addresses dev-agent feedback from #550 and Low-Timeframe Analyst feedback (Apr 1).
+- Implementation: Refactored `compute_scan_highlights` into pure `highlights_from_rows` + two thin wrappers: `compute_scan_highlights` (BackendConnection) and `compute_scan_highlights_sqlite` (&Connection). Both SQLite and Postgres brief paths wired. `scan_highlights` uses `skip_serializing_if` to omit from JSON when empty.
+- Files: `src/commands/brief.rs` (+95: `scan_highlights` field on AgentBrief, import + wiring in both SQLite and backend paths, 2 new tests), `src/commands/scan.rs` (+95: `highlights_from_rows`, `compute_scan_highlights_sqlite`, 3 new tests)
+- Tests: 2348 passing (+5 new). Clippy clean.
+
 ### 2026-04-02 — feat: stale cache warning on data prices and analytics market-snapshot
 
 - What: When cached prices are >2h old, both `data prices` (alias: `data quotes`) and `analytics market-snapshot` now surface a staleness warning telling agents and users that data is stale and suggesting `pftui data refresh`.
