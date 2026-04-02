@@ -967,9 +967,15 @@ fn main() -> Result<()> {
                 history,
                 json,
             } => commands::sentiment::run(&backend, symbol.as_deref(), history, json),
-            cli::DataCommand::Calendar { command } => {
-                commands::calendar::dispatch(&backend, command)
-            }
+            cli::DataCommand::Calendar {
+                command,
+                days,
+                impact,
+                event_type,
+                json,
+            } => commands::calendar::dispatch(
+                &backend, command, days, impact, event_type, json,
+            ),
             cli::DataCommand::Cot { symbol, json } => {
                 commands::cot::run(&backend, symbol.as_deref(), json)
             }
