@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use chrono::Utc;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
@@ -28,9 +29,18 @@ use crate::tui::views::markets;
 #[derive(Debug, Serialize)]
 pub struct MarketSnapshot {
     pub generated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub staleness_warning: Option<StalenessInfo>,
     pub prices: PricesSection,
     pub sentiment: SentimentSection,
     pub regime: RegimeSection,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StalenessInfo {
+    /// How many hours since the most recent cached price was fetched.
+    pub stale_hours: f64,
+    pub message: String,
 }
 
 // -- Prices --
@@ -43,7 +53,7 @@ pub struct PricesSection {
     pub market: Vec<PriceEntry>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PriceEntry {
     pub symbol: String,
     pub name: String,
@@ -104,6 +114,44 @@ pub struct RegimeKeyLevels {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+/// Threshold in hours beyond which cached prices are considered stale.
+const STALE_THRESHOLD_HOURS: i64 = 2;
+
+/// Check if price entries are stale (>2h since most recent fetch).
+fn check_staleness(entries: &[PriceEntry]) -> Option<StalenessInfo> {
+    let newest = entries
+        .iter()
+        .filter(|e| !e.fetched_at.is_empty())
+        .filter_map(|e| parse_fetched_at(&e.fetched_at))
+        .max()?;
+
+    let age = Utc::now().signed_duration_since(newest);
+    let stale_hours = age.num_minutes() as f64 / 60.0;
+
+    if age.num_hours() >= STALE_THRESHOLD_HOURS {
+        let hours_display = stale_hours.round() as i64;
+        Some(StalenessInfo {
+            stale_hours: (stale_hours * 10.0).round() / 10.0,
+            message: format!(
+                "Cached prices are {}h old. Run `pftui data refresh` for live data.",
+                hours_display
+            ),
+        })
+    } else {
+        None
+    }
+}
+
+/// Parse the fetched_at timestamp string into a chrono DateTime.
+fn parse_fetched_at(s: &str) -> Option<chrono::DateTime<Utc>> {
+    chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z")
+        .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f%#z"))
+        .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%#z"))
+        .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%#z"))
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc))
+}
 
 /// Compute daily change for a symbol from price history.
 fn compute_change(
@@ -342,8 +390,22 @@ pub fn build_snapshot(backend: &BackendConnection) -> Result<MarketSnapshot> {
 
     let generated_at = chrono::Utc::now().to_rfc3339();
 
+    // Check staleness across all price entries (portfolio + market)
+    let all_entries: Vec<&PriceEntry> = prices
+        .portfolio
+        .iter()
+        .chain(prices.market.iter())
+        .collect();
+    let staleness_warning = check_staleness(
+        &all_entries
+            .iter()
+            .map(|e| (*e).clone())
+            .collect::<Vec<_>>(),
+    );
+
     Ok(MarketSnapshot {
         generated_at,
+        staleness_warning,
         prices,
         sentiment,
         regime,
@@ -354,6 +416,11 @@ pub fn build_snapshot(backend: &BackendConnection) -> Result<MarketSnapshot> {
 
 fn print_terminal(snap: &MarketSnapshot) {
     println!("═══ Market Snapshot ═══\n");
+
+    // Staleness warning
+    if let Some(ref warning) = snap.staleness_warning {
+        println!("  ⚠ {}\n", warning.message);
+    }
 
     // Regime
     println!(
