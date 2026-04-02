@@ -32,6 +32,12 @@ struct StalenessWarning {
     /// How many hours since the most recent cached price was fetched.
     stale_hours: f64,
     message: String,
+    /// Number of symbols with individually stale prices (>2h old or missing).
+    stale_count: usize,
+    /// Total number of tracked symbols.
+    total_count: usize,
+    /// List of symbols whose prices are individually stale.
+    stale_symbols: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -43,10 +49,43 @@ struct PriceRow {
     change_pct: Option<Decimal>,
     source: String,
     fetched_at: String,
+    /// Whether this specific symbol's cached price is stale (>2h old or missing).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    stale: bool,
+    /// How many hours since this symbol's price was last fetched. Omitted when fresh.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    age_hours: Option<f64>,
+}
+
+/// Annotate each price row with per-symbol staleness info.
+/// Sets `stale` and `age_hours` on each row based on its individual `fetched_at`.
+fn annotate_per_symbol_staleness(rows: &mut [PriceRow]) {
+    let now = Utc::now();
+    for row in rows.iter_mut() {
+        if row.fetched_at.is_empty() || row.price.is_none() {
+            // No cached price at all — treat as stale
+            row.stale = true;
+            row.age_hours = None;
+        } else if let Some(ts) = parse_fetched_at(&row.fetched_at) {
+            let age = now.signed_duration_since(ts);
+            let hours = age.num_minutes() as f64 / 60.0;
+            let rounded = (hours * 10.0).round() / 10.0;
+            if age.num_hours() >= STALE_THRESHOLD_HOURS {
+                row.stale = true;
+                row.age_hours = Some(rounded);
+            }
+            // fresh: stale stays false, age_hours stays None
+        } else {
+            // Unparseable timestamp — treat as stale
+            row.stale = true;
+            row.age_hours = None;
+        }
+    }
 }
 
 /// Check if cached prices are stale (>2h since most recent fetch).
 /// Returns a warning if stale, None if fresh or no prices exist.
+/// Includes per-symbol breakdown: which symbols are stale and how many.
 fn check_staleness(rows: &[PriceRow]) -> Option<StalenessWarning> {
     let newest = rows
         .iter()
@@ -57,14 +96,34 @@ fn check_staleness(rows: &[PriceRow]) -> Option<StalenessWarning> {
     let age = Utc::now().signed_duration_since(newest);
     let stale_hours = age.num_minutes() as f64 / 60.0;
 
+    // Collect per-symbol stale info
+    let stale_symbols: Vec<String> = rows.iter().filter(|r| r.stale).map(|r| r.symbol.clone()).collect();
+    let stale_count = stale_symbols.len();
+    let total_count = rows.len();
+
     if age.num_hours() >= STALE_THRESHOLD_HOURS {
         let hours_display = stale_hours.round() as i64;
         Some(StalenessWarning {
             stale_hours: (stale_hours * 10.0).round() / 10.0,
             message: format!(
-                "Cached prices are {}h old. Run `pftui data refresh` for live data.",
-                hours_display
+                "Cached prices are {}h old ({}/{} symbols stale). Run `pftui data refresh` for live data.",
+                hours_display, stale_count, total_count
             ),
+            stale_count,
+            total_count,
+            stale_symbols,
+        })
+    } else if stale_count > 0 {
+        // Global cache is fresh but some individual symbols are stale/missing
+        Some(StalenessWarning {
+            stale_hours: (stale_hours * 10.0).round() / 10.0,
+            message: format!(
+                "{}/{} symbols have stale or missing prices. Run `pftui data refresh` to update.",
+                stale_count, total_count
+            ),
+            stale_count,
+            total_count,
+            stale_symbols,
         })
     } else {
         None
@@ -272,10 +331,15 @@ pub fn run(
             change_pct,
             source,
             fetched_at,
+            stale: false,
+            age_hours: None,
         });
     }
 
-    // Check staleness of cached prices
+    // Annotate per-symbol staleness before computing global staleness
+    annotate_per_symbol_staleness(&mut rows);
+
+    // Check staleness of cached prices (now uses per-symbol annotations)
     let staleness = check_staleness(&rows);
 
     if json {
@@ -334,13 +398,15 @@ pub fn run(
     println!("  {}", "\u{2500}".repeat(total_w));
 
     for r in &rows {
+        let stale_marker = if r.stale { " ⚠" } else { "" };
         println!(
-            "  {:<sym_w$}  {:<name_w$}  {:>price_w$}  {:>chg_w$}  {:>pct_w$}",
+            "  {:<sym_w$}  {:<name_w$}  {:>price_w$}  {:>chg_w$}  {:>pct_w$}{}",
             r.symbol,
             r.name,
             format_decimal_opt(r.price),
             format_change_opt(r.change),
             format_pct_opt(r.change_pct),
+            stale_marker,
         );
     }
 
@@ -554,6 +620,8 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            stale: false,
+            age_hours: None,
         }];
         assert!(check_staleness(&rows).is_none());
     }
@@ -570,12 +638,17 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            stale: true,
+            age_hours: Some(3.0),
         }];
         let warning = check_staleness(&rows);
         assert!(warning.is_some());
         let w = warning.unwrap();
         assert!(w.stale_hours >= 2.9);
         assert!(w.message.contains("data refresh"));
+        assert_eq!(w.stale_count, 1);
+        assert_eq!(w.total_count, 1);
+        assert_eq!(w.stale_symbols, vec!["BTC"]);
     }
 
     #[test]
@@ -592,6 +665,8 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: true,
+                age_hours: Some(5.0),
             },
             PriceRow {
                 symbol: "FRESH".to_string(),
@@ -601,10 +676,16 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: false,
+                age_hours: None,
             },
         ];
-        // Should NOT warn because the newest price is fresh
-        assert!(check_staleness(&rows).is_none());
+        // Global cache is fresh (newest is <2h old) but OLD is individually stale
+        let warning = check_staleness(&rows);
+        assert!(warning.is_some(), "should warn because OLD symbol is stale");
+        let w = warning.unwrap();
+        assert_eq!(w.stale_count, 1);
+        assert_eq!(w.stale_symbols, vec!["OLD"]);
     }
 
     #[test]
@@ -620,6 +701,8 @@ mod tests {
                 change_pct: None,
                 source: String::new(),
                 fetched_at: String::new(),
+                stale: true,
+                age_hours: None,
             },
             PriceRow {
                 symbol: "OK".to_string(),
@@ -629,9 +712,16 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: false,
+                age_hours: None,
             },
         ];
-        assert!(check_staleness(&rows).is_none());
+        // Global is fresh but MISSING is individually stale (no price)
+        let warning = check_staleness(&rows);
+        assert!(warning.is_some());
+        let w = warning.unwrap();
+        assert_eq!(w.stale_count, 1);
+        assert_eq!(w.stale_symbols, vec!["MISSING"]);
     }
 
     #[test]
@@ -664,7 +754,10 @@ mod tests {
     fn staleness_json_output_includes_warning() {
         let warning = StalenessWarning {
             stale_hours: 3.5,
-            message: "Cached prices are 4h old. Run `pftui data refresh` for live data.".to_string(),
+            message: "Cached prices are 4h old (2/3 symbols stale). Run `pftui data refresh` for live data.".to_string(),
+            stale_count: 2,
+            total_count: 3,
+            stale_symbols: vec!["BTC".to_string(), "AAPL".to_string()],
         };
         let output = PriceOutput {
             staleness_warning: Some(warning),
@@ -674,6 +767,9 @@ mod tests {
         assert!(json_str.contains("staleness_warning"));
         assert!(json_str.contains("stale_hours"));
         assert!(json_str.contains("data refresh"));
+        assert!(json_str.contains("stale_count"));
+        assert!(json_str.contains("stale_symbols"));
+        assert!(json_str.contains("BTC"));
     }
 
     #[test]
@@ -684,6 +780,172 @@ mod tests {
         };
         let json_str = serde_json::to_string(&output).unwrap();
         assert!(!json_str.contains("staleness_warning"));
+    }
+
+    #[test]
+    fn per_symbol_staleness_fresh_symbol() {
+        let now = Utc::now();
+        let fetched = now - chrono::Duration::minutes(30);
+        let mut rows = vec![PriceRow {
+            symbol: "BTC".to_string(),
+            name: "Bitcoin".to_string(),
+            price: Some(dec!(84000)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            stale: false,
+            age_hours: None,
+        }];
+        annotate_per_symbol_staleness(&mut rows);
+        assert!(!rows[0].stale);
+        assert!(rows[0].age_hours.is_none());
+    }
+
+    #[test]
+    fn per_symbol_staleness_old_symbol() {
+        let now = Utc::now();
+        let fetched = now - chrono::Duration::hours(5);
+        let mut rows = vec![PriceRow {
+            symbol: "AAPL".to_string(),
+            name: "Apple".to_string(),
+            price: Some(dec!(195)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            stale: false,
+            age_hours: None,
+        }];
+        annotate_per_symbol_staleness(&mut rows);
+        assert!(rows[0].stale);
+        assert!(rows[0].age_hours.unwrap() >= 4.9);
+    }
+
+    #[test]
+    fn per_symbol_staleness_missing_price() {
+        let mut rows = vec![PriceRow {
+            symbol: "MISSING".to_string(),
+            name: "No Price".to_string(),
+            price: None,
+            change: None,
+            change_pct: None,
+            source: String::new(),
+            fetched_at: String::new(),
+            stale: false,
+            age_hours: None,
+        }];
+        annotate_per_symbol_staleness(&mut rows);
+        assert!(rows[0].stale);
+        assert!(rows[0].age_hours.is_none());
+    }
+
+    #[test]
+    fn per_symbol_staleness_mixed_freshness() {
+        let now = Utc::now();
+        let old = now - chrono::Duration::hours(4);
+        let fresh = now - chrono::Duration::minutes(15);
+        let mut rows = vec![
+            PriceRow {
+                symbol: "OLD".to_string(),
+                name: "Old Asset".to_string(),
+                price: Some(dec!(100)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: false,
+                age_hours: None,
+            },
+            PriceRow {
+                symbol: "FRESH".to_string(),
+                name: "Fresh Asset".to_string(),
+                price: Some(dec!(200)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: false,
+                age_hours: None,
+            },
+        ];
+        annotate_per_symbol_staleness(&mut rows);
+        assert!(rows[0].stale, "OLD should be stale");
+        assert!(rows[0].age_hours.unwrap() >= 3.9);
+        assert!(!rows[1].stale, "FRESH should not be stale");
+        assert!(rows[1].age_hours.is_none());
+    }
+
+    #[test]
+    fn per_symbol_staleness_json_omits_when_fresh() {
+        let row = PriceRow {
+            symbol: "BTC".to_string(),
+            name: "Bitcoin".to_string(),
+            price: Some(dec!(84000)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: "2026-04-02T12:00:00+00".to_string(),
+            stale: false,
+            age_hours: None,
+        };
+        let json_str = serde_json::to_string(&row).unwrap();
+        assert!(!json_str.contains("stale"), "fresh row should not contain stale field");
+        assert!(!json_str.contains("age_hours"), "fresh row should not contain age_hours field");
+    }
+
+    #[test]
+    fn per_symbol_staleness_json_includes_when_stale() {
+        let row = PriceRow {
+            symbol: "BTC".to_string(),
+            name: "Bitcoin".to_string(),
+            price: Some(dec!(84000)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: "2026-04-02T08:00:00+00".to_string(),
+            stale: true,
+            age_hours: Some(4.2),
+        };
+        let json_str = serde_json::to_string(&row).unwrap();
+        assert!(json_str.contains("\"stale\":true"), "stale row should contain stale:true");
+        assert!(json_str.contains("\"age_hours\":4.2"), "stale row should contain age_hours");
+    }
+
+    #[test]
+    fn staleness_warning_includes_per_symbol_breakdown() {
+        let now = Utc::now();
+        let old = now - chrono::Duration::hours(3);
+        let rows = vec![
+            PriceRow {
+                symbol: "BTC".to_string(),
+                name: "Bitcoin".to_string(),
+                price: Some(dec!(84000)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: true,
+                age_hours: Some(3.0),
+            },
+            PriceRow {
+                symbol: "GOLD".to_string(),
+                name: "Gold".to_string(),
+                price: Some(dec!(2100)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: true,
+                age_hours: Some(3.0),
+            },
+        ];
+        let warning = check_staleness(&rows).unwrap();
+        assert_eq!(warning.stale_count, 2);
+        assert_eq!(warning.total_count, 2);
+        assert!(warning.stale_symbols.contains(&"BTC".to_string()));
+        assert!(warning.stale_symbols.contains(&"GOLD".to_string()));
+        assert!(warning.message.contains("2/2"));
     }
 
     #[test]

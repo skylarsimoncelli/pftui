@@ -44,6 +44,12 @@ pub struct StalenessInfo {
     /// How many hours since the most recent cached price was fetched.
     pub stale_hours: f64,
     pub message: String,
+    /// Number of symbols with individually stale prices.
+    pub stale_count: usize,
+    /// Total number of symbols.
+    pub total_count: usize,
+    /// List of symbols whose prices are individually stale.
+    pub stale_symbols: Vec<String>,
 }
 
 // -- Prices --
@@ -67,6 +73,12 @@ pub struct PriceEntry {
     pub change_pct: Option<Decimal>,
     pub source: String,
     pub fetched_at: String,
+    /// Whether this specific symbol's cached price is stale (>2h old or missing).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub stale: bool,
+    /// How many hours since this symbol's price was last fetched. Omitted when fresh.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub age_hours: Option<f64>,
 }
 
 // -- Sentiment --
@@ -122,6 +134,7 @@ pub struct RegimeKeyLevels {
 const STALE_THRESHOLD_HOURS: i64 = 2;
 
 /// Check if price entries are stale (>2h since most recent fetch).
+/// Includes per-symbol breakdown of stale symbols.
 fn check_staleness(entries: &[PriceEntry]) -> Option<StalenessInfo> {
     let newest = entries
         .iter()
@@ -132,14 +145,32 @@ fn check_staleness(entries: &[PriceEntry]) -> Option<StalenessInfo> {
     let age = Utc::now().signed_duration_since(newest);
     let stale_hours = age.num_minutes() as f64 / 60.0;
 
+    let stale_symbols: Vec<String> = entries.iter().filter(|e| e.stale).map(|e| e.symbol.clone()).collect();
+    let stale_count = stale_symbols.len();
+    let total_count = entries.len();
+
     if age.num_hours() >= STALE_THRESHOLD_HOURS {
         let hours_display = stale_hours.round() as i64;
         Some(StalenessInfo {
             stale_hours: (stale_hours * 10.0).round() / 10.0,
             message: format!(
-                "Cached prices are {}h old. Run `pftui data refresh` for live data.",
-                hours_display
+                "Cached prices are {}h old ({}/{} symbols stale). Run `pftui data refresh` for live data.",
+                hours_display, stale_count, total_count
             ),
+            stale_count,
+            total_count,
+            stale_symbols,
+        })
+    } else if stale_count > 0 {
+        Some(StalenessInfo {
+            stale_hours: (stale_hours * 10.0).round() / 10.0,
+            message: format!(
+                "{}/{} symbols have stale or missing prices. Run `pftui data refresh` to update.",
+                stale_count, total_count
+            ),
+            stale_count,
+            total_count,
+            stale_symbols,
         })
     } else {
         None
@@ -231,6 +262,22 @@ fn build_price_entry(
         None => (None, None),
     };
 
+    // Compute per-symbol staleness
+    let (stale, age_hours) = if fetched_at.is_empty() || price.is_none() {
+        (true, None)
+    } else if let Some(ts) = parse_fetched_at(&fetched_at) {
+        let age = Utc::now().signed_duration_since(ts);
+        let hours = age.num_minutes() as f64 / 60.0;
+        let rounded = (hours * 10.0).round() / 10.0;
+        if age.num_hours() >= STALE_THRESHOLD_HOURS {
+            (true, Some(rounded))
+        } else {
+            (false, None)
+        }
+    } else {
+        (true, None)
+    };
+
     PriceEntry {
         symbol: symbol.to_string(),
         name: display_name.to_string(),
@@ -239,6 +286,8 @@ fn build_price_entry(
         change_pct,
         source,
         fetched_at,
+        stale,
+        age_hours,
     }
 }
 
