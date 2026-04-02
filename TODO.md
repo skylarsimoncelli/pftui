@@ -10,11 +10,11 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-- [Feedback] Investigate `data prices`/`data quotes` returning empty output — Evening Analysis (Apr 2, 82/80) reports endpoints returned empty despite implementation existing. May be a config/DB issue or missing price cache. Check `prices_cache` table state and `data refresh --only prices` flow.
+- [Feedback] Investigate `data prices`/`data quotes` returning empty output — Evening Analysis (Apr 2, 82/80) reports endpoints returned empty despite implementation existing. **Investigated Apr 2**: not reproducible — both commands return full data (70 symbols) when cache is populated. Likely a timing issue where the agent ran before `data refresh` populated the cache. The new `analytics market-snapshot` command mitigates this by consolidating data access. If reproduced again, check whether `data refresh --only prices` was run first. Consider adding a "last refreshed" warning when cache is stale >2h.
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] Unified market snapshot endpoint — Evening Analysis (Apr 2, 82/80): "would benefit from a unified market snapshot endpoint combining prices+sentiment+flows in one call." Consider `analytics market-snapshot --json` consolidating `data prices --market`, `analytics news-sentiment`, and regime flows into one payload.
+_(none)_
 
 ## P3 - Long Term
 
@@ -53,6 +53,7 @@ _(none)_
 **Shipped since last review (Apr 1):**
 1. ✅ Synthesis conviction matrix (#540) — per-asset analyst conviction scores inline in synthesis
 2. ✅ Time-bomb test fix (#544) — dynamic dates in power_flows tests
+3. ✅ Unified market snapshot (#548) — prices + sentiment + regime in one call (addresses Evening Analysis P2)
 
 **Release status:** v0.24.0 tagged Apr 2. 71 commits since v0.23.0, no P0 bugs, 2315 tests passing, clippy clean.
 

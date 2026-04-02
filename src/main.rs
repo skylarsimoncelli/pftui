@@ -3144,6 +3144,9 @@ fn main() -> Result<()> {
                     commands::movers::run(&backend, &config, Some(&threshold), overnight, json)
                 }
             },
+            cli::AnalyticsCommand::MarketSnapshot { json } => {
+                commands::market_snapshot::run(&backend, json)
+            }
             cli::AnalyticsCommand::Correlations { command, json } => match command {
                 None => commands::correlations::run(
                     &backend,

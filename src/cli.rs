@@ -3504,6 +3504,13 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Unified market snapshot: prices + sentiment + regime in one call
+    #[command(name = "market-snapshot", after_help = "\
+Combines portfolio/market prices, news sentiment scoring, and regime\ncontext into a single JSON payload. Replaces three separate agent calls\n(data prices --market, analytics news-sentiment, analytics regime-flows)\nwith one command.\n\nExamples:\n  pftui analytics market-snapshot --json    # Full snapshot for agent consumption\n  pftui analytics market-snapshot           # Terminal summary\n\nSee also: data prices, analytics news-sentiment, analytics regime-flows")]
+    MarketSnapshot {
+        #[arg(long)]
+        json: bool,
+    },
     /// Rolling correlations: compute, store, and detect correlation breaks between asset pairs
     Correlations {
         #[command(subcommand)]
@@ -8687,6 +8694,32 @@ mod tests {
         };
         assert!(severity.is_none());
         assert!((threshold - 0.50).abs() < f64::EPSILON);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_market_snapshot() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "analytics", "market-snapshot", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::MarketSnapshot { json } = command else {
+            panic!("expected market-snapshot");
+        };
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_market_snapshot_no_json() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "analytics", "market-snapshot"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::MarketSnapshot { json } = command else {
+            panic!("expected market-snapshot");
+        };
+        assert!(!json);
         Ok(())
     }
 }

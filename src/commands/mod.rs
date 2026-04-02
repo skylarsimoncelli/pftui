@@ -46,6 +46,7 @@ pub mod journal;
 pub mod list_tx;
 pub mod macro_cmd;
 pub mod market_hours;
+pub mod market_snapshot;
 pub mod migrate_journal;
 pub mod mirror;
 pub mod morning_brief;

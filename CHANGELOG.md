@@ -1,5 +1,15 @@
 # Changelog
 
+### 2026-04-02 — feat: unified market snapshot endpoint — prices + sentiment + regime in one call
+
+- What: New `analytics market-snapshot` command consolidating portfolio/market prices, news sentiment scoring, and regime context into a single JSON payload. Replaces three separate agent calls (`data prices --market`, `analytics news-sentiment`, `analytics regime-flows`) with one command.
+- Why: Evening Analysis feedback (Apr 2): "would benefit from a unified market snapshot endpoint combining prices+sentiment+flows in one call." Agents currently make 3+ sequential calls to assemble a market picture — this reduces latency and simplifies agent routines.
+- JSON output: `MarketSnapshot` struct with `generated_at`, `prices` (portfolio + market sections with symbol/name/price/change/change_pct/source/fetched_at), `sentiment` (overall_score/label, by_category breakdown), `regime` (current_regime/confidence/drivers/key_levels with VIX/DXY/10Y/oil/gold/BTC). `skip_serializing_if` omits null optional fields for compact output.
+- Terminal output: Regime summary line + sentiment overview + portfolio price table + market price table.
+- Usage: `pftui analytics market-snapshot --json` (agent consumption), `pftui analytics market-snapshot` (terminal summary)
+- Files: `src/commands/market_snapshot.rs` (new, MarketSnapshot/PricesSection/SentimentSection/RegimeSection structs, build_snapshot public fn, run, print_terminal), `src/commands/mod.rs` (module registration), `src/cli.rs` (MarketSnapshot variant + 2 CLI parse tests), `src/main.rs` (dispatch wiring)
+- Tests: 2325 tests passing (+10 new: 8 market_snapshot unit tests + 2 CLI parse tests). Clippy clean.
+
 ### 2026-04-02 — fix: use dynamic dates in power_flows tests to prevent time-bomb failures (#544)
 
 - What: Fixed 4 failing tests in `db::power_flows` that used hardcoded date `2026-03-25`, which fell outside the 7-day date filter window after April 1. Added `today()` helper using `chrono::Utc::now()` so test data always falls within the query window.
