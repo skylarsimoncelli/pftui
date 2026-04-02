@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use anyhow::Result;
+use chrono::Utc;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
@@ -14,6 +15,23 @@ use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 use crate::tui::views::markets;
 
+/// Threshold in hours beyond which cached prices are considered stale.
+const STALE_THRESHOLD_HOURS: i64 = 2;
+
+#[derive(Serialize)]
+struct PriceOutput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    staleness_warning: Option<StalenessWarning>,
+    prices: Vec<PriceRow>,
+}
+
+#[derive(Serialize)]
+struct StalenessWarning {
+    /// How many hours since the most recent cached price was fetched.
+    stale_hours: f64,
+    message: String,
+}
+
 #[derive(Serialize)]
 struct PriceRow {
     symbol: String,
@@ -23,6 +41,44 @@ struct PriceRow {
     change_pct: Option<Decimal>,
     source: String,
     fetched_at: String,
+}
+
+/// Check if cached prices are stale (>2h since most recent fetch).
+/// Returns a warning if stale, None if fresh or no prices exist.
+fn check_staleness(rows: &[PriceRow]) -> Option<StalenessWarning> {
+    let newest = rows
+        .iter()
+        .filter(|r| !r.fetched_at.is_empty())
+        .filter_map(|r| parse_fetched_at(&r.fetched_at))
+        .max()?;
+
+    let age = Utc::now().signed_duration_since(newest);
+    let stale_hours = age.num_minutes() as f64 / 60.0;
+
+    if age.num_hours() >= STALE_THRESHOLD_HOURS {
+        let hours_display = stale_hours.round() as i64;
+        Some(StalenessWarning {
+            stale_hours: (stale_hours * 10.0).round() / 10.0,
+            message: format!(
+                "Cached prices are {}h old. Run `pftui data refresh` for live data.",
+                hours_display
+            ),
+        })
+    } else {
+        None
+    }
+}
+
+/// Parse the fetched_at timestamp string into a chrono DateTime.
+/// Handles formats: "2026-04-02 08:09:25.198868+00" and ISO 8601 variants.
+fn parse_fetched_at(s: &str) -> Option<chrono::DateTime<Utc>> {
+    // Try standard formats
+    chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z")
+        .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f%#z"))
+        .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%#z"))
+        .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%#z"))
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc))
 }
 
 /// Compute daily change using price history.
@@ -175,8 +231,15 @@ pub fn run(backend: &BackendConnection, market: bool, json: bool) -> Result<()> 
         });
     }
 
+    // Check staleness of cached prices
+    let staleness = check_staleness(&rows);
+
     if json {
-        let json_str = serde_json::to_string_pretty(&rows)?;
+        let output = PriceOutput {
+            staleness_warning: staleness,
+            prices: rows,
+        };
+        let json_str = serde_json::to_string_pretty(&output)?;
         println!("{}", json_str);
         return Ok(());
     }
@@ -185,6 +248,12 @@ pub fn run(backend: &BackendConnection, market: bool, json: bool) -> Result<()> 
     if rows.is_empty() {
         println!("No tracked symbols found.");
         return Ok(());
+    }
+
+    // Show staleness warning before table
+    if let Some(ref warning) = staleness {
+        println!("  ⚠ {}", warning.message);
+        println!();
     }
 
     let sym_w = rows
@@ -421,5 +490,155 @@ mod tests {
             items.iter().any(|i| i.yahoo_symbol == "HG=F"),
             "market_symbols should include HG=F (Copper Futures)"
         );
+    }
+
+    #[test]
+    fn staleness_none_when_empty() {
+        let rows: Vec<PriceRow> = vec![];
+        assert!(check_staleness(&rows).is_none());
+    }
+
+    #[test]
+    fn staleness_none_when_fresh() {
+        let now = Utc::now();
+        let fetched = now - chrono::Duration::minutes(30);
+        let rows = vec![PriceRow {
+            symbol: "BTC".to_string(),
+            name: "Bitcoin".to_string(),
+            price: Some(dec!(84000)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+        }];
+        assert!(check_staleness(&rows).is_none());
+    }
+
+    #[test]
+    fn staleness_warning_when_stale() {
+        let now = Utc::now();
+        let fetched = now - chrono::Duration::hours(3);
+        let rows = vec![PriceRow {
+            symbol: "BTC".to_string(),
+            name: "Bitcoin".to_string(),
+            price: Some(dec!(84000)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+        }];
+        let warning = check_staleness(&rows);
+        assert!(warning.is_some());
+        let w = warning.unwrap();
+        assert!(w.stale_hours >= 2.9);
+        assert!(w.message.contains("data refresh"));
+    }
+
+    #[test]
+    fn staleness_uses_newest_timestamp() {
+        let now = Utc::now();
+        let old = now - chrono::Duration::hours(5);
+        let fresh = now - chrono::Duration::minutes(30);
+        let rows = vec![
+            PriceRow {
+                symbol: "OLD".to_string(),
+                name: "Old Asset".to_string(),
+                price: Some(dec!(100)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            },
+            PriceRow {
+                symbol: "FRESH".to_string(),
+                name: "Fresh Asset".to_string(),
+                price: Some(dec!(200)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            },
+        ];
+        // Should NOT warn because the newest price is fresh
+        assert!(check_staleness(&rows).is_none());
+    }
+
+    #[test]
+    fn staleness_skips_empty_fetched_at() {
+        let now = Utc::now();
+        let fresh = now - chrono::Duration::minutes(10);
+        let rows = vec![
+            PriceRow {
+                symbol: "MISSING".to_string(),
+                name: "No Timestamp".to_string(),
+                price: None,
+                change: None,
+                change_pct: None,
+                source: String::new(),
+                fetched_at: String::new(),
+            },
+            PriceRow {
+                symbol: "OK".to_string(),
+                name: "Has Timestamp".to_string(),
+                price: Some(dec!(100)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            },
+        ];
+        assert!(check_staleness(&rows).is_none());
+    }
+
+    #[test]
+    fn parse_fetched_at_postgres_format() {
+        use chrono::Datelike;
+        let dt = parse_fetched_at("2026-04-02 08:09:25.198868+00");
+        assert!(dt.is_some());
+        assert_eq!(dt.unwrap().year(), 2026);
+    }
+
+    #[test]
+    fn parse_fetched_at_iso_format() {
+        let dt = parse_fetched_at("2026-04-02T08:09:25.198868+00");
+        assert!(dt.is_some());
+    }
+
+    #[test]
+    fn parse_fetched_at_no_fractional() {
+        let dt = parse_fetched_at("2026-04-02 08:09:25+00");
+        assert!(dt.is_some());
+    }
+
+    #[test]
+    fn parse_fetched_at_invalid() {
+        assert!(parse_fetched_at("not-a-date").is_none());
+        assert!(parse_fetched_at("").is_none());
+    }
+
+    #[test]
+    fn staleness_json_output_includes_warning() {
+        let warning = StalenessWarning {
+            stale_hours: 3.5,
+            message: "Cached prices are 4h old. Run `pftui data refresh` for live data.".to_string(),
+        };
+        let output = PriceOutput {
+            staleness_warning: Some(warning),
+            prices: vec![],
+        };
+        let json_str = serde_json::to_string(&output).unwrap();
+        assert!(json_str.contains("staleness_warning"));
+        assert!(json_str.contains("stale_hours"));
+        assert!(json_str.contains("data refresh"));
+    }
+
+    #[test]
+    fn staleness_json_output_omits_when_none() {
+        let output = PriceOutput {
+            staleness_warning: None,
+            prices: vec![],
+        };
+        let json_str = serde_json::to_string(&output).unwrap();
+        assert!(!json_str.contains("staleness_warning"));
     }
 }
