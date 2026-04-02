@@ -436,12 +436,19 @@ mod tests {
     use super::*;
     use crate::db;
 
+    /// Return today's date as YYYY-MM-DD so time-windowed queries always
+    /// include the test data regardless of when the test suite runs.
+    fn today() -> String {
+        chrono::Utc::now().format("%Y-%m-%d").to_string()
+    }
+
     #[test]
     fn test_add_and_list_power_flows() {
         let conn = db::open_in_memory();
+        let date = today();
         let id = add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "Fed rate pause signals fiscal dominance",
             "FIC",
             "gaining",
@@ -464,9 +471,10 @@ mod tests {
     #[test]
     fn test_invalid_complex_rejected() {
         let conn = db::open_in_memory();
+        let date = today();
         let result = add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "test",
             "INVALID",
             "gaining",
@@ -485,9 +493,10 @@ mod tests {
     #[test]
     fn test_invalid_direction_rejected() {
         let conn = db::open_in_memory();
+        let date = today();
         let result = add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "test",
             "FIC",
             "winning",
@@ -506,9 +515,10 @@ mod tests {
     #[test]
     fn test_magnitude_bounds() {
         let conn = db::open_in_memory();
+        let date = today();
         let too_low = add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "test",
             "FIC",
             "gaining",
@@ -521,7 +531,7 @@ mod tests {
 
         let too_high = add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "test",
             "FIC",
             "gaining",
@@ -534,7 +544,7 @@ mod tests {
 
         let ok = add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "test",
             "FIC",
             "gaining",
@@ -549,9 +559,10 @@ mod tests {
     #[test]
     fn test_filter_by_complex() {
         let conn = db::open_in_memory();
+        let date = today();
         add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "FIC event",
             "FIC",
             "gaining",
@@ -563,7 +574,7 @@ mod tests {
         .unwrap();
         add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "MIC event",
             "MIC",
             "losing",
@@ -582,9 +593,10 @@ mod tests {
     #[test]
     fn test_filter_by_direction() {
         let conn = db::open_in_memory();
+        let date = today();
         add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "gaining event",
             "FIC",
             "gaining",
@@ -596,7 +608,7 @@ mod tests {
         .unwrap();
         add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "losing event",
             "MIC",
             "losing",
@@ -615,10 +627,11 @@ mod tests {
     #[test]
     fn test_compute_balance() {
         let conn = db::open_in_memory();
+        let date = today();
         // FIC gaining +4 from MIC
         add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "event 1",
             "FIC",
             "gaining",
@@ -631,7 +644,7 @@ mod tests {
         // FIC gaining +3 (no target)
         add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "event 2",
             "FIC",
             "gaining",
@@ -644,7 +657,7 @@ mod tests {
         // TIC losing -2 to FIC
         add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "event 3",
             "TIC",
             "losing",
@@ -684,10 +697,11 @@ mod tests {
     #[test]
     fn test_target_complex_filter_includes_entries() {
         let conn = db::open_in_memory();
+        let date = today();
         // FIC gaining, target = MIC. Filtering by MIC should include this.
         add_power_flow(
             &conn,
-            "2026-03-25",
+            &date,
             "FIC power grab",
             "FIC",
             "gaining",
