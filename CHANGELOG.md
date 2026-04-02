@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-02 — fix: make calendar list the default subcommand + close 4 stale PRs
+
+- What: `pftui data calendar --json` now works without specifying the `list` subcommand. Previously failed with `error: unexpected argument '--json'`. Also closed 4 stale PRs (#500, #379, #361, #163).
+- Why: Low-Timeframe Analyst feedback (Apr 2): "calendar json flag failed but list worked." Agents naturally try `pftui data calendar --json` — requiring the explicit `list` subcommand was a UX friction point. Stale PRs (#500 feedback, #379 economy confidence depth, #361 morning brief command, #163 F53 Situation Engine) were all superseded by later work.
+- Implementation: Made `CalendarCommand` optional (`Option<CalendarCommand>`), hoisted list flags (`--days`, `--impact`, `--type`, `--json`) to parent `Calendar` variant. When no subcommand given, defaults to list behavior. Follows same pattern as `data predictions`. Subcommand flags take precedence when `list` is explicit.
+- Files: `src/cli.rs` (+62: hoisted flags, 2 new tests), `src/commands/calendar.rs` (+16: dispatch accepts Optional command + top-level flags), `src/main.rs` (+5: pass new fields)
+- Tests: 2382 passing (+2 new: `parse_calendar_default_list`, `parse_calendar_default_list_with_filters`). Clippy clean.
+- **Non-breaking:** Existing `pftui data calendar list --json` works identically.
+
 ### 2026-04-02 — bugfix: fix silently ignored --timeframe/--direction/--conviction/--limit filters on analytics trends list
 
 - What: `analytics trends list --timeframe high --direction accelerating --conviction high --limit 5` now actually filters results. Previously these four flags were accepted by the CLI but silently ignored — the list always returned all trends filtered only by `--status` and `--category`.
