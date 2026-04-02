@@ -6,6 +6,8 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 
+use crate::commands::refresh::{self, RefreshPlan};
+use crate::config::Config;
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::db::price_history::{get_history_backend, get_price_at_date_backend};
@@ -123,7 +125,49 @@ fn prev_close_for(backend: &BackendConnection, symbol: &str) -> Option<Decimal> 
         })
 }
 
-pub fn run(backend: &BackendConnection, market: bool, json: bool) -> Result<()> {
+/// Check if the price cache is stale (>2h since most recent fetch).
+/// Returns true if stale or empty.
+pub fn is_cache_stale(backend: &BackendConnection) -> bool {
+    let cached = match get_all_cached_prices_backend(backend) {
+        Ok(c) => c,
+        Err(_) => return true,
+    };
+    if cached.is_empty() {
+        return true;
+    }
+    let newest = cached
+        .iter()
+        .filter(|q| !q.fetched_at.is_empty())
+        .filter_map(|q| parse_fetched_at(&q.fetched_at))
+        .max();
+    match newest {
+        Some(ts) => {
+            let age = Utc::now().signed_duration_since(ts);
+            age.num_hours() >= STALE_THRESHOLD_HOURS
+        }
+        None => true,
+    }
+}
+
+pub fn run(
+    backend: &BackendConnection,
+    config: &Config,
+    market: bool,
+    json: bool,
+    auto_refresh: bool,
+) -> Result<()> {
+    // Auto-refresh: if flag is set and cache is stale, do a prices-only refresh first
+    if auto_refresh && is_cache_stale(backend) {
+        if !json {
+            println!("  ⟳ Cache stale — auto-refreshing prices...");
+        }
+        let plan = RefreshPlan::prices_only();
+        let _ = refresh::run_quiet_with_plan(backend, config, false, &plan);
+        if !json {
+            println!("  ✓ Prices refreshed.\n");
+        }
+    }
+
     // Collect all tracked symbols: portfolio holdings + watchlist
     let mut symbols: BTreeMap<String, AssetCategory> = BTreeMap::new();
 
@@ -355,7 +399,7 @@ mod tests {
     fn prices_empty_db() {
         let conn = open_in_memory();
         let backend = to_backend(conn);
-        let result = run(&backend, false, false);
+        let result = run(&backend, &Config::default(), false, false, false);
         assert!(result.is_ok());
     }
 
@@ -363,7 +407,7 @@ mod tests {
     fn prices_empty_db_json() {
         let conn = open_in_memory();
         let backend = to_backend(conn);
-        let result = run(&backend, false, true);
+        let result = run(&backend, &Config::default(), false, true, false);
         assert!(result.is_ok());
     }
 
@@ -412,11 +456,11 @@ mod tests {
         let backend = to_backend(conn);
 
         // Table output
-        let result = run(&backend, false, false);
+        let result = run(&backend, &Config::default(), false, false, false);
         assert!(result.is_ok());
 
         // JSON output
-        let result = run(&backend, false, true);
+        let result = run(&backend, &Config::default(), false, true, false);
         assert!(result.is_ok());
     }
 
@@ -460,7 +504,7 @@ mod tests {
         let conn = open_in_memory();
         let backend = to_backend(conn);
         // --market flag should not error even with empty db (no cached prices)
-        let result = run(&backend, true, false);
+        let result = run(&backend, &Config::default(), true, false, false);
         assert!(result.is_ok());
     }
 
@@ -468,7 +512,7 @@ mod tests {
     fn prices_market_flag_json() {
         let conn = open_in_memory();
         let backend = to_backend(conn);
-        let result = run(&backend, true, true);
+        let result = run(&backend, &Config::default(), true, true, false);
         assert!(result.is_ok());
     }
 
@@ -640,5 +684,108 @@ mod tests {
         };
         let json_str = serde_json::to_string(&output).unwrap();
         assert!(!json_str.contains("staleness_warning"));
+    }
+
+    #[test]
+    fn is_cache_stale_empty_db() {
+        let conn = open_in_memory();
+        let backend = to_backend(conn);
+        assert!(is_cache_stale(&backend));
+    }
+
+    #[test]
+    fn is_cache_stale_fresh_data() {
+        let conn = open_in_memory();
+        use crate::db::price_cache::upsert_price;
+        use crate::models::price::PriceQuote;
+
+        let now = Utc::now();
+        let fetched = now - chrono::Duration::minutes(30);
+
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "BTC-USD".to_string(),
+                price: dec!(84000),
+                currency: "USD".to_string(),
+                source: "yahoo".to_string(),
+                fetched_at: fetched
+                    .format("%Y-%m-%d %H:%M:%S%.6f+00")
+                    .to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: None,
+            },
+        )
+        .unwrap();
+
+        let backend = to_backend(conn);
+        assert!(!is_cache_stale(&backend));
+    }
+
+    #[test]
+    fn is_cache_stale_old_data() {
+        let conn = open_in_memory();
+        use crate::db::price_cache::upsert_price;
+        use crate::models::price::PriceQuote;
+
+        let now = Utc::now();
+        let fetched = now - chrono::Duration::hours(3);
+
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "BTC-USD".to_string(),
+                price: dec!(84000),
+                currency: "USD".to_string(),
+                source: "yahoo".to_string(),
+                fetched_at: fetched
+                    .format("%Y-%m-%d %H:%M:%S%.6f+00")
+                    .to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: None,
+            },
+        )
+        .unwrap();
+
+        let backend = to_backend(conn);
+        assert!(is_cache_stale(&backend));
+    }
+
+    #[test]
+    fn auto_refresh_not_triggered_when_fresh() {
+        let conn = open_in_memory();
+        use crate::db::price_cache::upsert_price;
+        use crate::models::price::PriceQuote;
+
+        let now = Utc::now();
+        let fetched = now - chrono::Duration::minutes(10);
+
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: dec!(195),
+                currency: "USD".to_string(),
+                source: "yahoo".to_string(),
+                fetched_at: fetched
+                    .format("%Y-%m-%d %H:%M:%S%.6f+00")
+                    .to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: None,
+            },
+        )
+        .unwrap();
+
+        let backend = to_backend(conn);
+        let config = Config::default();
+        // auto_refresh=true but cache is fresh → should NOT attempt refresh, just return data
+        let result = run(&backend, &config, false, false, true);
+        assert!(result.is_ok());
     }
 }

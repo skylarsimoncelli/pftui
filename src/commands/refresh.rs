@@ -155,6 +155,13 @@ impl RefreshPlan {
         }
     }
 
+    /// Convenience plan for refreshing only price data.
+    pub fn prices_only() -> Self {
+        let mut plan = Self::none();
+        plan.prices = true;
+        plan
+    }
+
     /// Build a plan that only enables the named sources.
     /// Returns an error if any source name is unrecognised.
     pub fn from_only(sources: &[String]) -> anyhow::Result<Self> {

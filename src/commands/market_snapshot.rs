@@ -12,6 +12,9 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 
+use crate::commands::prices::is_cache_stale;
+use crate::commands::refresh::{self, RefreshPlan};
+use crate::config::Config;
 use crate::db::backend::BackendConnection;
 use crate::db::news_cache::get_latest_news_backend;
 use crate::db::price_cache::get_all_cached_prices_backend;
@@ -241,7 +244,23 @@ fn build_price_entry(
 
 // ── Main entry point ─────────────────────────────────────────────────
 
-pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    config: &Config,
+    json_output: bool,
+    auto_refresh: bool,
+) -> Result<()> {
+    if auto_refresh && is_cache_stale(backend) {
+        if !json_output {
+            println!("  ⟳ Cache stale — auto-refreshing prices...");
+        }
+        let plan = RefreshPlan::prices_only();
+        let _ = refresh::run_quiet_with_plan(backend, config, false, &plan);
+        if !json_output {
+            println!("  ✓ Prices refreshed.\n");
+        }
+    }
+
     let snapshot = build_snapshot(backend)?;
 
     if json_output {
@@ -557,7 +576,7 @@ mod tests {
     fn snapshot_empty_db_json() {
         let conn = open_in_memory();
         let backend = to_backend(conn);
-        let result = run(&backend, true);
+        let result = run(&backend, &Config::default(), true, false);
         assert!(result.is_ok());
     }
 
@@ -565,7 +584,7 @@ mod tests {
     fn snapshot_empty_db_terminal() {
         let conn = open_in_memory();
         let backend = to_backend(conn);
-        let result = run(&backend, false);
+        let result = run(&backend, &Config::default(), false, false);
         assert!(result.is_ok());
     }
 
