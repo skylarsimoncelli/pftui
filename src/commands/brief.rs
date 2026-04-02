@@ -28,6 +28,7 @@ use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
+use crate::commands::correlations::{CorrelationBreak as CorrelationsBreak, interpret_break};
 use crate::commands::scan::{compute_scan_highlights, compute_scan_highlights_sqlite, ScanHighlight};
 use crate::db::scenario_contract_mappings;
 use crate::db::scenarios::Scenario;
@@ -2481,9 +2482,16 @@ fn print_correlation_summary(conn: &Connection, positions: &[Position]) {
         }
         println!("**Active Breaks (7d vs 90d):**");
         for brk in summary.active_breaks.iter().take(5) {
+            let interp = interpret_break(&to_correlations_break(brk));
+            let severity_badge = match interp.severity.as_str() {
+                "severe" => "🔴",
+                "moderate" => "🟡",
+                _ => "🟢",
+            };
             println!(
-                "- {}-{}: Δ{:+.2} (7d {:+.2} vs 90d {:+.2})",
-                brk.symbol_a, brk.symbol_b, brk.delta, brk.corr_7d, brk.corr_90d
+                "- {} {}-{}: Δ{:+.2} (7d {:+.2} vs 90d {:+.2}) — {}",
+                severity_badge, brk.symbol_a, brk.symbol_b, brk.delta, brk.corr_7d,
+                brk.corr_90d, interp.interpretation,
             );
         }
     }
@@ -2514,13 +2522,32 @@ fn print_correlation_summary_backend(backend: &BackendConnection, positions: &[P
         }
         println!("**Active Breaks (7d vs 90d):**");
         for brk in summary.active_breaks.iter().take(5) {
+            let interp = interpret_break(&to_correlations_break(brk));
+            let severity_badge = match interp.severity.as_str() {
+                "severe" => "🔴",
+                "moderate" => "🟡",
+                _ => "🟢",
+            };
             println!(
-                "- {}-{}: Δ{:+.2} (7d {:+.2} vs 90d {:+.2})",
-                brk.symbol_a, brk.symbol_b, brk.delta, brk.corr_7d, brk.corr_90d
+                "- {} {}-{}: Δ{:+.2} (7d {:+.2} vs 90d {:+.2}) — {}",
+                severity_badge, brk.symbol_a, brk.symbol_b, brk.delta, brk.corr_7d,
+                brk.corr_90d, interp.interpretation,
             );
         }
     }
     println!();
+}
+
+/// Convert a brief-internal CorrelationBreak to the correlations module's type
+/// so we can reuse `interpret_break()` for severity/interpretation/signal.
+fn to_correlations_break(b: &CorrelationBreak) -> CorrelationsBreak {
+    CorrelationsBreak {
+        symbol_a: b.symbol_a.clone(),
+        symbol_b: b.symbol_b.clone(),
+        corr_7d: Some(b.corr_7d),
+        corr_90d: Some(b.corr_90d),
+        break_delta: b.delta,
+    }
 }
 
 fn correlation_summary_to_json(summary: &CorrelationSummary) -> Option<serde_json::Value> {
@@ -2536,12 +2563,16 @@ fn correlation_summary_to_json(summary: &CorrelationSummary) -> Option<serde_jso
             })
         }).collect::<Vec<_>>(),
         "active_breaks": summary.active_breaks.iter().map(|b| {
+            let interp = interpret_break(&to_correlations_break(b));
             serde_json::json!({
                 "symbol_a": b.symbol_a,
                 "symbol_b": b.symbol_b,
                 "corr_7d": b.corr_7d,
                 "corr_90d": b.corr_90d,
                 "delta": b.delta,
+                "severity": interp.severity,
+                "interpretation": interp.interpretation,
+                "signal": interp.signal,
             })
         }).collect::<Vec<_>>(),
     }))
@@ -4526,5 +4557,114 @@ mod tests {
         let result = build_calibration_from_mappings(&mappings).unwrap();
         assert!(result.entries[0].divergence_pp < 0.0);
         assert!(result.entries[0].significant);
+    }
+
+    #[test]
+    fn correlation_break_json_includes_severity() {
+        let summary = CorrelationSummary {
+            top_pairs: vec![],
+            active_breaks: vec![CorrelationBreak {
+                symbol_a: "BTC-USD".to_string(),
+                symbol_b: "GC=F".to_string(),
+                corr_7d: 0.85,
+                corr_90d: 0.10,
+                delta: 0.75,
+            }],
+        };
+        let json = correlation_summary_to_json(&summary).unwrap();
+        let breaks = json["active_breaks"].as_array().unwrap();
+        assert_eq!(breaks.len(), 1);
+        let brk = &breaks[0];
+        assert!(brk["severity"].is_string());
+        assert!(brk["interpretation"].is_string());
+        assert!(brk["signal"].is_string());
+        // delta 0.75 => severe
+        assert_eq!(brk["severity"].as_str().unwrap(), "severe");
+    }
+
+    #[test]
+    fn correlation_break_json_moderate_severity() {
+        let summary = CorrelationSummary {
+            top_pairs: vec![],
+            active_breaks: vec![CorrelationBreak {
+                symbol_a: "^GSPC".to_string(),
+                symbol_b: "DX-Y.NYB".to_string(),
+                corr_7d: 0.20,
+                corr_90d: -0.35,
+                delta: 0.55,
+            }],
+        };
+        let json = correlation_summary_to_json(&summary).unwrap();
+        let brk = &json["active_breaks"][0];
+        assert_eq!(brk["severity"].as_str().unwrap(), "moderate");
+        // Interpretation should be a non-empty string
+        assert!(!brk["interpretation"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn correlation_break_json_minor_severity() {
+        let summary = CorrelationSummary {
+            top_pairs: vec![],
+            active_breaks: vec![CorrelationBreak {
+                symbol_a: "TSLA".to_string(),
+                symbol_b: "NVDA".to_string(),
+                corr_7d: 0.60,
+                corr_90d: 0.25,
+                delta: 0.35,
+            }],
+        };
+        let json = correlation_summary_to_json(&summary).unwrap();
+        let brk = &json["active_breaks"][0];
+        assert_eq!(brk["severity"].as_str().unwrap(), "minor");
+    }
+
+    #[test]
+    fn correlation_break_json_preserves_existing_fields() {
+        let summary = CorrelationSummary {
+            top_pairs: vec![CorrelationPair {
+                symbol_a: "BTC-USD".to_string(),
+                symbol_b: "GC=F".to_string(),
+                corr_30d: 0.42,
+            }],
+            active_breaks: vec![CorrelationBreak {
+                symbol_a: "SI=F".to_string(),
+                symbol_b: "GC=F".to_string(),
+                corr_7d: 0.90,
+                corr_90d: 0.20,
+                delta: 0.70,
+            }],
+        };
+        let json = correlation_summary_to_json(&summary).unwrap();
+        // top_pairs still has corr_30d
+        let pair = &json["top_pairs_30d"][0];
+        assert_eq!(pair["symbol_a"].as_str().unwrap(), "BTC-USD");
+        assert!((pair["corr_30d"].as_f64().unwrap() - 0.42).abs() < 0.01);
+        // breaks still have the original fields
+        let brk = &json["active_breaks"][0];
+        assert_eq!(brk["symbol_a"].as_str().unwrap(), "SI=F");
+        assert!((brk["corr_7d"].as_f64().unwrap() - 0.90).abs() < 0.01);
+        assert!((brk["corr_90d"].as_f64().unwrap() - 0.20).abs() < 0.01);
+        assert!((brk["delta"].as_f64().unwrap() - 0.70).abs() < 0.01);
+        // AND has the new enrichment fields
+        assert!(brk["severity"].is_string());
+        assert!(brk["interpretation"].is_string());
+        assert!(brk["signal"].is_string());
+    }
+
+    #[test]
+    fn to_correlations_break_maps_fields_correctly() {
+        let brief_break = CorrelationBreak {
+            symbol_a: "BTC-USD".to_string(),
+            symbol_b: "GC=F".to_string(),
+            corr_7d: 0.85,
+            corr_90d: 0.10,
+            delta: 0.75,
+        };
+        let corr_break = to_correlations_break(&brief_break);
+        assert_eq!(corr_break.symbol_a, "BTC-USD");
+        assert_eq!(corr_break.symbol_b, "GC=F");
+        assert_eq!(corr_break.corr_7d, Some(0.85));
+        assert_eq!(corr_break.corr_90d, Some(0.10));
+        assert!((corr_break.break_delta - 0.75).abs() < f64::EPSILON);
     }
 }
