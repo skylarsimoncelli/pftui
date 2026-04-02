@@ -195,6 +195,19 @@ pub fn list_trends(
     status: Option<&str>,
     category: Option<&str>,
 ) -> Result<Vec<Trend>> {
+    list_trends_filtered(conn, status, category, None, None, None, None)
+}
+
+/// List trends with full filter support: status, category, timeframe, direction, conviction, limit.
+pub fn list_trends_filtered(
+    conn: &Connection,
+    status: Option<&str>,
+    category: Option<&str>,
+    timeframe: Option<&str>,
+    direction: Option<&str>,
+    conviction: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<Trend>> {
     let mut sql = String::from(
         "SELECT id, name, timeframe, direction, conviction, category, description, asset_impact, key_signal, status, created_at, updated_at
          FROM trend_tracker WHERE 1=1",
@@ -209,8 +222,24 @@ pub fn list_trends(
         sql.push_str(" AND category = ?");
         params_vec.push(c.to_string());
     }
+    if let Some(tf) = timeframe {
+        sql.push_str(" AND LOWER(timeframe) = LOWER(?)");
+        params_vec.push(tf.to_string());
+    }
+    if let Some(dir) = direction {
+        sql.push_str(" AND LOWER(direction) = LOWER(?)");
+        params_vec.push(dir.to_string());
+    }
+    if let Some(conv) = conviction {
+        sql.push_str(" AND LOWER(conviction) = LOWER(?)");
+        params_vec.push(conv.to_string());
+    }
 
     sql.push_str(" ORDER BY updated_at DESC");
+
+    if let Some(lim) = limit {
+        sql.push_str(&format!(" LIMIT {}", lim));
+    }
 
     let mut stmt = conn.prepare(&sql)?;
     let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec
@@ -226,6 +255,18 @@ fn list_trends_postgres(
     status: Option<&str>,
     category: Option<&str>,
 ) -> Result<Vec<Trend>> {
+    list_trends_filtered_postgres(pool, status, category, None, None, None, None)
+}
+
+fn list_trends_filtered_postgres(
+    pool: &PgPool,
+    status: Option<&str>,
+    category: Option<&str>,
+    timeframe: Option<&str>,
+    direction: Option<&str>,
+    conviction: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<Trend>> {
     crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             "SELECT id, name, timeframe, direction, conviction, category, description, asset_impact, key_signal, status, created_at::text, updated_at::text
@@ -239,7 +280,25 @@ fn list_trends_postgres(
             qb.push(" AND category = ");
             qb.push_bind(c);
         }
+        if let Some(tf) = timeframe {
+            qb.push(" AND LOWER(timeframe) = LOWER(");
+            qb.push_bind(tf);
+            qb.push(")");
+        }
+        if let Some(dir) = direction {
+            qb.push(" AND LOWER(direction) = LOWER(");
+            qb.push_bind(dir);
+            qb.push(")");
+        }
+        if let Some(conv) = conviction {
+            qb.push(" AND LOWER(conviction) = LOWER(");
+            qb.push_bind(conv);
+            qb.push(")");
+        }
         qb.push(" ORDER BY updated_at DESC");
+        if let Some(lim) = limit {
+            qb.push(format!(" LIMIT {}", lim));
+        }
 
         let rows = qb.build().fetch_all(pool).await?;
         Ok::<Vec<Trend>, sqlx::Error>(
@@ -273,6 +332,23 @@ pub fn list_trends_backend(
         backend,
         |conn| list_trends(conn, status, category),
         |pool| list_trends_postgres(pool, status, category),
+    )
+}
+
+/// List trends with full filter support at the backend level.
+pub fn list_trends_filtered_backend(
+    backend: &BackendConnection,
+    status: Option<&str>,
+    category: Option<&str>,
+    timeframe: Option<&str>,
+    direction: Option<&str>,
+    conviction: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<Trend>> {
+    query::dispatch(
+        backend,
+        |conn| list_trends_filtered(conn, status, category, timeframe, direction, conviction, limit),
+        |pool| list_trends_filtered_postgres(pool, status, category, timeframe, direction, conviction, limit),
     )
 }
 
@@ -949,5 +1025,77 @@ mod tests {
         assert_eq!(limited.len(), 1);
         // Most recent first (ORDER BY date DESC)
         assert_eq!(limited[0].evidence, "Third");
+    }
+
+    #[test]
+    fn list_trends_filtered_by_timeframe() {
+        let conn = setup_db();
+        add_trend(&conn, "High TF Trend", "high", "accelerating", "high", None, None, None, None).unwrap();
+        add_trend(&conn, "Low TF Trend", "low", "stable", "medium", None, None, None, None).unwrap();
+        add_trend(&conn, "Medium TF Trend", "medium", "decelerating", "low", None, None, None, None).unwrap();
+
+        let high_only = list_trends_filtered(&conn, None, None, Some("high"), None, None, None).unwrap();
+        assert_eq!(high_only.len(), 1);
+        assert_eq!(high_only[0].name, "High TF Trend");
+
+        // Case-insensitive
+        let low_upper = list_trends_filtered(&conn, None, None, Some("LOW"), None, None, None).unwrap();
+        assert_eq!(low_upper.len(), 1);
+        assert_eq!(low_upper[0].name, "Low TF Trend");
+    }
+
+    #[test]
+    fn list_trends_filtered_by_direction() {
+        let conn = setup_db();
+        add_trend(&conn, "Accel Trend", "high", "accelerating", "high", None, None, None, None).unwrap();
+        add_trend(&conn, "Stable Trend", "high", "stable", "medium", None, None, None, None).unwrap();
+
+        let accel = list_trends_filtered(&conn, None, None, None, Some("accelerating"), None, None).unwrap();
+        assert_eq!(accel.len(), 1);
+        assert_eq!(accel[0].name, "Accel Trend");
+    }
+
+    #[test]
+    fn list_trends_filtered_by_conviction() {
+        let conn = setup_db();
+        add_trend(&conn, "High Conv", "high", "stable", "high", None, None, None, None).unwrap();
+        add_trend(&conn, "Low Conv", "low", "stable", "low", None, None, None, None).unwrap();
+
+        let high_conv = list_trends_filtered(&conn, None, None, None, None, Some("high"), None).unwrap();
+        assert_eq!(high_conv.len(), 1);
+        assert_eq!(high_conv[0].name, "High Conv");
+    }
+
+    #[test]
+    fn list_trends_filtered_combined() {
+        let conn = setup_db();
+        add_trend(&conn, "Match", "high", "accelerating", "high", Some("energy"), None, None, None).unwrap();
+        add_trend(&conn, "Wrong TF", "low", "accelerating", "high", Some("energy"), None, None, None).unwrap();
+        add_trend(&conn, "Wrong Dir", "high", "stable", "high", Some("energy"), None, None, None).unwrap();
+
+        let results = list_trends_filtered(&conn, None, Some("energy"), Some("high"), Some("accelerating"), Some("high"), None).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "Match");
+    }
+
+    #[test]
+    fn list_trends_filtered_respects_limit() {
+        let conn = setup_db();
+        add_trend(&conn, "Trend A", "high", "stable", "high", None, None, None, None).unwrap();
+        add_trend(&conn, "Trend B", "high", "stable", "high", None, None, None, None).unwrap();
+        add_trend(&conn, "Trend C", "high", "stable", "high", None, None, None, None).unwrap();
+
+        let limited = list_trends_filtered(&conn, None, None, Some("high"), None, None, Some(2)).unwrap();
+        assert_eq!(limited.len(), 2);
+    }
+
+    #[test]
+    fn list_trends_filtered_no_filters_returns_all() {
+        let conn = setup_db();
+        add_trend(&conn, "A", "high", "stable", "high", None, None, None, None).unwrap();
+        add_trend(&conn, "B", "low", "accelerating", "low", None, None, None, None).unwrap();
+
+        let all = list_trends_filtered(&conn, None, None, None, None, None, None).unwrap();
+        assert_eq!(all.len(), 2);
     }
 }

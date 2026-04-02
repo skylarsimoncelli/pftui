@@ -8519,6 +8519,39 @@ mod tests {
     }
 
     #[test]
+    fn parse_analytics_trends_list_all_filters() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui", "analytics", "trends", "list",
+            "--timeframe", "high",
+            "--direction", "accelerating",
+            "--conviction", "high",
+            "--category", "energy",
+            "--status", "active",
+            "--limit", "5",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Trends { command } = command else {
+            panic!("expected trends");
+        };
+        let AnalyticsTrendsCommand::List {
+            timeframe, direction, conviction, category, status, limit, json, ..
+        } = command else {
+            panic!("expected list");
+        };
+        assert_eq!(timeframe.as_deref(), Some("high"));
+        assert_eq!(direction.as_deref(), Some("accelerating"));
+        assert_eq!(conviction.as_deref(), Some("high"));
+        assert_eq!(category.as_deref(), Some("energy"));
+        assert_eq!(status.as_deref(), Some("active"));
+        assert_eq!(limit, Some(5));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
     fn parse_calendar_list() -> Result<()> {
         let cli = Cli::parse_from(["pftui", "data", "calendar", "list", "--days", "14", "--impact", "high", "--json"]);
         let Some(Command::Data { command }) = cli.command else {

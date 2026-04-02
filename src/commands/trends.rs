@@ -48,7 +48,9 @@ pub fn run(
             Ok(())
         }
         "list" => {
-            let trends_list = trends::list_trends_backend(backend, status, category)?;
+            let trends_list = trends::list_trends_filtered_backend(
+                backend, status, category, timeframe, direction, conviction, limit,
+            )?;
 
             if json_output {
                 let mut enriched = Vec::new();

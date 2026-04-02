@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-02 — bugfix: fix silently ignored --timeframe/--direction/--conviction/--limit filters on analytics trends list
+
+- What: `analytics trends list --timeframe high --direction accelerating --conviction high --limit 5` now actually filters results. Previously these four flags were accepted by the CLI but silently ignored — the list always returned all trends filtered only by `--status` and `--category`.
+- Why: Agents passing `--timeframe high` to get high-timeframe trends were getting the full unfiltered list back. This made agent routines less efficient (filtering client-side or processing irrelevant data) and violated the CLI contract (flags that parse but don't work).
+- Implementation: New `list_trends_filtered` / `list_trends_filtered_postgres` / `list_trends_filtered_backend` functions in `db/trends.rs` that accept all 6 filter parameters (status, category, timeframe, direction, conviction, limit) with case-insensitive matching for timeframe/direction/conviction. The existing `list_trends` / `list_trends_backend` now delegate to the filtered variants with None defaults — no breaking changes for other callers. The `run()` list action in `commands/trends.rs` now calls `list_trends_filtered_backend` so all CLI-passed filters are actually applied.
+- Files: `src/db/trends.rs` (+105: `list_trends_filtered`, `list_trends_filtered_postgres`, `list_trends_filtered_backend`, 7 new tests), `src/commands/trends.rs` (+2: switch to filtered backend call), `src/cli.rs` (+33: 1 new CLI parse test)
+- Tests: 2380 passing (+8 new: 7 DB filter tests + 1 CLI parse test). Clippy clean.
+- **Non-breaking:** Existing callers of `list_trends_backend` are unchanged. New `list_trends_filtered_backend` is additive.
+
 ### 2026-04-02 — feat: enrich correlation breaks in brief with severity/interpretation/signal
 
 - What: `portfolio brief --json` correlation breaks now include `severity` (severe/moderate/minor), `interpretation` (human-readable explanation of what the break means), and `signal` (positioning suggestion) on each `active_breaks` entry. Terminal output shows severity emoji badges (🔴/🟡/🟢) and interpretation text.
