@@ -2266,6 +2266,52 @@ fn run_synthesis(backend: &BackendConnection, json_output: bool) -> Result<()> {
                 println!("- {} {}", item.symbol, item.summary);
             }
         }
+        if !report.conviction_matrix.is_empty() {
+            println!("\nConviction matrix (analyst scores):");
+            println!(
+                "  {:<8} {:>5} {:>5} {:>5} {:>5}  {:>4}  Alignment",
+                "Asset", "LOW", "MED", "HIGH", "MACRO", "Net"
+            );
+            println!("  {}", "─".repeat(56));
+            for entry in &report.conviction_matrix {
+                let low_str = entry
+                    .low
+                    .as_ref()
+                    .map(|d| format!("{:+}", d.conviction))
+                    .unwrap_or_else(|| "  —".to_string());
+                let med_str = entry
+                    .medium
+                    .as_ref()
+                    .map(|d| format!("{:+}", d.conviction))
+                    .unwrap_or_else(|| "  —".to_string());
+                let high_str = entry
+                    .high
+                    .as_ref()
+                    .map(|d| format!("{:+}", d.conviction))
+                    .unwrap_or_else(|| "  —".to_string());
+                let macro_str = entry
+                    .macro_view
+                    .as_ref()
+                    .map(|d| format!("{:+}", d.conviction))
+                    .unwrap_or_else(|| "  —".to_string());
+                let align_icon = match entry.alignment.as_str() {
+                    "aligned-bull" => "🟢 aligned-bull",
+                    "aligned-bear" => "🔴 aligned-bear",
+                    "divergent" => "🟡 divergent",
+                    _ => "⚪ neutral",
+                };
+                println!(
+                    "  {:<8} {:>5} {:>5} {:>5} {:>5}  {:>+4}  {}",
+                    entry.symbol,
+                    low_str,
+                    med_str,
+                    high_str,
+                    macro_str,
+                    entry.net_conviction,
+                    align_icon
+                );
+            }
+        }
         if let Some(ps) = &report.power_structure {
             println!("\nPower structure (FIC/MIC/TIC):");
             for c in &ps.complexes {
