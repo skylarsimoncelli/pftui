@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-- [Feedback] Investigate `data prices`/`data quotes` returning empty output — Evening Analysis (Apr 2, 82/80) reports endpoints returned empty despite implementation existing. **Investigated Apr 2**: not reproducible — both commands return full data (70 symbols) when cache is populated. Likely a timing issue where the agent ran before `data refresh` populated the cache. The new `analytics market-snapshot` command mitigates this by consolidating data access. If reproduced again, check whether `data refresh --only prices` was run first. Consider adding a "last refreshed" warning when cache is stale >2h.
+_(none)_
 
 ## P2 - Coverage And Agent Consumption
 

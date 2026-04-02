@@ -1,5 +1,16 @@
 # Changelog
 
+### 2026-04-02 — feat: stale cache warning on data prices and analytics market-snapshot
+
+- What: When cached prices are >2h old, both `data prices` (alias: `data quotes`) and `analytics market-snapshot` now surface a staleness warning telling agents and users that data is stale and suggesting `pftui data refresh`.
+- Why: P1 investigation (Apr 2): Evening Analysis reported `data prices`/`data quotes` returning empty output. Root cause was cache timing — the agent ran before `data refresh` populated the cache. The endpoints worked but gave no indication that data was absent/stale. This makes staleness visible so agents can self-diagnose.
+- Terminal output: `⚠ Cached prices are Xh old. Run 'pftui data refresh' for live data.` shown above the price table when stale.
+- JSON output: `data prices --json` shape changed from bare array `[...]` to `{"staleness_warning": {...}, "prices": [...]}`. `staleness_warning` omitted when fresh (`skip_serializing_if`). `analytics market-snapshot` gets additive `staleness_warning` field.
+- Implementation: Staleness computed from newest `fetched_at` across all cached prices. Robust timestamp parsing handles Postgres, ISO 8601, and no-fractional formats. 2-hour threshold constant.
+- Files: `src/commands/prices.rs` (+221: `PriceOutput`, `StalenessWarning`, `check_staleness()`, `parse_fetched_at()`, 11 new tests), `src/commands/market_snapshot.rs` (+69: `StalenessInfo`, staleness check wired into `build_snapshot`, terminal warning)
+- Tests: 2343 passing (+11 new: staleness_none_when_empty, staleness_none_when_fresh, staleness_warning_when_stale, staleness_uses_newest_timestamp, staleness_skips_empty_fetched_at, parse_fetched_at_postgres_format, parse_fetched_at_iso_format, parse_fetched_at_no_fractional, parse_fetched_at_invalid, staleness_json_output_includes_warning, staleness_json_output_omits_when_none). Clippy clean.
+- **Breaking:** `data prices --json` output shape changed from bare array to object. Agents parsing old format need to read `.prices`.
+
 ### 2026-04-02 — feat: scan highlights embedded in Situation Room
 
 - What: Added `scan_highlights` section to the Situation Room (`analytics situation`) that automatically surfaces notable portfolio scan results — big daily movers (|change| ≥ 3%), trackline breaches (price below SMA50/SMA200), and divergent gainers (total gain ≥ 20%) — directly in the dashboard. Agents no longer need a separate `analytics scan` call to see key technical flags.
