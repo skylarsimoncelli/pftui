@@ -28,6 +28,8 @@ use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
+use crate::commands::scan::{compute_scan_highlights, compute_scan_highlights_sqlite, ScanHighlight};
+
 // ==================== Agent JSON Structures ====================
 
 #[derive(Serialize)]
@@ -65,6 +67,8 @@ struct AgentBrief {
     technical_signals: Vec<serde_json::Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     overnight_changes: Vec<OvernightChangeJson>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    scan_highlights: Vec<ScanHighlight>,
 }
 
 #[derive(Serialize)]
@@ -440,6 +444,9 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     let overnight_changes =
         build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
 
+    // Scan highlights: big movers, trackline breaches, divergent gainers
+    let scan_highlights = compute_scan_highlights_sqlite(conn).unwrap_or_default();
+
     let brief = AgentBrief {
         timestamp,
         portfolio: portfolio_summary,
@@ -459,6 +466,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
         timeframe_signal,
         technical_signals: technical_signals_json,
         overnight_changes,
+        scan_highlights,
     };
 
     let json = serde_json::to_string_pretty(&brief)?;
@@ -637,6 +645,9 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
     let overnight_changes =
         build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
 
+    // Scan highlights: big movers, trackline breaches, divergent gainers
+    let scan_highlights = compute_scan_highlights(backend).unwrap_or_default();
+
     let brief = AgentBrief {
         timestamp,
         portfolio: portfolio_summary,
@@ -656,6 +667,7 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
         timeframe_signal,
         technical_signals: technical_signals_json,
         overnight_changes,
+        scan_highlights,
     };
     println!("{}", serde_json::to_string_pretty(&brief)?);
     Ok(())
@@ -4154,5 +4166,88 @@ mod tests {
         // Run brief in JSON mode — should succeed with watchlist levels populated
         let result = run_internal(&conn, &config, true, false, false);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn agent_brief_scan_highlights_serialized_when_present() {
+        let highlight = ScanHighlight {
+            symbol: "BTC-USD".to_string(),
+            name: "Bitcoin".to_string(),
+            scan_type: "big_mover".to_string(),
+            detail: "+6.2% daily change".to_string(),
+            value_pct: Some(6.2),
+            severity: "elevated".to_string(),
+        };
+        let brief = AgentBrief {
+            timestamp: "2026-04-02T10:00:00Z".to_string(),
+            portfolio: PortfolioSummaryJson {
+                total_value: "100000".to_string(),
+                total_cost: "90000".to_string(),
+                total_gain: "10000".to_string(),
+                total_gain_pct: "11.11".to_string(),
+                daily_pnl: None,
+                daily_pnl_pct: None,
+                base_currency: "USD".to_string(),
+            },
+            positions: vec![],
+            watchlist: vec![],
+            movers: vec![],
+            market_movers: vec![],
+            macro_data: None,
+            news_summary: vec![],
+            economic_data: vec![],
+            predictions: vec![],
+            sentiment: None,
+            alerts: vec![],
+            drift: None,
+            regime: None,
+            correlations: None,
+            timeframe_signal: None,
+            technical_signals: vec![],
+            overnight_changes: vec![],
+            scan_highlights: vec![highlight],
+        };
+        let json = serde_json::to_string(&brief).unwrap();
+        assert!(json.contains("scan_highlights"), "scan_highlights should appear when non-empty");
+        assert!(json.contains("big_mover"));
+        assert!(json.contains("BTC-USD"));
+    }
+
+    #[test]
+    fn agent_brief_scan_highlights_omitted_when_empty() {
+        let brief = AgentBrief {
+            timestamp: "2026-04-02T10:00:00Z".to_string(),
+            portfolio: PortfolioSummaryJson {
+                total_value: "100000".to_string(),
+                total_cost: "90000".to_string(),
+                total_gain: "10000".to_string(),
+                total_gain_pct: "11.11".to_string(),
+                daily_pnl: None,
+                daily_pnl_pct: None,
+                base_currency: "USD".to_string(),
+            },
+            positions: vec![],
+            watchlist: vec![],
+            movers: vec![],
+            market_movers: vec![],
+            macro_data: None,
+            news_summary: vec![],
+            economic_data: vec![],
+            predictions: vec![],
+            sentiment: None,
+            alerts: vec![],
+            drift: None,
+            regime: None,
+            correlations: None,
+            timeframe_signal: None,
+            technical_signals: vec![],
+            overnight_changes: vec![],
+            scan_highlights: vec![],
+        };
+        let json = serde_json::to_string(&brief).unwrap();
+        assert!(
+            !json.contains("scan_highlights"),
+            "scan_highlights should be omitted from JSON when empty"
+        );
     }
 }
