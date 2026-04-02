@@ -558,7 +558,7 @@ pub enum DataCommand {
         json: bool,
     },
     /// Consolidated closing prices for all portfolio + watchlist symbols
-    #[command(alias = "quotes", after_help = "Aliases: `data quotes` also works.\n\nFor overnight futures specifically, see: pftui data futures\nFor market overview symbols, add --market flag.")]
+    #[command(alias = "quotes", after_help = "Aliases: `data quotes` also works.\n\nFor overnight futures specifically, see: pftui data futures\nFor market overview symbols, add --market flag.\nUse --auto-refresh to automatically refresh stale (>2h) prices before returning.")]
     Prices {
         /// Include all market overview symbols (indices, commodities, crypto, forex, bonds)
         #[arg(long)]
@@ -566,6 +566,9 @@ pub enum DataCommand {
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
+        /// Automatically refresh prices if cache is stale (>2h old)
+        #[arg(long)]
+        auto_refresh: bool,
     },
     /// Backfill missing OHLCV data for existing price history (re-fetches from Yahoo Finance)
     Backfill {
@@ -3510,6 +3513,9 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
     MarketSnapshot {
         #[arg(long)]
         json: bool,
+        /// Automatically refresh prices if cache is stale (>2h old)
+        #[arg(long)]
+        auto_refresh: bool,
     },
     /// Rolling correlations: compute, store, and detect correlation breaks between asset pairs
     Correlations {
@@ -8065,7 +8071,7 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json } = command else {
+        let DataCommand::Prices { market, json, auto_refresh: _ } = command else {
             panic!("expected Prices");
         };
         assert!(market);
@@ -8078,7 +8084,7 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json } = command else {
+        let DataCommand::Prices { market, json, auto_refresh: _ } = command else {
             panic!("expected Prices");
         };
         assert!(!market);
@@ -8092,7 +8098,7 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json } = command else {
+        let DataCommand::Prices { market, json, auto_refresh: _ } = command else {
             panic!("expected Prices via quotes alias");
         };
         assert!(!market);
@@ -8106,7 +8112,7 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json } = command else {
+        let DataCommand::Prices { market, json, auto_refresh: _ } = command else {
             panic!("expected Prices via quotes alias");
         };
         assert!(market);
@@ -8119,11 +8125,63 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json } = command else {
+        let DataCommand::Prices { market, json, auto_refresh: _ } = command else {
             panic!("expected Prices via quotes alias");
         };
         assert!(!market);
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_data_prices_auto_refresh_flag() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "prices",
+            "--auto-refresh",
+            "--json",
+        ])
+        .unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Prices {
+            market,
+            json,
+            auto_refresh,
+        } = command
+        else {
+            panic!("expected Prices");
+        };
+        assert!(!market);
+        assert!(json);
+        assert!(auto_refresh);
+    }
+
+    #[test]
+    fn parse_data_quotes_auto_refresh_flag() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "quotes",
+            "--auto-refresh",
+            "--market",
+        ])
+        .unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Prices {
+            market,
+            json,
+            auto_refresh,
+        } = command
+        else {
+            panic!("expected Prices via quotes alias");
+        };
+        assert!(market);
+        assert!(!json);
+        assert!(auto_refresh);
     }
 
     #[test]
@@ -8703,7 +8761,7 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
-        let AnalyticsCommand::MarketSnapshot { json } = command else {
+        let AnalyticsCommand::MarketSnapshot { json, auto_refresh: _ } = command else {
             panic!("expected market-snapshot");
         };
         assert!(json);
@@ -8716,10 +8774,34 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
-        let AnalyticsCommand::MarketSnapshot { json } = command else {
+        let AnalyticsCommand::MarketSnapshot { json, auto_refresh: _ } = command else {
             panic!("expected market-snapshot");
         };
         assert!(!json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_market_snapshot_auto_refresh() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "market-snapshot",
+            "--auto-refresh",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::MarketSnapshot {
+            json,
+            auto_refresh,
+        } = command
+        else {
+            panic!("expected market-snapshot");
+        };
+        assert!(json);
+        assert!(auto_refresh);
         Ok(())
     }
 }

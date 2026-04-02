@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-04-02 — feat: --auto-refresh flag on data prices and analytics market-snapshot
+
+- What: New `--auto-refresh` flag on `data prices` (alias: `data quotes`) and `analytics market-snapshot`. When set, automatically triggers a prices-only refresh if cached prices are stale (>2h old) before returning data.
+- Why: Agents calling `data prices` before `data refresh` get empty or stale data. The stale cache warning (#552) tells them about it, but they still get bad data. With `--auto-refresh`, agents can self-heal: `pftui data prices --auto-refresh --json` guarantees fresh prices without a separate refresh call. Addresses dev-agent feedback from #552 ("would benefit from auto-refresh trigger when cache is stale") and root cause of Evening Analysis empty data reports (Apr 2).
+- Implementation: New `is_cache_stale()` public function in `prices.rs` checks newest `fetched_at` timestamp across all cached prices. New `RefreshPlan::prices_only()` convenience constructor. Both `data prices` and `analytics market-snapshot` accept `--auto-refresh` flag and run `refresh::run_quiet_with_plan()` with a prices-only plan when cache is stale. Terminal shows progress indicator; JSON output is clean (refresh happens silently before data output).
+- Files: `src/commands/prices.rs` (+45: `is_cache_stale()` pub fn, auto-refresh logic in `run()`, 4 new tests), `src/commands/market_snapshot.rs` (+15: auto-refresh logic in `run()`, import `is_cache_stale`), `src/commands/refresh.rs` (+6: `RefreshPlan::prices_only()` convenience fn), `src/cli.rs` (+40: `auto_refresh` field on Prices and MarketSnapshot, 3 new CLI parse tests), `src/main.rs` (+3: pass config and auto_refresh through dispatch)
+- Tests: 2355 passing (+7 new: 3 `is_cache_stale` unit tests, 1 `auto_refresh_not_triggered_when_fresh` integration test, 3 CLI parse tests). Clippy clean.
+
 ### 2026-04-02 — feat: scan highlights in portfolio brief JSON output
 
 - What: `portfolio brief --json` now includes a `scan_highlights` field surfacing big movers (≥3% daily change), trackline breaches (below SMA50/200), and divergent gainers (≥20% total gain) directly in the brief payload.

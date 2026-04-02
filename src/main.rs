@@ -1031,9 +1031,11 @@ fn main() -> Result<()> {
                 commands::supply::run(&backend, symbol, json)
             }
             cli::DataCommand::Sovereign { json } => commands::sovereign::run(&backend, json),
-            cli::DataCommand::Prices { market, json } => {
-                commands::prices::run(&backend, market, json)
-            }
+            cli::DataCommand::Prices {
+                market,
+                json,
+                auto_refresh,
+            } => commands::prices::run(&backend, &config, market, json, auto_refresh),
             cli::DataCommand::OilInventory { weeks, json } => {
                 commands::oil_inventory::run(&config, weeks, json)
             }
@@ -3144,8 +3146,8 @@ fn main() -> Result<()> {
                     commands::movers::run(&backend, &config, Some(&threshold), overnight, json)
                 }
             },
-            cli::AnalyticsCommand::MarketSnapshot { json } => {
-                commands::market_snapshot::run(&backend, json)
+            cli::AnalyticsCommand::MarketSnapshot { json, auto_refresh } => {
+                commands::market_snapshot::run(&backend, &config, json, auto_refresh)
             }
             cli::AnalyticsCommand::Correlations { command, json } => match command {
                 None => commands::correlations::run(
