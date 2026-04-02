@@ -1,5 +1,17 @@
 # Changelog
 
+### 2026-04-02 — feat: per-symbol staleness on data prices and analytics market-snapshot
+
+- What: `data prices --json` and `analytics market-snapshot --json` now include per-symbol staleness indicators. Each price row gains `stale` (boolean, omitted when false) and `age_hours` (float, omitted when fresh) fields. The `staleness_warning` object gains `stale_count`, `total_count`, and `stale_symbols` (list of individually stale symbol names). A new staleness warning is now also emitted when the global cache is fresh but individual symbols are stale/missing.
+- Why: Previously staleness was a single global check (newest timestamp across all prices). An agent would see "prices are fresh" even if 5 of 50 symbols hadn't been updated in hours. This made it impossible to know which data was reliable. Dev-agent feedback from #552: "would benefit from per-symbol staleness rather than global newest timestamp." Per-symbol staleness lets agents make targeted decisions about which data to trust.
+- JSON output (data prices): Each row now includes `"stale": true` and `"age_hours": 4.2` when the symbol's cached price is >2h old or missing. Fresh rows omit both fields (`skip_serializing_if`). `staleness_warning` now includes `stale_count`, `total_count`, `stale_symbols` array, and enhanced message showing `N/M symbols stale`.
+- JSON output (market-snapshot): Same per-symbol `stale`/`age_hours` fields on each `PriceEntry`. Same enhanced `StalenessInfo` with per-symbol breakdown.
+- Terminal output: Stale symbols show ` ⚠` marker after their row in the price table.
+- New behavior: A staleness warning is now emitted even when the newest price is fresh, if individual symbols are stale. Previously this was silent.
+- Files: `src/commands/prices.rs` (+95: `annotate_per_symbol_staleness()` fn, `stale`/`age_hours` fields on `PriceRow`, enhanced `StalenessWarning` struct, terminal stale markers, 7 new tests), `src/commands/market_snapshot.rs` (+35: `stale`/`age_hours` fields on `PriceEntry`, enhanced `StalenessInfo` struct, per-symbol staleness in `build_price_entry`)
+- Tests: 2362 passing (+7 new: per_symbol_staleness_fresh_symbol, per_symbol_staleness_old_symbol, per_symbol_staleness_missing_price, per_symbol_staleness_mixed_freshness, per_symbol_staleness_json_omits_when_fresh, per_symbol_staleness_json_includes_when_stale, staleness_warning_includes_per_symbol_breakdown). Clippy clean.
+- **Additive JSON change:** New fields use `skip_serializing_if` so existing parsers are unaffected. `staleness_warning` now appears in more cases (when individual symbols are stale even if global cache is fresh).
+
 ### 2026-04-02 — feat: --auto-refresh flag on data prices and analytics market-snapshot
 
 - What: New `--auto-refresh` flag on `data prices` (alias: `data quotes`) and `analytics market-snapshot`. When set, automatically triggers a prices-only refresh if cached prices are stale (>2h old) before returning data.
