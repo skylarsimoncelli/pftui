@@ -2038,6 +2038,26 @@ fn run_situation(backend: &BackendConnection, json_output: bool) -> Result<()> {
             }
         }
 
+        // Scan highlights
+        if !snapshot.scan_highlights.is_empty() {
+            println!();
+            println!("SCAN HIGHLIGHTS");
+            for sh in &snapshot.scan_highlights {
+                let icon = match sh.severity.as_str() {
+                    "critical" => "🔴",
+                    "elevated" => "🟡",
+                    _ => "🟢",
+                };
+                let tag = match sh.scan_type.as_str() {
+                    "big_mover" => "MOVER",
+                    "trackline_breach" => "BREACH",
+                    "divergent_gainer" => "GAINER",
+                    other => other,
+                };
+                println!("  {} [{}] {} ({}) — {}", icon, tag, sh.symbol, sh.name, sh.detail);
+            }
+        }
+
         // Alert summary
         let alerts = &snapshot.alert_summary;
         if alerts.total > 0 || alerts.triggered > 0 {

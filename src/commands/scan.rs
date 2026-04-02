@@ -827,6 +827,138 @@ fn to_json(row: &ScanRow) -> serde_json::Value {
     })
 }
 
+// ── Scan highlights for the Situation Room ─────────────────────────────
+
+/// A notable finding from built-in portfolio scans, embedded directly in the
+/// Situation Room so agents don't need a separate `analytics scan` call.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ScanHighlight {
+    pub symbol: String,
+    pub name: String,
+    /// The type of scan that flagged this: `big_mover`, `trackline_breach`, or `divergent_gainer`.
+    pub scan_type: String,
+    /// Human-readable detail (e.g. "+4.2% daily change", "below SMA50 by -3.1%").
+    pub detail: String,
+    /// The key numeric value driving the highlight (change_1d for movers, gap_pct for breaches).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_pct: Option<f64>,
+    pub severity: String,
+}
+
+/// Compute scan highlights for the Situation Room.
+///
+/// Runs three built-in scans on portfolio + watchlist positions:
+/// 1. **Big movers** — |daily change| ≥ 3%
+/// 2. **Trackline breaches** — price below SMA50 or SMA200
+/// 3. **Divergent gainers** — gain_pct ≥ 20% (positions significantly outperforming cost basis)
+///
+/// Results are severity-sorted and capped at 10 entries.
+pub fn compute_scan_highlights(backend: &BackendConnection) -> Result<Vec<ScanHighlight>> {
+    let rows = load_rows_backend(backend, None)?;
+    let mut highlights: Vec<ScanHighlight> = Vec::new();
+
+    for row in &rows {
+        // 1. Big movers: |change_1d| >= 3%
+        if let Some(change) = row.change_1d {
+            let abs_change = change.abs();
+            if abs_change >= dec!(3) {
+                let severity = if abs_change >= dec!(7) {
+                    "critical"
+                } else if abs_change >= dec!(5) {
+                    "elevated"
+                } else {
+                    "normal"
+                };
+                let direction = if change > Decimal::ZERO { "+" } else { "" };
+                highlights.push(ScanHighlight {
+                    symbol: row.symbol.clone(),
+                    name: row.name.clone(),
+                    scan_type: "big_mover".to_string(),
+                    detail: format!("{}{:.1}% daily change", direction, change),
+                    value_pct: change.to_string().parse::<f64>().ok(),
+                    severity: severity.to_string(),
+                });
+            }
+        }
+
+        // 2. Trackline breaches: below SMA50 or SMA200
+        if row.trackline_breach != "none" {
+            let worst_gap = row
+                .sma200_gap_pct
+                .filter(|g| *g < Decimal::ZERO)
+                .or(row.sma50_gap_pct.filter(|g| *g < Decimal::ZERO));
+            let severity = if row.trackline_breach.contains("below_sma200") {
+                "elevated"
+            } else {
+                "normal"
+            };
+            let detail = if row.trackline_breach.contains("below_sma200")
+                && row.trackline_breach.contains("below_sma50")
+            {
+                format!(
+                    "Below SMA50 and SMA200 (gap {:.1}%)",
+                    worst_gap.unwrap_or(Decimal::ZERO)
+                )
+            } else if row.trackline_breach.contains("below_sma200") {
+                format!(
+                    "Below SMA200 (gap {:.1}%)",
+                    row.sma200_gap_pct.unwrap_or(Decimal::ZERO)
+                )
+            } else {
+                format!(
+                    "Below SMA50 (gap {:.1}%)",
+                    row.sma50_gap_pct.unwrap_or(Decimal::ZERO)
+                )
+            };
+            highlights.push(ScanHighlight {
+                symbol: row.symbol.clone(),
+                name: row.name.clone(),
+                scan_type: "trackline_breach".to_string(),
+                value_pct: worst_gap.and_then(|g| g.to_string().parse::<f64>().ok()),
+                detail,
+                severity: severity.to_string(),
+            });
+        }
+
+        // 3. Divergent gainers: gain_pct >= 20%
+        if let Some(gain) = row.gain_pct {
+            if gain >= dec!(20) {
+                highlights.push(ScanHighlight {
+                    symbol: row.symbol.clone(),
+                    name: row.name.clone(),
+                    scan_type: "divergent_gainer".to_string(),
+                    detail: format!("+{:.1}% total gain", gain),
+                    value_pct: gain.to_string().parse::<f64>().ok(),
+                    severity: "normal".to_string(),
+                });
+            }
+        }
+    }
+
+    // Sort: critical first, then elevated, then normal; within same severity by |value|
+    highlights.sort_by(|a, b| {
+        severity_rank(&b.severity)
+            .cmp(&severity_rank(&a.severity))
+            .then_with(|| {
+                let av = a.value_pct.map(|v| v.abs()).unwrap_or(0.0);
+                let bv = b.value_pct.map(|v| v.abs()).unwrap_or(0.0);
+                bv.partial_cmp(&av).unwrap_or(std::cmp::Ordering::Equal)
+            })
+    });
+    highlights.truncate(10);
+
+    Ok(highlights)
+}
+
+fn severity_rank(severity: &str) -> u8 {
+    match severity {
+        "critical" => 3,
+        "elevated" => 2,
+        "normal" => 1,
+        _ => 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1024,5 +1156,168 @@ mod tests {
         let rows = load_rows(&conn, None).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].change_1d, Some(dec!(10))); // +10%
+    }
+
+    #[test]
+    fn scan_highlight_big_mover_flagged() {
+        let conn = open_in_memory();
+        crate::db::transactions::insert_transaction(
+            &conn,
+            &crate::models::transaction::NewTransaction {
+                symbol: "BTC-USD".to_string(),
+                category: crate::models::asset::AssetCategory::Crypto,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: Decimal::from(1),
+                price_per: Decimal::from(80000),
+                currency: "USD".to_string(),
+                date: "2026-03-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        price_cache::upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "BTC-USD".to_string(),
+                price: Decimal::from(85000),
+                currency: "USD".to_string(),
+                fetched_at: "2026-04-02T00:00:00Z".to_string(),
+                source: "test".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: Some(Decimal::from(80000)),
+            },
+        )
+        .unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        let highlights = compute_scan_highlights(&backend).unwrap();
+        // 85000 vs 80000 previous_close = +6.25% → should flag as big_mover
+        assert!(
+            highlights.iter().any(|h| h.symbol == "BTC-USD" && h.scan_type == "big_mover"),
+            "BTC-USD should be flagged as big_mover with 6.25% daily change"
+        );
+        let btc = highlights.iter().find(|h| h.symbol == "BTC-USD" && h.scan_type == "big_mover").unwrap();
+        assert_eq!(btc.severity, "elevated"); // >= 5% but < 7%
+    }
+
+    #[test]
+    fn scan_highlight_trackline_breach_flagged() {
+        let conn = open_in_memory();
+        crate::db::transactions::insert_transaction(
+            &conn,
+            &crate::models::transaction::NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: crate::models::asset::AssetCategory::Equity,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: Decimal::from(10),
+                price_per: Decimal::from(200),
+                currency: "USD".to_string(),
+                date: "2026-01-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        price_cache::upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: Decimal::from(95),
+                currency: "USD".to_string(),
+                fetched_at: "2026-04-02T00:00:00Z".to_string(),
+                source: "test".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: Some(Decimal::from(96)),
+            },
+        )
+        .unwrap();
+        // Build SMA50 history at 100 so price 95 is below
+        let base_date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let history: Vec<HistoryRecord> = (0..60)
+            .map(|day| HistoryRecord {
+                date: (base_date + chrono::Duration::days(day))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+                close: Decimal::from(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            })
+            .collect();
+        price_history::upsert_history(&conn, "AAPL", "test", &history).unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        let highlights = compute_scan_highlights(&backend).unwrap();
+        assert!(
+            highlights.iter().any(|h| h.symbol == "AAPL" && h.scan_type == "trackline_breach"),
+            "AAPL should be flagged as trackline_breach when below SMA50"
+        );
+    }
+
+    #[test]
+    fn scan_highlight_severity_sorting() {
+        // severity_rank should sort critical > elevated > normal
+        assert!(severity_rank("critical") > severity_rank("elevated"));
+        assert!(severity_rank("elevated") > severity_rank("normal"));
+        assert!(severity_rank("normal") > severity_rank("unknown"));
+    }
+
+    #[test]
+    fn scan_highlight_capped_at_10() {
+        // Create a vec of 15 highlights and verify compute caps at 10
+        let mut highlights: Vec<ScanHighlight> = (0..15)
+            .map(|i| ScanHighlight {
+                symbol: format!("SYM{}", i),
+                name: format!("Symbol {}", i),
+                scan_type: "big_mover".to_string(),
+                detail: format!("+{}.0% daily change", 3 + i),
+                value_pct: Some((3 + i) as f64),
+                severity: if i >= 10 { "critical" } else { "normal" }.to_string(),
+            })
+            .collect();
+        highlights.sort_by(|a, b| {
+            severity_rank(&b.severity)
+                .cmp(&severity_rank(&a.severity))
+                .then_with(|| {
+                    let av = a.value_pct.map(|v| v.abs()).unwrap_or(0.0);
+                    let bv = b.value_pct.map(|v| v.abs()).unwrap_or(0.0);
+                    bv.partial_cmp(&av).unwrap_or(std::cmp::Ordering::Equal)
+                })
+        });
+        highlights.truncate(10);
+        assert_eq!(highlights.len(), 10);
+        // Critical items should come first
+        assert_eq!(highlights[0].severity, "critical");
+    }
+
+    #[test]
+    fn scan_highlight_json_serialization() {
+        let highlight = ScanHighlight {
+            symbol: "BTC-USD".to_string(),
+            name: "Bitcoin".to_string(),
+            scan_type: "big_mover".to_string(),
+            detail: "+5.2% daily change".to_string(),
+            value_pct: Some(5.2),
+            severity: "elevated".to_string(),
+        };
+        let json = serde_json::to_string(&highlight).unwrap();
+        assert!(json.contains("\"scan_type\":\"big_mover\""));
+        assert!(json.contains("\"value_pct\":5.2"));
+
+        // value_pct omitted when None
+        let highlight_no_val = ScanHighlight {
+            symbol: "X".to_string(),
+            name: "X".to_string(),
+            scan_type: "test".to_string(),
+            detail: "test".to_string(),
+            value_pct: None,
+            severity: "normal".to_string(),
+        };
+        let json2 = serde_json::to_string(&highlight_no_val).unwrap();
+        assert!(!json2.contains("value_pct"));
     }
 }
