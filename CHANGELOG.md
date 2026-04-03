@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-04-03 — feat: add 'portfolio snapshot' alias for 'portfolio status'
+
+- What: `pftui portfolio snapshot` now works as an alias for `pftui portfolio status`. Both commands produce identical output (consolidated allocation, value, daily P&L, and unrealized gain).
+- Why: Evening Analysis feedback (Apr 3): agent tried `portfolio snapshot` and got "unrecognized subcommand." Agents naturally reach for "snapshot" as a synonym for the consolidated portfolio view. Adding the alias removes CLI discoverability friction.
+- Files: `src/cli.rs` (+25: `#[command(alias = "snapshot")]` on `Status` variant, 2 new CLI parse tests)
+- Tests: 2395 passing (+2 new). Clippy clean.
+- **Non-breaking:** Additive alias only. Existing `portfolio status` usage unchanged.
+
 ### 2026-04-03 — feat: configurable alert thresholds for correlation breaks and scenario probability shifts
 
 - What: `correlation_regime_break` macro alert now respects the alert rule's `threshold` field (default 0.3) instead of hardcoded 0.3. New `scenario_probability_shift` macro alert condition detects when any active scenario's probability shifts by ≥ threshold pp between its last two history entries (default 10pp). Both are included in `analytics alerts seed-defaults`. Agents can customize thresholds via `analytics alerts add --kind macro --condition correlation_regime_break` with any threshold, or `analytics alerts add --kind macro --condition scenario_probability_shift` with custom pp threshold.
