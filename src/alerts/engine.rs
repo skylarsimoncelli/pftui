@@ -13,6 +13,7 @@ use crate::db::price_cache;
 use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::db::price_history;
 use crate::db::scan_queries;
+use crate::db::scenarios;
 use crate::db::triggered_alerts;
 use crate::indicators::bollinger::compute_bollinger;
 use crate::indicators::{compute_macd, compute_rsi, compute_sma};
@@ -509,7 +510,8 @@ fn evaluate_macro_alert_backend(
     alert: &AlertRule,
 ) -> Result<AlertEvaluation> {
     let condition = alert.condition.as_deref().unwrap_or_default();
-    let evaluation = crate::data::macro_alerts::evaluate_condition(backend, condition)?;
+    let evaluation =
+        crate::data::macro_alerts::evaluate_condition(backend, condition, &alert.threshold)?;
     Ok(AlertEvaluation {
         current_value: evaluation.current_value,
         is_triggered: evaluation.triggered,
@@ -623,7 +625,12 @@ fn evaluate_macro_alert_sqlite(
         "correlation_regime_break" => {
             let rows_30 = correlation_snapshots::list_current(conn, Some("30d"))?;
             let rows_90 = correlation_snapshots::list_current(conn, Some("90d"))?;
-            Ok(evaluate_correlation_break(rows_30, rows_90))
+            let threshold = alert.threshold.parse::<f64>().unwrap_or(0.3);
+            Ok(evaluate_correlation_break(rows_30, rows_90, threshold))
+        }
+        "scenario_probability_shift" => {
+            let threshold_pp = alert.threshold.parse::<f64>().unwrap_or(10.0);
+            Ok(evaluate_scenario_probability_shift_sqlite(conn, threshold_pp)?)
         }
         _ => Ok(AlertEvaluation {
             current_value: None,
@@ -984,6 +991,7 @@ fn evaluate_threshold_cross(
 fn evaluate_correlation_break(
     rows_30: Vec<crate::db::correlation_snapshots::CorrelationSnapshot>,
     rows_90: Vec<crate::db::correlation_snapshots::CorrelationSnapshot>,
+    threshold: f64,
 ) -> AlertEvaluation {
     let mut best: Option<(String, String, f64)> = None;
     for short in &rows_30 {
@@ -1008,13 +1016,14 @@ fn evaluate_correlation_break(
         current_value,
         is_triggered: best
             .as_ref()
-            .map(|(_, _, delta)| *delta >= 0.3)
+            .map(|(_, _, delta)| *delta >= threshold)
             .unwrap_or(false),
         distance_pct: None,
         trigger_data: json!({
             "symbol_a": best.as_ref().map(|row| row.0.clone()),
             "symbol_b": best.as_ref().map(|row| row.1.clone()),
-            "delta": best.as_ref().map(|row| row.2)
+            "delta": best.as_ref().map(|row| row.2),
+            "threshold": threshold
         }),
     }
 }
@@ -1075,6 +1084,70 @@ fn evaluate_pair_correlation_break(
             "delta": delta
         }),
     }
+}
+
+fn evaluate_scenario_probability_shift_sqlite(
+    conn: &Connection,
+    threshold_pp: f64,
+) -> Result<AlertEvaluation> {
+    let active = scenarios::list_scenarios(conn, Some("active"))?;
+    if active.is_empty() {
+        return Ok(AlertEvaluation {
+            current_value: None,
+            is_triggered: false,
+            distance_pct: None,
+            trigger_data: json!({ "reason": "no_active_scenarios" }),
+        });
+    }
+
+    let mut best_shift: Option<(String, f64, f64, f64, Option<String>)> = None;
+
+    for scenario in &active {
+        let history = scenarios::get_history(conn, scenario.id, Some(2))?;
+        if history.len() < 2 {
+            continue;
+        }
+        let current_prob = history[0].probability;
+        let previous_prob = history[1].probability;
+        let delta = current_prob - previous_prob;
+        let abs_delta = delta.abs();
+
+        if abs_delta > best_shift.as_ref().map(|(_, _, _, d, _)| d.abs()).unwrap_or(0.0) {
+            best_shift = Some((
+                scenario.name.clone(),
+                previous_prob,
+                current_prob,
+                delta,
+                history[0].driver.clone(),
+            ));
+        }
+    }
+
+    let Some((name, old_prob, new_prob, delta, driver)) = best_shift else {
+        return Ok(AlertEvaluation {
+            current_value: None,
+            is_triggered: false,
+            distance_pct: None,
+            trigger_data: json!({ "reason": "no_scenario_history" }),
+        });
+    };
+
+    let abs_delta = delta.abs();
+    let current_value = decimal_from_f64(abs_delta);
+
+    Ok(AlertEvaluation {
+        current_value,
+        is_triggered: abs_delta >= threshold_pp,
+        distance_pct: None,
+        trigger_data: json!({
+            "scenario_name": name,
+            "old_probability": old_prob,
+            "new_probability": new_prob,
+            "delta_pp": delta,
+            "threshold_pp": threshold_pp,
+            "driver": driver
+        }),
+    })
 }
 
 fn closes_as_f64(history: &[crate::models::price::HistoryRecord]) -> Vec<f64> {
@@ -2227,5 +2300,173 @@ mod tests {
         let results = check_alerts_backend(&backend, conn).unwrap();
         assert_eq!(results.len(), 1);
         assert!(!results[0].newly_triggered);
+    }
+
+    #[test]
+    fn test_correlation_break_with_custom_threshold() {
+        use crate::db::correlation_snapshots::CorrelationSnapshot;
+
+        // Delta = 0.25 — should NOT trigger with default 0.3 threshold
+        let rows_30 = vec![CorrelationSnapshot {
+            id: 1,
+            symbol_a: "BTC".to_string(),
+            symbol_b: "GLD".to_string(),
+            correlation: 0.55,
+            period: "30d".to_string(),
+            recorded_at: "2026-04-01".to_string(),
+        }];
+        let rows_90 = vec![CorrelationSnapshot {
+            id: 2,
+            symbol_a: "BTC".to_string(),
+            symbol_b: "GLD".to_string(),
+            correlation: 0.80,
+            period: "90d".to_string(),
+            recorded_at: "2026-04-01".to_string(),
+        }];
+
+        let eval_default = evaluate_correlation_break(rows_30.clone(), rows_90.clone(), 0.3);
+        assert!(!eval_default.is_triggered, "delta 0.25 should not trigger at 0.3 threshold");
+
+        // Should trigger with a lower threshold of 0.2
+        let eval_custom = evaluate_correlation_break(rows_30, rows_90, 0.2);
+        assert!(eval_custom.is_triggered, "delta 0.25 should trigger at 0.2 threshold");
+        let trigger_data = eval_custom.trigger_data;
+        assert_eq!(trigger_data["threshold"], 0.2);
+    }
+
+    #[test]
+    fn test_correlation_break_threshold_in_trigger_data() {
+        use crate::db::correlation_snapshots::CorrelationSnapshot;
+
+        let rows_30 = vec![CorrelationSnapshot {
+            id: 1,
+            symbol_a: "BTC".to_string(),
+            symbol_b: "SPY".to_string(),
+            correlation: 0.10,
+            period: "30d".to_string(),
+            recorded_at: "2026-04-01".to_string(),
+        }];
+        let rows_90 = vec![CorrelationSnapshot {
+            id: 2,
+            symbol_a: "BTC".to_string(),
+            symbol_b: "SPY".to_string(),
+            correlation: 0.80,
+            period: "90d".to_string(),
+            recorded_at: "2026-04-01".to_string(),
+        }];
+
+        let eval = evaluate_correlation_break(rows_30, rows_90, 0.5);
+        assert!(eval.is_triggered, "delta 0.70 should trigger at 0.5 threshold");
+        assert_eq!(eval.trigger_data["threshold"], 0.5);
+        assert_eq!(eval.trigger_data["symbol_a"], "BTC");
+        assert_eq!(eval.trigger_data["symbol_b"], "SPY");
+    }
+
+    #[test]
+    fn test_scenario_probability_shift_sqlite_no_scenarios() {
+        let conn = setup_test_db();
+        let eval = evaluate_scenario_probability_shift_sqlite(&conn, 10.0).unwrap();
+        assert!(!eval.is_triggered);
+        assert_eq!(eval.trigger_data["reason"], "no_active_scenarios");
+    }
+
+    #[test]
+    fn test_scenario_probability_shift_sqlite_large_shift() {
+        let conn = setup_test_db();
+        // Add a scenario
+        conn.execute(
+            "INSERT INTO scenarios (name, probability, status, phase, created_at, updated_at) \
+             VALUES ('Dollar Collapse', 20.0, 'active', 'developing', datetime('now'), datetime('now'))",
+            [],
+        ).unwrap();
+        let scenario_id: i64 = conn.query_row(
+            "SELECT id FROM scenarios WHERE name = 'Dollar Collapse'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+
+        // Add two history entries: old probability 20%, new probability 45% (25pp shift)
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) \
+             VALUES (?, 20.0, 'initial', datetime('now', '-1 day'))",
+            rusqlite::params![scenario_id],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) \
+             VALUES (?, 45.0, 'big move', datetime('now'))",
+            rusqlite::params![scenario_id],
+        ).unwrap();
+
+        let eval = evaluate_scenario_probability_shift_sqlite(&conn, 10.0).unwrap();
+        assert!(eval.is_triggered, "25pp shift should trigger at 10pp threshold");
+        assert_eq!(eval.trigger_data["scenario_name"], "Dollar Collapse");
+        assert_eq!(eval.trigger_data["old_probability"], 20.0);
+        assert_eq!(eval.trigger_data["new_probability"], 45.0);
+        assert_eq!(eval.trigger_data["threshold_pp"], 10.0);
+    }
+
+    #[test]
+    fn test_scenario_probability_shift_sqlite_small_shift_no_trigger() {
+        let conn = setup_test_db();
+        conn.execute(
+            "INSERT INTO scenarios (name, probability, status, phase, created_at, updated_at) \
+             VALUES ('Gold Rally', 30.0, 'active', 'developing', datetime('now'), datetime('now'))",
+            [],
+        ).unwrap();
+        let scenario_id: i64 = conn.query_row(
+            "SELECT id FROM scenarios WHERE name = 'Gold Rally'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+
+        // Add two history entries: 30% -> 35% (5pp shift, below 10pp threshold)
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) \
+             VALUES (?, 30.0, 'initial', datetime('now', '-1 day'))",
+            rusqlite::params![scenario_id],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) \
+             VALUES (?, 35.0, 'small update', datetime('now'))",
+            rusqlite::params![scenario_id],
+        ).unwrap();
+
+        let eval = evaluate_scenario_probability_shift_sqlite(&conn, 10.0).unwrap();
+        assert!(!eval.is_triggered, "5pp shift should NOT trigger at 10pp threshold");
+    }
+
+    #[test]
+    fn test_scenario_probability_shift_custom_threshold() {
+        let conn = setup_test_db();
+        conn.execute(
+            "INSERT INTO scenarios (name, probability, status, phase, created_at, updated_at) \
+             VALUES ('Rate Cuts', 50.0, 'active', 'developing', datetime('now'), datetime('now'))",
+            [],
+        ).unwrap();
+        let scenario_id: i64 = conn.query_row(
+            "SELECT id FROM scenarios WHERE name = 'Rate Cuts'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+
+        // 50% -> 55% = 5pp shift
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) \
+             VALUES (?, 50.0, 'initial', datetime('now', '-1 day'))",
+            rusqlite::params![scenario_id],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO scenario_history (scenario_id, probability, driver, recorded_at) \
+             VALUES (?, 55.0, 'fed signal', datetime('now'))",
+            rusqlite::params![scenario_id],
+        ).unwrap();
+
+        // Should NOT trigger at default 10pp
+        let eval_10 = evaluate_scenario_probability_shift_sqlite(&conn, 10.0).unwrap();
+        assert!(!eval_10.is_triggered);
+
+        // Should trigger at custom 5pp threshold
+        let eval_5 = evaluate_scenario_probability_shift_sqlite(&conn, 5.0).unwrap();
+        assert!(eval_5.is_triggered, "5pp shift should trigger at 5pp threshold");
     }
 }
