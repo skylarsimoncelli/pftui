@@ -2374,6 +2374,291 @@ fn get_all_timelines_postgres(
     Ok(timelines)
 }
 
+// --- Batch query functions for N+1 elimination ---
+
+/// Batch count branches for multiple scenarios (SQLite).
+/// Returns HashMap<scenario_id, count>.
+pub fn count_branches_batch(
+    conn: &Connection,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    if scenario_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: Vec<&str> = scenario_ids.iter().map(|_| "?").collect();
+    let sql = format!(
+        "SELECT scenario_id, COUNT(*) FROM scenario_branches WHERE scenario_id IN ({}) GROUP BY scenario_id",
+        placeholders.join(",")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::ToSql> = scenario_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect();
+    let rows = stmt.query_map(&params_refs[..], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    let mut map = std::collections::HashMap::new();
+    for row in rows {
+        let (sid, cnt) = row?;
+        map.insert(sid, cnt as usize);
+    }
+    Ok(map)
+}
+
+fn count_branches_batch_postgres(
+    pool: &PgPool,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    use sqlx::Row as _;
+    if scenario_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    crate::db::pg_runtime::block_on(async {
+        let rows = sqlx::query(
+            "SELECT scenario_id, COUNT(*)::bigint FROM scenario_branches WHERE scenario_id = ANY($1) GROUP BY scenario_id",
+        )
+        .bind(scenario_ids)
+        .fetch_all(pool)
+        .await?;
+        let mut map = std::collections::HashMap::new();
+        for r in &rows {
+            let sid: i64 = r.get(0);
+            let cnt: i64 = r.get(1);
+            map.insert(sid, cnt as usize);
+        }
+        Ok::<std::collections::HashMap<i64, usize>, sqlx::Error>(map)
+    })
+    .map_err(Into::into)
+}
+
+pub fn count_branches_batch_backend(
+    backend: &BackendConnection,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    query::dispatch(
+        backend,
+        |conn| count_branches_batch(conn, scenario_ids),
+        |pool| count_branches_batch_postgres(pool, scenario_ids),
+    )
+}
+
+/// Batch count impacts for multiple scenarios (SQLite).
+pub fn count_impacts_batch(
+    conn: &Connection,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    if scenario_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: Vec<&str> = scenario_ids.iter().map(|_| "?").collect();
+    let sql = format!(
+        "SELECT scenario_id, COUNT(*) FROM scenario_impacts WHERE scenario_id IN ({}) GROUP BY scenario_id",
+        placeholders.join(",")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::ToSql> = scenario_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect();
+    let rows = stmt.query_map(&params_refs[..], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    let mut map = std::collections::HashMap::new();
+    for row in rows {
+        let (sid, cnt) = row?;
+        map.insert(sid, cnt as usize);
+    }
+    Ok(map)
+}
+
+fn count_impacts_batch_postgres(
+    pool: &PgPool,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    use sqlx::Row as _;
+    if scenario_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    crate::db::pg_runtime::block_on(async {
+        let rows = sqlx::query(
+            "SELECT scenario_id, COUNT(*)::bigint FROM scenario_impacts WHERE scenario_id = ANY($1) GROUP BY scenario_id",
+        )
+        .bind(scenario_ids)
+        .fetch_all(pool)
+        .await?;
+        let mut map = std::collections::HashMap::new();
+        for r in &rows {
+            let sid: i64 = r.get(0);
+            let cnt: i64 = r.get(1);
+            map.insert(sid, cnt as usize);
+        }
+        Ok::<std::collections::HashMap<i64, usize>, sqlx::Error>(map)
+    })
+    .map_err(Into::into)
+}
+
+pub fn count_impacts_batch_backend(
+    backend: &BackendConnection,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    query::dispatch(
+        backend,
+        |conn| count_impacts_batch(conn, scenario_ids),
+        |pool| count_impacts_batch_postgres(pool, scenario_ids),
+    )
+}
+
+/// Batch fetch indicators for multiple scenarios (SQLite).
+/// Returns full indicator data grouped by scenario_id (needed to count triggered status).
+pub fn list_indicators_batch(
+    conn: &Connection,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, Vec<ScenarioIndicator>>> {
+    if scenario_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: Vec<&str> = scenario_ids.iter().map(|_| "?").collect();
+    let sql = format!(
+        "SELECT id, scenario_id, branch_id, impact_id, symbol, metric, operator, threshold, label, status, triggered_at, last_value, last_checked, created_at, updated_at
+         FROM scenario_indicators WHERE scenario_id IN ({}) ORDER BY scenario_id, status, id",
+        placeholders.join(",")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::ToSql> = scenario_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect();
+    let rows = stmt.query_map(&params_refs[..], ScenarioIndicator::from_row)?;
+    let all: Vec<ScenarioIndicator> = rows.collect::<Result<Vec<_>, _>>()?;
+
+    let mut map: std::collections::HashMap<i64, Vec<ScenarioIndicator>> =
+        std::collections::HashMap::new();
+    for ind in all {
+        map.entry(ind.scenario_id).or_default().push(ind);
+    }
+    Ok(map)
+}
+
+fn list_indicators_batch_postgres(
+    pool: &PgPool,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, Vec<ScenarioIndicator>>> {
+    if scenario_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    crate::db::pg_runtime::block_on(async {
+        let rows: Vec<IndicatorRow> = sqlx::query_as(
+            "SELECT id, scenario_id, branch_id, impact_id, symbol, metric, operator, threshold, label, status, triggered_at::text, last_value, last_checked::text, created_at::text, updated_at::text
+             FROM scenario_indicators WHERE scenario_id = ANY($1) ORDER BY scenario_id, status, id",
+        )
+        .bind(scenario_ids)
+        .fetch_all(pool)
+        .await?;
+        let mut map: std::collections::HashMap<i64, Vec<ScenarioIndicator>> =
+            std::collections::HashMap::new();
+        for r in rows {
+            let ind = ScenarioIndicator {
+                id: r.0,
+                scenario_id: r.1,
+                branch_id: r.2,
+                impact_id: r.3,
+                symbol: r.4,
+                metric: r.5,
+                operator: r.6,
+                threshold: r.7,
+                label: r.8,
+                status: r.9,
+                triggered_at: r.10,
+                last_value: r.11,
+                last_checked: r.12,
+                created_at: r.13,
+                updated_at: r.14,
+            };
+            map.entry(ind.scenario_id).or_default().push(ind);
+        }
+        Ok::<std::collections::HashMap<i64, Vec<ScenarioIndicator>>, sqlx::Error>(map)
+    })
+    .map_err(Into::into)
+}
+
+pub fn list_indicators_batch_backend(
+    backend: &BackendConnection,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, Vec<ScenarioIndicator>>> {
+    query::dispatch(
+        backend,
+        |conn| list_indicators_batch(conn, scenario_ids),
+        |pool| list_indicators_batch_postgres(pool, scenario_ids),
+    )
+}
+
+/// Batch count updates for multiple scenarios (SQLite).
+pub fn count_updates_batch(
+    conn: &Connection,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    if scenario_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: Vec<&str> = scenario_ids.iter().map(|_| "?").collect();
+    let sql = format!(
+        "SELECT scenario_id, COUNT(*) FROM scenario_updates WHERE scenario_id IN ({}) GROUP BY scenario_id",
+        placeholders.join(",")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::ToSql> = scenario_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect();
+    let rows = stmt.query_map(&params_refs[..], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    let mut map = std::collections::HashMap::new();
+    for row in rows {
+        let (sid, cnt) = row?;
+        map.insert(sid, cnt as usize);
+    }
+    Ok(map)
+}
+
+fn count_updates_batch_postgres(
+    pool: &PgPool,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    use sqlx::Row as _;
+    if scenario_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    crate::db::pg_runtime::block_on(async {
+        let rows = sqlx::query(
+            "SELECT scenario_id, COUNT(*)::bigint FROM scenario_updates WHERE scenario_id = ANY($1) GROUP BY scenario_id",
+        )
+        .bind(scenario_ids)
+        .fetch_all(pool)
+        .await?;
+        let mut map = std::collections::HashMap::new();
+        for r in &rows {
+            let sid: i64 = r.get(0);
+            let cnt: i64 = r.get(1);
+            map.insert(sid, cnt as usize);
+        }
+        Ok::<std::collections::HashMap<i64, usize>, sqlx::Error>(map)
+    })
+    .map_err(Into::into)
+}
+
+pub fn count_updates_batch_backend(
+    backend: &BackendConnection,
+    scenario_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    query::dispatch(
+        backend,
+        |conn| count_updates_batch(conn, scenario_ids),
+        |pool| count_updates_batch_postgres(pool, scenario_ids),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2666,6 +2951,129 @@ mod tests {
         assert!(json.contains("\"name\":\"Test\""));
         assert!(json.contains("\"change\":25.0"));
         assert!(json.contains("\"data_points\""));
+        Ok(())
+    }
+
+    // --- Batch query tests ---
+
+    #[test]
+    fn count_branches_batch_empty_ids() -> Result<()> {
+        let conn = test_db()?;
+        let result = count_branches_batch(&conn, &[])?;
+        assert!(result.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn count_branches_batch_multiple_scenarios() -> Result<()> {
+        let conn = test_db()?;
+        let s1 = add_scenario(&conn, "Scenario A", 50.0, None, None, None, None)?;
+        let s2 = add_scenario(&conn, "Scenario B", 30.0, None, None, None, None)?;
+        let s3 = add_scenario(&conn, "Scenario C", 70.0, None, None, None, None)?;
+
+        add_branch(&conn, s1, "Branch 1A", 60.0, None)?;
+        add_branch(&conn, s1, "Branch 1B", 40.0, None)?;
+        add_branch(&conn, s2, "Branch 2A", 100.0, None)?;
+        // s3 has no branches
+
+        let counts = count_branches_batch(&conn, &[s1, s2, s3])?;
+        assert_eq!(*counts.get(&s1).unwrap_or(&0), 2);
+        assert_eq!(*counts.get(&s2).unwrap_or(&0), 1);
+        assert_eq!(counts.get(&s3), None); // no entry for zero-count
+        Ok(())
+    }
+
+    #[test]
+    fn count_impacts_batch_empty_ids() -> Result<()> {
+        let conn = test_db()?;
+        let result = count_impacts_batch(&conn, &[])?;
+        assert!(result.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn count_impacts_batch_multiple_scenarios() -> Result<()> {
+        let conn = test_db()?;
+        let s1 = add_scenario(&conn, "Scenario A", 50.0, None, None, None, None)?;
+        let s2 = add_scenario(&conn, "Scenario B", 30.0, None, None, None, None)?;
+
+        add_impact(&conn, s1, None, "BTC", "up", "primary", None, None)?;
+        add_impact(&conn, s1, None, "ETH", "up", "secondary", None, None)?;
+        add_impact(&conn, s1, None, "GLD", "down", "tertiary", None, None)?;
+        add_impact(&conn, s2, None, "SPY", "down", "primary", None, None)?;
+
+        let counts = count_impacts_batch(&conn, &[s1, s2])?;
+        assert_eq!(*counts.get(&s1).unwrap_or(&0), 3);
+        assert_eq!(*counts.get(&s2).unwrap_or(&0), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn list_indicators_batch_empty_ids() -> Result<()> {
+        let conn = test_db()?;
+        let result = list_indicators_batch(&conn, &[])?;
+        assert!(result.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn list_indicators_batch_multiple_scenarios() -> Result<()> {
+        let conn = test_db()?;
+        let s1 = add_scenario(&conn, "Scenario A", 50.0, None, None, None, None)?;
+        let s2 = add_scenario(&conn, "Scenario B", 30.0, None, None, None, None)?;
+
+        add_indicator(&conn, s1, None, None, "BTC", "price", ">", "100000", "BTC 100k")?;
+        add_indicator(&conn, s1, None, None, "ETH", "price", ">", "5000", "ETH 5k")?;
+        add_indicator(&conn, s2, None, None, "SPY", "price", "<", "400", "SPY drop")?;
+
+        let map = list_indicators_batch(&conn, &[s1, s2])?;
+        assert_eq!(map.get(&s1).unwrap().len(), 2);
+        assert_eq!(map.get(&s2).unwrap().len(), 1);
+        assert_eq!(map.get(&s2).unwrap()[0].label, "SPY drop");
+        Ok(())
+    }
+
+    #[test]
+    fn list_indicators_batch_triggered_filter() -> Result<()> {
+        let conn = test_db()?;
+        let s1 = add_scenario(&conn, "Scenario A", 50.0, None, None, None, None)?;
+
+        let ind1 = add_indicator(&conn, s1, None, None, "BTC", "price", ">", "100000", "BTC 100k")?;
+        add_indicator(&conn, s1, None, None, "ETH", "price", ">", "5000", "ETH 5k")?;
+
+        // Trigger one indicator
+        update_indicator_evaluation(&conn, ind1, "105000", true)?;
+
+        let map = list_indicators_batch(&conn, &[s1])?;
+        let indicators = map.get(&s1).unwrap();
+        assert_eq!(indicators.len(), 2);
+        let triggered = indicators.iter().filter(|i| i.status == "triggered").count();
+        assert_eq!(triggered, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn count_updates_batch_empty_ids() -> Result<()> {
+        let conn = test_db()?;
+        let result = count_updates_batch(&conn, &[])?;
+        assert!(result.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn count_updates_batch_multiple_scenarios() -> Result<()> {
+        let conn = test_db()?;
+        let s1 = add_scenario(&conn, "Scenario A", 50.0, None, None, None, None)?;
+        let s2 = add_scenario(&conn, "Scenario B", 30.0, None, None, None, None)?;
+
+        add_update(&conn, s1, None, "Update 1", None, "info", None, None, None, None)?;
+        add_update(&conn, s1, None, "Update 2", None, "warning", None, None, None, None)?;
+        add_update(&conn, s1, None, "Update 3", None, "critical", None, None, None, None)?;
+        add_update(&conn, s2, None, "Update A", None, "info", None, None, None, None)?;
+
+        let counts = count_updates_batch(&conn, &[s1, s2])?;
+        assert_eq!(*counts.get(&s1).unwrap_or(&0), 3);
+        assert_eq!(*counts.get(&s2).unwrap_or(&0), 1);
         Ok(())
     }
 }

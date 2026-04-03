@@ -99,16 +99,24 @@ fn run_list(backend: &BackendConnection, phase: Option<&str>, json_output: bool)
     let phase = phase.unwrap_or("active");
     let scenarios_list = scenarios::list_scenarios_by_phase_backend(backend, phase)?;
 
+    // Collect scenario IDs for batch queries (eliminates N+1)
+    let scenario_ids: Vec<i64> = scenarios_list.iter().map(|s| s.id).collect();
+    let branch_counts = scenarios::count_branches_batch_backend(backend, &scenario_ids)
+        .unwrap_or_default();
+    let impact_counts = scenarios::count_impacts_batch_backend(backend, &scenario_ids)
+        .unwrap_or_default();
+    let indicators_map = scenarios::list_indicators_batch_backend(backend, &scenario_ids)
+        .unwrap_or_default();
+    let update_counts = scenarios::count_updates_batch_backend(backend, &scenario_ids)
+        .unwrap_or_default();
+
     let mut entries = Vec::new();
     for s in &scenarios_list {
-        let branches = scenarios::list_branches_backend(backend, s.id)?;
-        let impacts = scenarios::list_impacts_backend(backend, s.id)?;
-        let indicators = scenarios::list_indicators_backend(backend, s.id)?;
-        let updates = scenarios::list_updates_backend(backend, s.id, None)?;
-        let triggered = indicators
-            .iter()
-            .filter(|i| i.status == "triggered")
-            .count();
+        let indicators = indicators_map.get(&s.id);
+        let indicator_count = indicators.map_or(0, |v| v.len());
+        let triggered = indicators.map_or(0, |v| {
+            v.iter().filter(|i| i.status == "triggered").count()
+        });
 
         entries.push(SituationListEntry {
             id: s.id,
@@ -116,11 +124,11 @@ fn run_list(backend: &BackendConnection, phase: Option<&str>, json_output: bool)
             probability: s.probability,
             phase: s.phase.clone(),
             status: s.status.clone(),
-            branch_count: branches.len(),
-            impact_count: impacts.len(),
-            indicator_count: indicators.len(),
+            branch_count: *branch_counts.get(&s.id).unwrap_or(&0),
+            impact_count: *impact_counts.get(&s.id).unwrap_or(&0),
+            indicator_count,
             indicators_triggered: triggered,
-            update_count: updates.len(),
+            update_count: *update_counts.get(&s.id).unwrap_or(&0),
             updated_at: s.updated_at.clone(),
         });
     }
