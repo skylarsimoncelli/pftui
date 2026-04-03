@@ -52,7 +52,7 @@ _(none)_
 
 **Top 3 priorities based on feedback:**
 1. **Evening Analyst prediction quality** — lowest overall at 68%. Backtest shows 26.7% win rate. Not a tooling issue — routine over-weights mean reversion. Backtest diagnostics (#525) surfaces this automatically.
-2. **Evening Analysis auto-event detection** — 82/78. Portfolio-matrix coverage at 4%. Wants automatic scenario creation when major events occur. New P2 item added.
+2. **Evening Analysis auto-event detection** — 82/78. Portfolio-matrix coverage at 4% (now surfaced in `analytics guidance` via stale views tracking #599). Wants automatic scenario creation when major events occur. P2 item above.
 3. **Morning Intelligence stale** — 75/85 since Mar 28. No new feedback. Monitor.
 
 **Shipped since last review (Apr 3):**
@@ -61,6 +61,7 @@ _(none)_
 3. ✅ Correlation break historical context + confirmation tracking (#588) — addresses Low-Timeframe Apr 3
 4. ✅ N+1 fix in movers command with batch history fetching (#590) — performance
 5. ✅ N+1 fix in load_or_compute_snapshots with batch snapshot fetching (#593) — performance (brief, summary, scan, watchlist)
+6. ✅ Stale/missing analyst views in analytics guidance (#599) — addresses Evening Analysis Apr 3 (4% coverage visibility)
 
 **Release status:** v0.25.0 tagged Apr 2. 19 feat/fix commits since tag. No P0 bugs. 2435 tests passing, clippy clean.
 
