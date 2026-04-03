@@ -632,6 +632,14 @@ pub enum DataAlertsRedirect {
     Check {
         #[arg(long)]
         today: bool,
+        #[arg(long = "newly-triggered")]
+        newly_triggered: bool,
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(long)]
+        condition: Option<String>,
+        #[arg(long)]
+        symbol: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -2305,6 +2313,18 @@ pub enum AnalyticsAlertsCommand {
         /// Only include alerts triggered since local midnight
         #[arg(long)]
         today: bool,
+        /// Only show newly triggered alerts (filters out armed/acknowledged/previously triggered)
+        #[arg(long = "newly-triggered")]
+        newly_triggered: bool,
+        /// Filter by alert kind: price, technical, macro, allocation, indicator, ratio
+        #[arg(long)]
+        kind: Option<String>,
+        /// Filter by condition name (e.g. correlation_break, correlation_regime_break, scenario_probability_shift)
+        #[arg(long)]
+        condition: Option<String>,
+        /// Filter by symbol or symbol pair (e.g. BTC-USD, BTC-USD:GC=F)
+        #[arg(long)]
+        symbol: Option<String>,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -3596,7 +3616,7 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         command: AnalyticsTrendsCommand,
     },
     /// Alert rules and monitoring (also available as `data alerts`)
-    #[command(after_help = "Common workflows:\n  pftui analytics alerts check             Check all alerts against current data\n  pftui analytics alerts check --today     Check only today's triggers\n  pftui analytics alerts triage            Prioritized alert dashboard with urgency tiers\n  pftui analytics alerts list              List alert rules\n  pftui analytics alerts list --triggered  Show triggered alert log\n  pftui analytics alerts add \"BTC > 100000\" Add a custom alert rule\n  pftui analytics alerts seed-defaults     Seed smart-alert defaults for holdings\n\nAlso accessible via: pftui data alerts check, pftui data alerts list")]
+    #[command(after_help = "Common workflows:\n  pftui analytics alerts check             Check all alerts against current data\n  pftui analytics alerts check --today     Check only today's triggers\n  pftui analytics alerts check --newly-triggered --json  Only new triggers (agent-friendly)\n  pftui analytics alerts check --condition correlation_break --json  Filter by condition\n  pftui analytics alerts check --kind macro --json  Filter by alert kind\n  pftui analytics alerts triage            Prioritized alert dashboard with urgency tiers\n  pftui analytics alerts list              List alert rules\n  pftui analytics alerts list --triggered  Show triggered alert log\n  pftui analytics alerts add \"BTC > 100000\" Add a custom alert rule\n  pftui analytics alerts seed-defaults     Seed smart-alert defaults for holdings\n\nAlso accessible via: pftui data alerts check, pftui data alerts list")]
     Alerts {
         #[command(subcommand)]
         command: AnalyticsAlertsCommand,
@@ -9015,6 +9035,134 @@ mod tests {
     fn parse_timing_flag_default_off() -> Result<()> {
         let cli = Cli::parse_from(["pftui", "data", "status"]);
         assert!(!cli.timing);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_alerts_check_newly_triggered_flag() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "alerts",
+            "check",
+            "--newly-triggered",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected alerts");
+        };
+        let AnalyticsAlertsCommand::Check {
+            newly_triggered,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected check");
+        };
+        assert!(newly_triggered);
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_alerts_check_kind_and_condition_filters() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "alerts",
+            "check",
+            "--kind",
+            "technical",
+            "--condition",
+            "correlation_break",
+            "--symbol",
+            "BTC-USD",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected alerts");
+        };
+        let AnalyticsAlertsCommand::Check {
+            kind,
+            condition,
+            symbol,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected check");
+        };
+        assert_eq!(kind.as_deref(), Some("technical"));
+        assert_eq!(condition.as_deref(), Some("correlation_break"));
+        assert_eq!(symbol.as_deref(), Some("BTC-USD"));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_alerts_check_defaults() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "analytics", "alerts", "check"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected alerts");
+        };
+        let AnalyticsAlertsCommand::Check {
+            today,
+            newly_triggered,
+            kind,
+            condition,
+            symbol,
+            json,
+        } = command
+        else {
+            panic!("expected check");
+        };
+        assert!(!today);
+        assert!(!newly_triggered);
+        assert!(kind.is_none());
+        assert!(condition.is_none());
+        assert!(symbol.is_none());
+        assert!(!json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_data_alerts_check_newly_triggered_flag() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "data",
+            "alerts",
+            "check",
+            "--newly-triggered",
+            "--condition",
+            "correlation_break",
+            "--json",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Alerts {
+            command: Some(DataAlertsRedirect::Check {
+                newly_triggered,
+                condition,
+                json,
+                ..
+            }),
+        } = command
+        else {
+            panic!("expected data alerts check");
+        };
+        assert!(newly_triggered);
+        assert_eq!(condition.as_deref(), Some("correlation_break"));
+        assert!(json);
         Ok(())
     }
 }
