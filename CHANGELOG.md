@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-03 — perf: fix N+1 query in situation room list with batch scenario queries
+
+- What: `journal situation list` now uses 4 batch queries instead of 4 queries per scenario (N+1 pattern). Previously, for each active scenario, `run_list` called `list_branches_backend`, `list_impacts_backend`, `list_indicators_backend`, and `list_updates_backend` individually. With 10 active scenarios, that was 40 DB round-trips; now it's always 4 regardless of scenario count. No change to output format — identical JSON and terminal output.
+- Why: Direct follow-on from #579 (trends batch queries). Dev-agent feedback noted "batch queries for other commands that loop over entities (e.g. situation room trend enrichment)." The situation room `run_list` had the same N+1 pattern: 4 individual queries per scenario to count branches, impacts, indicators, and updates.
+- Implementation: New batch functions in `src/db/scenarios.rs`: `count_branches_batch`/`count_branches_batch_postgres`/`count_branches_batch_backend` (aggregate branch counts per scenario), `count_impacts_batch`/`count_impacts_batch_postgres`/`count_impacts_batch_backend` (aggregate impact counts), `list_indicators_batch`/`list_indicators_batch_postgres`/`list_indicators_batch_backend` (fetch all indicators grouped by scenario — full data needed to count triggered status), `count_updates_batch`/`count_updates_batch_postgres`/`count_updates_batch_backend` (aggregate update counts). SQLite uses `WHERE scenario_id IN (?,?,...)`, PostgreSQL uses `WHERE scenario_id = ANY($1)`. Count functions return `HashMap<i64, usize>`, indicators return `HashMap<i64, Vec<ScenarioIndicator>>`. `commands/situation.rs` `run_list` refactored to collect scenario IDs upfront and issue 4 batch queries.
+- Files: `src/db/scenarios.rs` (+258: 12 batch functions with SQLite+Postgres, 9 new tests), `src/commands/situation.rs` (+14/-8: refactored run_list to use batch queries)
+- Tests: 2412 passing (+9 new: `count_branches_batch_empty_ids`, `count_branches_batch_multiple_scenarios`, `count_impacts_batch_empty_ids`, `count_impacts_batch_multiple_scenarios`, `list_indicators_batch_empty_ids`, `list_indicators_batch_multiple_scenarios`, `list_indicators_batch_triggered_filter`, `count_updates_batch_empty_ids`, `count_updates_batch_multiple_scenarios`). Clippy clean.
+- **Non-breaking:** Output format unchanged. Single-item query functions preserved. Batch functions are additive.
+
 ### 2026-04-03 — perf: fix N+1 query in trends list/dashboard with batch evidence and impact fetching
 
 - What: `analytics trends list` and `analytics trends dashboard` now use batch queries to fetch evidence, evidence counts, and asset impacts for all trends in 2-3 queries total, instead of 2-3 queries per trend (N+1 pattern). No change to output format — identical JSON and terminal output.
