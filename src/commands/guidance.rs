@@ -843,7 +843,7 @@ mod tests {
 
     #[test]
     fn test_stale_view_sorting() {
-        let mut views = vec![
+        let mut views = [
             StaleView {
                 asset: "A".into(),
                 analyst: "low".into(),

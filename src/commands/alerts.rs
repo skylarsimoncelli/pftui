@@ -406,6 +406,10 @@ fn run_check(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
         let sym_lower = sym_filter.to_lowercase();
         results.retain(|r| r.rule.symbol.to_lowercase().contains(&sym_lower));
     }
+    if let Some(status_filter) = &args.status_filter {
+        let status_lower = status_filter.to_lowercase();
+        results.retain(|r| r.rule.status.to_string().to_lowercase() == status_lower);
+    }
 
     if results.is_empty() {
         if args.json {
@@ -1785,6 +1789,62 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].rule.symbol, "GC=F");
         assert!(results[0].newly_triggered);
+    }
+
+    #[test]
+    fn test_check_status_filter() {
+        let backend = setup_backend();
+        // A price alert that will trigger (threshold = 5500, gold is above that)
+        let id1 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5500",
+                rule_text: "GC=F above 5500",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        // A price alert that stays armed (threshold = 99999)
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "99999",
+                rule_text: "GC=F above 99999",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        // Run check to trigger the first alert, then ack it
+        check_alerts_backend_only(&backend).unwrap();
+        alerts_db::acknowledge_alert_backend(&backend, id1).unwrap();
+
+        // Now we have: id1 = acknowledged, id2 = armed
+        let results = check_alerts_backend_only(&backend).unwrap();
+        assert!(results.len() >= 2);
+
+        // Filter by status = "armed" — should only get the 99999 alert
+        let mut armed = results.clone();
+        let status_lower = "armed".to_lowercase();
+        armed.retain(|r| r.rule.status.to_string().to_lowercase() == status_lower);
+        assert_eq!(armed.len(), 1);
+        assert_eq!(armed[0].rule.rule_text, "GC=F above 99999");
+
+        // Filter by status = "acknowledged" — should only get the 5500 alert
+        let mut acked = results.clone();
+        let status_lower = "acknowledged".to_lowercase();
+        acked.retain(|r| r.rule.status.to_string().to_lowercase() == status_lower);
+        assert_eq!(acked.len(), 1);
+        assert_eq!(acked[0].rule.rule_text, "GC=F above 5500");
     }
 
     #[test]

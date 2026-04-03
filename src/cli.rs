@@ -641,6 +641,8 @@ pub enum DataAlertsRedirect {
         #[arg(long)]
         symbol: Option<String>,
         #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
         json: bool,
     },
     /// → Redirects to `analytics alerts list`
@@ -2325,6 +2327,9 @@ pub enum AnalyticsAlertsCommand {
         /// Filter by symbol or symbol pair (e.g. BTC-USD, BTC-USD:GC=F)
         #[arg(long)]
         symbol: Option<String>,
+        /// Filter by alert status: armed, triggered, acknowledged
+        #[arg(long)]
+        status: Option<String>,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -9120,6 +9125,7 @@ mod tests {
             kind,
             condition,
             symbol,
+            status,
             json,
         } = command
         else {
@@ -9130,6 +9136,7 @@ mod tests {
         assert!(kind.is_none());
         assert!(condition.is_none());
         assert!(symbol.is_none());
+        assert!(status.is_none());
         assert!(!json);
         Ok(())
     }
@@ -9162,6 +9169,99 @@ mod tests {
         };
         assert!(newly_triggered);
         assert_eq!(condition.as_deref(), Some("correlation_break"));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_alerts_check_status_filter() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "alerts",
+            "check",
+            "--status",
+            "triggered",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected alerts");
+        };
+        let AnalyticsAlertsCommand::Check {
+            status,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected check");
+        };
+        assert_eq!(status.as_deref(), Some("triggered"));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_data_alerts_check_status_filter() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "data",
+            "alerts",
+            "check",
+            "--status",
+            "armed",
+            "--json",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Alerts {
+            command: Some(DataAlertsRedirect::Check {
+                status,
+                json,
+                ..
+            }),
+        } = command
+        else {
+            panic!("expected data alerts check");
+        };
+        assert_eq!(status.as_deref(), Some("armed"));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_alerts_check_status_combined_with_kind() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "alerts",
+            "check",
+            "--status",
+            "triggered",
+            "--kind",
+            "price",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected alerts");
+        };
+        let AnalyticsAlertsCommand::Check {
+            status,
+            kind,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected check");
+        };
+        assert_eq!(status.as_deref(), Some("triggered"));
+        assert_eq!(kind.as_deref(), Some("price"));
         assert!(json);
         Ok(())
     }

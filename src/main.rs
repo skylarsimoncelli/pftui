@@ -1073,14 +1073,14 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::DataCommand::Backfill { json } => commands::backfill::run(&backend, json),
             cli::DataCommand::Alerts { command } => {
                 let (action, args) = match command {
-                    Some(cli::DataAlertsRedirect::Check { today, newly_triggered, kind, condition, symbol, json }) => (
+                    Some(cli::DataAlertsRedirect::Check { today, newly_triggered, kind, condition, symbol, status, json }) => (
                         "check",
                         commands::alerts::AlertsArgs {
                             rule: None,
                             id: None,
                             ids: vec![],
                             json,
-                            status_filter: None,
+                            status_filter: status,
                             today,
                             kind,
                             symbol,
@@ -3707,14 +3707,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                             newly_triggered_only: false,
                         },
                     ),
-                    cli::AnalyticsAlertsCommand::Check { today, newly_triggered, kind, condition, symbol, json } => (
+                    cli::AnalyticsAlertsCommand::Check { today, newly_triggered, kind, condition, symbol, status, json } => (
                         "check",
                         commands::alerts::AlertsArgs {
                             rule: None,
                             id: None,
                             ids: vec![],
                             json,
-                            status_filter: None,
+                            status_filter: status,
                             today,
                             kind,
                             symbol,
