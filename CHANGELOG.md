@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-03 — feat: add --status filter to analytics alerts check
+
+- What: `analytics alerts check` and `data alerts check` now support `--status <status>` filter flag. Accepts `armed`, `triggered`, or `acknowledged` (case-insensitive). Composes with existing `--kind`, `--condition`, `--symbol`, and `--newly-triggered` filters for precise alert queries.
+- Why: Low-Timeframe Analyst feedback (Apr 3): "24 alerts felt noisy for market close — suggest filtering to >5% moves only." Root cause: `alerts check` returned all 106 alerts (24 triggered + 22 armed + 60 acknowledged) with no status filter. Agents can now run `pftui analytics alerts check --status triggered --json` to see only the alerts that matter, cutting noise by ~80%.
+- Implementation: New `--status` flag on `AnalyticsAlertsCommand::Check` and `DataAlertsRedirect::Check` CLI enums. Filter applied in `run_check()` after existing filters, using case-insensitive string match against `AlertStatus::to_string()`. `status_filter` field already existed on `AlertsArgs` (used by `list`) — now wired through for `check` as well. Also fixed pre-existing clippy warning in `guidance.rs` (`vec!` → array literal in test).
+- Files: `src/cli.rs` (+100: --status flag on 2 Check variants, 3 new CLI parse tests), `src/commands/alerts.rs` (+60: status filter in run_check, 1 new unit test), `src/commands/guidance.rs` (+1/-1: clippy fix), `src/main.rs` (+4/-4: pass status_filter through 2 Check arms)
+- Tests: 2456 passing (+4 new: parse_alerts_check_status_filter, parse_data_alerts_check_status_filter, parse_alerts_check_status_combined_with_kind, test_check_status_filter), 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** New flag is opt-in. Default behavior unchanged — `check` with no flags evaluates and shows all alerts as before.
+
 ### 2026-04-03 — feat: add stale/missing analyst views to analytics guidance
 
 - What: `analytics guidance` now surfaces analyst views that are missing or stale (7+ days old) for portfolio assets. JSON output includes `stale_views` array (missing/stale entries with asset, analyst, status, optional last_updated and days_stale) and `view_coverage` object (total_assets, total_cells, filled_cells, coverage_pct, missing_count, stale_count). Summary gains `stale_views_count` and `view_coverage_pct` fields. Terminal output shows "ANALYST VIEW GAPS" section with coverage stats, grouped missing and stale counts. Action item priority: "medium" when coverage < 25%, "low" otherwise.
