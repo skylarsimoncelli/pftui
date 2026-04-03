@@ -646,6 +646,7 @@ fn count_evidence(conn: &Connection, trend_id: i64) -> Result<usize> {
     Ok(count as usize)
 }
 
+#[allow(dead_code)]
 fn count_evidence_postgres(pool: &PgPool, trend_id: i64) -> Result<usize> {
     crate::db::pg_runtime::block_on(async {
         let row = sqlx::query("SELECT COUNT(*) FROM trend_evidence WHERE trend_id = $1")
@@ -658,6 +659,7 @@ fn count_evidence_postgres(pool: &PgPool, trend_id: i64) -> Result<usize> {
     .map_err(Into::into)
 }
 
+#[allow(dead_code)]
 pub fn count_evidence_backend(
     backend: &BackendConnection,
     trend_id: i64,
@@ -773,6 +775,256 @@ pub fn list_asset_impacts_backend(
         backend,
         |conn| list_asset_impacts(conn, trend_id),
         |pool| list_asset_impacts_postgres(pool, trend_id),
+    )
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Batch queries — fetch evidence/impacts for multiple trends in one query
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Batch-fetch evidence for multiple trends in one query, returning a map of trend_id -> Vec<TrendEvidence>.
+/// Each trend's evidence is ordered by date DESC and limited to `per_trend_limit` entries if specified.
+pub fn list_evidence_batch(
+    conn: &Connection,
+    trend_ids: &[i64],
+    per_trend_limit: Option<usize>,
+) -> Result<std::collections::HashMap<i64, Vec<TrendEvidence>>> {
+    if trend_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    // Build query with IN clause
+    let placeholders: Vec<&str> = trend_ids.iter().map(|_| "?").collect();
+    let sql = format!(
+        "SELECT id, trend_id, date, evidence, direction_impact, source, created_at
+         FROM trend_evidence WHERE trend_id IN ({}) ORDER BY trend_id, date DESC",
+        placeholders.join(",")
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::ToSql> = trend_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect();
+    let rows = stmt.query_map(&params_refs[..], TrendEvidence::from_row)?;
+    let all: Vec<TrendEvidence> = rows.collect::<Result<Vec<_>, _>>()?;
+
+    let mut map: std::collections::HashMap<i64, Vec<TrendEvidence>> = std::collections::HashMap::new();
+    for ev in all {
+        map.entry(ev.trend_id).or_default().push(ev);
+    }
+
+    // Apply per-trend limit if specified
+    if let Some(lim) = per_trend_limit {
+        for entries in map.values_mut() {
+            entries.truncate(lim);
+        }
+    }
+
+    Ok(map)
+}
+
+fn list_evidence_batch_postgres(
+    pool: &PgPool,
+    trend_ids: &[i64],
+    per_trend_limit: Option<usize>,
+) -> Result<std::collections::HashMap<i64, Vec<TrendEvidence>>> {
+    if trend_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    crate::db::pg_runtime::block_on(async {
+        let rows = sqlx::query(
+            "SELECT id, trend_id, date, evidence, direction_impact, source, created_at::text
+             FROM trend_evidence WHERE trend_id = ANY($1) ORDER BY trend_id, date DESC",
+        )
+        .bind(trend_ids)
+        .fetch_all(pool)
+        .await?;
+
+        let mut map: std::collections::HashMap<i64, Vec<TrendEvidence>> = std::collections::HashMap::new();
+        for r in &rows {
+            let ev = TrendEvidence {
+                id: r.get(0),
+                trend_id: r.get(1),
+                date: r.get(2),
+                evidence: r.get(3),
+                direction_impact: r.get(4),
+                source: r.get(5),
+                created_at: r.get(6),
+            };
+            map.entry(ev.trend_id).or_default().push(ev);
+        }
+
+        if let Some(lim) = per_trend_limit {
+            for entries in map.values_mut() {
+                entries.truncate(lim);
+            }
+        }
+
+        Ok::<std::collections::HashMap<i64, Vec<TrendEvidence>>, sqlx::Error>(map)
+    })
+    .map_err(Into::into)
+}
+
+pub fn list_evidence_batch_backend(
+    backend: &BackendConnection,
+    trend_ids: &[i64],
+    per_trend_limit: Option<usize>,
+) -> Result<std::collections::HashMap<i64, Vec<TrendEvidence>>> {
+    query::dispatch(
+        backend,
+        |conn| list_evidence_batch(conn, trend_ids, per_trend_limit),
+        |pool| list_evidence_batch_postgres(pool, trend_ids, per_trend_limit),
+    )
+}
+
+/// Batch-fetch evidence counts for multiple trends in one query.
+pub fn count_evidence_batch(
+    conn: &Connection,
+    trend_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    if trend_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let placeholders: Vec<&str> = trend_ids.iter().map(|_| "?").collect();
+    let sql = format!(
+        "SELECT trend_id, COUNT(*) FROM trend_evidence WHERE trend_id IN ({}) GROUP BY trend_id",
+        placeholders.join(",")
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::ToSql> = trend_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect();
+    let rows = stmt.query_map(&params_refs[..], |row| {
+        let trend_id: i64 = row.get(0)?;
+        let count: i64 = row.get(1)?;
+        Ok((trend_id, count as usize))
+    })?;
+
+    rows.collect::<Result<std::collections::HashMap<i64, usize>, _>>().map_err(Into::into)
+}
+
+fn count_evidence_batch_postgres(
+    pool: &PgPool,
+    trend_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    if trend_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    crate::db::pg_runtime::block_on(async {
+        let rows = sqlx::query(
+            "SELECT trend_id, COUNT(*) FROM trend_evidence WHERE trend_id = ANY($1) GROUP BY trend_id",
+        )
+        .bind(trend_ids)
+        .fetch_all(pool)
+        .await?;
+
+        let map: std::collections::HashMap<i64, usize> = rows
+            .iter()
+            .map(|r| {
+                let trend_id: i64 = r.get(0);
+                let count: i64 = r.get(1);
+                (trend_id, count as usize)
+            })
+            .collect();
+
+        Ok::<std::collections::HashMap<i64, usize>, sqlx::Error>(map)
+    })
+    .map_err(Into::into)
+}
+
+pub fn count_evidence_batch_backend(
+    backend: &BackendConnection,
+    trend_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, usize>> {
+    query::dispatch(
+        backend,
+        |conn| count_evidence_batch(conn, trend_ids),
+        |pool| count_evidence_batch_postgres(pool, trend_ids),
+    )
+}
+
+/// Batch-fetch asset impacts for multiple trends in one query.
+pub fn list_asset_impacts_batch(
+    conn: &Connection,
+    trend_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, Vec<TrendAssetImpact>>> {
+    if trend_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let placeholders: Vec<&str> = trend_ids.iter().map(|_| "?").collect();
+    let sql = format!(
+        "SELECT id, trend_id, symbol, impact, mechanism, timeframe, updated_at
+         FROM trend_asset_impact WHERE trend_id IN ({}) ORDER BY trend_id, symbol",
+        placeholders.join(",")
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::ToSql> = trend_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect();
+    let rows = stmt.query_map(&params_refs[..], TrendAssetImpact::from_row)?;
+    let all: Vec<TrendAssetImpact> = rows.collect::<Result<Vec<_>, _>>()?;
+
+    let mut map: std::collections::HashMap<i64, Vec<TrendAssetImpact>> = std::collections::HashMap::new();
+    for impact in all {
+        map.entry(impact.trend_id).or_default().push(impact);
+    }
+
+    Ok(map)
+}
+
+fn list_asset_impacts_batch_postgres(
+    pool: &PgPool,
+    trend_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, Vec<TrendAssetImpact>>> {
+    if trend_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    crate::db::pg_runtime::block_on(async {
+        let rows = sqlx::query(
+            "SELECT id, trend_id, symbol, impact, mechanism, timeframe, updated_at::text
+             FROM trend_asset_impact WHERE trend_id = ANY($1) ORDER BY trend_id, symbol",
+        )
+        .bind(trend_ids)
+        .fetch_all(pool)
+        .await?;
+
+        let mut map: std::collections::HashMap<i64, Vec<TrendAssetImpact>> = std::collections::HashMap::new();
+        for r in &rows {
+            let impact = TrendAssetImpact {
+                id: r.get(0),
+                trend_id: r.get(1),
+                symbol: r.get(2),
+                impact: r.get(3),
+                mechanism: r.get(4),
+                timeframe: r.get(5),
+                updated_at: r.get(6),
+            };
+            map.entry(impact.trend_id).or_default().push(impact);
+        }
+
+        Ok::<std::collections::HashMap<i64, Vec<TrendAssetImpact>>, sqlx::Error>(map)
+    })
+    .map_err(Into::into)
+}
+
+pub fn list_asset_impacts_batch_backend(
+    backend: &BackendConnection,
+    trend_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, Vec<TrendAssetImpact>>> {
+    query::dispatch(
+        backend,
+        |conn| list_asset_impacts_batch(conn, trend_ids),
+        |pool| list_asset_impacts_batch_postgres(pool, trend_ids),
     )
 }
 
@@ -1097,5 +1349,116 @@ mod tests {
 
         let all = list_trends_filtered(&conn, None, None, None, None, None, None).unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // Batch query tests
+    // ───────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn list_evidence_batch_empty_ids() {
+        let conn = setup_db();
+        let result = list_evidence_batch(&conn, &[], None).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn list_evidence_batch_multiple_trends() {
+        let conn = setup_db();
+        let t1 = add_trend(&conn, "Trend A", "high", "stable", "medium", None, None, None, None).unwrap();
+        let t2 = add_trend(&conn, "Trend B", "low", "accelerating", "high", None, None, None, None).unwrap();
+        let t3 = add_trend(&conn, "Trend C", "medium", "stable", "low", None, None, None, None).unwrap();
+
+        add_evidence(&conn, t1, "2026-03-01", "Evidence A1", None, None).unwrap();
+        add_evidence(&conn, t1, "2026-03-02", "Evidence A2", Some("strengthens"), None).unwrap();
+        add_evidence(&conn, t2, "2026-03-01", "Evidence B1", None, None).unwrap();
+        // t3 has no evidence
+
+        let map = list_evidence_batch(&conn, &[t1, t2, t3], None).unwrap();
+        assert_eq!(map.get(&t1).map(|v| v.len()).unwrap_or(0), 2);
+        assert_eq!(map.get(&t2).map(|v| v.len()).unwrap_or(0), 1);
+        assert_eq!(map.get(&t3).map(|v| v.len()).unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn list_evidence_batch_respects_per_trend_limit() {
+        let conn = setup_db();
+        let t1 = add_trend(&conn, "Trend A", "high", "stable", "medium", None, None, None, None).unwrap();
+
+        add_evidence(&conn, t1, "2026-03-01", "First", None, None).unwrap();
+        add_evidence(&conn, t1, "2026-03-02", "Second", None, None).unwrap();
+        add_evidence(&conn, t1, "2026-03-03", "Third", None, None).unwrap();
+
+        let map = list_evidence_batch(&conn, &[t1], Some(2)).unwrap();
+        assert_eq!(map.get(&t1).map(|v| v.len()).unwrap_or(0), 2);
+        // Most recent first (ORDER BY date DESC)
+        assert_eq!(map[&t1][0].evidence, "Third");
+        assert_eq!(map[&t1][1].evidence, "Second");
+    }
+
+    #[test]
+    fn count_evidence_batch_multiple_trends() {
+        let conn = setup_db();
+        let t1 = add_trend(&conn, "Trend A", "high", "stable", "medium", None, None, None, None).unwrap();
+        let t2 = add_trend(&conn, "Trend B", "low", "accelerating", "high", None, None, None, None).unwrap();
+
+        add_evidence(&conn, t1, "2026-03-01", "E1", None, None).unwrap();
+        add_evidence(&conn, t1, "2026-03-02", "E2", None, None).unwrap();
+        add_evidence(&conn, t1, "2026-03-03", "E3", None, None).unwrap();
+        add_evidence(&conn, t2, "2026-03-01", "E1", None, None).unwrap();
+
+        let counts = count_evidence_batch(&conn, &[t1, t2]).unwrap();
+        assert_eq!(counts.get(&t1).copied().unwrap_or(0), 3);
+        assert_eq!(counts.get(&t2).copied().unwrap_or(0), 1);
+    }
+
+    #[test]
+    fn count_evidence_batch_empty_ids() {
+        let conn = setup_db();
+        let result = count_evidence_batch(&conn, &[]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn list_asset_impacts_batch_multiple_trends() {
+        let conn = setup_db();
+        let t1 = add_trend(&conn, "Trend A", "high", "stable", "medium", None, None, None, None).unwrap();
+        let t2 = add_trend(&conn, "Trend B", "low", "accelerating", "high", None, None, None, None).unwrap();
+        let t3 = add_trend(&conn, "Trend C", "medium", "stable", "low", None, None, None, None).unwrap();
+
+        add_asset_impact(&conn, t1, "BTC", "bullish", Some("store of value"), None).unwrap();
+        add_asset_impact(&conn, t1, "GC=F", "bullish", Some("safe haven"), None).unwrap();
+        add_asset_impact(&conn, t2, "SPY", "bearish", Some("risk off"), None).unwrap();
+        // t3 has no impacts
+
+        let map = list_asset_impacts_batch(&conn, &[t1, t2, t3]).unwrap();
+        assert_eq!(map.get(&t1).map(|v| v.len()).unwrap_or(0), 2);
+        assert_eq!(map.get(&t2).map(|v| v.len()).unwrap_or(0), 1);
+        assert_eq!(map.get(&t3).map(|v| v.len()).unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn list_asset_impacts_batch_empty_ids() {
+        let conn = setup_db();
+        let result = list_asset_impacts_batch(&conn, &[]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn list_asset_impacts_batch_preserves_symbol_order() {
+        let conn = setup_db();
+        let t1 = add_trend(&conn, "Trend A", "high", "stable", "medium", None, None, None, None).unwrap();
+
+        add_asset_impact(&conn, t1, "GC=F", "bullish", None, None).unwrap();
+        add_asset_impact(&conn, t1, "BTC", "bullish", None, None).unwrap();
+        add_asset_impact(&conn, t1, "SPY", "bearish", None, None).unwrap();
+
+        let map = list_asset_impacts_batch(&conn, &[t1]).unwrap();
+        let impacts = &map[&t1];
+        assert_eq!(impacts.len(), 3);
+        // ORDER BY symbol
+        assert_eq!(impacts[0].symbol, "BTC");
+        assert_eq!(impacts[1].symbol, "GC=F");
+        assert_eq!(impacts[2].symbol, "SPY");
     }
 }
