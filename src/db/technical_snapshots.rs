@@ -2,6 +2,7 @@ use anyhow::Result;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, QueryBuilder, Row as PgRow};
+use std::collections::HashMap;
 
 use crate::db::backend::BackendConnection;
 use crate::db::query;
@@ -214,6 +215,103 @@ pub fn list_latest_snapshots_backend(
     )
 }
 
+/// Batch-fetch the latest snapshot per symbol for a set of symbols (SQLite).
+///
+/// Returns a map of symbol → latest snapshot. Symbols not found in the table
+/// are omitted from the result. Uses `WHERE symbol IN (...)` to fetch all
+/// symbols in one query instead of N individual queries.
+pub fn get_latest_snapshots_batch(
+    conn: &Connection,
+    symbols: &[String],
+    timeframe: &str,
+) -> Result<HashMap<String, TechnicalSnapshotRecord>> {
+    if symbols.is_empty() {
+        return Ok(HashMap::new());
+    }
+    // Build placeholder string: ?2, ?3, ?4, ... (timeframe is ?1)
+    let placeholders: Vec<String> = (2..=symbols.len() + 1).map(|i| format!("?{}", i)).collect();
+    let in_clause = placeholders.join(", ");
+    let sql = format!(
+        "SELECT {SELECT_COLUMNS}
+         FROM technical_snapshots t
+         WHERE t.timeframe = ?1
+           AND t.symbol IN ({in_clause})
+           AND t.computed_at = (
+             SELECT MAX(ts.computed_at)
+             FROM technical_snapshots ts
+             WHERE ts.symbol = t.symbol AND ts.timeframe = t.timeframe
+           )
+         ORDER BY t.symbol ASC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
+        vec![Box::new(timeframe.to_string())];
+    for s in symbols {
+        params_vec.push(Box::new(s.clone()));
+    }
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|p| p.as_ref()).collect();
+
+    let rows = stmt.query_map(params_refs.as_slice(), TechnicalSnapshotRecord::from_row)?;
+    let mut result = HashMap::new();
+    for row in rows {
+        let record = row?;
+        result.insert(record.symbol.clone(), record);
+    }
+    Ok(result)
+}
+
+fn get_latest_snapshots_batch_postgres(
+    pool: &PgPool,
+    symbols: &[String],
+    timeframe: &str,
+) -> Result<HashMap<String, TechnicalSnapshotRecord>> {
+    if symbols.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows: Vec<sqlx::postgres::PgRow> = crate::db::pg_runtime::block_on(async {
+        sqlx::query(&format!(
+            "SELECT {SELECT_COLUMNS_PG}
+             FROM technical_snapshots t
+             WHERE t.timeframe = $1
+               AND t.symbol = ANY($2)
+               AND t.computed_at = (
+                 SELECT MAX(ts.computed_at)
+                 FROM technical_snapshots ts
+                 WHERE ts.symbol = t.symbol AND ts.timeframe = t.timeframe
+               )
+             ORDER BY t.symbol ASC"
+        ))
+        .bind(timeframe)
+        .bind(symbols)
+        .fetch_all(pool)
+        .await
+    })?;
+    let mut result = HashMap::new();
+    for row in &rows {
+        let record = row_to_record_pg(row);
+        result.insert(record.symbol.clone(), record);
+    }
+    Ok(result)
+}
+
+/// Batch-fetch the latest snapshot per symbol for a set of symbols.
+///
+/// Returns a map of symbol → latest snapshot. Symbols not found are omitted.
+/// Uses a single query with `IN`/`ANY` instead of N individual queries.
+pub fn get_latest_snapshots_batch_backend(
+    backend: &BackendConnection,
+    symbols: &[String],
+    timeframe: &str,
+) -> Result<HashMap<String, TechnicalSnapshotRecord>> {
+    query::dispatch(
+        backend,
+        |conn| get_latest_snapshots_batch(conn, symbols, timeframe),
+        |pool| get_latest_snapshots_batch_postgres(pool, symbols, timeframe),
+    )
+}
+
 fn row_to_record_pg(row: &sqlx::postgres::PgRow) -> TechnicalSnapshotRecord {
     TechnicalSnapshotRecord {
         symbol: row.get(0),
@@ -399,5 +497,67 @@ mod tests {
         assert_eq!(rows[0].symbol, "AAPL");
         assert_eq!(rows[0].rsi_14, Some(62.0));
         assert_eq!(rows[1].symbol, "BTC");
+    }
+
+    #[test]
+    fn batch_empty_symbols_returns_empty() {
+        let conn = open_in_memory();
+        let result = get_latest_snapshots_batch(&conn, &[], "1d").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn batch_returns_latest_per_symbol() {
+        let conn = open_in_memory();
+        insert_snapshot(&conn, &sample("AAPL", "2026-03-17T10:00:00Z", 55.0)).unwrap();
+        insert_snapshot(&conn, &sample("AAPL", "2026-03-17T11:00:00Z", 62.0)).unwrap();
+        insert_snapshot(&conn, &sample("BTC", "2026-03-17T09:00:00Z", 48.0)).unwrap();
+        insert_snapshot(&conn, &sample("TSLA", "2026-03-17T12:00:00Z", 70.0)).unwrap();
+
+        let symbols = vec!["AAPL".to_string(), "BTC".to_string()];
+        let result = get_latest_snapshots_batch(&conn, &symbols, "1d").unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result["AAPL"].rsi_14, Some(62.0), "should return latest AAPL snapshot");
+        assert_eq!(result["BTC"].rsi_14, Some(48.0));
+        assert!(!result.contains_key("TSLA"), "should not include unrequested symbols");
+    }
+
+    #[test]
+    fn batch_missing_symbol_excluded() {
+        let conn = open_in_memory();
+        insert_snapshot(&conn, &sample("AAPL", "2026-03-17T10:00:00Z", 55.0)).unwrap();
+
+        let symbols = vec!["AAPL".to_string(), "MISSING".to_string()];
+        let result = get_latest_snapshots_batch(&conn, &symbols, "1d").unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key("AAPL"));
+        assert!(!result.contains_key("MISSING"));
+    }
+
+    #[test]
+    fn batch_respects_timeframe_filter() {
+        let conn = open_in_memory();
+        insert_snapshot(&conn, &sample("AAPL", "2026-03-17T10:00:00Z", 55.0)).unwrap();
+
+        let symbols = vec!["AAPL".to_string()];
+        // "1d" should find it
+        let found = get_latest_snapshots_batch(&conn, &symbols, "1d").unwrap();
+        assert_eq!(found.len(), 1);
+        // "1w" should not find it (sample uses "1d")
+        let not_found = get_latest_snapshots_batch(&conn, &symbols, "1w").unwrap();
+        assert!(not_found.is_empty());
+    }
+
+    #[test]
+    fn batch_single_symbol() {
+        let conn = open_in_memory();
+        insert_snapshot(&conn, &sample("BTC", "2026-03-17T09:00:00Z", 48.0)).unwrap();
+
+        let symbols = vec!["BTC".to_string()];
+        let result = get_latest_snapshots_batch(&conn, &symbols, "1d").unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result["BTC"].rsi_14, Some(48.0));
     }
 }

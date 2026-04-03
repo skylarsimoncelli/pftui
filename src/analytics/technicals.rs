@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::db::backend::BackendConnection;
-use crate::db::price_history::{get_history, get_history_backend};
+use crate::db::price_history::{get_history_batch, get_history_batch_backend};
 use crate::db::technical_snapshots::{
-    get_latest_snapshot, get_latest_snapshot_backend, TechnicalSnapshotRecord,
+    get_latest_snapshots_batch, get_latest_snapshots_batch_backend, TechnicalSnapshotRecord,
 };
 use crate::indicators::atr::compute_atr;
 use crate::indicators::bollinger::compute_bollinger;
@@ -183,25 +183,31 @@ pub fn load_or_compute_snapshots(
     symbols: &[String],
     timeframe: &str,
 ) -> HashMap<String, TechnicalSnapshotRecord> {
-    let mut out = HashMap::new();
-    let mut missing = HashSet::new();
-
-    for symbol in symbols {
-        match get_latest_snapshot(conn, symbol, timeframe) {
-            Ok(Some(row)) => {
-                out.insert(symbol.clone(), row);
-            }
-            _ => {
-                missing.insert(symbol.clone());
-            }
-        }
+    if symbols.is_empty() {
+        return HashMap::new();
     }
 
-    for symbol in missing {
-        let history = match get_history(conn, &symbol, 370) {
-            Ok(rows) if !rows.is_empty() => rows,
-            _ => continue,
-        };
+    // Batch-fetch all cached snapshots in one query instead of N individual queries
+    let mut out = get_latest_snapshots_batch(conn, symbols, timeframe).unwrap_or_default();
+
+    // Identify symbols that weren't in the snapshot cache
+    let missing: Vec<String> = symbols
+        .iter()
+        .filter(|s| !out.contains_key(s.as_str()))
+        .cloned()
+        .collect();
+
+    if missing.is_empty() {
+        return out;
+    }
+
+    // Batch-fetch price history for all missing symbols in one query
+    let history_map = get_history_batch(conn, &missing, 370).unwrap_or_default();
+
+    for (symbol, history) in history_map {
+        if history.is_empty() {
+            continue;
+        }
         if let Some(snapshot) = compute_snapshot(&symbol, timeframe, &history) {
             out.insert(symbol, snapshot);
         }
@@ -215,25 +221,32 @@ pub fn load_or_compute_snapshots_backend(
     symbols: &[String],
     timeframe: &str,
 ) -> HashMap<String, TechnicalSnapshotRecord> {
-    let mut out = HashMap::new();
-    let mut missing = HashSet::new();
-
-    for symbol in symbols {
-        match get_latest_snapshot_backend(backend, symbol, timeframe) {
-            Ok(Some(row)) => {
-                out.insert(symbol.clone(), row);
-            }
-            _ => {
-                missing.insert(symbol.clone());
-            }
-        }
+    if symbols.is_empty() {
+        return HashMap::new();
     }
 
-    for symbol in missing {
-        let history = match get_history_backend(backend, &symbol, 370) {
-            Ok(rows) if !rows.is_empty() => rows,
-            _ => continue,
-        };
+    // Batch-fetch all cached snapshots in one query instead of N individual queries
+    let mut out =
+        get_latest_snapshots_batch_backend(backend, symbols, timeframe).unwrap_or_default();
+
+    // Identify symbols that weren't in the snapshot cache
+    let missing: Vec<String> = symbols
+        .iter()
+        .filter(|s| !out.contains_key(s.as_str()))
+        .cloned()
+        .collect();
+
+    if missing.is_empty() {
+        return out;
+    }
+
+    // Batch-fetch price history for all missing symbols in one query
+    let history_map = get_history_batch_backend(backend, &missing, 370).unwrap_or_default();
+
+    for (symbol, history) in history_map {
+        if history.is_empty() {
+            continue;
+        }
         if let Some(snapshot) = compute_snapshot(&symbol, timeframe, &history) {
             out.insert(symbol, snapshot);
         }
