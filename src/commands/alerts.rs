@@ -535,6 +535,8 @@ fn inferred_threshold(condition: &str) -> String {
         "vix_regime_shift" => "20/25/30/35".to_string(),
         "fear_greed_extreme" => "15/85".to_string(),
         "dxy_century_cross" => "100".to_string(),
+        "correlation_regime_break" => "0.3".to_string(),
+        "scenario_probability_shift" => "10".to_string(),
         _ => "0".to_string(),
     }
 }
@@ -732,6 +734,11 @@ fn run_seed_defaults(backend: &BackendConnection) -> Result<()> {
             "correlation_regime_break",
             "Major correlation regime break",
             240,
+        ),
+        (
+            "scenario_probability_shift",
+            "Scenario probability shifted ≥10pp",
+            60,
         ),
     ] {
         seeded += seed_alert(
@@ -1866,6 +1873,23 @@ mod tests {
         assert!(alerts.iter().any(|alert| alert.symbol == "AAPL"));
         assert!(alerts.iter().any(|alert| alert.kind == AlertKind::Macro
             && alert.condition.as_deref() == Some("regime_change")));
+        // Verify new scenario_probability_shift alert is seeded
+        assert!(alerts.iter().any(|alert| alert.kind == AlertKind::Macro
+            && alert.condition.as_deref() == Some("scenario_probability_shift")));
+        // Verify correlation_regime_break has configurable threshold
+        let corr_alert = alerts.iter().find(|alert| alert.condition.as_deref() == Some("correlation_regime_break"));
+        assert!(corr_alert.is_some(), "correlation_regime_break should be seeded");
+        assert_eq!(corr_alert.unwrap().threshold, "0.3", "default correlation threshold should be 0.3");
+        // Verify scenario_probability_shift has configurable threshold
+        let scenario_alert = alerts.iter().find(|alert| alert.condition.as_deref() == Some("scenario_probability_shift"));
+        assert!(scenario_alert.is_some());
+        assert_eq!(scenario_alert.unwrap().threshold, "10", "default scenario threshold should be 10pp");
+    }
+
+    #[test]
+    fn test_inferred_threshold_new_conditions() {
+        assert_eq!(inferred_threshold("correlation_regime_break"), "0.3");
+        assert_eq!(inferred_threshold("scenario_probability_shift"), "10");
     }
 
     #[test]

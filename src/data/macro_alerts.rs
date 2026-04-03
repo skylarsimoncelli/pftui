@@ -6,7 +6,7 @@ use std::str::FromStr;
 use crate::db::backend::BackendConnection;
 use crate::db::{
     correlation_snapshots, economic_cache, price_cache, price_history, regime_snapshots,
-    sentiment_cache,
+    scenarios, sentiment_cache,
 };
 
 #[derive(Debug, Clone)]
@@ -19,6 +19,7 @@ pub struct MacroAlertEvaluation {
 pub fn evaluate_condition(
     backend: &BackendConnection,
     condition: &str,
+    threshold: &str,
 ) -> Result<MacroAlertEvaluation> {
     match condition {
         "regime_change" => evaluate_regime_change(backend),
@@ -26,7 +27,14 @@ pub fn evaluate_condition(
         "fear_greed_extreme" => evaluate_fear_greed_extreme(backend),
         "yield_curve_inversion_change" => evaluate_yield_curve_inversion_change(backend),
         "dxy_century_cross" => evaluate_dxy_century_cross(backend),
-        "correlation_regime_break" => evaluate_correlation_regime_break(backend),
+        "correlation_regime_break" => {
+            let thresh = threshold.parse::<f64>().unwrap_or(DEFAULT_CORRELATION_BREAK_THRESHOLD);
+            evaluate_correlation_regime_break(backend, thresh)
+        }
+        "scenario_probability_shift" => {
+            let thresh_pp = threshold.parse::<f64>().unwrap_or(DEFAULT_SCENARIO_SHIFT_THRESHOLD_PP);
+            evaluate_scenario_probability_shift(backend, thresh_pp)
+        }
         other => Ok(MacroAlertEvaluation {
             triggered: false,
             current_value: None,
@@ -34,6 +42,12 @@ pub fn evaluate_condition(
         }),
     }
 }
+
+/// Default correlation break threshold (delta between 30d and 90d correlation).
+const DEFAULT_CORRELATION_BREAK_THRESHOLD: f64 = 0.3;
+
+/// Default scenario probability shift threshold in percentage points.
+const DEFAULT_SCENARIO_SHIFT_THRESHOLD_PP: f64 = 10.0;
 
 fn evaluate_regime_change(backend: &BackendConnection) -> Result<MacroAlertEvaluation> {
     let history = regime_snapshots::get_history_backend(backend, Some(2))?;
@@ -182,7 +196,10 @@ fn evaluate_dxy_century_cross(backend: &BackendConnection) -> Result<MacroAlertE
     })
 }
 
-fn evaluate_correlation_regime_break(backend: &BackendConnection) -> Result<MacroAlertEvaluation> {
+fn evaluate_correlation_regime_break(
+    backend: &BackendConnection,
+    threshold: f64,
+) -> Result<MacroAlertEvaluation> {
     let rows_30 = correlation_snapshots::list_current_backend(backend, Some("30d"))?;
     let rows_90 = correlation_snapshots::list_current_backend(backend, Some("90d"))?;
     let mut best: Option<(String, String, f64)> = None;
@@ -209,12 +226,109 @@ fn evaluate_correlation_regime_break(backend: &BackendConnection) -> Result<Macr
 
     let current_value = Decimal::from_str(&format!("{delta:.6}")).ok();
     Ok(MacroAlertEvaluation {
-        triggered: delta >= 0.3,
+        triggered: delta >= threshold,
         current_value,
         trigger_data: json!({
             "symbol_a": symbol_a,
             "symbol_b": symbol_b,
-            "delta": delta
+            "delta": delta,
+            "threshold": threshold
         }),
     })
+}
+
+fn evaluate_scenario_probability_shift(
+    backend: &BackendConnection,
+    threshold_pp: f64,
+) -> Result<MacroAlertEvaluation> {
+    let active = scenarios::list_scenarios_backend(backend, Some("active"))?;
+    if active.is_empty() {
+        return Ok(MacroAlertEvaluation {
+            triggered: false,
+            current_value: None,
+            trigger_data: json!({ "reason": "no_active_scenarios" }),
+        });
+    }
+
+    // Find the largest recent shift across all active scenarios
+    let mut best_shift: Option<(String, f64, f64, f64, Option<String>)> = None; // (name, old, new, delta, driver)
+
+    for scenario in &active {
+        let history = scenarios::get_history_backend(backend, scenario.id, Some(2))?;
+        if history.len() < 2 {
+            continue;
+        }
+        // history is ordered DESC (newest first)
+        let current_prob = history[0].probability;
+        let previous_prob = history[1].probability;
+        let delta = current_prob - previous_prob;
+        let abs_delta = delta.abs();
+
+        if abs_delta > best_shift.as_ref().map(|(_, _, _, d, _)| d.abs()).unwrap_or(0.0) {
+            best_shift = Some((
+                scenario.name.clone(),
+                previous_prob,
+                current_prob,
+                delta,
+                history[0].driver.clone(),
+            ));
+        }
+    }
+
+    let Some((name, old_prob, new_prob, delta, driver)) = best_shift else {
+        return Ok(MacroAlertEvaluation {
+            triggered: false,
+            current_value: None,
+            trigger_data: json!({ "reason": "no_scenario_history" }),
+        });
+    };
+
+    let abs_delta = delta.abs();
+    let current_value = Decimal::from_str(&format!("{abs_delta:.1}")).ok();
+
+    Ok(MacroAlertEvaluation {
+        triggered: abs_delta >= threshold_pp,
+        current_value,
+        trigger_data: json!({
+            "scenario_name": name,
+            "old_probability": old_prob,
+            "new_probability": new_prob,
+            "delta_pp": delta,
+            "threshold_pp": threshold_pp,
+            "driver": driver
+        }),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_correlation_break_threshold() {
+        assert!((DEFAULT_CORRELATION_BREAK_THRESHOLD - 0.3).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_default_scenario_shift_threshold() {
+        assert!((DEFAULT_SCENARIO_SHIFT_THRESHOLD_PP - 10.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_evaluate_condition_unknown_condition() {
+        let conn = crate::db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        let eval = evaluate_condition(&backend, "nonexistent_condition", "0").unwrap();
+        assert!(!eval.triggered);
+        assert_eq!(eval.trigger_data["error"], "unsupported_condition");
+    }
+
+    #[test]
+    fn test_evaluate_scenario_shift_no_scenarios() {
+        let conn = crate::db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        let eval = evaluate_scenario_probability_shift(&backend, 10.0).unwrap();
+        assert!(!eval.triggered);
+        assert_eq!(eval.trigger_data["reason"], "no_active_scenarios");
+    }
 }
