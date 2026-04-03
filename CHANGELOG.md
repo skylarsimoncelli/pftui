@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-04-03 — fix: mark flaky World Bank integration tests as #[ignore]
+
+- What: `test_fetch_gdp_growth` and `test_fetch_all_indicators` in `src/data/worldbank.rs` now carry `#[ignore]` so they don't run by default. Run explicitly with `cargo test -- --ignored`.
+- Why: These tests make live HTTP calls to `api.worldbank.org` which intermittently returns 502 Bad Gateway, causing false CI failures. Flagged in dev-agent feedback from #583. Standard Rust practice for network-dependent integration tests.
+- Files: `src/data/worldbank.rs` (+2: `#[ignore]` annotations)
+- Tests: 2413 passing, 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** Tests still exist, just don't run by default.
+
 ### 2026-04-03 — feat: add --timing global flag for CLI command latency monitoring
 
 - What: New `--timing` global flag prints command execution time to stderr after any CLI command completes. Format: `[timing] elapsed_ms=123.456`. Works as a global flag — can appear before or after subcommands (`pftui --timing data status` or `pftui data status --timing`).
