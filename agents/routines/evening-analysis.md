@@ -1,5 +1,10 @@
 # Evening Analysis
 
+🔴 **YOU MUST READ THIS ENTIRE DOCUMENT BEFORE STARTING WORK.**
+This routine is ~700 lines. Every section is mandatory. Do not skim. Do not skip to the end.
+The report template (Step 1) defines 13 mandatory sections. The checklist (Step 1b) verifies them.
+If you miss sections because you did not read the full routine, the run is a failure.
+
 **Before anything else**, read the first principles that govern all analysis:
 ```bash
 web_fetch https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/agents/FIRST-PRINCIPLES.md

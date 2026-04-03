@@ -1,5 +1,10 @@
 # Public Daily Report
 
+🔴 **YOU MUST READ THIS ENTIRE DOCUMENT BEFORE STARTING WORK.**
+Every step is mandatory (especially Steps 4 and 7). Do not skim. The report
+template defines the required structure. The fact-check step is non-negotiable.
+If you skip steps because you did not read the full routine, the run is a failure.
+
 **Before anything else**, read the documents that define what pftui is and how it thinks:
 ```bash
 web_fetch https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/agents/FIRST-PRINCIPLES.md

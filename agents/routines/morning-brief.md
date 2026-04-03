@@ -1,5 +1,10 @@
 # Morning Brief
 
+🔴 **YOU MUST READ THIS ENTIRE DOCUMENT BEFORE STARTING WORK.**
+Every step and section is mandatory. Do not skim. The delivery template defines
+the required report structure. If you skip sections because you did not read the
+full routine, the run is a failure.
+
 **Before anything else**, read the first principles that govern all analysis:
 ```bash
 web_fetch https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/agents/FIRST-PRINCIPLES.md
