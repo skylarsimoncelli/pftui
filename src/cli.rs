@@ -2234,6 +2234,12 @@ pub enum AnalyticsCorrelationsCommand {
         /// Cooldown in minutes for seeded alerts (default: 240)
         #[arg(long, default_value = "240")]
         cooldown: i64,
+        /// Enrich breaks with historical context: trend direction, duration, and recent snapshots
+        #[arg(long)]
+        verbose: bool,
+        /// Number of historical snapshots per break pair when --verbose (default: 7)
+        #[arg(long, default_value = "7")]
+        history_depth: usize,
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -8870,6 +8876,66 @@ mod tests {
         };
         assert!(severity.is_none());
         assert!((threshold - 0.50).abs() < f64::EPSILON);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_correlations_breaks_verbose_flag() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "correlations",
+            "breaks",
+            "--verbose",
+            "--history-depth",
+            "10",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Correlations {
+            command: Some(AnalyticsCorrelationsCommand::Breaks {
+                verbose,
+                history_depth,
+                json,
+                ..
+            }),
+            ..
+        } = command
+        else {
+            panic!("expected correlations breaks");
+        };
+        assert!(verbose);
+        assert_eq!(history_depth, 10);
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_correlations_breaks_verbose_defaults() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "correlations",
+            "breaks",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Correlations {
+            command: Some(AnalyticsCorrelationsCommand::Breaks {
+                verbose,
+                history_depth,
+                ..
+            }),
+            ..
+        } = command
+        else {
+            panic!("expected correlations breaks");
+        };
+        assert!(!verbose);
+        assert_eq!(history_depth, 7);
         Ok(())
     }
 
