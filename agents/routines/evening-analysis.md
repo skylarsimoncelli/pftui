@@ -590,6 +590,36 @@ shift. Connect to portfolio implications.]
 REPORT
 ```
 
+### Step 1b: MANDATORY SECTION CHECKLIST
+
+🔴🔴🔴 **BEFORE GENERATING THE PDF, VERIFY YOUR MARKDOWN CONTAINS ALL OF THESE SECTIONS.**
+🔴🔴🔴 **IF ANY SECTION IS MISSING, THE REPORT IS INCOMPLETE AND MUST NOT BE SENT.**
+
+The evening analysis is NOT a duplicate of the public report. It is Skylar's PRIVATE
+operator report with sections the public report cannot have. If your report looks like
+the public report, you have failed.
+
+Check your markdown file contains ALL of these headings. Each one is mandatory:
+
+- [ ] `## Public Report Fact-Check` — Did you verify the public report's data?
+- [ ] `## Data Integrity Audit` — Accuracy scorecard, error tracking, cumulative trend, system health rating
+- [ ] `## What the Analysts Are Thinking` — Summary of all 4 timeframe agents' recent journalling and evolving views
+- [ ] `## Cross-Timeframe Intelligence` — Where layers converge/diverge on held assets
+- [ ] `## Adversarial Debate` — Structured bull/bear on today's most contentious topic
+- [ ] `## Power Structure Analysis` — Managed theater scorecard, follow the money
+- [ ] `## Key Intelligence` — 2-3 deep analytical findings
+- [ ] `## Prediction Market Calibration` — Divergences between pftui and market consensus
+- [ ] `## Portfolio Reflections` — Current snapshot, trades we're waiting for, should we change anything?
+- [ ] `## Prediction System Health` — Accuracy trend, conviction level, calibration
+- [ ] `## Learning and Self-Improvement` — Recent lessons, are we incorporating them, blind spots
+- [ ] `## Scenario Assessment` — Only scenarios that moved
+- [ ] `## On The Line` — New predictions
+
+**The sections that make this report DIFFERENT from the public report are:**
+Portfolio Reflections, What the Analysts Are Thinking, Prediction System Health,
+Learning and Self-Improvement, and Data Integrity Audit. These are the reason
+this report exists. Without them, you are just duplicating the public report.
+
 ### Step 2: Generate PDF
 
 ```bash
@@ -652,6 +682,8 @@ pftui agent message ack --id <id>
 
 ## Rules
 
+- **🔴 ALL 13 SECTIONS IN THE TEMPLATE ARE MANDATORY.** Do not skip any. Do not merge them. Do not replace them with your own format. The template exists because the user explicitly requested each section. Check the Step 1b checklist before generating the PDF.
+- **🔴 THIS IS NOT THE PUBLIC REPORT.** If your report does not contain Portfolio Reflections, What the Analysts Are Thinking, Prediction System Health, and Learning and Self-Improvement, you have written the wrong report. Start over.
 - ONE message. The deep evening analysis.
 - This is where intelligence happens. Go deep, not wide.
 - Prediction self-reflection is MANDATORY and must be genuine, not templated.
