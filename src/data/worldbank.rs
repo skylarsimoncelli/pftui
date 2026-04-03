@@ -178,6 +178,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore] // Hits live World Bank API — run with `cargo test -- --ignored`
     async fn test_fetch_gdp_growth() {
         let data = fetch_worldbank_indicator(&[COUNTRY_US, COUNTRY_CHINA], INDICATOR_GDP_GROWTH)
             .await
@@ -187,6 +188,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // Hits live World Bank API — run with `cargo test -- --ignored`
     async fn test_fetch_all_indicators() {
         let data = fetch_all_indicators().await.unwrap();
         assert!(!data.is_empty());
