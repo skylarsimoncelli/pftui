@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-03 — perf: fix N+1 query in load_or_compute_snapshots with batch snapshot fetching
+
+- What: `load_or_compute_snapshots` and `load_or_compute_snapshots_backend` now use 2 batch queries instead of N+1 individual queries per symbol. Previously, for each symbol in the input list, `get_latest_snapshot_backend` was called individually (N queries for N symbols), then `get_history_backend` per missing symbol (M more queries). With 50+ symbols in a typical portfolio+watchlist, that was 50-100+ DB round-trips. Now uses `get_latest_snapshots_batch_backend` (1 query with `WHERE symbol IN`/`ANY`) to fetch all cached snapshots, then reuses `get_history_batch_backend` (from #590, 1 query) for any missing symbols' fallback computation. Total: always 2 queries regardless of symbol count.
+- Why: Follow-on from N+1 optimization series (#579, #581, #590). `load_or_compute_snapshots` is called by `portfolio brief`, `portfolio summary`, `analytics technicals`, `analytics scan`, and `watchlist list` — all high-frequency agent commands that previously issued 50-100+ individual DB round-trips per invocation.
+- Implementation: New `get_latest_snapshots_batch` / `get_latest_snapshots_batch_postgres` / `get_latest_snapshots_batch_backend` in `db/technical_snapshots.rs`. SQLite uses `WHERE symbol IN (?,?,...)`, PostgreSQL uses `WHERE symbol = ANY($1)`. Returns `HashMap<String, TechnicalSnapshotRecord>`. Both `load_or_compute_snapshots` (direct SQLite) and `load_or_compute_snapshots_backend` (backend dispatch) refactored to: (1) batch-fetch cached snapshots, (2) collect missing symbols, (3) batch-fetch history for missing, (4) compute snapshots from history. Removed unused `HashSet` import and individual `get_latest_snapshot`/`get_history` imports.
+- Files: `src/db/technical_snapshots.rs` (+160: 3 batch functions, 5 new tests), `src/analytics/technicals.rs` (+50/-37: refactored both functions to use batch queries)
+- Tests: 2435 passing (+5 new: `batch_empty_symbols_returns_empty`, `batch_returns_latest_per_symbol`, `batch_missing_symbol_excluded`, `batch_respects_timeframe_filter`, `batch_single_symbol`), 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** Output format unchanged. Identical results. Single-item query functions preserved.
+
 ### 2026-04-03 — perf: fix N+1 queries in movers command with batch history fetching
 
 - What: `analytics movers` and `analytics movers themes` now use 2 batch queries instead of N+1 individual queries per symbol. Previously, `compute_change_pct` called `get_history_backend` (10 rows) per symbol inside the loop, plus a potential `get_price_at_date_backend` fallback — totaling ~50-100 individual DB round-trips for a typical portfolio+watchlist. Now uses a single `get_history_batch_backend` with a `ROW_NUMBER() OVER (PARTITION BY symbol)` window function to fetch all symbols' recent history in one query, plus a batched `get_prices_at_date_backend` for yesterday fallback prices.

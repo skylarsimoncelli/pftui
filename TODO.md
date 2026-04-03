@@ -46,6 +46,7 @@ _(none)_
 | High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable.) |
 | Morning Intelligence | 75% | 85% | Mar 28 | → (stable.) |
 | Morning Brief Cron | 85% | 80% | Apr 2 | → (stable.) |
+| Morning Brief | 85% | 88% | Apr 3 | ↑ (85→85 use, 80→88 overall. ISM services already in brief; no code change needed.) |
 | Public Daily Report | 82% | 80% | Mar 28 | → (stable.) |
 | Dev Agent | 92% | 94% | Apr 3 | → (stable high.) |
 
@@ -54,11 +55,13 @@ _(none)_
 2. **Evening Analysis auto-event detection** — 82/78. Portfolio-matrix coverage at 4%. Wants automatic scenario creation when major events occur. New P2 item added.
 3. **Morning Intelligence stale** — 75/85 since Mar 28. No new feedback. Monitor.
 
-**Shipped since last review (Apr 2):**
+**Shipped since last review (Apr 3):**
 1. ✅ Configurable alert thresholds for correlation breaks + scenario probability shifts (#572) — addresses Medium-Timeframe Apr 3
 2. ✅ Portfolio snapshot alias for portfolio status (#575) — addresses Evening Analysis Apr 3
 3. ✅ Correlation break historical context + confirmation tracking (#588) — addresses Low-Timeframe Apr 3
+4. ✅ N+1 fix in movers command with batch history fetching (#590) — performance
+5. ✅ N+1 fix in load_or_compute_snapshots with batch snapshot fetching (#593) — performance (brief, summary, scan, watchlist)
 
-**Release status:** v0.25.0 tagged Apr 2. 17 feat/fix commits since tag. No P0 bugs. 2424 tests passing, clippy clean.
+**Release status:** v0.25.0 tagged Apr 2. 19 feat/fix commits since tag. No P0 bugs. 2435 tests passing, clippy clean.
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.
