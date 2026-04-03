@@ -1089,6 +1089,7 @@ pub enum PortfolioOpportunityCommand {
 #[derive(Subcommand)]
 pub enum PortfolioCommand {
     /// Consolidated portfolio snapshot: allocation, value, daily P&L, and unrealized gain in one call
+    #[command(alias = "snapshot")]
     Status {
         /// Output JSON instead of formatted text
         #[arg(long)]
@@ -4089,6 +4090,30 @@ mod tests {
                 command: Some(PortfolioCommand::Status { json }),
             }) => assert!(!json),
             _ => panic!("expected portfolio status command"),
+        }
+    }
+
+    #[test]
+    fn parse_portfolio_snapshot_alias_resolves_to_status() {
+        let cli =
+            Cli::try_parse_from(["pftui", "portfolio", "snapshot", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command: Some(PortfolioCommand::Status { json }),
+            }) => assert!(json),
+            _ => panic!("expected portfolio status via snapshot alias"),
+        }
+    }
+
+    #[test]
+    fn parse_portfolio_snapshot_alias_no_flags() {
+        let cli =
+            Cli::try_parse_from(["pftui", "portfolio", "snapshot"]).unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command: Some(PortfolioCommand::Status { json }),
+            }) => assert!(!json),
+            _ => panic!("expected portfolio status via snapshot alias"),
         }
     }
 
