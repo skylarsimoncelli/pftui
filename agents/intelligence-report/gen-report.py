@@ -324,10 +324,30 @@ def md_to_pdf(md_path, pdf_path, title, date, subtitle=None, author="Skylar Simo
     print(f"Generated: {pdf_path}")
 
 if __name__ == '__main__':
-    md_path = sys.argv[1]
-    pdf_path = sys.argv[2]
-    title = sys.argv[3]
-    date = sys.argv[4]
-    subtitle = sys.argv[5] if len(sys.argv) > 5 else None
-    author = sys.argv[6] if len(sys.argv) > 6 else "Skylar Simoncelli"
-    md_to_pdf(md_path, pdf_path, title, date, subtitle, author)
+    import argparse
+    parser = argparse.ArgumentParser(description='Generate branded PFTUI Intelligence Report PDFs')
+    parser.add_argument('md_path', help='Input markdown file path')
+    parser.add_argument('pdf_path', help='Output PDF file path')
+    parser.add_argument('title', nargs='?', default='PFTUI Intelligence Report', help='Report title')
+    parser.add_argument('date', nargs='?', default=None, help='Report date')
+    parser.add_argument('subtitle', nargs='?', default=None, help='Report subtitle')
+    parser.add_argument('author', nargs='?', default='Skylar Simoncelli', help='Author name')
+    # Also accept named flags so agents can't break it with --title etc.
+    parser.add_argument('--title', dest='title_flag', default=None, help='Report title (named)')
+    parser.add_argument('--subtitle', dest='subtitle_flag', default=None, help='Report subtitle (named)')
+    parser.add_argument('--date', dest='date_flag', default=None, help='Report date (named)')
+    parser.add_argument('--author', dest='author_flag', default=None, help='Author name (named)')
+
+    args = parser.parse_args()
+
+    # Named flags override positional args
+    title = args.title_flag or args.title
+    date_str = args.date_flag or args.date
+    subtitle = args.subtitle_flag or args.subtitle
+    author = args.author_flag or args.author
+
+    if not date_str:
+        from datetime import datetime
+        date_str = datetime.now().strftime('%B %d, %Y')
+
+    md_to_pdf(args.md_path, args.pdf_path, title, date_str, subtitle, author)
