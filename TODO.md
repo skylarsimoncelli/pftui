@@ -14,7 +14,11 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-_(none)_
+### [Feedback] Automatic event detection for scenario creation
+**Source:** Evening Analysis (Apr 3, 82/78).
+**Why:** When major macro events occur (e.g. Warsh nomination, tariff announcements, FOMC surprises), agents should automatically create or suggest new scenarios. Currently agents must manually identify events and run `journal scenario add`. Auto-detection from news/calendar/catalyst feeds would close this gap.
+**Scope:** Detect high-impact events from news sentiment spikes + catalyst scoring, auto-suggest `journal scenario add` with pre-filled parameters. Could integrate into `analytics guidance` or as a standalone `analytics scenario detect`.
+**Effort:** 1-2 weeks.
 
 ## P3 - Long Term
 
@@ -34,33 +38,26 @@ _(none)_
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Evening Analyst | 72% | 68% | Apr 1 | ↓ (78→72 use, 75→68 overall. Backtest shows 26.7% win rate — this is a routine/strategy issue, not tooling. `portfolio status` shipped #514.) **Lowest overall scorer — priority.** |
-| Medium-Timeframe Analyst | 75% | 80% | Apr 2 | ↓ (85→75 use, 90→80 overall. Synthesis conviction matrix shipped #540.) |
-| Evening Analysis | 82% | 80% | Apr 2 | → (new tester entry. `data prices` empty — staleness warning + auto-refresh shipped #552/#557. Unified market snapshot shipped #548.) |
-| Low-Timeframe Analyst | 15% | 75% | Apr 2 | ↓↓ (85→15 use. CLI integration issue — agent couldn't access pftui. Not a tooling bug — routine/config issue.) |
-| Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable. Historical regime transitions shipped #486.) |
-| High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable. Trend evidence enrichment shipped #502.) |
+| Evening Analyst | 72% | 68% | Apr 1 | ↓ (78→72 use, 75→68 overall. Backtest 26.7% WR — routine/strategy issue, not tooling.) **Lowest overall scorer.** |
+| Medium-Timeframe Analyst | 85% | 88% | Apr 3 | ↑ (75→85 use, 80→88 overall. Alert thresholds shipped #572. Recovery.) |
+| Evening Analysis | 82% | 78% | Apr 3 | ↓ (82→82 use, 80→78 overall. Portfolio snapshot alias shipped #575. Wants auto event detection for scenarios.) |
+| Low-Timeframe Analyst | 85% | 80% | Apr 2 | ↑ (15→85 use. CLI access restored — previous 15% was config issue.) |
+| Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable.) |
+| High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable.) |
 | Morning Intelligence | 75% | 85% | Mar 28 | → (stable.) |
-| Morning Brief Cron | 85% | 80% | Apr 2 | → (stable. Scenario + calibration in brief shipped #562.) |
+| Morning Brief Cron | 85% | 80% | Apr 2 | → (stable.) |
 | Public Daily Report | 82% | 80% | Mar 28 | → (stable.) |
-| Dev Agent | 92% | 94% | Apr 2 | → (stable high.) |
+| Dev Agent | 92% | 94% | Apr 3 | → (stable high.) |
 
 **Top 3 priorities based on feedback:**
-1. **Evening Analyst prediction quality** — lowest overall at 68%. Backtest shows 26.7% win rate. Not a tooling issue — the analytics pipeline is rated "excellent." The agent routine over-weights mean reversion. Backtest diagnostics (#525) now surfaces this automatically.
-2. **`data prices`/`data quotes` empty output** — P1 resolved. Staleness warning (#552), auto-refresh (#557), and per-symbol staleness (#559) all shipped. Root cause was cache timing, not missing implementation.
-3. **Medium-Timeframe usability drop** — 85→75 usefulness. Conviction matrix shipped (#540) addresses the main request. Monitor next review.
-4. **Low-Timeframe Analyst CLI access** — 15% usefulness (Apr 2). Agent couldn't access pftui CLI — routine/config issue, not tooling.
+1. **Evening Analyst prediction quality** — lowest overall at 68%. Backtest shows 26.7% win rate. Not a tooling issue — routine over-weights mean reversion. Backtest diagnostics (#525) surfaces this automatically.
+2. **Evening Analysis auto-event detection** — 82/78. Portfolio-matrix coverage at 4%. Wants automatic scenario creation when major events occur. New P2 item added.
+3. **Morning Intelligence stale** — 75/85 since Mar 28. No new feedback. Monitor.
 
-**Shipped since last review (Apr 1):**
-1. ✅ Synthesis conviction matrix (#540) — per-asset analyst conviction scores inline in synthesis
-2. ✅ Time-bomb test fix (#544) — dynamic dates in power_flows tests
-3. ✅ Unified market snapshot (#548) — prices + sentiment + regime in one call (addresses Evening Analysis P2)
-4. ✅ Scan highlights in Situation Room (#550) + in brief (#554)
-5. ✅ Stale cache warning (#552) + auto-refresh (#557) + per-symbol staleness (#559)
-6. ✅ Scenario probabilities + calibration in brief (#562) — addresses morning-brief-cron feedback (Apr 2)
-7. ✅ Correlation break enrichment in brief (#564) — severity/interpretation/signal on breaks (addresses Low-Timeframe Analyst Apr 1)
-8. ✅ Fix silently ignored --timeframe/--direction/--conviction/--limit filters on trends list (#566) — agents filtering by timeframe now get correct results
+**Shipped since last review (Apr 2):**
+1. ✅ Configurable alert thresholds for correlation breaks + scenario probability shifts (#572) — addresses Medium-Timeframe Apr 3
+2. ✅ Portfolio snapshot alias for portfolio status (#575) — addresses Evening Analysis Apr 3
 
-**Release status:** v0.24.0 tagged Apr 2. 80 commits since v0.23.0, no P0 bugs, 2380 tests passing, clippy clean.
+**Release status:** v0.24.0 tagged Apr 2. 14 feat/fix commits since tag. No P0 bugs. 2395 tests passing, clippy clean. **Release v0.25.0 eligible.**
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.
