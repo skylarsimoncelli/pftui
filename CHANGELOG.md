@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-03 — feat: add --timing global flag for CLI command latency monitoring
+
+- What: New `--timing` global flag prints command execution time to stderr after any CLI command completes. Format: `[timing] elapsed_ms=123.456`. Works as a global flag — can appear before or after subcommands (`pftui --timing data status` or `pftui data status --timing`).
+- Why: Dev-agent feedback from #579 and #581 flagged the need for per-command latency logging to measure the impact of N+1 query optimizations. Agents can now pass `--timing` to any command and get elapsed milliseconds on stderr — useful for performance monitoring, regression detection, and optimization validation.
+- Implementation: `main()` refactored into `main()` + `run_cli()` to wrap timing around the entire command dispatch. `std::time::Instant::now()` captures start time when `--timing` is set. Output goes to stderr so JSON on stdout remains parseable. Works with all commands including early-return paths (search, market-hours).
+- Files: `src/cli.rs` (+33: new `timing` field on Cli struct, 3 CLI parse tests), `src/main.rs` (+21: timing wrapper, `main()`/`run_cli()` split)
+- Tests: 2415 passing (+3 new: `parse_timing_flag_global`, `parse_timing_flag_after_subcommand`, `parse_timing_flag_default_off`). Clippy clean.
+- **Non-breaking:** Flag is opt-in. Default behavior unchanged. Output goes to stderr only.
+
 ### 2026-04-03 — perf: fix N+1 query in situation room list with batch scenario queries
 
 - What: `journal situation list` now uses 4 batch queries instead of 4 queries per scenario (N+1 pattern). Previously, for each active scenario, `run_list` called `list_branches_backend`, `list_impacts_backend`, `list_indicators_backend`, and `list_updates_backend` individually. With 10 active scenarios, that was 40 DB round-trips; now it's always 4 regardless of scenario count. No change to output format — identical JSON and terminal output.
