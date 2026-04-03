@@ -59,6 +59,8 @@ pub struct AlertsArgs {
     pub recent: bool,
     /// Number of hours for the recent filter (default: 24).
     pub recent_hours: i64,
+    /// Only show newly triggered alerts (check command).
+    pub newly_triggered_only: bool,
 }
 
 fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
@@ -382,6 +384,27 @@ fn run_check(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     let mut results = check_alerts_backend_only(backend)?;
     if args.today {
         results.retain(|r| alert_matches_today_filter(&r.rule));
+    }
+    if args.newly_triggered_only {
+        results.retain(|r| r.newly_triggered);
+    }
+    if let Some(kind_filter) = &args.kind {
+        let kind_lower = kind_filter.to_lowercase();
+        results.retain(|r| r.rule.kind.to_string().to_lowercase() == kind_lower);
+    }
+    if let Some(cond_filter) = &args.condition {
+        let cond_lower = cond_filter.to_lowercase();
+        results.retain(|r| {
+            r.rule
+                .condition
+                .as_deref()
+                .map(|c| c.to_lowercase() == cond_lower)
+                .unwrap_or(false)
+        });
+    }
+    if let Some(sym_filter) = &args.symbol {
+        let sym_lower = sym_filter.to_lowercase();
+        results.retain(|r| r.rule.symbol.to_lowercase().contains(&sym_lower));
     }
 
     if results.is_empty() {
@@ -1408,6 +1431,7 @@ mod tests {
             cooldown_minutes: 0,
             recent: false,
             recent_hours: 24,
+            newly_triggered_only: false,
         }
     }
 
@@ -1546,6 +1570,221 @@ mod tests {
         let json = serde_json::to_string(&json_results).unwrap();
         assert!(json.contains("GC=F"));
         assert!(json.contains("\"newly_triggered\":false"));
+    }
+
+    #[test]
+    fn test_check_newly_triggered_filter() {
+        let backend = setup_backend();
+        // Price alert: GC=F above 5500 — will trigger (current ~5600)
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5500",
+                rule_text: "GC=F above 5500",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        // Price alert: GC=F above 9000 — will NOT trigger (stays armed)
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "9000",
+                rule_text: "GC=F above 9000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        let mut results = check_alerts_backend_only(&backend).unwrap();
+        assert_eq!(results.len(), 2);
+        // Apply newly-triggered filter
+        results.retain(|r| r.newly_triggered);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rule.symbol, "GC=F");
+        assert_eq!(results[0].rule.threshold, "5500");
+    }
+
+    #[test]
+    fn test_check_kind_filter() {
+        let backend = setup_backend();
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "9000",
+                rule_text: "GC=F above 9000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "technical",
+                symbol: "BTC-USD:GC=F",
+                direction: "above",
+                condition: Some("correlation_break"),
+                threshold: "0.30",
+                rule_text: "Correlation break BTC-USD vs GC=F",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        let mut results = check_alerts_backend_only(&backend).unwrap();
+        assert_eq!(results.len(), 2);
+        // Filter by kind = "technical"
+        let kind_lower = "technical".to_lowercase();
+        results.retain(|r| r.rule.kind.to_string().to_lowercase() == kind_lower);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].rule.symbol.contains("BTC-USD"));
+    }
+
+    #[test]
+    fn test_check_condition_filter() {
+        let backend = setup_backend();
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "9000",
+                rule_text: "GC=F above 9000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "technical",
+                symbol: "BTC-USD:GC=F",
+                direction: "above",
+                condition: Some("correlation_break"),
+                threshold: "0.30",
+                rule_text: "Correlation break BTC-USD vs GC=F",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        let mut results = check_alerts_backend_only(&backend).unwrap();
+        assert_eq!(results.len(), 2);
+        // Filter by condition = "correlation_break"
+        let cond_lower = "correlation_break".to_lowercase();
+        results.retain(|r| {
+            r.rule
+                .condition
+                .as_deref()
+                .map(|c| c.to_lowercase() == cond_lower)
+                .unwrap_or(false)
+        });
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].rule.condition.as_deref(),
+            Some("correlation_break")
+        );
+    }
+
+    #[test]
+    fn test_check_symbol_filter() {
+        let backend = setup_backend();
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "9000",
+                rule_text: "GC=F above 9000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "BTC-USD",
+                direction: "above",
+                condition: None,
+                threshold: "200000",
+                rule_text: "BTC-USD above 200000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        let mut results = check_alerts_backend_only(&backend).unwrap();
+        assert_eq!(results.len(), 2);
+        // Filter by symbol containing "BTC"
+        let sym_lower = "btc".to_lowercase();
+        results.retain(|r| r.rule.symbol.to_lowercase().contains(&sym_lower));
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rule.symbol, "BTC-USD");
+    }
+
+    #[test]
+    fn test_check_combined_filters() {
+        let backend = setup_backend();
+        // A triggered price alert
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5500",
+                rule_text: "GC=F above 5500",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        // A non-triggered technical alert
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "technical",
+                symbol: "BTC-USD:GC=F",
+                direction: "above",
+                condition: Some("correlation_break"),
+                threshold: "0.30",
+                rule_text: "Correlation break BTC-USD vs GC=F",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        let mut results = check_alerts_backend_only(&backend).unwrap();
+        assert!(results.len() >= 2);
+        // Combine: newly-triggered + kind=price
+        results.retain(|r| r.newly_triggered);
+        let kind_lower = "price".to_lowercase();
+        results.retain(|r| r.rule.kind.to_string().to_lowercase() == kind_lower);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rule.symbol, "GC=F");
+        assert!(results[0].newly_triggered);
     }
 
     #[test]
