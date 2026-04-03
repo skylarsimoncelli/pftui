@@ -52,11 +52,17 @@ pub fn run(
                 backend, status, category, timeframe, direction, conviction, limit,
             )?;
 
+            // Batch-fetch all evidence and impacts in 2-3 queries instead of N+1
+            let trend_ids: Vec<i64> = trends_list.iter().map(|t| t.id).collect();
+            let impacts_map = trends::list_asset_impacts_batch_backend(backend, &trend_ids).unwrap_or_default();
+
             if json_output {
+                let evidence_map = trends::list_evidence_batch_backend(backend, &trend_ids, None).unwrap_or_default();
+
                 let mut enriched = Vec::new();
                 for t in &trends_list {
-                    let evidence_list = trends::list_evidence_backend(backend, t.id, None).unwrap_or_default();
-                    let impacts = trends::list_asset_impacts_backend(backend, t.id).unwrap_or_default();
+                    let evidence_list = evidence_map.get(&t.id).cloned().unwrap_or_default();
+                    let impacts = impacts_map.get(&t.id).cloned().unwrap_or_default();
                     let evidence_count = evidence_list.len();
                     let latest_evidence = evidence_list.first().map(|e| e.date.clone());
                     let recent_evidence: Vec<_> = evidence_list.into_iter().take(3).collect();
@@ -84,6 +90,10 @@ pub fn run(
                 }
 
                 if verbose {
+                    // Batch-fetch evidence (top 3 per trend) and counts
+                    let evidence_map = trends::list_evidence_batch_backend(backend, &trend_ids, Some(3)).unwrap_or_default();
+                    let counts_map = trends::count_evidence_batch_backend(backend, &trend_ids).unwrap_or_default();
+
                     // Enriched output with evidence and asset impacts inline
                     for (i, t) in trends_list.iter().enumerate() {
                         if i > 0 {
@@ -115,9 +125,10 @@ pub fn run(
                             println!("  Key signal: {}", sig);
                         }
 
-                        let evidence_list = trends::list_evidence_backend(backend, t.id, Some(3)).unwrap_or_default();
+                        let evidence_list = evidence_map.get(&t.id).cloned().unwrap_or_default();
                         if !evidence_list.is_empty() {
-                            println!("  Evidence ({} total):", trends::count_evidence_backend(backend, t.id).unwrap_or(evidence_list.len()));
+                            let total_count = counts_map.get(&t.id).copied().unwrap_or(evidence_list.len());
+                            println!("  Evidence ({} total):", total_count);
                             for e in evidence_list {
                                 let impact_mark = match e.direction_impact.as_deref() {
                                     Some("strengthens") => "↑",
@@ -128,7 +139,7 @@ pub fn run(
                             }
                         }
 
-                        let impacts = trends::list_asset_impacts_backend(backend, t.id).unwrap_or_default();
+                        let impacts = impacts_map.get(&t.id).cloned().unwrap_or_default();
                         if !impacts.is_empty() {
                             let bullish: Vec<_> = impacts.iter().filter(|i| i.impact == "bullish").map(|i| i.symbol.as_str()).collect();
                             let bearish: Vec<_> = impacts.iter().filter(|i| i.impact == "bearish").map(|i| i.symbol.as_str()).collect();
@@ -142,6 +153,10 @@ pub fn run(
                         }
                     }
                 } else {
+                    // Batch-fetch evidence counts and latest evidence (top 1 per trend)
+                    let counts_map = trends::count_evidence_batch_backend(backend, &trend_ids).unwrap_or_default();
+                    let evidence_map = trends::list_evidence_batch_backend(backend, &trend_ids, Some(1)).unwrap_or_default();
+
                     // Compact table with evidence summary columns
                     println!(
                         "{:<36} {:<8} {:<12} {:<10} {:<10} {:<8} {:<12} Impacts",
@@ -150,11 +165,11 @@ pub fn run(
                     println!("{}", "─".repeat(110));
 
                     for t in &trends_list {
-                        let evidence_count = trends::count_evidence_backend(backend, t.id).unwrap_or(0);
-                        let evidence_list = trends::list_evidence_backend(backend, t.id, Some(1)).unwrap_or_default();
+                        let evidence_count = counts_map.get(&t.id).copied().unwrap_or(0);
+                        let evidence_list = evidence_map.get(&t.id).cloned().unwrap_or_default();
                         let latest_date = evidence_list.first().map(|e| e.date.as_str()).unwrap_or("—");
 
-                        let impacts = trends::list_asset_impacts_backend(backend, t.id).unwrap_or_default();
+                        let impacts = impacts_map.get(&t.id).cloned().unwrap_or_default();
                         let impact_summary = if impacts.is_empty() {
                             "—".to_string()
                         } else {
@@ -296,11 +311,16 @@ pub fn run(
         "dashboard" => {
             let trends_list = trends::list_trends_backend(backend, Some("active"), None)?;
 
+            // Batch-fetch evidence (top 3) and impacts for all trends
+            let trend_ids: Vec<i64> = trends_list.iter().map(|t| t.id).collect();
+            let evidence_map = trends::list_evidence_batch_backend(backend, &trend_ids, Some(3)).unwrap_or_default();
+            let impacts_map = trends::list_asset_impacts_batch_backend(backend, &trend_ids).unwrap_or_default();
+
             if json_output {
                 let mut dashboard_data = Vec::new();
                 for t in &trends_list {
-                    let evidence_list = trends::list_evidence_backend(backend, t.id, Some(3))?;
-                    let impacts = trends::list_asset_impacts_backend(backend, t.id)?;
+                    let evidence_list = evidence_map.get(&t.id).cloned().unwrap_or_default();
+                    let impacts = impacts_map.get(&t.id).cloned().unwrap_or_default();
                     dashboard_data.push(json!({
                         "trend": t,
                         "recent_evidence": evidence_list,
@@ -342,7 +362,7 @@ pub fn run(
                         println!("  Key signal: {}", sig);
                     }
 
-                    let evidence_list = trends::list_evidence_backend(backend, t.id, Some(3))?;
+                    let evidence_list = evidence_map.get(&t.id).cloned().unwrap_or_default();
                     if !evidence_list.is_empty() {
                         println!("  Recent evidence:");
                         for e in evidence_list {
@@ -355,7 +375,7 @@ pub fn run(
                         }
                     }
 
-                    let impacts = trends::list_asset_impacts_backend(backend, t.id)?;
+                    let impacts = impacts_map.get(&t.id).cloned().unwrap_or_default();
                     if !impacts.is_empty() {
                         let bullish: Vec<_> = impacts.iter().filter(|i| i.impact == "bullish").collect();
                         let bearish: Vec<_> = impacts.iter().filter(|i| i.impact == "bearish").collect();
