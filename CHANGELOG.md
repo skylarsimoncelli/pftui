@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-03 — perf: fix N+1 queries in movers command with batch history fetching
+
+- What: `analytics movers` and `analytics movers themes` now use 2 batch queries instead of N+1 individual queries per symbol. Previously, `compute_change_pct` called `get_history_backend` (10 rows) per symbol inside the loop, plus a potential `get_price_at_date_backend` fallback — totaling ~50-100 individual DB round-trips for a typical portfolio+watchlist. Now uses a single `get_history_batch_backend` with a `ROW_NUMBER() OVER (PARTITION BY symbol)` window function to fetch all symbols' recent history in one query, plus a batched `get_prices_at_date_backend` for yesterday fallback prices.
+- Why: Dev-agent feedback from #581 flagged "look for N+1 patterns in other commands (debates, alerts)." The movers command had the most impactful N+1 — it scans all held + watchlist + sector ETF symbols (50+) and issued per-symbol history queries. With PostgreSQL (network latency per query), the round-trip savings are significant.
+- Implementation: New `get_history_batch` / `get_history_batch_postgres` / `get_history_batch_backend` functions in `db/price_history.rs` using `WHERE symbol IN (...)` (SQLite) and `WHERE symbol = ANY($1)` (PostgreSQL) with `ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC)` window function. Also refactored `get_prices_at_date` and `get_prices_at_date_postgres` from N individual queries to single batch queries using the same window function pattern. `compute_change_pct` signature changed from `(backend, symbol, ...)` to `(symbol, ..., history_map, yesterday_prices)` — takes pre-fetched data instead of hitting the DB. Both `run()` and `run_themes()` batch-fetch upfront.
+- Files: `src/db/price_history.rs` (+120: get_history_batch, get_history_batch_postgres, get_history_batch_backend, refactored get_prices_at_date + postgres variant to batch, 6 new tests), `src/commands/movers.rs` (+20/-15: refactored compute_change_pct signature, batch pre-fetching in run + run_themes, test_maps_for helper, updated 8 test callsites)
+- Tests: 2430 passing (+6 new: test_get_history_batch_empty_symbols, test_get_history_batch_single_symbol, test_get_history_batch_multiple_symbols, test_get_history_batch_respects_limit, test_get_history_batch_missing_symbol_excluded, test_get_history_batch_preserves_ohlcv), 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** Output format unchanged. Identical JSON and terminal output. Only internal query pattern changed.
+
 ### 2026-04-03 — feat: add --verbose flag to correlation breaks with historical context
 
 - What: `analytics correlations breaks --verbose` enriches each break with historical context: trend direction (widening/narrowing/stable/new), first break date, break duration in days, delta change over time, and recent correlation snapshots. Configurable `--history-depth` (default 7). Both JSON and terminal output enriched.

@@ -97,11 +97,41 @@ pub fn get_prices_at_date(
     symbols: &[String],
     date: &str,
 ) -> Result<HashMap<String, Decimal>> {
+    if symbols.is_empty() {
+        return Ok(HashMap::new());
+    }
+    // Batch query: for each symbol, get the closest price on or before the date.
+    // Uses a window function to rank rows per symbol by date DESC, then picks rank 1.
+    let placeholders: Vec<String> = (1..=symbols.len()).map(|i| format!("?{}", i)).collect();
+    let in_clause = placeholders.join(", ");
+    let sql = format!(
+        "SELECT symbol, close FROM (
+             SELECT symbol, close,
+                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+             FROM price_history
+             WHERE symbol IN ({}) AND date <= ?{}
+         ) WHERE rn = 1",
+        in_clause,
+        symbols.len() + 1
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = symbols
+        .iter()
+        .map(|s| Box::new(s.clone()) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
+    params_vec.push(Box::new(date.to_string()));
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|p| p.as_ref()).collect();
+    let rows = stmt.query_map(params_refs.as_slice(), |row| {
+        let symbol: String = row.get(0)?;
+        let close_str: String = row.get(1)?;
+        Ok((symbol, close_str))
+    })?;
     let mut result = HashMap::new();
-    for symbol in symbols {
-        if let Some(price) = get_price_at_date(conn, symbol, date)? {
-            result.insert(symbol.clone(), price);
-        }
+    for row in rows {
+        let (symbol, close_str) = row?;
+        let price = close_str.parse().unwrap_or(Decimal::ZERO);
+        result.insert(symbol, price);
     }
     Ok(result)
 }
@@ -230,7 +260,6 @@ pub fn get_price_at_date_backend(
     )
 }
 
-#[allow(dead_code)]
 pub fn get_prices_at_date_backend(
     backend: &BackendConnection,
     symbols: &[String],
@@ -252,6 +281,129 @@ pub fn get_all_symbols_history_backend(
         backend,
         |conn| get_all_symbols_history(conn, limit),
         |pool| get_all_symbols_history_postgres(pool, limit),
+    )
+}
+
+/// Batch-fetch the most recent `limit` history rows for each of the given symbols.
+/// Returns a HashMap keyed by symbol with chronological history vectors.
+/// Uses a single SQL query with a window function instead of N individual queries.
+pub fn get_history_batch(
+    conn: &Connection,
+    symbols: &[String],
+    limit: u32,
+) -> Result<HashMap<String, Vec<HistoryRecord>>> {
+    if symbols.is_empty() {
+        return Ok(HashMap::new());
+    }
+    // Build placeholder string: (?1, ?2, ?3, ...)
+    let placeholders: Vec<String> = (1..=symbols.len()).map(|i| format!("?{}", i)).collect();
+    let in_clause = placeholders.join(", ");
+    let sql = format!(
+        "SELECT symbol, date, close, volume, open, high, low
+         FROM (
+             SELECT symbol, date, close, volume, open, high, low,
+                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+             FROM price_history
+             WHERE symbol IN ({})
+         )
+         WHERE rn <= ?{}
+         ORDER BY symbol, date ASC",
+        in_clause,
+        symbols.len() + 1
+    );
+    let mut stmt = conn.prepare(&sql)?;
+
+    // Bind symbol parameters + the limit parameter
+    let limit_idx = symbols.len() + 1;
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = symbols
+        .iter()
+        .map(|s| Box::new(s.clone()) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
+    params_vec.push(Box::new(limit as i64));
+
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|p| p.as_ref()).collect();
+    let rows = stmt.query_map(params_refs.as_slice(), |row| {
+        let symbol: String = row.get(0)?;
+        let date: String = row.get(1)?;
+        let close_str: String = row.get(2)?;
+        let volume_str: Option<String> = row.get(3)?;
+        let open_str: Option<String> = row.get(4)?;
+        let high_str: Option<String> = row.get(5)?;
+        let low_str: Option<String> = row.get(6)?;
+        Ok((symbol, date, close_str, volume_str, open_str, high_str, low_str))
+    })?;
+
+    let mut result: HashMap<String, Vec<HistoryRecord>> = HashMap::new();
+    for row in rows {
+        let (symbol, date, close_str, volume_str, open_str, high_str, low_str) = row?;
+        let record = HistoryRecord {
+            date,
+            close: close_str.parse().unwrap_or(Decimal::ZERO),
+            volume: volume_str.and_then(|v| v.parse::<u64>().ok()),
+            open: open_str.and_then(|s| s.parse().ok()),
+            high: high_str.and_then(|s| s.parse().ok()),
+            low: low_str.and_then(|s| s.parse().ok()),
+        };
+        result.entry(symbol).or_default().push(record);
+    }
+    let _ = limit_idx; // suppress unused warning
+    Ok(result)
+}
+
+fn get_history_batch_postgres(
+    pool: &PgPool,
+    symbols: &[String],
+    limit: u32,
+) -> Result<HashMap<String, Vec<HistoryRecord>>> {
+    if symbols.is_empty() {
+        return Ok(HashMap::new());
+    }
+    ensure_tables_postgres(pool)?;
+    type BatchRow = (String, String, String, Option<String>, Option<String>, Option<String>, Option<String>);
+    let rows: Vec<BatchRow> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
+            "SELECT symbol, date, close, volume, open, high, low
+             FROM (
+                 SELECT symbol, date, close, volume, open, high, low,
+                        ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+                 FROM price_history
+                 WHERE symbol = ANY($1)
+             ) sub
+             WHERE rn <= $2
+             ORDER BY symbol, date ASC",
+        )
+        .bind(symbols)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+    })?;
+
+    let mut result: HashMap<String, Vec<HistoryRecord>> = HashMap::new();
+    for (symbol, date, close_str, volume_str, open_str, high_str, low_str) in rows {
+        let record = HistoryRecord {
+            date,
+            close: close_str.parse().unwrap_or(Decimal::ZERO),
+            volume: volume_str.and_then(|v| v.parse::<u64>().ok()),
+            open: open_str.and_then(|s| s.parse().ok()),
+            high: high_str.and_then(|s| s.parse().ok()),
+            low: low_str.and_then(|s| s.parse().ok()),
+        };
+        result.entry(symbol).or_default().push(record);
+    }
+    Ok(result)
+}
+
+/// Batch-fetch recent history for specified symbols via backend dispatch.
+pub fn get_history_batch_backend(
+    backend: &BackendConnection,
+    symbols: &[String],
+    limit: u32,
+) -> Result<HashMap<String, Vec<HistoryRecord>>> {
+    query::dispatch(
+        backend,
+        |conn| get_history_batch(conn, symbols, limit),
+        |pool| get_history_batch_postgres(pool, symbols, limit),
     )
 }
 
@@ -394,11 +546,28 @@ fn get_prices_at_date_postgres(
     symbols: &[String],
     date: &str,
 ) -> Result<HashMap<String, Decimal>> {
+    if symbols.is_empty() {
+        return Ok(HashMap::new());
+    }
+    ensure_tables_postgres(pool)?;
+    let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
+            "SELECT symbol, close FROM (
+                 SELECT symbol, close,
+                        ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+                 FROM price_history
+                 WHERE symbol = ANY($1) AND date <= $2
+             ) sub WHERE rn = 1",
+        )
+        .bind(symbols)
+        .bind(date)
+        .fetch_all(pool)
+        .await
+    })?;
     let mut result = HashMap::new();
-    for symbol in symbols {
-        if let Some(price) = get_price_at_date_postgres(pool, symbol, date)? {
-            result.insert(symbol.clone(), price);
-        }
+    for (symbol, close_str) in rows {
+        let price = close_str.parse().unwrap_or(Decimal::ZERO);
+        result.insert(symbol, price);
     }
     Ok(result)
 }
@@ -738,5 +907,109 @@ mod tests {
         assert_eq!(fetched[0].open, None);
         assert_eq!(fetched[0].high, None);
         assert_eq!(fetched[0].low, None);
+    }
+
+    // ─── Batch history tests ───────────────────────────────────────────────
+
+    #[test]
+    fn test_get_history_batch_empty_symbols() {
+        let conn = open_in_memory();
+        let result = get_history_batch(&conn, &[], 10).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_get_history_batch_single_symbol() {
+        let conn = open_in_memory();
+        let records = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(105), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(103), volume: None, open: None, high: None, low: None },
+        ];
+        upsert_history(&conn, "AAPL", "yahoo", &records).unwrap();
+
+        let result = get_history_batch(&conn, &["AAPL".to_string()], 10).unwrap();
+        assert_eq!(result.len(), 1);
+        let aapl = result.get("AAPL").unwrap();
+        assert_eq!(aapl.len(), 3);
+        // Chronological order (oldest first)
+        assert_eq!(aapl[0].date, "2025-01-01");
+        assert_eq!(aapl[2].date, "2025-01-03");
+    }
+
+    #[test]
+    fn test_get_history_batch_multiple_symbols() {
+        let conn = open_in_memory();
+        upsert_history(&conn, "AAPL", "yahoo", &[
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(105), volume: None, open: None, high: None, low: None },
+        ]).unwrap();
+        upsert_history(&conn, "GOOG", "yahoo", &[
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(200), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(210), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(215), volume: None, open: None, high: None, low: None },
+        ]).unwrap();
+
+        let syms = vec!["AAPL".to_string(), "GOOG".to_string()];
+        let result = get_history_batch(&conn, &syms, 10).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.get("AAPL").unwrap().len(), 2);
+        assert_eq!(result.get("GOOG").unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_get_history_batch_respects_limit() {
+        let conn = open_in_memory();
+        let records: Vec<HistoryRecord> = (1..=20).map(|d| HistoryRecord {
+            date: format!("2025-01-{:02}", d),
+            close: Decimal::from(100 + d),
+            volume: None, open: None, high: None, low: None,
+        }).collect();
+        upsert_history(&conn, "AAPL", "yahoo", &records).unwrap();
+
+        let result = get_history_batch(&conn, &["AAPL".to_string()], 5).unwrap();
+        let aapl = result.get("AAPL").unwrap();
+        assert_eq!(aapl.len(), 5);
+        // Should have the 5 most recent, in chronological order
+        assert_eq!(aapl[0].date, "2025-01-16");
+        assert_eq!(aapl[4].date, "2025-01-20");
+    }
+
+    #[test]
+    fn test_get_history_batch_missing_symbol_excluded() {
+        let conn = open_in_memory();
+        upsert_history(&conn, "AAPL", "yahoo", &[
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+        ]).unwrap();
+
+        let syms = vec!["AAPL".to_string(), "UNKNOWN".to_string()];
+        let result = get_history_batch(&conn, &syms, 10).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key("AAPL"));
+        assert!(!result.contains_key("UNKNOWN"));
+    }
+
+    #[test]
+    fn test_get_history_batch_preserves_ohlcv() {
+        let conn = open_in_memory();
+        upsert_history(&conn, "TSLA", "yahoo", &[
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(250),
+                volume: Some(5_000_000),
+                open: Some(dec!(248)),
+                high: Some(dec!(255)),
+                low: Some(dec!(245)),
+            },
+        ]).unwrap();
+
+        let result = get_history_batch(&conn, &["TSLA".to_string()], 10).unwrap();
+        let tsla = result.get("TSLA").unwrap();
+        assert_eq!(tsla.len(), 1);
+        assert_eq!(tsla[0].close, dec!(250));
+        assert_eq!(tsla[0].volume, Some(5_000_000));
+        assert_eq!(tsla[0].open, Some(dec!(248)));
+        assert_eq!(tsla[0].high, Some(dec!(255)));
+        assert_eq!(tsla[0].low, Some(dec!(245)));
     }
 }

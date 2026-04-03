@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::db::allocations::get_unique_allocation_symbols_backend;
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
-use crate::db::price_history::{get_history_backend, get_price_at_date_backend};
+use crate::db::price_history::get_history_batch_backend;
 use crate::db::transactions::get_unique_symbols_backend;
 use crate::db::watchlist::list_watchlist_backend;
 use crate::models::asset::AssetCategory;
@@ -40,28 +40,24 @@ struct Mover {
 /// function now falls back to Yahoo's `regularMarketPreviousClose` stored in the
 /// price cache. This prevents symbols from being silently skipped during crashes.
 fn compute_change_pct(
-    backend: &BackendConnection,
     symbol: &str,
     current_price: Option<Decimal>,
     cached_previous_close: Option<Decimal>,
+    history_map: &HashMap<String, Vec<crate::models::price::HistoryRecord>>,
+    yesterday_prices: &HashMap<String, Decimal>,
 ) -> Option<Decimal> {
     use chrono::Utc;
 
     let current = current_price?;
 
     let today = Utc::now().date_naive();
-    // Fetch more history to survive multi-day stale-close duplication (weekends, holidays).
-    let history = get_history_backend(backend, symbol, 10)
-        .ok()
-        .unwrap_or_default();
-    let prev_close = previous_close_from_history(&history, today, current)
+    // Use pre-fetched batch history instead of per-symbol DB query.
+    let empty = Vec::new();
+    let history = history_map.get(symbol).unwrap_or(&empty);
+    let prev_close = previous_close_from_history(history, today, current)
         .or_else(|| {
-            // Fallback: explicit yesterday lookup
-            let yesterday = today - chrono::Duration::days(1);
-            let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
-            let price = get_price_at_date_backend(backend, symbol, &yesterday_str)
-                .ok()
-                .flatten()?;
+            // Fallback: use pre-fetched yesterday price
+            let price = yesterday_prices.get(symbol).copied()?;
             // Only use fallback if it differs from current (same stale-close guard)
             if price != current {
                 Some(price)
@@ -240,6 +236,18 @@ pub fn run(
 
     let csym = crate::config::currency_symbol(&config.base_currency);
 
+    // Batch-fetch recent history for all symbols (1 query instead of N)
+    let all_syms: Vec<String> = symbols.iter().map(|(s, _, _)| s.clone()).collect();
+    let history_map = get_history_batch_backend(backend, &all_syms, 10)
+        .unwrap_or_default();
+
+    // Pre-compute yesterday's date for fallback lookups
+    let yesterday = chrono::Utc::now().date_naive() - chrono::Duration::days(1);
+    let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+    let yesterday_prices =
+        crate::db::price_history::get_prices_at_date_backend(backend, &all_syms, &yesterday_str)
+            .unwrap_or_default();
+
     // Compute movers
     let mut movers: Vec<Mover> = Vec::new();
     let mut skipped: Vec<serde_json::Value> = Vec::new();
@@ -247,7 +255,7 @@ pub fn run(
         let current_price = price_map.get(sym).copied();
         let cached_prev_close = prev_close_map.get(sym).copied();
 
-        match compute_change_pct(backend, sym, current_price, cached_prev_close) {
+        match compute_change_pct(sym, current_price, cached_prev_close, &history_map, &yesterday_prices) {
             Some(pct) => {
                 let abs_pct = if pct < dec!(0) { -pct } else { pct };
                 if abs_pct >= threshold_pct {
@@ -513,6 +521,16 @@ fn detect_themes(
         .filter_map(|q| q.previous_close.map(|pc| (q.symbol.clone(), pc)))
         .collect();
 
+    // Batch-fetch recent history for all symbols (1 query instead of N)
+    let all_syms: Vec<String> = symbols.iter().map(|(s, _, _)| s.clone()).collect();
+    let history_map = get_history_batch_backend(backend, &all_syms, 10)
+        .unwrap_or_default();
+    let yesterday = chrono::Utc::now().date_naive() - chrono::Duration::days(1);
+    let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+    let yesterday_prices =
+        crate::db::price_history::get_prices_at_date_backend(backend, &all_syms, &yesterday_str)
+            .unwrap_or_default();
+
     // Compute changes and group by sector
     // Key: (sector, direction) → Vec<ThemeMover>
     let mut groups: HashMap<(String, &'static str), Vec<ThemeMover>> = HashMap::new();
@@ -521,7 +539,7 @@ fn detect_themes(
         let current_price = price_map.get(sym).copied();
         let cached_prev = prev_close_map.get(sym).copied();
 
-        if let Some(pct) = compute_change_pct(backend, sym, current_price, cached_prev) {
+        if let Some(pct) = compute_change_pct(sym, current_price, cached_prev, &history_map, &yesterday_prices) {
             let abs_pct = if pct < dec!(0) { -pct } else { pct };
             if abs_pct >= threshold_pct {
                 let direction = if pct >= dec!(0) { "up" } else { "down" };
@@ -708,6 +726,27 @@ mod tests {
 
     fn to_backend(conn: Connection) -> crate::db::backend::BackendConnection {
         crate::db::backend::BackendConnection::Sqlite { conn }
+    }
+
+    /// Test helper: builds history_map and yesterday_prices from backend for a
+    /// single symbol, matching what the production code pre-fetches in batch.
+    fn test_maps_for(
+        backend: &crate::db::backend::BackendConnection,
+        symbol: &str,
+    ) -> (
+        HashMap<String, Vec<crate::models::price::HistoryRecord>>,
+        HashMap<String, Decimal>,
+    ) {
+        let syms = vec![symbol.to_string()];
+        let history_map =
+            crate::db::price_history::get_history_batch_backend(backend, &syms, 10)
+                .unwrap_or_default();
+        let yesterday = chrono::Utc::now().date_naive() - chrono::Duration::days(1);
+        let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+        let yesterday_prices =
+            crate::db::price_history::get_prices_at_date_backend(backend, &syms, &yesterday_str)
+                .unwrap_or_default();
+        (history_map, yesterday_prices)
     }
 
     #[test]
@@ -1056,7 +1095,8 @@ mod tests {
 
         // Current price is 210, previous close was 200 → 5% gain
         let backend = to_backend(conn);
-        let pct = compute_change_pct(&backend, "AAPL", Some(dec!(210)), None).unwrap();
+        let (hm, yp) = test_maps_for(&backend, "AAPL");
+        let pct = compute_change_pct("AAPL", Some(dec!(210)), None, &hm, &yp).unwrap();
         assert_eq!(pct, dec!(5));
     }
 
@@ -1083,7 +1123,8 @@ mod tests {
 
         // Previous close was 0 → should return None (can't compute % change)
         let backend = to_backend(conn);
-        assert!(compute_change_pct(&backend, "AAPL", Some(dec!(100)), None).is_none());
+        let (hm, yp) = test_maps_for(&backend, "AAPL");
+        assert!(compute_change_pct("AAPL", Some(dec!(100)), None, &hm, &yp).is_none());
     }
 
     #[test]
@@ -1109,7 +1150,8 @@ mod tests {
 
         // No current price provided → should return None
         let backend = to_backend(conn);
-        assert!(compute_change_pct(&backend, "AAPL", None, None).is_none());
+        let (hm, yp) = test_maps_for(&backend, "AAPL");
+        assert!(compute_change_pct("AAPL", None, None, &hm, &yp).is_none());
     }
 
     #[test]
@@ -1275,7 +1317,8 @@ mod tests {
         let backend = to_backend(conn);
 
         // No history at all — but we have a cached previous_close
-        let pct = compute_change_pct(&backend, "GC=F", Some(dec!(2700)), Some(dec!(3000)));
+        let (hm, yp) = test_maps_for(&backend, "GC=F");
+        let pct = compute_change_pct("GC=F", Some(dec!(2700)), Some(dec!(3000)), &hm, &yp);
         assert!(pct.is_some());
         let pct = pct.unwrap();
         assert_eq!(pct, dec!(-10)); // (2700 - 3000) / 3000 * 100 = -10%
@@ -1288,7 +1331,8 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let backend = to_backend(conn);
 
-        assert!(compute_change_pct(&backend, "GC=F", Some(dec!(2700)), None).is_none());
+        let (hm, yp) = test_maps_for(&backend, "GC=F");
+        assert!(compute_change_pct("GC=F", Some(dec!(2700)), None, &hm, &yp).is_none());
     }
 
     #[test]
@@ -1314,8 +1358,9 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
+        let (hm, yp) = test_maps_for(&backend, "AAPL");
         // History says 200, cached says 195 — should use history (200)
-        let pct = compute_change_pct(&backend, "AAPL", Some(dec!(210)), Some(dec!(195))).unwrap();
+        let pct = compute_change_pct("AAPL", Some(dec!(210)), Some(dec!(195)), &hm, &yp).unwrap();
         assert_eq!(pct, dec!(5)); // (210 - 200) / 200 * 100 = 5%
     }
 
@@ -1393,7 +1438,8 @@ mod tests {
         let backend = to_backend(conn);
 
         // Current BTC = $84,000, corrupt previous_close = $37 → ~227,000% change
-        let pct = compute_change_pct(&backend, "BTC-USD", Some(dec!(84000)), Some(dec!(37)));
+        let (hm, yp) = test_maps_for(&backend, "BTC-USD");
+        let pct = compute_change_pct("BTC-USD", Some(dec!(84000)), Some(dec!(37)), &hm, &yp);
         assert!(pct.is_none(), "Should reject >500% change as implausible");
     }
 
@@ -1404,7 +1450,8 @@ mod tests {
         let backend = to_backend(conn);
 
         // Current = $50, previous = $100 → -50% change (legitimate)
-        let pct = compute_change_pct(&backend, "SMCI", Some(dec!(50)), Some(dec!(100)));
+        let (hm, yp) = test_maps_for(&backend, "SMCI");
+        let pct = compute_change_pct("SMCI", Some(dec!(50)), Some(dec!(100)), &hm, &yp);
         assert!(pct.is_some(), "Should allow legitimate -50% move");
         assert_eq!(pct.unwrap(), dec!(-50));
     }
@@ -1415,12 +1462,13 @@ mod tests {
         let backend = to_backend(conn);
 
         // Exactly 500% → allowed
-        let pct = compute_change_pct(&backend, "TEST", Some(dec!(600)), Some(dec!(100)));
+        let (hm, yp) = test_maps_for(&backend, "TEST");
+        let pct = compute_change_pct("TEST", Some(dec!(600)), Some(dec!(100)), &hm, &yp);
         assert!(pct.is_some(), "500% should be allowed");
         assert_eq!(pct.unwrap(), dec!(500));
 
         // Just over 500% → rejected
-        let pct = compute_change_pct(&backend, "TEST", Some(dec!(602)), Some(dec!(100)));
+        let pct = compute_change_pct("TEST", Some(dec!(602)), Some(dec!(100)), &hm, &yp);
         assert!(pct.is_none(), "502% should be rejected as implausible");
     }
 
