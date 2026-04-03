@@ -41,7 +41,7 @@ _(none)_
 | Evening Analyst | 72% | 68% | Apr 1 | ↓ (78→72 use, 75→68 overall. Backtest 26.7% WR — routine/strategy issue, not tooling.) **Lowest overall scorer.** |
 | Medium-Timeframe Analyst | 85% | 88% | Apr 3 | ↑ (75→85 use, 80→88 overall. Alert thresholds shipped #572. Recovery.) |
 | Evening Analysis | 82% | 78% | Apr 3 | ↓ (82→82 use, 80→78 overall. Portfolio snapshot alias shipped #575. Wants auto event detection for scenarios.) |
-| Low-Timeframe Analyst | 85% | 80% | Apr 2 | ↑ (15→85 use. CLI access restored — previous 15% was config issue.) |
+| Low-Timeframe Analyst | 85% | 88% | Apr 3 | ↑ (85→85 use, 80→88 overall. Break history shipped #588.) |
 | Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable.) |
 | Morning Intelligence | 75% | 85% | Mar 28 | → (stable.) |
@@ -57,7 +57,8 @@ _(none)_
 **Shipped since last review (Apr 2):**
 1. ✅ Configurable alert thresholds for correlation breaks + scenario probability shifts (#572) — addresses Medium-Timeframe Apr 3
 2. ✅ Portfolio snapshot alias for portfolio status (#575) — addresses Evening Analysis Apr 3
+3. ✅ Correlation break historical context + confirmation tracking (#588) — addresses Low-Timeframe Apr 3
 
-**Release status:** v0.24.0 tagged Apr 2. 14 feat/fix commits since tag. No P0 bugs. 2395 tests passing, clippy clean. **Release v0.25.0 eligible.**
+**Release status:** v0.25.0 tagged Apr 2. 17 feat/fix commits since tag. No P0 bugs. 2424 tests passing, clippy clean.
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.

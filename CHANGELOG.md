@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-03 — feat: add --verbose flag to correlation breaks with historical context
+
+- What: `analytics correlations breaks --verbose` enriches each break with historical context: trend direction (widening/narrowing/stable/new), first break date, break duration in days, delta change over time, and recent correlation snapshots. Configurable `--history-depth` (default 7). Both JSON and terminal output enriched.
+- Why: Low-Timeframe Analyst feedback (Apr 3): "Add correlation break severity thresholds and historical context. The 10 breaks detected are valuable but need ranking beyond current severe/moderate. Also consider correlation break confirmation tracking." Agents can now rank breaks by persistence and trajectory, distinguish new vs established breaks, and track confirmation/resolution.
+- Implementation: New `BreakHistoryContext` and `BreakSnapshot` structs. `compute_break_history()` fetches 7d and 90d correlation snapshots, aligns by date, computes trend from absolute delta change (>0.05 = widening, <-0.05 = narrowing), finds first break date by scanning oldest-to-newest for threshold exceedance, computes duration via simple Julian day diff. `run_breaks()` accepts `verbose: bool` and `history_depth: usize`, fetches history per pair when verbose.
+- Files: `src/commands/correlations.rs` (+388: BreakHistoryContext, BreakSnapshot, compute_break_history, days_between, enriched output, 9 tests), `src/cli.rs` (+66: --verbose + --history-depth flags, 2 CLI parse tests), `src/main.rs` (+4: pass new args)
+- Tests: 2424 passing (+11 new), 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** New flags are opt-in. Default behavior unchanged. Existing JSON shape preserved when --verbose is not set.
+
 ### 2026-04-03 — fix: mark flaky World Bank integration tests as #[ignore]
 
 - What: `test_fetch_gdp_growth` and `test_fetch_all_indicators` in `src/data/worldbank.rs` now carry `#[ignore]` so they don't run by default. Run explicitly with `cargo test -- --ignored`.
