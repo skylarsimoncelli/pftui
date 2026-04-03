@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-03 — perf: fix N+1 query in trends list/dashboard with batch evidence and impact fetching
+
+- What: `analytics trends list` and `analytics trends dashboard` now use batch queries to fetch evidence, evidence counts, and asset impacts for all trends in 2-3 queries total, instead of 2-3 queries per trend (N+1 pattern). No change to output format — identical JSON and terminal output.
+- Why: Dev-agent feedback from #566: "N+1 query optimization in trends list enrichment (currently calls evidence+impacts per trend)." With many active trends, the old pattern resulted in dozens of individual DB round-trips. Batch queries reduce this to a constant 2-3 queries regardless of trend count.
+- Implementation: New batch functions in `src/db/trends.rs`: `list_evidence_batch`/`list_evidence_batch_backend` (fetch evidence for multiple trends with optional per-trend limit, using `IN`/`ANY` clauses), `count_evidence_batch`/`count_evidence_batch_backend` (aggregate counts grouped by trend_id), `list_asset_impacts_batch`/`list_asset_impacts_batch_backend` (fetch impacts for multiple trends). Results returned as `HashMap<i64, Vec<...>>` keyed by trend_id. Both SQLite (`WHERE trend_id IN (?,?,...)`) and PostgreSQL (`WHERE trend_id = ANY($1)` with array bind) backends implemented. `commands/trends.rs` refactored: `list` action (JSON, verbose, compact table) and `dashboard` action now collect trend IDs upfront and issue batch queries. Single-item `count_evidence_backend` preserved with `#[allow(dead_code)]` for future use.
+- Files: `src/db/trends.rs` (+363: 6 batch functions with SQLite+Postgres, 8 new tests), `src/commands/trends.rs` (+44/-13: refactored list+dashboard to use batch queries)
+- Tests: 2403 passing (+8 new: `list_evidence_batch_empty_ids`, `list_evidence_batch_multiple_trends`, `list_evidence_batch_respects_per_trend_limit`, `count_evidence_batch_multiple_trends`, `count_evidence_batch_empty_ids`, `list_asset_impacts_batch_multiple_trends`, `list_asset_impacts_batch_empty_ids`, `list_asset_impacts_batch_preserves_symbol_order`). Clippy clean. CI 4/4 green.
+- **Non-breaking:** Output format unchanged. Single-item query functions preserved. Batch functions are additive.
+
 ### 2026-04-03 — feat: add 'portfolio snapshot' alias for 'portfolio status'
 
 - What: `pftui portfolio snapshot` now works as an alias for `pftui portfolio status`. Both commands produce identical output (consolidated allocation, value, daily P&L, and unrealized gain).
