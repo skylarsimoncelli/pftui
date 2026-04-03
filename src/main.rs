@@ -3281,6 +3281,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                     severity,
                     seed_alerts,
                     cooldown,
+                    verbose,
+                    history_depth,
                     json,
                 }) => commands::correlations::run_breaks(
                     &backend,
@@ -3289,6 +3291,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                     severity.as_deref(),
                     seed_alerts,
                     cooldown,
+                    verbose,
+                    history_depth,
                     json,
                 ),
             },

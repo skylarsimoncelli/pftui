@@ -458,6 +458,8 @@ pub fn run_breaks(
     severity_filter: Option<&str>,
     seed_alerts: bool,
     cooldown: i64,
+    verbose: bool,
+    history_depth: usize,
     json: bool,
 ) -> Result<()> {
     if threshold <= 0.0 || threshold > 1.0 {
@@ -546,20 +548,58 @@ pub fn run_breaks(
         })
         .collect();
 
+    // Optionally fetch historical context for each break pair
+    let history_ctx: Vec<Option<BreakHistoryContext>> = if verbose {
+        enriched
+            .iter()
+            .map(|(bp, _)| {
+                compute_break_history(backend, &bp.symbol_a, &bp.symbol_b, history_depth).ok()
+            })
+            .collect()
+    } else {
+        enriched.iter().map(|_| None).collect()
+    };
+
     if json {
+        let breaks_json: Vec<_> = enriched
+            .iter()
+            .zip(history_ctx.iter())
+            .map(|((bp, interp), hist)| {
+                let mut obj = serde_json::json!({
+                    "symbol_a": bp.symbol_a,
+                    "symbol_b": bp.symbol_b,
+                    "corr_7d": bp.corr_7d,
+                    "corr_90d": bp.corr_90d,
+                    "break_delta": bp.break_delta,
+                    "severity": interp.severity,
+                    "interpretation": interp.interpretation,
+                    "signal": interp.signal,
+                });
+                if let Some(h) = hist {
+                    obj.as_object_mut().unwrap().insert(
+                        "history".to_string(),
+                        serde_json::json!({
+                            "trend": h.trend,
+                            "first_break_date": h.first_break_date,
+                            "break_duration_days": h.break_duration_days,
+                            "delta_change": h.delta_change,
+                            "snapshots": h.snapshots.iter().map(|s| serde_json::json!({
+                                "date": s.date,
+                                "corr_7d": s.corr_7d,
+                                "corr_90d": s.corr_90d,
+                                "delta": s.delta,
+                            })).collect::<Vec<_>>(),
+                        }),
+                    );
+                }
+                obj
+            })
+            .collect();
         let output = serde_json::json!({
             "threshold": threshold,
             "severity_filter": severity_filter,
-            "breaks": enriched.iter().map(|(bp, interp)| serde_json::json!({
-                "symbol_a": bp.symbol_a,
-                "symbol_b": bp.symbol_b,
-                "corr_7d": bp.corr_7d,
-                "corr_90d": bp.corr_90d,
-                "break_delta": bp.break_delta,
-                "severity": interp.severity,
-                "interpretation": interp.interpretation,
-                "signal": interp.signal,
-            })).collect::<Vec<_>>(),
+            "verbose": verbose,
+            "breaks": breaks_json,
             "count": enriched.len(),
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
@@ -604,11 +644,32 @@ pub fn run_breaks(
         }
         // Print interpretation details below the table
         println!();
-        for (bp, interp) in &enriched {
+        for ((bp, interp), hist) in enriched.iter().zip(history_ctx.iter()) {
             let pair = format!("{}/{}", bp.symbol_a, bp.symbol_b);
             println!("  {} [{}]", pair, severity_badge(&interp.severity));
             println!("    {}", interp.interpretation);
             println!("    → {}", interp.signal);
+            if let Some(h) = hist {
+                println!("    Trend: {} | Duration: {} days | Δ change: {:+.2}",
+                    h.trend,
+                    h.break_duration_days.map_or("N/A".to_string(), |d| d.to_string()),
+                    h.delta_change.unwrap_or(0.0),
+                );
+                if let Some(first) = &h.first_break_date {
+                    println!("    First break: {}", first);
+                }
+                if !h.snapshots.is_empty() {
+                    println!("    Recent history:");
+                    for s in &h.snapshots {
+                        println!("      {} │ 7d: {} │ 90d: {} │ Δ: {:+.2}",
+                            s.date,
+                            s.corr_7d.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+                            s.corr_90d.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+                            s.delta.unwrap_or(0.0),
+                        );
+                    }
+                }
+            }
             println!();
         }
     }
@@ -992,6 +1053,151 @@ fn interpret_pair_break(
             )
         }
     }
+}
+
+/// A single historical snapshot for a break pair.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BreakSnapshot {
+    pub date: String,
+    pub corr_7d: Option<f64>,
+    pub corr_90d: Option<f64>,
+    pub delta: Option<f64>,
+}
+
+/// Historical context for a correlation break: trend, duration, and recent snapshots.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BreakHistoryContext {
+    /// "widening", "narrowing", "stable", or "new" (insufficient history)
+    pub trend: String,
+    /// Date of the first snapshot where delta exceeded the break threshold (0.30)
+    pub first_break_date: Option<String>,
+    /// Days since first break (None if history insufficient)
+    pub break_duration_days: Option<i64>,
+    /// Change in delta between oldest and newest snapshot (positive = widening)
+    pub delta_change: Option<f64>,
+    /// Recent snapshots (newest first)
+    pub snapshots: Vec<BreakSnapshot>,
+}
+
+/// Compute historical context for a correlation break pair.
+///
+/// Fetches recent snapshots for the 7d and 90d periods, aligns them by date,
+/// and computes trend direction + break duration.
+pub fn compute_break_history(
+    backend: &BackendConnection,
+    symbol_a: &str,
+    symbol_b: &str,
+    depth: usize,
+) -> Result<BreakHistoryContext> {
+    // Fetch history for both windows. We fetch more than `depth` to find first break date.
+    let hist_7d =
+        correlation_snapshots::get_history_backend(backend, symbol_a, symbol_b, Some("7d"), Some(depth * 3))?;
+    let hist_90d =
+        correlation_snapshots::get_history_backend(backend, symbol_a, symbol_b, Some("90d"), Some(depth * 3))?;
+
+    // Build lookup maps by date (truncated to date portion)
+    let map_7d: HashMap<String, f64> = hist_7d
+        .iter()
+        .map(|s| {
+            let date = s.recorded_at.split('T').next().unwrap_or(&s.recorded_at).to_string();
+            (date, s.correlation)
+        })
+        .collect();
+    let map_90d: HashMap<String, f64> = hist_90d
+        .iter()
+        .map(|s| {
+            let date = s.recorded_at.split('T').next().unwrap_or(&s.recorded_at).to_string();
+            (date, s.correlation)
+        })
+        .collect();
+
+    // Collect all unique dates, sorted descending (newest first)
+    let mut all_dates: Vec<String> = map_7d.keys().chain(map_90d.keys()).cloned().collect();
+    all_dates.sort();
+    all_dates.dedup();
+    all_dates.reverse();
+
+    // Build aligned snapshots
+    let mut snapshots: Vec<BreakSnapshot> = Vec::new();
+    for date in &all_dates {
+        let c7 = map_7d.get(date).copied();
+        let c90 = map_90d.get(date).copied();
+        let delta = match (c7, c90) {
+            (Some(a), Some(b)) => Some(a - b),
+            _ => None,
+        };
+        snapshots.push(BreakSnapshot {
+            date: date.clone(),
+            corr_7d: c7,
+            corr_90d: c90,
+            delta,
+        });
+    }
+
+    // Find first break date (scanning from oldest to newest)
+    let first_break_date = snapshots
+        .iter()
+        .rev()
+        .find(|s| s.delta.is_some_and(|d| d.abs() >= BREAK_THRESHOLD))
+        .map(|s| s.date.clone());
+
+    // Compute break duration in days
+    let break_duration_days = first_break_date.as_ref().and_then(|first| {
+        let today = snapshots.first().map(|s| &s.date)?;
+        days_between(first, today)
+    });
+
+    // Compute trend from the last `depth` snapshots that have deltas
+    let recent_deltas: Vec<f64> = snapshots
+        .iter()
+        .take(depth)
+        .filter_map(|s| s.delta)
+        .collect();
+
+    let (trend, delta_change) = if recent_deltas.len() < 2 {
+        ("new".to_string(), None)
+    } else {
+        let newest = recent_deltas[0];
+        let oldest = recent_deltas[recent_deltas.len() - 1];
+        let change = newest.abs() - oldest.abs();
+        let trend = if change > 0.05 {
+            "widening"
+        } else if change < -0.05 {
+            "narrowing"
+        } else {
+            "stable"
+        };
+        (trend.to_string(), Some(change))
+    };
+
+    // Truncate snapshots to requested depth
+    snapshots.truncate(depth);
+
+    Ok(BreakHistoryContext {
+        trend,
+        first_break_date,
+        break_duration_days,
+        delta_change,
+        snapshots,
+    })
+}
+
+/// Parse date strings (YYYY-MM-DD) and compute day difference.
+fn days_between(a: &str, b: &str) -> Option<i64> {
+    let parse = |s: &str| -> Option<i64> {
+        let parts: Vec<&str> = s.split('-').collect();
+        if parts.len() < 3 {
+            return None;
+        }
+        let y: i64 = parts[0].parse().ok()?;
+        let m: i64 = parts[1].parse().ok()?;
+        let d: i64 = parts[2].parse().ok()?;
+        // Simple Julian day approximation — good enough for day diffs
+        Some(y * 365 + y / 4 - y / 100 + y / 400 + (m * 306 + 5) / 10 + d)
+    };
+    let da = parse(a)?;
+    let db = parse(b)?;
+    Some((db - da).abs())
 }
 
 fn print_pairs(
@@ -1530,7 +1736,7 @@ mod tests {
 
         let backend = BackendConnection::Sqlite { conn };
         // Run breaks with seed-alerts
-        run_breaks(&backend, 0.10, 20, None, true, 240, false).unwrap();
+        run_breaks(&backend, 0.10, 20, None, true, 240, false, 7, false).unwrap();
 
         let alerts = db_alerts::list_alerts_backend(&backend).unwrap();
         let corr_alerts: Vec<_> = alerts
@@ -1587,8 +1793,8 @@ mod tests {
 
         let backend = BackendConnection::Sqlite { conn };
         // Seed twice — second run should not duplicate
-        run_breaks(&backend, 0.10, 20, None, true, 240, false).unwrap();
-        run_breaks(&backend, 0.10, 20, None, true, 240, false).unwrap();
+        run_breaks(&backend, 0.10, 20, None, true, 240, false, 7, false).unwrap();
+        run_breaks(&backend, 0.10, 20, None, true, 240, false, 7, false).unwrap();
 
         let alerts = db_alerts::list_alerts_backend(&backend).unwrap();
         let corr_alerts: Vec<_> = alerts
@@ -1935,5 +2141,159 @@ mod tests {
         assert!(!interp.severity.is_empty());
         assert!(!interp.interpretation.is_empty());
         assert!(!interp.signal.is_empty());
+    }
+
+    // ── days_between tests ──
+
+    #[test]
+    fn test_days_between_same_date() {
+        assert_eq!(days_between("2026-04-01", "2026-04-01"), Some(0));
+    }
+
+    #[test]
+    fn test_days_between_one_day() {
+        let d = days_between("2026-04-01", "2026-04-02").unwrap();
+        assert_eq!(d, 1);
+    }
+
+    #[test]
+    fn test_days_between_multi_day() {
+        let d = days_between("2026-03-20", "2026-04-03").unwrap();
+        assert!((13..=15).contains(&d), "Expected ~14 days, got {}", d);
+    }
+
+    #[test]
+    fn test_days_between_invalid() {
+        assert_eq!(days_between("bad", "2026-04-01"), None);
+    }
+
+    // ── compute_break_history tests ──
+
+    #[test]
+    fn test_break_history_empty_db() {
+        let conn = open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        let ctx = compute_break_history(&backend, "GC=F", "DX-Y.NYB", 7).unwrap();
+        assert_eq!(ctx.trend, "new");
+        assert!(ctx.snapshots.is_empty());
+        assert!(ctx.first_break_date.is_none());
+        assert!(ctx.break_duration_days.is_none());
+    }
+
+    #[test]
+    fn test_break_history_with_snapshots() {
+        let conn = open_in_memory();
+        // Store several snapshots across dates for both 7d and 90d windows
+        for day in 1..=5 {
+            let date_str = format!("2026-04-{:02}", day);
+            // 7d correlation: starts at 0.5 and rises to 0.9
+            let c7 = 0.5 + (day as f64 - 1.0) * 0.1;
+            // 90d stays at -0.3
+            let c90 = -0.3;
+            // Store with timestamps
+            conn.execute(
+                "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period, recorded_at)
+                 VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params!["GC=F", "DX-Y.NYB", c7, "7d", format!("{}T12:00:00Z", date_str)],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period, recorded_at)
+                 VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params!["GC=F", "DX-Y.NYB", c90, "90d", format!("{}T12:00:00Z", date_str)],
+            ).unwrap();
+        }
+        let backend = BackendConnection::Sqlite { conn };
+        let ctx = compute_break_history(&backend, "GC=F", "DX-Y.NYB", 7).unwrap();
+
+        // Should have 5 snapshots
+        assert_eq!(ctx.snapshots.len(), 5);
+        // Newest first
+        assert!(ctx.snapshots[0].date.contains("2026-04-05"));
+        // Delta should exist for all
+        for s in &ctx.snapshots {
+            assert!(s.delta.is_some());
+            assert!(s.corr_7d.is_some());
+            assert!(s.corr_90d.is_some());
+        }
+        // All deltas exceed 0.30 (7d 0.5 - 90d -0.3 = 0.8), so first_break_date is day 1
+        assert!(ctx.first_break_date.is_some());
+        assert!(ctx.first_break_date.as_ref().unwrap().contains("2026-04-01"));
+        // Trend should be widening (delta grows as 7d rises)
+        assert_eq!(ctx.trend, "widening");
+        assert!(ctx.delta_change.unwrap() > 0.0);
+    }
+
+    #[test]
+    fn test_break_history_narrowing_trend() {
+        let conn = open_in_memory();
+        // Delta starts large and shrinks
+        for day in 1..=5 {
+            let date_str = format!("2026-04-{:02}", day);
+            // 7d: starts at 0.9 and drops to 0.5
+            let c7 = 0.9 - (day as f64 - 1.0) * 0.1;
+            let c90 = -0.3;
+            conn.execute(
+                "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period, recorded_at)
+                 VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params!["GC=F", "SI=F", c7, "7d", format!("{}T12:00:00Z", date_str)],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period, recorded_at)
+                 VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params!["GC=F", "SI=F", c90, "90d", format!("{}T12:00:00Z", date_str)],
+            ).unwrap();
+        }
+        let backend = BackendConnection::Sqlite { conn };
+        let ctx = compute_break_history(&backend, "GC=F", "SI=F", 7).unwrap();
+        assert_eq!(ctx.trend, "narrowing");
+        assert!(ctx.delta_change.unwrap() < 0.0);
+    }
+
+    #[test]
+    fn test_break_history_stable_trend() {
+        let conn = open_in_memory();
+        // Delta stays the same
+        for day in 1..=5 {
+            let date_str = format!("2026-04-{:02}", day);
+            let c7 = 0.7;
+            let c90 = -0.3;
+            conn.execute(
+                "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period, recorded_at)
+                 VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params!["BTC-USD", "^GSPC", c7, "7d", format!("{}T12:00:00Z", date_str)],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period, recorded_at)
+                 VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params!["BTC-USD", "^GSPC", c90, "90d", format!("{}T12:00:00Z", date_str)],
+            ).unwrap();
+        }
+        let backend = BackendConnection::Sqlite { conn };
+        let ctx = compute_break_history(&backend, "BTC-USD", "^GSPC", 7).unwrap();
+        assert_eq!(ctx.trend, "stable");
+    }
+
+    #[test]
+    fn test_break_history_depth_truncation() {
+        let conn = open_in_memory();
+        for day in 1..=10 {
+            let date_str = format!("2026-04-{:02}", day);
+            conn.execute(
+                "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period, recorded_at)
+                 VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params!["GC=F", "DX-Y.NYB", 0.5, "7d", format!("{}T12:00:00Z", date_str)],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period, recorded_at)
+                 VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params!["GC=F", "DX-Y.NYB", -0.3, "90d", format!("{}T12:00:00Z", date_str)],
+            ).unwrap();
+        }
+        let backend = BackendConnection::Sqlite { conn };
+        // Request depth of 3
+        let ctx = compute_break_history(&backend, "GC=F", "DX-Y.NYB", 3).unwrap();
+        assert_eq!(ctx.snapshots.len(), 3);
+        // Should be the 3 most recent
+        assert!(ctx.snapshots[0].date.contains("2026-04-10"));
     }
 }
