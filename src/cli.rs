@@ -3863,6 +3863,10 @@ pub struct Cli {
     #[arg(long, visible_alias = "offline", global = true)]
     pub cached_only: bool,
 
+    /// Print command execution time (elapsed_ms on stderr; agents can use for latency monitoring)
+    #[arg(long, global = true)]
+    pub timing: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -8916,6 +8920,35 @@ mod tests {
         };
         assert!(json);
         assert!(auto_refresh);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_timing_flag_global() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "--timing", "data", "status", "--json"]);
+        assert!(cli.timing);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Status { json, .. } = command else {
+            panic!("expected status");
+        };
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_timing_flag_after_subcommand() -> Result<()> {
+        // Global flags can appear after the subcommand too
+        let cli = Cli::parse_from(["pftui", "data", "status", "--timing"]);
+        assert!(cli.timing);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_timing_flag_default_off() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "data", "status"]);
+        assert!(!cli.timing);
         Ok(())
     }
 }

@@ -813,6 +813,27 @@ fn dispatch_predictions(
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let timing = cli.timing;
+    let start = if timing {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    };
+
+    let result = run_cli(cli);
+
+    if let Some(start) = start {
+        let elapsed = start.elapsed();
+        eprintln!(
+            "[timing] elapsed_ms={:.3}",
+            elapsed.as_secs_f64() * 1000.0
+        );
+    }
+
+    result
+}
+
+fn run_cli(cli: Cli) -> Result<()> {
     let cached_only = cli.cached_only;
 
     if matches!(cli.command, Some(Command::Console)) {
