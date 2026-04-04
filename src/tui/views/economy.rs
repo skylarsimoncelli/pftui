@@ -426,7 +426,10 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn format_fetched_date(ts: &str) -> String {
+    // Try RFC3339 first, then Postgres-style timestamps
     chrono::DateTime::parse_from_rfc3339(ts)
+        .or_else(|_| chrono::DateTime::parse_from_str(ts, "%Y-%m-%d %H:%M:%S%.f%#z"))
+        .or_else(|_| chrono::DateTime::parse_from_str(ts, "%Y-%m-%d %H:%M:%S%#z"))
         .map(|d| d.format("%b %d").to_string())
         .unwrap_or_else(|_| "recent".to_string())
 }

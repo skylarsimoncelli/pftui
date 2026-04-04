@@ -54,17 +54,35 @@ impl SourceStatus {
 type UtcDateTime = chrono::DateTime<chrono::Utc>;
 
 fn parse_timestamp_utc(raw: &str) -> Option<UtcDateTime> {
+    // RFC3339: "2026-04-04T00:10:41+00:00" or "2026-04-04T00:10:41.656Z"
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
         return Some(dt.with_timezone(&chrono::Utc));
     }
+    // Unix timestamp (integer seconds)
     if let Ok(ts) = raw.parse::<i64>() {
         if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
             return Some(dt.with_timezone(&chrono::Utc));
         }
     }
-    chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
+    // Postgres-style timestamps with timezone offset:
+    //   "2026-04-04 00:10:41.656262+00"   (space sep, fractional secs, short tz)
+    //   "2026-04-04 00:10:41+00"           (space sep, no fractional, short tz)
+    //   "2026-04-04T00:10:41.656262+00"    (T sep, short tz)
+    //   "2026-04-04 00:10:41.656262+00:00" (space sep, full tz)
+    // The %#z specifier handles both short (+00) and full (+00:00) offsets.
+    // The %.f specifier handles optional fractional seconds.
+    chrono::DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f%#z")
+        .or_else(|_| chrono::DateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.f%#z"))
+        .or_else(|_| chrono::DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%#z"))
+        .or_else(|_| chrono::DateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%#z"))
         .ok()
-        .map(|dt| chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc))
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .or_else(|| {
+            // Fallback: naive datetime without timezone (assume UTC)
+            chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
+                .ok()
+                .map(|dt| chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc))
+        })
 }
 
 fn format_time_ago(rfc3339_str: &str) -> String {
@@ -210,8 +228,8 @@ fn check_news(conn: &Connection) -> Result<DataSourceStatus> {
 
     let now = chrono::Utc::now();
     let fetched_at = &news[0].fetched_at;
-    let is_stale = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(fetched_at) {
-        let age = now.signed_duration_since(dt.with_timezone(&chrono::Utc));
+    let is_stale = if let Some(dt) = parse_timestamp_utc(fetched_at) {
+        let age = now.signed_duration_since(dt);
         age.num_seconds() > NEWS_FRESHNESS_SECS
     } else {
         true
@@ -219,7 +237,7 @@ fn check_news(conn: &Connection) -> Result<DataSourceStatus> {
 
     Ok(DataSourceStatus {
         name: "News",
-        last_fetch: Some(fetched_at.clone()),
+        last_fetch: parse_timestamp_utc(fetched_at).map(|dt| dt.to_rfc3339()),
         records: count,
         status: if is_stale {
             SourceStatus::Stale
@@ -782,7 +800,7 @@ fn print_table(config: &crate::config::Config, sources: &[DataSourceStatus]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
+    use chrono::{Datelike, Duration, Timelike};
 
     #[test]
     fn stale_check_uses_most_recent_timestamp() {
@@ -792,5 +810,91 @@ mod tests {
         let (_latest, is_stale) =
             most_recent_and_stale_from_fetched(vec![old, fresh], now, 15 * 60);
         assert!(!is_stale);
+    }
+
+    #[test]
+    fn parse_rfc3339_timestamp() {
+        let dt = parse_timestamp_utc("2026-04-04T00:10:41+00:00");
+        assert!(dt.is_some());
+        let dt = dt.unwrap();
+        assert_eq!(dt.year(), 2026);
+        assert_eq!(dt.month(), 4);
+        assert_eq!(dt.day(), 4);
+    }
+
+    #[test]
+    fn parse_postgres_timestamp_with_fractional_and_short_tz() {
+        // This is the format Postgres returns for timestamptz columns
+        let dt = parse_timestamp_utc("2026-04-04 00:10:41.656262+00");
+        assert!(dt.is_some(), "failed to parse Postgres timestamp with fractional secs and short tz");
+        let dt = dt.unwrap();
+        assert_eq!(dt.year(), 2026);
+        assert_eq!(dt.month(), 4);
+        assert_eq!(dt.day(), 4);
+        assert_eq!(dt.hour(), 0);
+        assert_eq!(dt.minute(), 10);
+        assert_eq!(dt.second(), 41);
+    }
+
+    #[test]
+    fn parse_postgres_timestamp_without_fractional() {
+        let dt = parse_timestamp_utc("2026-04-04 00:10:41+00");
+        assert!(dt.is_some(), "failed to parse Postgres timestamp without fractional secs");
+        let dt = dt.unwrap();
+        assert_eq!(dt.year(), 2026);
+    }
+
+    #[test]
+    fn parse_postgres_timestamp_full_tz_offset() {
+        let dt = parse_timestamp_utc("2026-04-04 00:10:41.656262+00:00");
+        assert!(dt.is_some(), "failed to parse Postgres timestamp with full tz offset");
+    }
+
+    #[test]
+    fn parse_postgres_timestamp_negative_tz() {
+        let dt = parse_timestamp_utc("2026-04-04 00:10:41.123456-05");
+        assert!(dt.is_some(), "failed to parse Postgres timestamp with negative tz offset");
+        let dt = dt.unwrap();
+        // -05 offset means the UTC time is 5 hours ahead
+        assert_eq!(dt.hour(), 5);
+        assert_eq!(dt.minute(), 10);
+    }
+
+    #[test]
+    fn parse_unix_timestamp() {
+        let dt = parse_timestamp_utc("1775258763");
+        assert!(dt.is_some(), "failed to parse unix timestamp");
+    }
+
+    #[test]
+    fn parse_naive_datetime() {
+        let dt = parse_timestamp_utc("2026-04-04 00:10:41");
+        assert!(dt.is_some(), "failed to parse naive datetime");
+    }
+
+    #[test]
+    fn parse_invalid_returns_none() {
+        assert!(parse_timestamp_utc("not-a-date").is_none());
+        assert!(parse_timestamp_utc("").is_none());
+    }
+
+    #[test]
+    fn stale_check_with_postgres_timestamps() {
+        // Verify that most_recent_and_stale_from_fetched works with Postgres-format timestamps
+        let now = chrono::Utc::now();
+        let fresh_pg = format!(
+            "{} {}+00",
+            now.format("%Y-%m-%d"),
+            now.format("%H:%M:%S%.6f")
+        );
+        let old_pg = format!(
+            "{} {}+00",
+            (now - Duration::hours(4)).format("%Y-%m-%d"),
+            (now - Duration::hours(4)).format("%H:%M:%S%.6f")
+        );
+        let (latest, is_stale) =
+            most_recent_and_stale_from_fetched(vec![old_pg, fresh_pg], now, 15 * 60);
+        assert!(latest.is_some(), "should parse Postgres-format timestamps in staleness check");
+        assert!(!is_stale, "fresh Postgres timestamp should not be stale");
     }
 }

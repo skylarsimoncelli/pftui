@@ -504,17 +504,31 @@ fn alert_matches_today_filter(alert: &AlertRule) -> bool {
 }
 
 fn parse_timestamp_utc(raw: &str) -> Option<DateTime<Utc>> {
+    // RFC3339: "2026-04-04T00:10:41+00:00" or "2026-04-04T00:10:41.656Z"
     if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
         return Some(dt.with_timezone(&Utc));
     }
+    // Unix timestamp (integer seconds)
     if let Ok(ts) = raw.parse::<i64>() {
         if let Some(dt) = DateTime::from_timestamp(ts, 0) {
             return Some(dt.with_timezone(&Utc));
         }
     }
-    NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
+    // Postgres-style timestamps: "2026-04-04 00:10:41.656262+00"
+    // %#z handles both short (+00) and full (+00:00) timezone offsets.
+    // %.f handles optional fractional seconds.
+    DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f%#z")
+        .or_else(|_| DateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.f%#z"))
+        .or_else(|_| DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%#z"))
+        .or_else(|_| DateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%#z"))
         .ok()
-        .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+        .map(|dt| dt.with_timezone(&Utc))
+        .or_else(|| {
+            // Fallback: naive datetime without timezone (assume UTC)
+            NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
+                .ok()
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+        })
 }
 
 fn hours_since_local_midnight() -> i64 {
