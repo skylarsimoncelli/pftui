@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-04-04 — feat: Yahoo Finance retry with exponential backoff on transient failures
+
+- What: All Yahoo Finance API calls (`fetch_price`, `fetch_history`, `fetch_fx_rate`, `fetch_fx_history`, `fetch_chart_extras`) now retry up to 3 times with exponential backoff (500ms, 1s, 2s) on transient failures: HTTP 429 (rate limit), 5xx server errors, timeouts, and connection issues.
+- Why: Evening Analysis feedback (Apr 4): "Yahoo Finance rate-limiting during parallel price fetches; recommend staggering API calls or caching." When `data refresh` fetches 50+ symbols sequentially, Yahoo occasionally rate-limits or returns 5xx errors, causing data gaps that require manual web search fallback. The existing 100ms inter-request delay reduces but doesn't prevent rate-limiting under load. Retry with backoff ensures transient failures recover automatically without failing the entire symbol.
+- Implementation: New `is_retryable_error()` function matches error messages against known transient patterns (429, 500-504, timeout, connection reset/refused, temporarily unavailable). Case-insensitive matching. Each Yahoo API call wraps in a `for attempt in 0..=YAHOO_MAX_RETRIES` loop: on retryable error, sleeps `500ms * 2^attempt` before retrying; on non-retryable error, returns immediately. `fetch_chart_extras` (v8 chart API) uses HTTP status code matching directly since it builds its own `reqwest` calls. Constants: `YAHOO_MAX_RETRIES = 3`, `YAHOO_RETRY_BASE_DELAY_MS = 500`. Max total retry delay per symbol: 3.5s.
+- Files: `src/price/yahoo.rs` (+246: `is_retryable_error`, retry loops on 5 functions, 6 new tests)
+- Tests: 2486 passing (+6 new: `retryable_error_detects_rate_limit`, `retryable_error_detects_server_errors`, `retryable_error_detects_network_issues`, `retryable_error_rejects_non_transient`, `retryable_error_case_insensitive`, `retry_constants_are_reasonable`), 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** Retry is internal to Yahoo fetch functions. No API or output changes. Existing rate-limit delays (100ms between requests) remain unchanged. Retry only activates on failures — successful first attempts have zero overhead.
+
 ### 2026-04-04 — feat: holiday-aware staleness on data prices and analytics market-snapshot
 
 - What: `data prices` and `analytics market-snapshot` now distinguish between stale prices due to market closure (weekends/US holidays) vs potential data errors. Each price row includes `market_closed` (boolean, skip_serializing when false). Staleness warnings include `market_closed_count` (skip_serializing when zero) and `market_closed_symbols` (skip_serializing when empty). Staleness messages adapt: "all markets closed — No action needed" vs "N market closed, M may need refresh." Terminal output uses 🌙 for market-closed staleness vs ⚠ for potential errors.
