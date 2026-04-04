@@ -1,9 +1,35 @@
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::time::Duration;
 use yahoo_finance_api as yahoo;
 
 use crate::models::price::{HistoryRecord, PriceQuote};
+
+/// Maximum number of retry attempts for Yahoo Finance API requests.
+const YAHOO_MAX_RETRIES: u32 = 3;
+
+/// Base delay for exponential backoff (doubles each retry: 500ms, 1000ms, 2000ms).
+const YAHOO_RETRY_BASE_DELAY_MS: u64 = 500;
+
+/// Check if an error message indicates a transient/retryable Yahoo Finance failure.
+/// Covers HTTP 429 (rate limit), 5xx server errors, timeouts, and connection resets.
+fn is_retryable_error(err_msg: &str) -> bool {
+    let lower = err_msg.to_lowercase();
+    lower.contains("429")
+        || lower.contains("too many requests")
+        || lower.contains("rate limit")
+        || lower.contains("500")
+        || lower.contains("502")
+        || lower.contains("503")
+        || lower.contains("504")
+        || lower.contains("server error")
+        || lower.contains("timeout")
+        || lower.contains("timed out")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("temporarily unavailable")
+}
 
 /// Normalize a symbol to Yahoo Finance format.
 ///
@@ -37,7 +63,39 @@ fn uses_frankfurter_fallback(symbol: &str) -> bool {
 async fn fetch_fx_rate(from_currency: &str) -> Result<Decimal> {
     let pair = format!("{}USD=X", from_currency);
     let provider = yahoo::YahooConnector::new()?;
-    let response = provider.get_latest_quotes(&pair, "1d").await?;
+
+    // Retry with exponential backoff on transient failures
+    let mut last_err = None;
+    let mut response_opt = None;
+    for attempt in 0..=YAHOO_MAX_RETRIES {
+        match provider.get_latest_quotes(&pair, "1d").await {
+            Ok(resp) => {
+                response_opt = Some(resp);
+                break;
+            }
+            Err(e) => {
+                let err_msg = format!("{}", e);
+                if attempt < YAHOO_MAX_RETRIES && is_retryable_error(&err_msg) {
+                    let delay = Duration::from_millis(
+                        YAHOO_RETRY_BASE_DELAY_MS * 2u64.pow(attempt),
+                    );
+                    tokio::time::sleep(delay).await;
+                    last_err = Some(e);
+                } else {
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+    let response = match response_opt {
+        Some(r) => r,
+        None => {
+            return Err(last_err
+                .map(|e| e.into())
+                .unwrap_or_else(|| anyhow::anyhow!("FX rate fetch failed after retries for {}", pair)));
+        }
+    };
+
     let quote = response.last_quote()?;
     let rate = Decimal::try_from(quote.close)?;
     if rate <= dec!(0) {
@@ -56,7 +114,39 @@ async fn fetch_fx_history(
     let provider = yahoo::YahooConnector::new()?;
     let now = time::OffsetDateTime::now_utc();
     let start = now - time::Duration::days(days as i64);
-    let response = provider.get_quote_history(&pair, start, now).await?;
+
+    // Retry with exponential backoff on transient failures
+    let mut last_err = None;
+    let mut response_opt = None;
+    for attempt in 0..=YAHOO_MAX_RETRIES {
+        match provider.get_quote_history(&pair, start, now).await {
+            Ok(resp) => {
+                response_opt = Some(resp);
+                break;
+            }
+            Err(e) => {
+                let err_msg = format!("{}", e);
+                if attempt < YAHOO_MAX_RETRIES && is_retryable_error(&err_msg) {
+                    let delay = Duration::from_millis(
+                        YAHOO_RETRY_BASE_DELAY_MS * 2u64.pow(attempt),
+                    );
+                    tokio::time::sleep(delay).await;
+                    last_err = Some(e);
+                } else {
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+    let response = match response_opt {
+        Some(r) => r,
+        None => {
+            return Err(last_err
+                .map(|e| e.into())
+                .unwrap_or_else(|| anyhow::anyhow!("FX history fetch failed after retries for {}", pair)));
+        }
+    };
+
     let quotes = response.quotes()?;
 
     let mut rates = std::collections::HashMap::new();
@@ -149,7 +239,38 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
     }
 
     let provider = yahoo::YahooConnector::new()?;
-    let response = provider.get_latest_quotes(&yahoo_sym, "1d").await?;
+
+    // Retry with exponential backoff on transient failures (429, 5xx, timeouts)
+    let mut last_err = None;
+    let mut response_opt = None;
+    for attempt in 0..=YAHOO_MAX_RETRIES {
+        match provider.get_latest_quotes(&yahoo_sym, "1d").await {
+            Ok(resp) => {
+                response_opt = Some(resp);
+                break;
+            }
+            Err(e) => {
+                let err_msg = format!("{}", e);
+                if attempt < YAHOO_MAX_RETRIES && is_retryable_error(&err_msg) {
+                    let delay = Duration::from_millis(
+                        YAHOO_RETRY_BASE_DELAY_MS * 2u64.pow(attempt),
+                    );
+                    tokio::time::sleep(delay).await;
+                    last_err = Some(e);
+                } else {
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+    let response = match response_opt {
+        Some(r) => r,
+        None => {
+            return Err(last_err
+                .map(|e| e.into())
+                .unwrap_or_else(|| anyhow::anyhow!("Yahoo fetch failed after retries for {}", symbol)));
+        }
+    };
     let quote = response.last_quote()?;
 
     let mut price = Decimal::try_from(quote.close)?;
@@ -246,14 +367,40 @@ async fn fetch_chart_extras(symbol: &str, _provider: &yahoo::YahooConnector) -> 
         Err(_) => return default,
     };
 
-    let resp = match client.get(&url).send().await {
-        Ok(r) => r,
-        Err(_) => return default,
-    };
-
-    if !resp.status().is_success() {
-        return default;
+    // Retry with exponential backoff on transient failures
+    let mut resp_opt = None;
+    for attempt in 0..=YAHOO_MAX_RETRIES {
+        match client.get(&url).send().await {
+            Ok(r) if r.status().is_success() => {
+                resp_opt = Some(r);
+                break;
+            }
+            Ok(r) => {
+                let status = r.status().as_u16();
+                if attempt < YAHOO_MAX_RETRIES
+                    && (status == 429 || (500..=504).contains(&status))
+                {
+                    let delay = Duration::from_millis(
+                        YAHOO_RETRY_BASE_DELAY_MS * 2u64.pow(attempt),
+                    );
+                    tokio::time::sleep(delay).await;
+                } else {
+                    return default;
+                }
+            }
+            Err(_) if attempt < YAHOO_MAX_RETRIES => {
+                let delay = Duration::from_millis(
+                    YAHOO_RETRY_BASE_DELAY_MS * 2u64.pow(attempt),
+                );
+                tokio::time::sleep(delay).await;
+            }
+            Err(_) => return default,
+        }
     }
+    let resp = match resp_opt {
+        Some(r) => r,
+        None => return default,
+    };
 
     let json: serde_json::Value = match resp.json().await {
         Ok(j) => j,
@@ -322,7 +469,37 @@ pub async fn fetch_history(symbol: &str, days: u32) -> Result<Vec<HistoryRecord>
     let now = time::OffsetDateTime::now_utc();
     let start = now - time::Duration::days(days as i64);
 
-    let response = provider.get_quote_history(&yahoo_sym, start, now).await?;
+    // Retry with exponential backoff on transient failures (429, 5xx, timeouts)
+    let mut last_err = None;
+    let mut response_opt = None;
+    for attempt in 0..=YAHOO_MAX_RETRIES {
+        match provider.get_quote_history(&yahoo_sym, start, now).await {
+            Ok(resp) => {
+                response_opt = Some(resp);
+                break;
+            }
+            Err(e) => {
+                let err_msg = format!("{}", e);
+                if attempt < YAHOO_MAX_RETRIES && is_retryable_error(&err_msg) {
+                    let delay = Duration::from_millis(
+                        YAHOO_RETRY_BASE_DELAY_MS * 2u64.pow(attempt),
+                    );
+                    tokio::time::sleep(delay).await;
+                    last_err = Some(e);
+                } else {
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+    let response = match response_opt {
+        Some(r) => r,
+        None => {
+            return Err(last_err
+                .map(|e| e.into())
+                .unwrap_or_else(|| anyhow::anyhow!("Yahoo history fetch failed after retries for {}", symbol)));
+        }
+    };
 
     // Check if the security trades in a non-USD currency
     let currency = response
@@ -471,5 +648,62 @@ mod tests {
         assert!(uses_frankfurter_fallback("JPY=X"));
         assert!(uses_frankfurter_fallback("CNY=X"));
         assert!(!uses_frankfurter_fallback("EURUSD=X"));
+    }
+
+    #[test]
+    fn retryable_error_detects_rate_limit() {
+        assert!(is_retryable_error("HTTP 429 Too Many Requests"));
+        assert!(is_retryable_error("rate limit exceeded"));
+        assert!(is_retryable_error("too many requests"));
+    }
+
+    #[test]
+    fn retryable_error_detects_server_errors() {
+        assert!(is_retryable_error("HTTP 500 Internal Server Error"));
+        assert!(is_retryable_error("502 Bad Gateway"));
+        assert!(is_retryable_error("503 Service Unavailable"));
+        assert!(is_retryable_error("504 Gateway Timeout"));
+        assert!(is_retryable_error("server error"));
+    }
+
+    #[test]
+    fn retryable_error_detects_network_issues() {
+        assert!(is_retryable_error("request timeout"));
+        assert!(is_retryable_error("connection timed out"));
+        assert!(is_retryable_error("connection reset by peer"));
+        assert!(is_retryable_error("connection refused"));
+        assert!(is_retryable_error("temporarily unavailable"));
+    }
+
+    #[test]
+    fn retryable_error_rejects_non_transient() {
+        assert!(!is_retryable_error("404 Not Found"));
+        assert!(!is_retryable_error("invalid symbol"));
+        assert!(!is_retryable_error("unauthorized"));
+        assert!(!is_retryable_error("bad request"));
+    }
+
+    #[test]
+    fn retryable_error_case_insensitive() {
+        assert!(is_retryable_error("RATE LIMIT EXCEEDED"));
+        assert!(is_retryable_error("Connection Reset"));
+        assert!(is_retryable_error("TIMEOUT"));
+    }
+
+    #[test]
+    fn retry_constants_are_reasonable() {
+        const { assert!(YAHOO_MAX_RETRIES >= 1) };
+        const { assert!(YAHOO_MAX_RETRIES <= 5) };
+        const { assert!(YAHOO_RETRY_BASE_DELAY_MS >= 100) };
+        const { assert!(YAHOO_RETRY_BASE_DELAY_MS <= 2000) };
+        // Max total delay = 500 + 1000 + 2000 = 3500ms — reasonable for 3 retries
+        let max_total_ms: u64 = (0..YAHOO_MAX_RETRIES)
+            .map(|i| YAHOO_RETRY_BASE_DELAY_MS * 2u64.pow(i))
+            .sum();
+        assert!(
+            max_total_ms <= 10_000,
+            "total retry delay should not exceed 10s, got {}ms",
+            max_total_ms
+        );
     }
 }

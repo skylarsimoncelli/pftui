@@ -20,11 +20,11 @@ _(none)_
 **Scope:** Detect high-impact events from news sentiment spikes + catalyst scoring, auto-suggest `journal scenario add` with pre-filled parameters. Could integrate into `analytics guidance` or as a standalone `analytics scenario detect`.
 **Effort:** 1-2 weeks.
 
-### [Feedback] Yahoo Finance rate-limit resilience for parallel price fetches
+### [Feedback] Yahoo Finance parallel fetch throttling and partial-success reporting
 **Source:** Evening Analysis (Apr 4, 82/78).
-**Why:** Yahoo Finance rate-limiting during parallel price fetches causes data gaps. 3 analyst crons timing out at 600s may be related to slow/failing Yahoo requests blocking the refresh pipeline.
-**Scope:** Add staggered/throttled Yahoo API calls (e.g. semaphore limiting concurrent requests to 3-5), exponential backoff on 429s (similar to FRED retry in #490), and partial-success reporting so one failed symbol doesn't block the entire refresh.
-**Effort:** 3-5 days.
+**Why:** Yahoo Finance rate-limiting during parallel price fetches causes data gaps. 3 analyst crons timing out at 600s may be related to slow/failing Yahoo requests blocking the refresh pipeline. Retry with exponential backoff shipped (PR #609), but parallel fetches still sequential with 100ms delay — could benefit from semaphore-based concurrency limiting and partial-success reporting.
+**Scope:** Add semaphore limiting concurrent Yahoo requests to 3-5, partial-success reporting so one failed symbol doesn't block the entire refresh. Retry/backoff already done.
+**Effort:** 2-3 days.
 
 ## P3 - Long Term
 
@@ -74,7 +74,8 @@ _(none)_
 10. ✅ Polymarket pipeline fix + 6 new tag slugs (#607)
 11. ✅ Postgres timestamp parsing fixes (#603, #604)
 12. ✅ Research-ingestion skill + routine integration
+13. ✅ Yahoo Finance retry with exponential backoff (#609)
 
-**Release status:** v0.26.0 released Apr 4. 2480 tests passing, clippy clean. No P0 bugs.
+**Release status:** v0.26.0 released Apr 4. 2486 tests passing, clippy clean. No P0 bugs.
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.
