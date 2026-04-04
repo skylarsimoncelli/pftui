@@ -642,6 +642,9 @@ pub enum DataAlertsRedirect {
         symbol: Option<String>,
         #[arg(long)]
         status: Option<String>,
+        /// Filter by urgency tier: critical, high, watch, low
+        #[arg(long)]
+        urgency: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -2330,6 +2333,9 @@ pub enum AnalyticsAlertsCommand {
         /// Filter by alert status: armed, triggered, acknowledged
         #[arg(long)]
         status: Option<String>,
+        /// Filter by urgency tier: critical, high, watch, low
+        #[arg(long)]
+        urgency: Option<String>,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -9126,6 +9132,7 @@ mod tests {
             condition,
             symbol,
             status,
+            urgency,
             json,
         } = command
         else {
@@ -9137,6 +9144,7 @@ mod tests {
         assert!(condition.is_none());
         assert!(symbol.is_none());
         assert!(status.is_none());
+        assert!(urgency.is_none());
         assert!(!json);
         Ok(())
     }
@@ -9262,6 +9270,65 @@ mod tests {
         };
         assert_eq!(status.as_deref(), Some("triggered"));
         assert_eq!(kind.as_deref(), Some("price"));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_alerts_check_urgency_filter() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "alerts",
+            "check",
+            "--urgency",
+            "critical",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected alerts");
+        };
+        let AnalyticsAlertsCommand::Check {
+            urgency,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected check");
+        };
+        assert_eq!(urgency.as_deref(), Some("critical"));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_data_alerts_check_urgency_filter() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "data",
+            "alerts",
+            "check",
+            "--urgency",
+            "watch",
+            "--json",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Alerts {
+            command: Some(DataAlertsRedirect::Check {
+                urgency,
+                json,
+                ..
+            }),
+        } = command
+        else {
+            panic!("expected data alerts check");
+        };
+        assert_eq!(urgency.as_deref(), Some("watch"));
         assert!(json);
         Ok(())
     }

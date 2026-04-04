@@ -1073,7 +1073,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::DataCommand::Backfill { json } => commands::backfill::run(&backend, json),
             cli::DataCommand::Alerts { command } => {
                 let (action, args) = match command {
-                    Some(cli::DataAlertsRedirect::Check { today, newly_triggered, kind, condition, symbol, status, json }) => (
+                    Some(cli::DataAlertsRedirect::Check { today, newly_triggered, kind, condition, symbol, status, urgency, json }) => (
                         "check",
                         commands::alerts::AlertsArgs {
                             rule: None,
@@ -1094,6 +1094,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent: false,
                             recent_hours: 24,
                             newly_triggered_only: newly_triggered,
+                            urgency_filter: urgency,
                         },
                     ),
                     Some(cli::DataAlertsRedirect::List {
@@ -1125,6 +1126,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent,
                             recent_hours,
                             newly_triggered_only: false,
+                            urgency_filter: None,
                         },
                     ),
                     None => {
@@ -3651,6 +3653,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent: false,
                             recent_hours: 24,
                             newly_triggered_only: false,
+                            urgency_filter: None,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::List {
@@ -3682,6 +3685,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent,
                             recent_hours,
                             newly_triggered_only: false,
+                            urgency_filter: None,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Remove { id } => (
@@ -3705,9 +3709,10 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent: false,
                             recent_hours: 24,
                             newly_triggered_only: false,
+                            urgency_filter: None,
                         },
                     ),
-                    cli::AnalyticsAlertsCommand::Check { today, newly_triggered, kind, condition, symbol, status, json } => (
+                    cli::AnalyticsAlertsCommand::Check { today, newly_triggered, kind, condition, symbol, status, urgency, json } => (
                         "check",
                         commands::alerts::AlertsArgs {
                             rule: None,
@@ -3728,6 +3733,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent: false,
                             recent_hours: 24,
                             newly_triggered_only: newly_triggered,
+                            urgency_filter: urgency,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Ack { ids } => (
@@ -3751,6 +3757,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent: false,
                             recent_hours: 24,
                             newly_triggered_only: false,
+                            urgency_filter: None,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Rearm { id } => (
@@ -3774,6 +3781,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent: false,
                             recent_hours: 24,
                             newly_triggered_only: false,
+                            urgency_filter: None,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::SeedDefaults => (
@@ -3797,6 +3805,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent: false,
                             recent_hours: 24,
                             newly_triggered_only: false,
+                            urgency_filter: None,
                         },
                     ),
                     // Triage is handled above via early return
