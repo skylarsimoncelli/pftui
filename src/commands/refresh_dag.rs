@@ -93,6 +93,15 @@ pub struct SourceResult {
     /// Number of items/symbols updated (if applicable)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub items_updated: Option<usize>,
+    /// Total items/symbols attempted (for partial-success reporting)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items_attempted: Option<usize>,
+    /// Number of items/symbols that failed (for partial-success reporting)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items_failed: Option<usize>,
+    /// Sample of failed symbol names (up to 5, for partial-success diagnostics)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_symbols: Option<Vec<String>>,
     /// Duration of this source's execution in milliseconds
     pub duration_ms: u64,
     /// If skipped, the reason
@@ -114,6 +123,9 @@ pub struct SourceResult {
 #[serde(rename_all = "lowercase")]
 pub enum SourceStatus {
     Ok,
+    /// Some items succeeded but others failed (e.g. 45/50 symbols fetched).
+    /// Not a full failure — the source produced usable data, but with gaps.
+    PartialSuccess,
     Skipped,
     Failed,
     Deferred,
@@ -143,7 +155,9 @@ impl RefreshResult {
     }
 
     pub fn add(&mut self, result: SourceResult) {
-        if result.status == SourceStatus::Failed {
+        if result.status == SourceStatus::Failed
+            || result.status == SourceStatus::PartialSuccess
+        {
             self.failures.push(result.clone());
         }
         if let Some(n) = result.items_updated {
@@ -450,6 +464,9 @@ mod tests {
             label: "Test OK".to_string(),
             status: SourceStatus::Ok,
             items_updated: Some(10),
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
             duration_ms: 100,
             reason: None,
             age_minutes: None,
@@ -461,6 +478,9 @@ mod tests {
             label: "Test Fail".to_string(),
             status: SourceStatus::Failed,
             items_updated: None,
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
             duration_ms: 50,
             reason: None,
             age_minutes: None,
@@ -472,6 +492,9 @@ mod tests {
             label: "Test Skip".to_string(),
             status: SourceStatus::Skipped,
             items_updated: None,
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
             duration_ms: 0,
             reason: Some("fresh".to_string()),
             age_minutes: Some(5),
@@ -520,6 +543,9 @@ mod tests {
             label: "BLS".to_string(),
             status: SourceStatus::Skipped,
             items_updated: None,
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
             duration_ms: 0,
             reason: Some("fresh".to_string()),
             age_minutes: Some(12),
@@ -545,6 +571,9 @@ mod tests {
             label: "Yahoo Prices".to_string(),
             status: SourceStatus::Ok,
             items_updated: Some(80),
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
             duration_ms: 1200,
             reason: None,
             age_minutes: None,
@@ -559,5 +588,94 @@ mod tests {
         assert!(json["sources"].is_array());
         assert!(json["failures"].is_array());
         assert_eq!(json["failures"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn partial_success_status_serializes() {
+        let json = serde_json::to_string(&SourceStatus::PartialSuccess).unwrap();
+        assert_eq!(json, "\"partialsuccess\"");
+        let deserialized: SourceStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, SourceStatus::PartialSuccess);
+    }
+
+    #[test]
+    fn partial_success_tracked_in_failures() {
+        let mut result = RefreshResult::new();
+        result.add(SourceResult {
+            name: "prices".to_string(),
+            label: "Prices".to_string(),
+            status: SourceStatus::PartialSuccess,
+            items_updated: Some(45),
+            items_attempted: Some(50),
+            items_failed: Some(5),
+            failed_symbols: Some(vec![
+                "AAPL".to_string(),
+                "TSLA".to_string(),
+            ]),
+            duration_ms: 800,
+            reason: None,
+            age_minutes: None,
+            error: Some("5 of 50 symbol fetches failed".to_string()),
+            detail: None,
+        });
+
+        assert_eq!(result.sources.len(), 1);
+        // PartialSuccess should appear in failures for visibility
+        assert_eq!(result.failures.len(), 1);
+        assert_eq!(result.failures[0].status, SourceStatus::PartialSuccess);
+        // But items_updated still counted
+        assert_eq!(result.total_items_updated, 45);
+    }
+
+    #[test]
+    fn partial_success_json_includes_new_fields() {
+        let result = SourceResult {
+            name: "prices".to_string(),
+            label: "Prices".to_string(),
+            status: SourceStatus::PartialSuccess,
+            items_updated: Some(45),
+            items_attempted: Some(50),
+            items_failed: Some(5),
+            failed_symbols: Some(vec![
+                "AAPL".to_string(),
+                "TSLA".to_string(),
+                "NVDA".to_string(),
+            ]),
+            duration_ms: 1200,
+            reason: None,
+            age_minutes: None,
+            error: Some("5 of 50 symbol fetches failed".to_string()),
+            detail: None,
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["status"], "partialsuccess");
+        assert_eq!(json["items_updated"], 45);
+        assert_eq!(json["items_attempted"], 50);
+        assert_eq!(json["items_failed"], 5);
+        assert_eq!(json["failed_symbols"].as_array().unwrap().len(), 3);
+        assert_eq!(json["failed_symbols"][0], "AAPL");
+        assert_eq!(json["error"], "5 of 50 symbol fetches failed");
+    }
+
+    #[test]
+    fn new_fields_omitted_when_none() {
+        let result = SourceResult {
+            name: "bls".to_string(),
+            label: "BLS".to_string(),
+            status: SourceStatus::Ok,
+            items_updated: Some(10),
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
+            duration_ms: 100,
+            reason: None,
+            age_minutes: None,
+            error: None,
+            detail: None,
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert!(json.get("items_attempted").is_none());
+        assert!(json.get("items_failed").is_none());
+        assert!(json.get("failed_symbols").is_none());
     }
 }
