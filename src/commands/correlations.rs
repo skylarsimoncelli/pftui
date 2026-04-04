@@ -754,16 +754,24 @@ fn asset_class(sym: &str) -> &'static str {
 }
 
 /// Human-readable asset label for interpretation text.
+///
+/// Each symbol gets a unique label so that same-class pairs
+/// (e.g. GC=F vs WGLD.L) produce distinct text like
+/// "Gold Futures and WisdomTree Gold" instead of "Gold and Gold".
 fn asset_label(sym: &str) -> &'static str {
     match sym {
-        "GC=F" | "WGLD.L" => "Gold",
-        "SI=F" | "PSLV" => "Silver",
+        "GC=F" => "Gold Futures",
+        "WGLD.L" => "WisdomTree Gold",
+        "SI=F" => "Silver Futures",
+        "PSLV" => "Sprott Silver",
         "BTC" | "BTC-USD" => "Bitcoin",
         "DX-Y.NYB" => "US Dollar (DXY)",
-        "^GSPC" | "SPY" => "S&P 500",
+        "^GSPC" => "S&P 500",
+        "SPY" => "SPY",
         "CL=F" => "Oil",
-        "URA" | "U-U.TO" => "Uranium",
-        "CCJ" => "Cameco (Uranium)",
+        "URA" => "Uranium (URA)",
+        "U-U.TO" => "Sprott Uranium",
+        "CCJ" => "Cameco",
         "HG=F" => "Copper",
         _ => "asset",
     }
@@ -2295,5 +2303,47 @@ mod tests {
         assert_eq!(ctx.snapshots.len(), 3);
         // Should be the 3 most recent
         assert!(ctx.snapshots[0].date.contains("2026-04-10"));
+    }
+
+    #[test]
+    fn asset_labels_are_unique_within_same_class() {
+        // Same-class symbols must have distinct labels so interpretations
+        // never produce "Gold and Gold" or "Silver and Silver".
+        assert_ne!(asset_label("GC=F"), asset_label("WGLD.L"));
+        assert_ne!(asset_label("SI=F"), asset_label("PSLV"));
+        assert_ne!(asset_label("URA"), asset_label("U-U.TO"));
+        assert_ne!(asset_label("^GSPC"), asset_label("SPY"));
+    }
+
+    #[test]
+    fn same_class_pair_produces_distinct_labels_in_interpretation() {
+        // GC=F vs WGLD.L: both gold, but interpretation should not say "Gold and Gold"
+        let brk = CorrelationBreak {
+            symbol_a: "GC=F".to_string(),
+            symbol_b: "WGLD.L".to_string(),
+            corr_7d: Some(-0.20),
+            corr_90d: Some(0.50),
+            break_delta: -0.70,
+        };
+        let interp = interpret_break(&brk);
+        // Should contain both distinct labels
+        assert!(interp.interpretation.contains("Gold Futures"));
+        assert!(interp.interpretation.contains("WisdomTree Gold"));
+        // Must NOT contain "Gold and Gold" or "Gold/Gold"
+        assert!(!interp.interpretation.contains("Gold and Gold"));
+    }
+
+    #[test]
+    fn same_class_silver_pair_produces_distinct_labels() {
+        let brk = CorrelationBreak {
+            symbol_a: "SI=F".to_string(),
+            symbol_b: "PSLV".to_string(),
+            corr_7d: Some(0.90),
+            corr_90d: Some(0.40),
+            break_delta: 0.50,
+        };
+        let interp = interpret_break(&brk);
+        assert!(interp.interpretation.contains("Silver Futures") || interp.interpretation.contains("Sprott Silver"));
+        assert!(!interp.interpretation.contains("Silver and Silver"));
     }
 }
