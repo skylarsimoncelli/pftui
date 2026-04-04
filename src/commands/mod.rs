@@ -8,6 +8,7 @@ pub mod annotate;
 pub mod backfill;
 pub mod backtest;
 pub mod brief;
+pub mod brief_common;
 pub mod broker;
 pub mod calibration;
 pub mod calendar;
