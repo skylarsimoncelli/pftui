@@ -4185,11 +4185,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                 detail,
                 json,
             ),
-            cli::AnalyticsCommand::MorningBrief { json } => {
-                commands::morning_brief::run(&backend, json)
+            cli::AnalyticsCommand::MorningBrief { json, section } => {
+                commands::morning_brief::run(&backend, json, &section)
             }
-            cli::AnalyticsCommand::EveningBrief { json } => {
-                commands::evening_brief::run(&backend, json)
+            cli::AnalyticsCommand::EveningBrief { json, section } => {
+                commands::evening_brief::run(&backend, json, &section)
             }
             cli::AnalyticsCommand::Guidance { json } => {
                 commands::guidance::run(&backend, json)

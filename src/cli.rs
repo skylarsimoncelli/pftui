@@ -3699,6 +3699,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         /// Output as JSON for agent/script consumption (recommended)
         #[arg(long)]
         json: bool,
+        /// Compute only specific sections (comma-separated). Omitted sections are null/empty.
+        /// Available: situation, deltas, synthesis, scenarios, correlation_breaks, catalysts, impact, alerts, news_sentiment
+        #[arg(long)]
+        section: Option<String>,
     },
     /// Consolidated evening analysis: morning-brief + narrative + opportunities + conviction changes + prediction stats + cross-timeframe resolution in one call
     #[command(name = "evening-brief", after_help = "Deep evening analysis payload for agents. Extends morning-brief with:\n  - Narrative: structured recap, key themes, analytical memory\n  - Opportunities: identified entry points, scenario plays\n  - Conviction changes: shifts over the past 7 days\n  - Prediction stats: overall accuracy scorecard\n  - Cross-timeframe resolution: divergent assets with stance guidance\n\nDesigned for the evening analyst who previously needed 20+ separate\nanalytics commands to assemble a full picture.\n\nSee also: analytics morning-brief, analytics narrative, analytics cross-timeframe")]
@@ -3706,6 +3710,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         /// Output as JSON for agent/script consumption (recommended)
         #[arg(long)]
         json: bool,
+        /// Compute only specific sections (comma-separated). Omitted sections are null/empty.
+        /// Available: situation, deltas, synthesis, scenarios, correlation_breaks, catalysts, impact, alerts, news_sentiment, narrative, opportunities, conviction_changes, prediction_stats, cross_timeframe_resolution
+        #[arg(long)]
+        section: Option<String>,
     },
     /// Routine workflow guidance: prioritized action items, pending predictions, triggered alerts, stale convictions, scenario shifts
     #[command(after_help = "Single-call routine priority advisor for agents. Answers\n\"what should I focus on right now?\" by aggregating:\n\n  - Triggered alerts needing acknowledgment\n  - Pending predictions past target date needing scoring\n  - Stale convictions (7+ days without update)\n  - Recently-updated scenarios (last 24h)\n\nAction items are ranked by urgency (critical > high > medium > low)\nwith suggested CLI commands for each.\n\nDesigned for agent routines that need a single entry point\nto determine workflow priorities.\n\nSee also: analytics alerts triage, analytics morning-brief")]
@@ -7630,10 +7638,11 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
-        let AnalyticsCommand::MorningBrief { json } = command else {
+        let AnalyticsCommand::MorningBrief { json, section } = command else {
             panic!("expected MorningBrief");
         };
         assert!(json);
+        assert!(section.is_none());
     }
 
     #[test]
@@ -7642,10 +7651,31 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
-        let AnalyticsCommand::MorningBrief { json } = command else {
+        let AnalyticsCommand::MorningBrief { json, section } = command else {
             panic!("expected MorningBrief");
         };
         assert!(!json);
+        assert!(section.is_none());
+    }
+
+    #[test]
+    fn parse_analytics_morning_brief_section_filter() {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "morning-brief",
+            "--json",
+            "--section",
+            "alerts,scenarios",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::MorningBrief { json, section } = command else {
+            panic!("expected MorningBrief");
+        };
+        assert!(json);
+        assert_eq!(section.as_deref(), Some("alerts,scenarios"));
     }
 
     #[test]
@@ -7654,10 +7684,11 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
-        let AnalyticsCommand::EveningBrief { json } = command else {
+        let AnalyticsCommand::EveningBrief { json, section } = command else {
             panic!("expected EveningBrief");
         };
         assert!(json);
+        assert!(section.is_none());
     }
 
     #[test]
@@ -7666,10 +7697,31 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
-        let AnalyticsCommand::EveningBrief { json } = command else {
+        let AnalyticsCommand::EveningBrief { json, section } = command else {
             panic!("expected EveningBrief");
         };
         assert!(!json);
+        assert!(section.is_none());
+    }
+
+    #[test]
+    fn parse_analytics_evening_brief_section_filter() {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "evening-brief",
+            "--json",
+            "--section",
+            "alerts,narrative,scenarios",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::EveningBrief { json, section } = command else {
+            panic!("expected EveningBrief");
+        };
+        assert!(json);
+        assert_eq!(section.as_deref(), Some("alerts,narrative,scenarios"));
     }
 
     #[test]
