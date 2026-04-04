@@ -20,11 +20,11 @@ _(none)_
 **Scope:** Detect high-impact events from news sentiment spikes + catalyst scoring, auto-suggest `journal scenario add` with pre-filled parameters. Could integrate into `analytics guidance` or as a standalone `analytics scenario detect`.
 **Effort:** 1-2 weeks.
 
-### [Feedback] Yahoo Finance parallel fetch throttling and partial-success reporting
+### [Feedback] Yahoo Finance semaphore-based concurrency limiting
 **Source:** Evening Analysis (Apr 4, 82/78).
-**Why:** Yahoo Finance rate-limiting during parallel price fetches causes data gaps. 3 analyst crons timing out at 600s may be related to slow/failing Yahoo requests blocking the refresh pipeline. Retry with exponential backoff shipped (PR #609), but parallel fetches still sequential with 100ms delay — could benefit from semaphore-based concurrency limiting and partial-success reporting.
-**Scope:** Add semaphore limiting concurrent Yahoo requests to 3-5, partial-success reporting so one failed symbol doesn't block the entire refresh. Retry/backoff already done.
-**Effort:** 2-3 days.
+**Why:** Yahoo Finance rate-limiting during parallel price fetches causes data gaps. Price fetches are currently sequential with 100ms delay — could benefit from semaphore-based concurrency limiting (3-5 concurrent requests).
+**Scope:** Add tokio Semaphore limiting concurrent Yahoo requests to 3-5. Retry/backoff shipped (#609), partial-success reporting shipped (#613).
+**Effort:** 1-2 days.
 
 ## P3 - Long Term
 
@@ -59,7 +59,7 @@ _(none)_
 **Top 3 priorities based on feedback:**
 1. **Evening Analyst prediction quality** — lowest overall at 68%. Backtest shows 26.7% win rate. Not a tooling issue — routine over-weights mean reversion. Backtest diagnostics (#525) surfaces this automatically.
 2. **Evening Analysis auto-event detection** — 82/78. Wants automatic scenario creation when major events occur. P2 item above.
-3. **Yahoo Finance rate-limit resilience** — Evening Analysis (Apr 4) reports rate-limiting during parallel fetches causing data gaps and cron timeouts. P2 item above.
+3. **Yahoo Finance rate-limit resilience** — Semaphore concurrency limiting remains (P2 above). Retry (#609), partial-success (#613), macro indicators (#611) all shipped.
 
 **Shipped since last review (Apr 3):**
 1. ✅ Configurable alert thresholds for correlation breaks + scenario probability shifts (#572)
@@ -75,7 +75,9 @@ _(none)_
 11. ✅ Postgres timestamp parsing fixes (#603, #604)
 12. ✅ Research-ingestion skill + routine integration
 13. ✅ Yahoo Finance retry with exponential backoff (#609)
+14. ✅ Macro market indicators in asset_names registry (#611)
+15. ✅ Partial-success reporting for price refresh pipeline (#613)
 
-**Release status:** v0.26.0 released Apr 4. 2486 tests passing, clippy clean. No P0 bugs.
+**Release status:** v0.26.0 released Apr 4. 2497 tests passing, clippy clean. No P0 bugs.
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.

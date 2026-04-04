@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-04-04 — feat: partial-success reporting for price refresh pipeline
+
+- What: Add `PartialSuccess` status variant to `SourceStatus` enum, with new fields on `SourceResult`: `items_attempted`, `items_failed`, and `failed_symbols` (up to 5 sample names). When price refresh fetches some symbols successfully but others fail, the status is now `PartialSuccess` instead of `Ok` with an error string. Price history backfill also uses `PartialSuccess`. `RefreshResult::add` tracks `PartialSuccess` entries in `failures` list for agent visibility.
+- Why: Evening Analysis feedback (Apr 4): "Yahoo Finance rate-limiting during parallel price fetches causing data gaps." Agents consuming `data refresh --json` couldn't programmatically distinguish full success from partial success — the status was always `ok` with an opaque error string. Now agents can check `status == "partialsuccess"` and inspect `items_failed`, `items_attempted`, and `failed_symbols` for automated recovery or targeted re-fetch.
+- Files: `src/commands/refresh_dag.rs` (+120: PartialSuccess variant, 3 new SourceResult fields, updated add() logic, 4 new tests), `src/commands/refresh.rs` (+376/-46: partial-success logic for prices and history backfill, new verbose output format)
+- Tests: 2497 passing (+4 new: partial_success_status_serializes, partial_success_tracked_in_failures, partial_success_json_includes_new_fields, new_fields_omitted_when_none), 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** New fields use skip_serializing_if. Existing JSON shape preserved when all symbols succeed (status remains `"ok"`, new fields omitted). Agents consuming `status == "ok"` are unaffected.
+
 ### 2026-04-04 — feat: add macro market indicators to asset_names registry
 
 - What: Add 25 missing symbols to the NAMES registry and fix `infer_category()` for index symbols (`^` prefix) and Dollar Index (`DX-Y.NYB`/`DXY`). New entries: market indices (`^GSPC`, `^NDX`, `^IXIC`, `^DJI`, `^RUT`, `^VIX`), Treasury yields (`^TNX` 10Y, `^TYX` 30Y, `^FVX` 5Y, `^IRX` 13W), Dollar Index (`DX-Y.NYB`, `DXY`), forex (`GBPUSD=X`, `EURUSD=X`, `JPY=X`, `CNY=X`), Brent Crude (`BZ=F`), equities (`HOOD`, `RKLB`), credit ETFs (`HYG`, `LQD`). `infer_category()` now handles `^` prefix as Fund, `DX-Y.NYB`/`DXY` as Forex, and includes `HYG`/`LQD` in known Funds.
