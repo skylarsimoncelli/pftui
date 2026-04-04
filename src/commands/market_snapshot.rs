@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 
-use crate::commands::prices::is_cache_stale;
+use crate::commands::prices::{is_cache_stale, is_market_closed};
 use crate::commands::refresh::{self, RefreshPlan};
 use crate::config::Config;
 use crate::db::backend::BackendConnection;
@@ -50,6 +50,12 @@ pub struct StalenessInfo {
     pub total_count: usize,
     /// List of symbols whose prices are individually stale.
     pub stale_symbols: Vec<String>,
+    /// Number of stale symbols whose market is currently closed (weekend/holiday).
+    #[serde(skip_serializing_if = "crate::commands::prices::is_zero_pub")]
+    pub market_closed_count: usize,
+    /// List of stale symbols whose staleness is expected due to market closure.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub market_closed_symbols: Vec<String>,
 }
 
 // -- Prices --
@@ -79,6 +85,13 @@ pub struct PriceEntry {
     /// How many hours since this symbol's price was last fetched. Omitted when fresh.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub age_hours: Option<f64>,
+    /// Whether this symbol's market is currently closed (weekend/holiday).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub market_closed: bool,
+    /// Asset category (used internally for market closure detection).
+    #[serde(skip)]
+    #[allow(dead_code)]
+    pub category: AssetCategory,
 }
 
 // -- Sentiment --
@@ -135,6 +148,7 @@ const STALE_THRESHOLD_HOURS: i64 = 2;
 
 /// Check if price entries are stale (>2h since most recent fetch).
 /// Includes per-symbol breakdown of stale symbols.
+/// Distinguishes between staleness due to market closure vs potential data errors.
 fn check_staleness(entries: &[PriceEntry]) -> Option<StalenessInfo> {
     let newest = entries
         .iter()
@@ -149,28 +163,66 @@ fn check_staleness(entries: &[PriceEntry]) -> Option<StalenessInfo> {
     let stale_count = stale_symbols.len();
     let total_count = entries.len();
 
+    let market_closed_symbols: Vec<String> = entries
+        .iter()
+        .filter(|e| e.stale && e.market_closed)
+        .map(|e| e.symbol.clone())
+        .collect();
+    let market_closed_count = market_closed_symbols.len();
+    let error_count = stale_count.saturating_sub(market_closed_count);
+
     if age.num_hours() >= STALE_THRESHOLD_HOURS {
         let hours_display = stale_hours.round() as i64;
-        Some(StalenessInfo {
-            stale_hours: (stale_hours * 10.0).round() / 10.0,
-            message: format!(
+        let message = if market_closed_count > 0 && error_count == 0 {
+            format!(
+                "Cached prices are {}h old ({}/{} symbols stale — all markets closed). No action needed.",
+                hours_display, stale_count, total_count
+            )
+        } else if market_closed_count > 0 {
+            format!(
+                "Cached prices are {}h old ({}/{} symbols stale: {} market closed, {} may need refresh). Run `pftui data refresh` for live data.",
+                hours_display, stale_count, total_count, market_closed_count, error_count
+            )
+        } else {
+            format!(
                 "Cached prices are {}h old ({}/{} symbols stale). Run `pftui data refresh` for live data.",
                 hours_display, stale_count, total_count
-            ),
-            stale_count,
-            total_count,
-            stale_symbols,
-        })
-    } else if stale_count > 0 {
+            )
+        };
         Some(StalenessInfo {
             stale_hours: (stale_hours * 10.0).round() / 10.0,
-            message: format!(
-                "{}/{} symbols have stale or missing prices. Run `pftui data refresh` to update.",
-                stale_count, total_count
-            ),
+            message,
             stale_count,
             total_count,
             stale_symbols,
+            market_closed_count,
+            market_closed_symbols,
+        })
+    } else if stale_count > 0 {
+        let message = if market_closed_count > 0 && error_count == 0 {
+            format!(
+                "{}/{} symbols have stale prices (all markets closed). No action needed.",
+                stale_count, total_count
+            )
+        } else if market_closed_count > 0 {
+            format!(
+                "{}/{} symbols have stale or missing prices ({} market closed, {} may need refresh). Run `pftui data refresh` to update.",
+                stale_count, total_count, market_closed_count, error_count
+            )
+        } else {
+            format!(
+                "{}/{} symbols have stale or missing prices. Run `pftui data refresh` to update.",
+                stale_count, total_count
+            )
+        };
+        Some(StalenessInfo {
+            stale_hours: (stale_hours * 10.0).round() / 10.0,
+            message,
+            stale_count,
+            total_count,
+            stale_symbols,
+            market_closed_count,
+            market_closed_symbols,
         })
     } else {
         None
@@ -278,6 +330,8 @@ fn build_price_entry(
         (true, None)
     };
 
+    let market_closed = is_market_closed(category, Utc::now());
+
     PriceEntry {
         symbol: symbol.to_string(),
         name: display_name.to_string(),
@@ -288,6 +342,8 @@ fn build_price_entry(
         fetched_at,
         stale,
         age_hours,
+        market_closed,
+        category,
     }
 }
 

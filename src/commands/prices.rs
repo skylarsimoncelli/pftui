@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{Datelike, NaiveDate, Utc, Weekday};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
@@ -19,6 +19,84 @@ use crate::tui::views::markets;
 
 /// Threshold in hours beyond which cached prices are considered stale.
 const STALE_THRESHOLD_HOURS: i64 = 2;
+
+/// Helper for serde skip_serializing_if on usize fields.
+fn is_zero(v: &usize) -> bool {
+    *v == 0
+}
+
+/// Public version of is_zero for cross-module serde skip_serializing_if.
+pub fn is_zero_pub(v: &usize) -> bool {
+    *v == 0
+}
+
+/// US market holidays for 2025-2027 (NYSE/NASDAQ observed closure dates).
+/// Maintained as a static list — add new years as needed.
+const US_MARKET_HOLIDAYS: &[&str] = &[
+    // 2025
+    "2025-01-01", // New Year's Day
+    "2025-01-20", // MLK Day
+    "2025-02-17", // Presidents' Day
+    "2025-04-18", // Good Friday
+    "2025-05-26", // Memorial Day
+    "2025-06-19", // Juneteenth
+    "2025-07-04", // Independence Day
+    "2025-09-01", // Labor Day
+    "2025-11-27", // Thanksgiving
+    "2025-12-25", // Christmas
+    // 2026
+    "2026-01-01", // New Year's Day
+    "2026-01-19", // MLK Day
+    "2026-02-16", // Presidents' Day
+    "2026-04-03", // Good Friday
+    "2026-05-25", // Memorial Day
+    "2026-06-19", // Juneteenth
+    "2026-07-03", // Independence Day (observed)
+    "2026-09-07", // Labor Day
+    "2026-11-26", // Thanksgiving
+    "2026-12-25", // Christmas
+    // 2027
+    "2027-01-01", // New Year's Day
+    "2027-01-18", // MLK Day
+    "2027-02-15", // Presidents' Day
+    "2027-03-26", // Good Friday
+    "2027-05-31", // Memorial Day
+    "2027-06-18", // Juneteenth (observed, falls on Sat)
+    "2027-07-05", // Independence Day (observed, falls on Sun)
+    "2027-09-06", // Labor Day
+    "2027-11-25", // Thanksgiving
+    "2027-12-24", // Christmas (observed, falls on Sat)
+];
+
+/// Check if a given date is a US market holiday.
+fn is_us_market_holiday(date: NaiveDate) -> bool {
+    let date_str = date.format("%Y-%m-%d").to_string();
+    US_MARKET_HOLIDAYS.contains(&date_str.as_str())
+}
+
+/// Determine if the market for a given asset category is currently closed.
+///
+/// - **Crypto**: trades 24/7 — never considered market-closed
+/// - **Forex/Cash**: trades 24/5 — closed on weekends (Sat/Sun UTC)
+/// - **Equity/Fund/Commodity**: closed on weekends + US market holidays
+///
+/// Uses UTC date for simplicity. US market hours are roughly 13:30-20:00 UTC,
+/// but for staleness purposes, the full calendar day is sufficient.
+pub fn is_market_closed(category: AssetCategory, now: chrono::DateTime<Utc>) -> bool {
+    match category {
+        AssetCategory::Crypto => false, // 24/7
+        AssetCategory::Forex | AssetCategory::Cash => {
+            // Closed weekends only
+            let weekday = now.weekday();
+            weekday == Weekday::Sat || weekday == Weekday::Sun
+        }
+        AssetCategory::Equity | AssetCategory::Fund | AssetCategory::Commodity => {
+            let weekday = now.weekday();
+            let date = now.date_naive();
+            weekday == Weekday::Sat || weekday == Weekday::Sun || is_us_market_holiday(date)
+        }
+    }
+}
 
 #[derive(Serialize)]
 struct PriceOutput {
@@ -38,6 +116,14 @@ struct StalenessWarning {
     total_count: usize,
     /// List of symbols whose prices are individually stale.
     stale_symbols: Vec<String>,
+    /// Number of stale symbols whose market is currently closed (weekend/holiday).
+    /// Omitted when zero.
+    #[serde(skip_serializing_if = "is_zero")]
+    market_closed_count: usize,
+    /// List of stale symbols whose staleness is expected due to market closure.
+    /// Omitted when empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    market_closed_symbols: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -55,13 +141,23 @@ struct PriceRow {
     /// How many hours since this symbol's price was last fetched. Omitted when fresh.
     #[serde(skip_serializing_if = "Option::is_none")]
     age_hours: Option<f64>,
+    /// Whether this symbol's market is currently closed (weekend/holiday).
+    /// When true AND stale, the staleness is expected — not a data error.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    market_closed: bool,
+    /// Asset category (used internally; not serialized in output).
+    #[serde(skip)]
+    category: AssetCategory,
 }
 
-/// Annotate each price row with per-symbol staleness info.
-/// Sets `stale` and `age_hours` on each row based on its individual `fetched_at`.
+/// Annotate each price row with per-symbol staleness and market closure info.
+/// Sets `stale`, `age_hours`, and `market_closed` on each row.
 fn annotate_per_symbol_staleness(rows: &mut [PriceRow]) {
     let now = Utc::now();
     for row in rows.iter_mut() {
+        // Check market closure for this asset's category
+        row.market_closed = is_market_closed(row.category, now);
+
         if row.fetched_at.is_empty() || row.price.is_none() {
             // No cached price at all — treat as stale
             row.stale = true;
@@ -86,6 +182,7 @@ fn annotate_per_symbol_staleness(rows: &mut [PriceRow]) {
 /// Check if cached prices are stale (>2h since most recent fetch).
 /// Returns a warning if stale, None if fresh or no prices exist.
 /// Includes per-symbol breakdown: which symbols are stale and how many.
+/// Distinguishes between staleness due to market closure vs potential data errors.
 fn check_staleness(rows: &[PriceRow]) -> Option<StalenessWarning> {
     let newest = rows
         .iter()
@@ -101,29 +198,69 @@ fn check_staleness(rows: &[PriceRow]) -> Option<StalenessWarning> {
     let stale_count = stale_symbols.len();
     let total_count = rows.len();
 
+    // Separate stale symbols into market-closed (expected) vs potentially errored
+    let market_closed_symbols: Vec<String> = rows
+        .iter()
+        .filter(|r| r.stale && r.market_closed)
+        .map(|r| r.symbol.clone())
+        .collect();
+    let market_closed_count = market_closed_symbols.len();
+    let error_count = stale_count.saturating_sub(market_closed_count);
+
     if age.num_hours() >= STALE_THRESHOLD_HOURS {
         let hours_display = stale_hours.round() as i64;
-        Some(StalenessWarning {
-            stale_hours: (stale_hours * 10.0).round() / 10.0,
-            message: format!(
+        let message = if market_closed_count > 0 && error_count == 0 {
+            // All stale symbols are market-closed — this is expected
+            format!(
+                "Cached prices are {}h old ({}/{} symbols stale — all markets closed). No action needed.",
+                hours_display, stale_count, total_count
+            )
+        } else if market_closed_count > 0 {
+            format!(
+                "Cached prices are {}h old ({}/{} symbols stale: {} market closed, {} may need refresh). Run `pftui data refresh` for live data.",
+                hours_display, stale_count, total_count, market_closed_count, error_count
+            )
+        } else {
+            format!(
                 "Cached prices are {}h old ({}/{} symbols stale). Run `pftui data refresh` for live data.",
                 hours_display, stale_count, total_count
-            ),
+            )
+        };
+        Some(StalenessWarning {
+            stale_hours: (stale_hours * 10.0).round() / 10.0,
+            message,
             stale_count,
             total_count,
             stale_symbols,
+            market_closed_count,
+            market_closed_symbols,
         })
     } else if stale_count > 0 {
         // Global cache is fresh but some individual symbols are stale/missing
-        Some(StalenessWarning {
-            stale_hours: (stale_hours * 10.0).round() / 10.0,
-            message: format!(
+        let message = if market_closed_count > 0 && error_count == 0 {
+            format!(
+                "{}/{} symbols have stale prices (all markets closed). No action needed.",
+                stale_count, total_count
+            )
+        } else if market_closed_count > 0 {
+            format!(
+                "{}/{} symbols have stale or missing prices ({} market closed, {} may need refresh). Run `pftui data refresh` to update.",
+                stale_count, total_count, market_closed_count, error_count
+            )
+        } else {
+            format!(
                 "{}/{} symbols have stale or missing prices. Run `pftui data refresh` to update.",
                 stale_count, total_count
-            ),
+            )
+        };
+        Some(StalenessWarning {
+            stale_hours: (stale_hours * 10.0).round() / 10.0,
+            message,
             stale_count,
             total_count,
             stale_symbols,
+            market_closed_count,
+            market_closed_symbols,
         })
     } else {
         None
@@ -333,6 +470,8 @@ pub fn run(
             fetched_at,
             stale: false,
             age_hours: None,
+            market_closed: false,
+            category: *cat,
         });
     }
 
@@ -398,7 +537,13 @@ pub fn run(
     println!("  {}", "\u{2500}".repeat(total_w));
 
     for r in &rows {
-        let stale_marker = if r.stale { " ⚠" } else { "" };
+        let stale_marker = if r.stale && r.market_closed {
+            " 🌙" // Market closed — staleness expected
+        } else if r.stale {
+            " ⚠" // Stale — possible data error
+        } else {
+            ""
+        };
         println!(
             "  {:<sym_w$}  {:<name_w$}  {:>price_w$}  {:>chg_w$}  {:>pct_w$}{}",
             r.symbol,
@@ -622,6 +767,8 @@ mod tests {
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
             stale: false,
             age_hours: None,
+            market_closed: false,
+            category: AssetCategory::Equity,
         }];
         assert!(check_staleness(&rows).is_none());
     }
@@ -640,6 +787,8 @@ mod tests {
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
             stale: true,
             age_hours: Some(3.0),
+            market_closed: false,
+            category: AssetCategory::Equity,
         }];
         let warning = check_staleness(&rows);
         assert!(warning.is_some());
@@ -667,6 +816,8 @@ mod tests {
                 fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
                 stale: true,
                 age_hours: Some(5.0),
+                market_closed: false,
+                category: AssetCategory::Equity,
             },
             PriceRow {
                 symbol: "FRESH".to_string(),
@@ -678,6 +829,8 @@ mod tests {
                 fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
                 stale: false,
                 age_hours: None,
+                market_closed: false,
+                category: AssetCategory::Equity,
             },
         ];
         // Global cache is fresh (newest is <2h old) but OLD is individually stale
@@ -703,6 +856,8 @@ mod tests {
                 fetched_at: String::new(),
                 stale: true,
                 age_hours: None,
+                market_closed: false,
+                category: AssetCategory::Equity,
             },
             PriceRow {
                 symbol: "OK".to_string(),
@@ -714,6 +869,8 @@ mod tests {
                 fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
                 stale: false,
                 age_hours: None,
+                market_closed: false,
+                category: AssetCategory::Equity,
             },
         ];
         // Global is fresh but MISSING is individually stale (no price)
@@ -758,6 +915,8 @@ mod tests {
             stale_count: 2,
             total_count: 3,
             stale_symbols: vec!["BTC".to_string(), "AAPL".to_string()],
+            market_closed_count: 0,
+            market_closed_symbols: vec![],
         };
         let output = PriceOutput {
             staleness_warning: Some(warning),
@@ -796,6 +955,8 @@ mod tests {
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
             stale: false,
             age_hours: None,
+            market_closed: false,
+            category: AssetCategory::Equity,
         }];
         annotate_per_symbol_staleness(&mut rows);
         assert!(!rows[0].stale);
@@ -816,6 +977,8 @@ mod tests {
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
             stale: false,
             age_hours: None,
+            market_closed: false,
+            category: AssetCategory::Equity,
         }];
         annotate_per_symbol_staleness(&mut rows);
         assert!(rows[0].stale);
@@ -834,6 +997,8 @@ mod tests {
             fetched_at: String::new(),
             stale: false,
             age_hours: None,
+            market_closed: false,
+            category: AssetCategory::Equity,
         }];
         annotate_per_symbol_staleness(&mut rows);
         assert!(rows[0].stale);
@@ -856,6 +1021,8 @@ mod tests {
                 fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
                 stale: false,
                 age_hours: None,
+                market_closed: false,
+                category: AssetCategory::Equity,
             },
             PriceRow {
                 symbol: "FRESH".to_string(),
@@ -867,6 +1034,8 @@ mod tests {
                 fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
                 stale: false,
                 age_hours: None,
+                market_closed: false,
+                category: AssetCategory::Equity,
             },
         ];
         annotate_per_symbol_staleness(&mut rows);
@@ -888,6 +1057,8 @@ mod tests {
             fetched_at: "2026-04-02T12:00:00+00".to_string(),
             stale: false,
             age_hours: None,
+            market_closed: false,
+            category: AssetCategory::Equity,
         };
         let json_str = serde_json::to_string(&row).unwrap();
         assert!(!json_str.contains("stale"), "fresh row should not contain stale field");
@@ -906,6 +1077,8 @@ mod tests {
             fetched_at: "2026-04-02T08:00:00+00".to_string(),
             stale: true,
             age_hours: Some(4.2),
+            market_closed: false,
+            category: AssetCategory::Equity,
         };
         let json_str = serde_json::to_string(&row).unwrap();
         assert!(json_str.contains("\"stale\":true"), "stale row should contain stale:true");
@@ -927,6 +1100,8 @@ mod tests {
                 fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
                 stale: true,
                 age_hours: Some(3.0),
+                market_closed: false,
+                category: AssetCategory::Equity,
             },
             PriceRow {
                 symbol: "GOLD".to_string(),
@@ -938,6 +1113,8 @@ mod tests {
                 fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
                 stale: true,
                 age_hours: Some(3.0),
+                market_closed: false,
+                category: AssetCategory::Equity,
             },
         ];
         let warning = check_staleness(&rows).unwrap();
@@ -1049,5 +1226,281 @@ mod tests {
         // auto_refresh=true but cache is fresh → should NOT attempt refresh, just return data
         let result = run(&backend, &config, false, false, true);
         assert!(result.is_ok());
+    }
+
+    // --- Market closure tests ---
+
+    #[test]
+    fn crypto_never_market_closed() {
+        use chrono::TimeZone;
+        // Saturday at noon UTC
+        let saturday = Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap();
+        assert!(!is_market_closed(AssetCategory::Crypto, saturday));
+        // Sunday
+        let sunday = Utc.with_ymd_and_hms(2026, 4, 5, 12, 0, 0).unwrap();
+        assert!(!is_market_closed(AssetCategory::Crypto, sunday));
+        // US holiday (Good Friday 2026)
+        let good_friday = Utc.with_ymd_and_hms(2026, 4, 3, 12, 0, 0).unwrap();
+        assert!(!is_market_closed(AssetCategory::Crypto, good_friday));
+    }
+
+    #[test]
+    fn equity_closed_on_weekends() {
+        use chrono::TimeZone;
+        let saturday = Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap();
+        assert!(is_market_closed(AssetCategory::Equity, saturday));
+        let sunday = Utc.with_ymd_and_hms(2026, 4, 5, 12, 0, 0).unwrap();
+        assert!(is_market_closed(AssetCategory::Equity, sunday));
+        // Weekday — open
+        let monday = Utc.with_ymd_and_hms(2026, 4, 6, 15, 0, 0).unwrap();
+        assert!(!is_market_closed(AssetCategory::Equity, monday));
+    }
+
+    #[test]
+    fn equity_closed_on_us_holidays() {
+        use chrono::TimeZone;
+        // Good Friday 2026 (observed)
+        let good_friday = Utc.with_ymd_and_hms(2026, 4, 3, 12, 0, 0).unwrap();
+        assert!(is_market_closed(AssetCategory::Equity, good_friday));
+        // Christmas 2026
+        let christmas = Utc.with_ymd_and_hms(2026, 12, 25, 12, 0, 0).unwrap();
+        assert!(is_market_closed(AssetCategory::Equity, christmas));
+        // Regular Wednesday — open
+        let wed = Utc.with_ymd_and_hms(2026, 4, 8, 12, 0, 0).unwrap();
+        assert!(!is_market_closed(AssetCategory::Equity, wed));
+    }
+
+    #[test]
+    fn forex_closed_on_weekends_only() {
+        use chrono::TimeZone;
+        let saturday = Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap();
+        assert!(is_market_closed(AssetCategory::Forex, saturday));
+        // US holiday (Good Friday) — forex still open
+        let good_friday = Utc.with_ymd_and_hms(2026, 4, 3, 12, 0, 0).unwrap();
+        assert!(!is_market_closed(AssetCategory::Forex, good_friday));
+    }
+
+    #[test]
+    fn commodity_closed_on_weekends_and_holidays() {
+        use chrono::TimeZone;
+        let saturday = Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap();
+        assert!(is_market_closed(AssetCategory::Commodity, saturday));
+        let good_friday = Utc.with_ymd_and_hms(2026, 4, 3, 12, 0, 0).unwrap();
+        assert!(is_market_closed(AssetCategory::Commodity, good_friday));
+    }
+
+    #[test]
+    fn fund_closed_on_weekends_and_holidays() {
+        use chrono::TimeZone;
+        let saturday = Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap();
+        assert!(is_market_closed(AssetCategory::Fund, saturday));
+        let good_friday = Utc.with_ymd_and_hms(2026, 4, 3, 12, 0, 0).unwrap();
+        assert!(is_market_closed(AssetCategory::Fund, good_friday));
+    }
+
+    #[test]
+    fn is_us_market_holiday_known_dates() {
+        // 2026 holidays
+        assert!(is_us_market_holiday(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()));
+        assert!(is_us_market_holiday(NaiveDate::from_ymd_opt(2026, 4, 3).unwrap()));
+        assert!(is_us_market_holiday(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap()));
+        // Regular day — not a holiday
+        assert!(!is_us_market_holiday(NaiveDate::from_ymd_opt(2026, 4, 8).unwrap()));
+    }
+
+    #[test]
+    fn market_closed_json_omits_when_false() {
+        let row = PriceRow {
+            symbol: "BTC".to_string(),
+            name: "Bitcoin".to_string(),
+            price: Some(dec!(84000)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: "2026-04-02T12:00:00+00".to_string(),
+            stale: false,
+            age_hours: None,
+            market_closed: false,
+            category: AssetCategory::Crypto,
+        };
+        let json_str = serde_json::to_string(&row).unwrap();
+        assert!(!json_str.contains("market_closed"), "market_closed should be omitted when false");
+    }
+
+    #[test]
+    fn market_closed_json_includes_when_true() {
+        let row = PriceRow {
+            symbol: "AAPL".to_string(),
+            name: "Apple".to_string(),
+            price: Some(dec!(195)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: "2026-04-04T08:00:00+00".to_string(),
+            stale: true,
+            age_hours: Some(16.0),
+            market_closed: true,
+            category: AssetCategory::Equity,
+        };
+        let json_str = serde_json::to_string(&row).unwrap();
+        assert!(json_str.contains("\"market_closed\":true"), "market_closed should be present when true");
+    }
+
+    #[test]
+    fn staleness_warning_all_market_closed() {
+        use chrono::TimeZone;
+        let now = Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap(); // Saturday
+        let fetched = now - chrono::Duration::hours(16);
+        let rows = vec![
+            PriceRow {
+                symbol: "AAPL".to_string(),
+                name: "Apple".to_string(),
+                price: Some(dec!(195)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: true,
+                age_hours: Some(16.0),
+                market_closed: true,
+                category: AssetCategory::Equity,
+            },
+            PriceRow {
+                symbol: "GC=F".to_string(),
+                name: "Gold Futures".to_string(),
+                price: Some(dec!(3100)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: true,
+                age_hours: Some(16.0),
+                market_closed: true,
+                category: AssetCategory::Commodity,
+            },
+        ];
+        let warning = check_staleness(&rows).unwrap();
+        assert_eq!(warning.market_closed_count, 2);
+        assert_eq!(warning.market_closed_symbols.len(), 2);
+        assert!(warning.message.contains("all markets closed"));
+        assert!(warning.message.contains("No action needed"));
+    }
+
+    #[test]
+    fn staleness_warning_mixed_market_closed_and_error() {
+        use chrono::TimeZone;
+        let now = Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap(); // Saturday
+        let fetched = now - chrono::Duration::hours(16);
+        let rows = vec![
+            PriceRow {
+                symbol: "AAPL".to_string(),
+                name: "Apple".to_string(),
+                price: Some(dec!(195)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: true,
+                age_hours: Some(16.0),
+                market_closed: true,
+                category: AssetCategory::Equity,
+            },
+            PriceRow {
+                symbol: "BTC".to_string(),
+                name: "Bitcoin".to_string(),
+                price: Some(dec!(84000)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                stale: true,
+                age_hours: Some(16.0),
+                market_closed: false, // Crypto is 24/7 — this IS an error
+                category: AssetCategory::Crypto,
+            },
+        ];
+        let warning = check_staleness(&rows).unwrap();
+        assert_eq!(warning.market_closed_count, 1);
+        assert_eq!(warning.stale_count, 2);
+        assert!(warning.message.contains("market closed"));
+        assert!(warning.message.contains("may need refresh"));
+    }
+
+    #[test]
+    fn staleness_warning_json_omits_market_closed_when_zero() {
+        let warning = StalenessWarning {
+            stale_hours: 3.5,
+            message: "test".to_string(),
+            stale_count: 1,
+            total_count: 2,
+            stale_symbols: vec!["BTC".to_string()],
+            market_closed_count: 0,
+            market_closed_symbols: vec![],
+        };
+        let json_str = serde_json::to_string(&warning).unwrap();
+        assert!(!json_str.contains("market_closed_count"), "should omit market_closed_count when zero");
+        assert!(!json_str.contains("market_closed_symbols"), "should omit market_closed_symbols when empty");
+    }
+
+    #[test]
+    fn staleness_warning_json_includes_market_closed_when_nonzero() {
+        let warning = StalenessWarning {
+            stale_hours: 16.0,
+            message: "test".to_string(),
+            stale_count: 2,
+            total_count: 3,
+            stale_symbols: vec!["AAPL".to_string(), "GC=F".to_string()],
+            market_closed_count: 2,
+            market_closed_symbols: vec!["AAPL".to_string(), "GC=F".to_string()],
+        };
+        let json_str = serde_json::to_string(&warning).unwrap();
+        assert!(json_str.contains("\"market_closed_count\":2"), "should include market_closed_count");
+        assert!(json_str.contains("market_closed_symbols"), "should include market_closed_symbols");
+    }
+
+    #[test]
+    fn annotate_sets_market_closed_for_equity_on_weekend() {
+        // This test only asserts market_closed is set during annotation.
+        // It may pass/fail depending on the current day being a weekend or not,
+        // so we construct the expected value dynamically.
+        let now = Utc::now();
+        let fetched = now - chrono::Duration::hours(3);
+        let expected_closed = is_market_closed(AssetCategory::Equity, now);
+        let mut rows = vec![PriceRow {
+            symbol: "AAPL".to_string(),
+            name: "Apple".to_string(),
+            price: Some(dec!(195)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            stale: false,
+            age_hours: None,
+            market_closed: false,
+            category: AssetCategory::Equity,
+        }];
+        annotate_per_symbol_staleness(&mut rows);
+        assert_eq!(rows[0].market_closed, expected_closed);
+    }
+
+    #[test]
+    fn annotate_never_sets_market_closed_for_crypto() {
+        let now = Utc::now();
+        let fetched = now - chrono::Duration::hours(3);
+        let mut rows = vec![PriceRow {
+            symbol: "BTC".to_string(),
+            name: "Bitcoin".to_string(),
+            price: Some(dec!(84000)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            stale: false,
+            age_hours: None,
+            market_closed: false,
+            category: AssetCategory::Crypto,
+        }];
+        annotate_per_symbol_staleness(&mut rows);
+        assert!(!rows[0].market_closed, "crypto should never be market_closed");
     }
 }
