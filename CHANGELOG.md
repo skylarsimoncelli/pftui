@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-04-04 — feat: add macro market indicators to asset_names registry
+
+- What: Add 25 missing symbols to the NAMES registry and fix `infer_category()` for index symbols (`^` prefix) and Dollar Index (`DX-Y.NYB`/`DXY`). New entries: market indices (`^GSPC`, `^NDX`, `^IXIC`, `^DJI`, `^RUT`, `^VIX`), Treasury yields (`^TNX` 10Y, `^TYX` 30Y, `^FVX` 5Y, `^IRX` 13W), Dollar Index (`DX-Y.NYB`, `DXY`), forex (`GBPUSD=X`, `EURUSD=X`, `JPY=X`, `CNY=X`), Brent Crude (`BZ=F`), equities (`HOOD`, `RKLB`), credit ETFs (`HYG`, `LQD`). `infer_category()` now handles `^` prefix as Fund, `DX-Y.NYB`/`DXY` as Forex, and includes `HYG`/`LQD` in known Funds.
+- Why: Evening Analysis feedback (Apr 4): "DXY, 10Y yield, and GBP/USD missing from pftui price tracker — manually sourced from web search." These symbols are used extensively in the TUI (markets view, economy view, regime bar, correlation grid, market context widget) but `resolve_name()` returned empty, `search_names()` couldn't find them, and `infer_category()` misclassified `^`-prefix indices as Equity.
+- Files: `src/models/asset_names.rs` (+111: 25 new NAMES entries, 3 infer_category rules, 7 new tests)
+- Tests: 2493 passing (+7 new: `resolve_name_macro_indicators`, `resolve_name_additional_assets`, `infer_category_market_indices`, `infer_category_dollar_index`, `infer_category_credit_etfs`, `search_names_finds_macro_indicators`, `search_names_finds_gbpusd`), 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** Additive only. No existing names or categories changed. All pre-existing tests pass.
+
 ### 2026-04-04 — feat: Yahoo Finance retry with exponential backoff on transient failures
 
 - What: All Yahoo Finance API calls (`fetch_price`, `fetch_history`, `fetch_fx_rate`, `fetch_fx_history`, `fetch_chart_extras`) now retry up to 3 times with exponential backoff (500ms, 1s, 2s) on transient failures: HTTP 429 (rate limit), 5xx server errors, timeouts, and connection issues.
