@@ -86,7 +86,11 @@ pftui data news --hours 4 --json          # breaking news from RSS + Brave
 pftui data sentiment --json               # Fear & Greed indices + COT positioning
 pftui data cot --json                     # COT percentile ranks + z-scores + extremes
 pftui data onchain --json                 # BTC exchange reserves, whale activity, MVRV
-pftui data predictions --json             # Polymarket, Manifold odds
+pftui data predictions --json             # Polymarket, Manifold odds (may be stale — supplement below)
+
+# IMPORTANT: pftui's Polymarket data may only have 1 contract. Pull live data directly:
+web_fetch "https://gamma-api.polymarket.com/events?limit=5&active=true&closed=false&tag_slug=geopolitics&order=volume24hr&ascending=false" --extractMode text
+web_fetch "https://gamma-api.polymarket.com/events?limit=5&active=true&closed=false&tag_slug=fed&order=volume24hr&ascending=false" --extractMode text
 pftui data fedwatch --json                # CME FedWatch rate probabilities (with verification)
 pftui data economy --json                 # CPI, NFP, GDP, PMI, JOLTS (with surprise detection)
 pftui data etf-flows --json               # BTC ETF inflows/outflows by fund

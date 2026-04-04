@@ -206,6 +206,31 @@ a scorecard. Explain what the system LEARNED from its mistakes. Example: "We pre
 gold would hold $5K. It didn't. The error was underweighting DXY momentum. We've
 since recalibrated our dollar sensitivity model."]
 
+### Prediction Market Intelligence
+[What are prediction markets saying about the key questions we're tracking?
+This is real-money consensus, not opinion polls or analyst forecasts.
+
+Pull live Polymarket data on the topics most relevant to today's analysis:
+```bash
+# Iran/geopolitics — ceasefire timelines, escalation bets
+web_fetch "https://gamma-api.polymarket.com/events?limit=10&active=true&closed=false&tag_slug=geopolitics&order=volume24hr&ascending=false" --extractMode text
+
+# Fed/economics — rate decisions, recession probability, inflation
+web_fetch "https://gamma-api.polymarket.com/events?limit=10&active=true&closed=false&tag_slug=fed&order=volume24hr&ascending=false" --extractMode text
+
+# Crypto — BTC price targets, ETF approvals, regulation
+web_fetch "https://gamma-api.polymarket.com/events?limit=5&active=true&closed=false&tag_slug=crypto&order=volume24hr&ascending=false" --extractMode text
+```
+
+Report the 5-8 most relevant contracts with their current probabilities. Focus on:
+- Iran war resolution timeline (when does the market expect ceasefire?)
+- Fed rate path (what does real money say about cuts/hikes this year?)
+- Recession probability
+- Any contracts that diverge significantly from our scenario probabilities
+
+Frame prediction market data as "the crowd's money is where its mouth is" — these
+are the most honest signals available because people have skin in the game.]
+
 ### Political Theater Filter
 [Apply the first principle: public statements from institutional players are tactical,
 not informational. What did officials say this week, and what did they actually DO?

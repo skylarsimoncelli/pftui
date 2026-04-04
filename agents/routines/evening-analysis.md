@@ -527,8 +527,22 @@ Structural forces. Each finding gets 2-4 paragraphs from first principles.]
 
 ## Prediction Market Calibration
 
-[Divergences between pftui scenario probabilities and prediction market consensus.
-What does the market see that we don't? What do we see that the market doesn't?]
+[Pull live Polymarket data — pftui's cached data may be incomplete:
+```bash
+web_fetch "https://gamma-api.polymarket.com/events?limit=10&active=true&closed=false&tag_slug=geopolitics&order=volume24hr&ascending=false" --extractMode text
+web_fetch "https://gamma-api.polymarket.com/events?limit=10&active=true&closed=false&tag_slug=fed&order=volume24hr&ascending=false" --extractMode text
+web_fetch "https://gamma-api.polymarket.com/events?limit=5&active=true&closed=false&tag_slug=crypto&order=volume24hr&ascending=false" --extractMode text
+```
+
+Compare prediction market probabilities against our scenario probabilities:
+- Iran ceasefire timeline: what does the money say vs our War Escalation scenario?
+- Fed rate path: do markets agree with our Inflation Spike / Hard Recession scenarios?
+- Recession: is the market pricing higher or lower probability than us?
+- Any contract where Polymarket diverges >15pp from our estimate: explain why
+
+This is the most honest signal in the system. These people have money on the line.
+Large divergences between our estimates and market consensus need explanation —
+either we know something the market doesn't, or we're wrong.]
 
 ## Portfolio Reflections
 

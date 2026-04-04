@@ -66,7 +66,12 @@ pftui data calendar --json                # upcoming economic events and catalys
 pftui data sovereign --json               # CB gold reserves, govt BTC holdings
 pftui data supply --json                  # COMEX warehouse inventory (gold, silver)
 pftui data news --hours 24 --json         # last 24h news from RSS + Brave
-pftui data predictions --json             # Polymarket/Manifold odds
+pftui data predictions --json             # Polymarket/Manifold odds (may be stale — supplement below)
+
+# IMPORTANT: pftui's Polymarket data may only have 1 contract. Pull live data directly:
+web_fetch "https://gamma-api.polymarket.com/events?limit=10&active=true&closed=false&tag_slug=geopolitics&order=volume24hr&ascending=false" --extractMode text
+web_fetch "https://gamma-api.polymarket.com/events?limit=10&active=true&closed=false&tag_slug=fed&order=volume24hr&ascending=false" --extractMode text
+web_fetch "https://gamma-api.polymarket.com/events?limit=5&active=true&closed=false&tag_slug=economics&order=volume24hr&ascending=false" --extractMode text
 pftui data etf-flows --days 7 --json      # BTC ETF flow trend
 pftui data consensus list --json          # analyst calls (Goldman, JPM, etc.) — read before searching
 pftui analytics scenario list --json      # active scenarios with probabilities
