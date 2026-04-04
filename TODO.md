@@ -40,7 +40,7 @@ _(none)_
 |--------|-----------|---------|------|-------|
 | Evening Analyst | 72% | 68% | Apr 1 | ↓ (78→72 use, 75→68 overall. Backtest 26.7% WR — routine/strategy issue, not tooling.) **Lowest overall scorer.** |
 | Medium-Timeframe Analyst | 85% | 88% | Apr 3 | ↑ (75→85 use, 80→88 overall. Alert thresholds shipped #572. Recovery.) |
-| Evening Analysis | 82% | 78% | Apr 3 | ↓ (82→82 use, 80→78 overall. Portfolio snapshot alias shipped #575. Wants auto event detection for scenarios.) |
+| Evening Analysis | 82% | 78% | Apr 4 | → (82→82 use, 78→78 overall. Holiday-aware staleness shipped #606. Wants auto event detection for scenarios.) |
 | Low-Timeframe Analyst | 85% | 88% | Apr 3 | ↑ (85→85 use, 80→88 overall. Break history shipped #588.) |
 | Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable.) |
@@ -55,14 +55,15 @@ _(none)_
 2. **Evening Analysis auto-event detection** — 82/78. Portfolio-matrix coverage at 4% (now surfaced in `analytics guidance` via stale views tracking #599). Wants automatic scenario creation when major events occur. P2 item above.
 3. **Morning Intelligence stale** — 75/85 since Mar 28. No new feedback. Monitor.
 
-**Shipped since last review (Apr 3):**
+**Shipped since last review (Apr 3-4):**
 1. ✅ Configurable alert thresholds for correlation breaks + scenario probability shifts (#572) — addresses Medium-Timeframe Apr 3
 2. ✅ Portfolio snapshot alias for portfolio status (#575) — addresses Evening Analysis Apr 3
 3. ✅ Correlation break historical context + confirmation tracking (#588) — addresses Low-Timeframe Apr 3
 4. ✅ N+1 fix in movers command with batch history fetching (#590) — performance
 5. ✅ N+1 fix in load_or_compute_snapshots with batch snapshot fetching (#593) — performance (brief, summary, scan, watchlist)
 6. ✅ Stale/missing analyst views in analytics guidance (#599) — addresses Evening Analysis Apr 3 (4% coverage visibility)
+7. ✅ Holiday-aware staleness on data prices + market-snapshot (#606) — addresses Evening Analysis Apr 4 (stale-from-close vs stale-from-error)
 
-**Release status:** v0.25.0 tagged Apr 2. 19 feat/fix commits since tag. No P0 bugs. 2435 tests passing, clippy clean.
+**Release status:** v0.25.0 tagged Apr 2. 20 feat/fix commits since tag. No P0 bugs. 2480 tests passing, clippy clean.
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.
