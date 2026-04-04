@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-04-04 — feat: Yahoo Finance semaphore-based concurrency limiting
+
+- What: Replace sequential Yahoo Finance price fetching (100ms delay between each request) with semaphore-gated concurrent fetching via `tokio::sync::Semaphore`. Up to `YAHOO_MAX_CONCURRENT` (4) requests run in-flight simultaneously. Both the main Yahoo fetch loop and the crypto Yahoo fallback loop use semaphore concurrency. New `fetch_yahoo_price_with_timeout()` helper extracts the per-symbol fetch-with-timeout pattern.
+- Why: Evening Analysis feedback (Apr 4, 82/78): "Yahoo Finance rate-limiting during parallel price fetches causes data gaps." With 50+ Yahoo symbols, sequential fetching with 100ms delay took 5+ seconds. Semaphore concurrency (4 in-flight) provides ~4× speedup while staying within Yahoo's rate limits. Combined with retry (#609) and partial-success (#613), this completes the Yahoo Finance resilience stack.
+- Files: `Cargo.toml` (+1: tokio `sync` feature), `src/commands/refresh.rs` (+115/-31: remove `YAHOO_RATE_LIMIT_DELAY`, add `YAHOO_MAX_CONCURRENT`, `fetch_yahoo_price_with_timeout` helper, semaphore-gated spawn loops for Yahoo + crypto fallback, 3 new tests)
+- Tests: 2500 passing (+3 new: `yahoo_max_concurrent_is_reasonable`, `semaphore_limits_concurrency`, `fetch_yahoo_price_with_timeout_handles_bad_symbol`), 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** Same output shape. Quotes may arrive in different order than sequential but all are collected before return. No API or JSON output changes.
+
 ### 2026-04-04 — feat: partial-success reporting for price refresh pipeline
 
 - What: Add `PartialSuccess` status variant to `SourceStatus` enum, with new fields on `SourceResult`: `items_attempted`, `items_failed`, and `failed_symbols` (up to 5 sample names). When price refresh fetches some symbols successfully but others fail, the status is now `PartialSuccess` instead of `Ok` with an error string. Price history backfill also uses `PartialSuccess`. `RefreshResult::add` tracks `PartialSuccess` entries in `failures` list for agent visibility.
