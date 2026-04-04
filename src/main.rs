@@ -1095,6 +1095,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent_hours: 24,
                             newly_triggered_only: newly_triggered,
                             urgency_filter: urgency,
+                            all_triggered: false,
                         },
                     ),
                     Some(cli::DataAlertsRedirect::List {
@@ -1127,6 +1128,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent_hours,
                             newly_triggered_only: false,
                             urgency_filter: None,
+                            all_triggered: false,
                         },
                     ),
                     None => {
@@ -3654,6 +3656,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent_hours: 24,
                             newly_triggered_only: false,
                             urgency_filter: None,
+                            all_triggered: false,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::List {
@@ -3686,6 +3689,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent_hours,
                             newly_triggered_only: false,
                             urgency_filter: None,
+                            all_triggered: false,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Remove { id } => (
@@ -3710,6 +3714,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent_hours: 24,
                             newly_triggered_only: false,
                             urgency_filter: None,
+                            all_triggered: false,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Check { today, newly_triggered, kind, condition, symbol, status, urgency, json } => (
@@ -3734,21 +3739,29 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent_hours: 24,
                             newly_triggered_only: newly_triggered,
                             urgency_filter: urgency,
+                            all_triggered: false,
                         },
                     ),
-                    cli::AnalyticsAlertsCommand::Ack { ids } => (
+                    cli::AnalyticsAlertsCommand::Ack {
+                        ids,
+                        all_triggered,
+                        condition,
+                        kind,
+                        symbol,
+                        json,
+                    } => (
                         "ack",
                         commands::alerts::AlertsArgs {
                             rule: None,
                             id: None,
                             ids,
-                            json: false,
+                            json,
                             status_filter: None,
                             today: false,
-                            kind: None,
-                            symbol: None,
+                            kind,
+                            symbol,
                             from_level: None,
-                            condition: None,
+                            condition,
                             label: None,
                             triggered: false,
                             since_hours: None,
@@ -3758,6 +3771,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent_hours: 24,
                             newly_triggered_only: false,
                             urgency_filter: None,
+                            all_triggered,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Rearm { id } => (
@@ -3782,6 +3796,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent_hours: 24,
                             newly_triggered_only: false,
                             urgency_filter: None,
+                            all_triggered: false,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::SeedDefaults => (
@@ -3806,6 +3821,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             recent_hours: 24,
                             newly_triggered_only: false,
                             urgency_filter: None,
+                            all_triggered: false,
                         },
                     ),
                     // Triage is handled above via early return

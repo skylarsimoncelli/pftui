@@ -63,6 +63,8 @@ pub struct AlertsArgs {
     pub newly_triggered_only: bool,
     /// Filter by urgency tier: critical, high, watch, low (check command).
     pub urgency_filter: Option<String>,
+    /// Bulk-ack all triggered alerts (optionally filtered by kind/condition/symbol).
+    pub all_triggered: bool,
 }
 
 fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
@@ -659,6 +661,11 @@ fn seed_alert(
 }
 
 fn run_ack(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
+    // Bulk-ack mode: --all-triggered with optional filters.
+    if args.all_triggered {
+        return run_ack_bulk(backend, args);
+    }
+
     // Collect IDs from both the bulk `ids` vec and the legacy single `id` field.
     let mut all_ids = args.ids.clone();
     if let Some(single) = args.id {
@@ -668,7 +675,7 @@ fn run_ack(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     }
 
     if all_ids.is_empty() {
-        eprintln!("Usage: pftui analytics alerts ack <ID> [<ID> ...]");
+        eprintln!("Usage: pftui analytics alerts ack <ID> [<ID> ...]\n       pftui analytics alerts ack --all-triggered [--condition X] [--kind Y] [--symbol Z]");
         std::process::exit(1);
     }
 
@@ -712,6 +719,106 @@ fn run_ack(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
 
     if !errors.is_empty() && acked.is_empty() {
         bail!("No alerts were acknowledged");
+    }
+
+    Ok(())
+}
+
+/// Bulk-acknowledge all triggered alerts, optionally filtered by kind/condition/symbol.
+fn run_ack_bulk(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
+    let triggered =
+        alerts_db::list_alerts_by_status_backend(backend, AlertStatus::Triggered)?;
+
+    // Apply optional filters (case-insensitive).
+    let filtered: Vec<_> = triggered
+        .into_iter()
+        .filter(|a| {
+            if let Some(ref k) = args.kind {
+                if !a.kind.to_string().eq_ignore_ascii_case(k) {
+                    return false;
+                }
+            }
+            if let Some(ref c) = args.condition {
+                match &a.condition {
+                    Some(cond) => {
+                        if !cond.eq_ignore_ascii_case(c) {
+                            return false;
+                        }
+                    }
+                    None => return false,
+                }
+            }
+            if let Some(ref s) = args.symbol {
+                if !a.symbol.eq_ignore_ascii_case(s) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        if args.json {
+            let result = serde_json::json!({
+                "acked": Vec::<serde_json::Value>::new(),
+                "total_triggered": 0,
+                "filters": {
+                    "kind": args.kind,
+                    "condition": args.condition,
+                    "symbol": args.symbol,
+                },
+            });
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        } else {
+            println!("No triggered alerts match the given filters.");
+        }
+        return Ok(());
+    }
+
+    let mut acked = Vec::new();
+    let mut errors = Vec::new();
+
+    for alert in &filtered {
+        match alerts_db::acknowledge_alert_backend(backend, alert.id) {
+            Ok(_) => {
+                let _ = triggered_alerts_db::acknowledge_for_alert_backend(backend, alert.id);
+                acked.push((alert.id, alert.rule_text.clone()));
+            }
+            Err(e) => {
+                errors.push(format!("Alert #{}: {}", alert.id, e));
+            }
+        }
+    }
+
+    if args.json {
+        let mut result = serde_json::json!({
+            "acked": acked.iter().map(|(id, rule)| serde_json::json!({"id": id, "rule": rule})).collect::<Vec<serde_json::Value>>(),
+            "total_triggered": filtered.len(),
+        });
+        if !errors.is_empty() {
+            result["errors"] = serde_json::json!(errors);
+        }
+        // Include active filters if any were specified.
+        if args.kind.is_some() || args.condition.is_some() || args.symbol.is_some() {
+            result["filters"] = serde_json::json!({
+                "kind": args.kind,
+                "condition": args.condition,
+                "symbol": args.symbol,
+            });
+        }
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        println!(
+            "✅ Acknowledged {}/{} triggered alerts",
+            acked.len(),
+            filtered.len()
+        );
+        for (id, rule) in &acked {
+            println!("   #{}: {}", id, rule);
+        }
+        for err in &errors {
+            eprintln!("⚠️  {}", err);
+        }
     }
 
     Ok(())
@@ -1467,6 +1574,7 @@ mod tests {
             recent_hours: 24,
             newly_triggered_only: false,
             urgency_filter: None,
+            all_triggered: false,
         }
     }
 
@@ -2231,6 +2339,215 @@ mod tests {
         };
         // All failed → error
         assert!(run_ack(&backend, &args).is_err());
+    }
+
+    #[test]
+    fn test_all_triggered_acks_all() {
+        let backend = setup_backend();
+        // Create and trigger two alerts (threshold below cached price of ~5500).
+        let id1 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5000",
+                rule_text: "GC=F above 5000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        let id2 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "BTC",
+                direction: "above",
+                condition: None,
+                threshold: "50000",
+                rule_text: "BTC above 50000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        check_alerts_backend_only(&backend).unwrap();
+        // Both should be triggered now.
+        assert_eq!(
+            alerts_db::get_alert_backend(&backend, id1)
+                .unwrap()
+                .unwrap()
+                .status,
+            AlertStatus::Triggered
+        );
+        assert_eq!(
+            alerts_db::get_alert_backend(&backend, id2)
+                .unwrap()
+                .unwrap()
+                .status,
+            AlertStatus::Triggered
+        );
+        // Bulk-ack all triggered.
+        let args = AlertsArgs {
+            all_triggered: true,
+            json: true,
+            ..default_args()
+        };
+        run_ack(&backend, &args).unwrap();
+        // Both should be acknowledged.
+        assert_eq!(
+            alerts_db::get_alert_backend(&backend, id1)
+                .unwrap()
+                .unwrap()
+                .status,
+            AlertStatus::Acknowledged
+        );
+        assert_eq!(
+            alerts_db::get_alert_backend(&backend, id2)
+                .unwrap()
+                .unwrap()
+                .status,
+            AlertStatus::Acknowledged
+        );
+    }
+
+    #[test]
+    fn test_all_triggered_with_symbol_filter() {
+        let backend = setup_backend();
+        let id1 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5000",
+                rule_text: "GC=F above 5000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        let id2 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "BTC",
+                direction: "above",
+                condition: None,
+                threshold: "50000",
+                rule_text: "BTC above 50000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        check_alerts_backend_only(&backend).unwrap();
+        // Only ack GC=F alerts.
+        let args = AlertsArgs {
+            all_triggered: true,
+            symbol: Some("GC=F".to_string()),
+            ..default_args()
+        };
+        run_ack(&backend, &args).unwrap();
+        // GC=F should be acknowledged, BTC should still be triggered.
+        assert_eq!(
+            alerts_db::get_alert_backend(&backend, id1)
+                .unwrap()
+                .unwrap()
+                .status,
+            AlertStatus::Acknowledged
+        );
+        assert_eq!(
+            alerts_db::get_alert_backend(&backend, id2)
+                .unwrap()
+                .unwrap()
+                .status,
+            AlertStatus::Triggered
+        );
+    }
+
+    #[test]
+    fn test_all_triggered_with_kind_filter() {
+        let backend = setup_backend();
+        let id1 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5000",
+                rule_text: "GC=F above 5000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        let id2 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "macro",
+                symbol: "GC=F",
+                direction: "above",
+                condition: Some("correlation_regime_break"),
+                threshold: "0.3",
+                rule_text: "GC=F macro correlation break",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        // Manually trigger both via DB.
+        alerts_db::update_alert_status_backend(
+            &backend,
+            id1,
+            AlertStatus::Triggered,
+            Some("2026-04-04T18:00:00Z"),
+        )
+        .unwrap();
+        alerts_db::update_alert_status_backend(
+            &backend,
+            id2,
+            AlertStatus::Triggered,
+            Some("2026-04-04T18:00:00Z"),
+        )
+        .unwrap();
+        // Only ack price alerts.
+        let args = AlertsArgs {
+            all_triggered: true,
+            kind: Some("price".to_string()),
+            ..default_args()
+        };
+        run_ack(&backend, &args).unwrap();
+        assert_eq!(
+            alerts_db::get_alert_backend(&backend, id1)
+                .unwrap()
+                .unwrap()
+                .status,
+            AlertStatus::Acknowledged
+        );
+        assert_eq!(
+            alerts_db::get_alert_backend(&backend, id2)
+                .unwrap()
+                .unwrap()
+                .status,
+            AlertStatus::Triggered
+        );
+    }
+
+    #[test]
+    fn test_all_triggered_no_matches_is_ok() {
+        let backend = setup_backend();
+        // No triggered alerts exist.
+        let args = AlertsArgs {
+            all_triggered: true,
+            ..default_args()
+        };
+        // Should succeed with empty result, not error.
+        run_ack(&backend, &args).unwrap();
     }
 
     #[test]
