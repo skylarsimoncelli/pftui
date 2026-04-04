@@ -49,9 +49,11 @@ struct GammaMarket {
     question: String,
     #[serde(rename = "outcomePrices")]
     outcome_prices: String, // JSON string: "[\"0.42\", \"0.58\"]"
-    #[serde(rename = "volume24hr")]
+    #[serde(rename = "volume24hr", default)]
     volume_24hr: f64,
+    #[serde(default)]
     active: bool,
+    #[serde(default)]
     closed: bool,
 }
 
@@ -201,11 +203,17 @@ const MACRO_TAG_SLUGS: &[(&str, &str)] = &[
     ("fed", "economics"),
     ("economics", "economics"),
     ("interest-rates", "economics"),
+    ("recession", "economics"),
+    ("inflation", "economics"),
     ("geopolitics", "geopolitics"),
     ("politics", "geopolitics"),
+    ("iran", "geopolitics"),
+    ("war", "geopolitics"),
     ("bitcoin", "crypto"),
     ("crypto", "crypto"),
     ("ai", "ai"),
+    ("ipo", "finance"),
+    ("stocks", "finance"),
 ];
 
 /// Gamma events API response structure.
@@ -223,9 +231,9 @@ struct GammaEventMarket {
     #[serde(rename = "conditionId")]
     condition_id: String,
     question: String,
-    #[serde(rename = "outcomePrices")]
-    outcome_prices: String, // JSON string: "[\"0.42\", \"0.58\"]"
-    #[serde(rename = "volume24hr")]
+    #[serde(rename = "outcomePrices", default)]
+    outcome_prices: String, // JSON string: "[\"0.42\", \"0.58\"]" — absent for resolved markets
+    #[serde(rename = "volume24hr", default)]
     volume_24hr: f64,
     #[serde(rename = "liquidityNum", default)]
     liquidity_num: f64,
@@ -335,6 +343,12 @@ fn parse_yes_probability(outcome_prices: &str) -> Option<f64> {
 fn is_entertainment_market(question: &str) -> bool {
     let q_lower = question.to_lowercase();
 
+    // Use word-boundary-aware matching for short acronyms to avoid false positives
+    // (e.g. "nfl" matching "conflict", "mlb" matching "Xmlb...")
+    let has_word = |word: &str| -> bool {
+        q_lower.split(|c: char| !c.is_alphanumeric()).any(|w| w == word)
+    };
+
     // Explicit entertainment/sports signals
     q_lower.contains("gta vi")
         || q_lower.contains("grand theft auto")
@@ -342,15 +356,15 @@ fn is_entertainment_market(question: &str) -> bool {
         || q_lower.contains("album")
         || q_lower.contains("playboi carti")
         || q_lower.contains("jesus christ return")
-        || q_lower.contains("nfl")
-        || q_lower.contains("nba")
-        || q_lower.contains("nhl")
-        || q_lower.contains("mlb")
-        || q_lower.contains("fifa")
+        || has_word("nfl")
+        || has_word("nba")
+        || has_word("nhl")
+        || has_word("mlb")
+        || has_word("fifa")
         || q_lower.contains("world cup")
         || q_lower.contains("march madness")
-        || q_lower.contains("ncaa")
-        || q_lower.contains("uefa")
+        || has_word("ncaa")
+        || has_word("uefa")
         || q_lower.contains("soccer")
         || q_lower.contains("super bowl")
         || q_lower.contains("champions league")
