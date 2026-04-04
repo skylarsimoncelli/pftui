@@ -527,11 +527,12 @@ Structural forces. Each finding gets 2-4 paragraphs from first principles.]
 
 ## Prediction Market Calibration
 
-[Pull live Polymarket data — pftui's cached data may be incomplete:
+[Pull Polymarket data from pftui (1,699 contracts tracked across geopolitics, economics, crypto, AI, finance):
 ```bash
-web_fetch "https://gamma-api.polymarket.com/events?limit=10&active=true&closed=false&tag_slug=geopolitics&order=volume24hr&ascending=false" --extractMode text
-web_fetch "https://gamma-api.polymarket.com/events?limit=10&active=true&closed=false&tag_slug=fed&order=volume24hr&ascending=false" --extractMode text
-web_fetch "https://gamma-api.polymarket.com/events?limit=5&active=true&closed=false&tag_slug=crypto&order=volume24hr&ascending=false" --extractMode text
+pftui data predictions markets --limit 30 --json
+pftui data predictions markets --category "geopolitics" --search "iran" --json
+pftui data predictions markets --category "economics" --search "fed" --json
+pftui data predictions markets --category "economics" --search "recession" --json
 ```
 
 Compare prediction market probabilities against our scenario probabilities:
