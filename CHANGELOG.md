@@ -1,5 +1,15 @@
 # Changelog
 
+### 2026-04-04 — feat: --section filter for morning-brief and evening-brief
+
+- What: `analytics morning-brief` and `analytics evening-brief` now support `--section <sections>` flag. Agents pass a comma-separated list of section names to compute only those sections; omitted sections are null/empty in JSON output. A `sections_requested` metadata field is included when filtering is active (omitted via `skip_serializing_if` when all sections are computed). Also extracted shared types (`ScenarioSummary`, `CorrelationBreakJson`, `AlertsSummary`, `SentimentCategoryJson`) and data builders into new `brief_common` module, eliminating duplication between `morning_brief.rs` and `evening_brief.rs`.
+- Why: Evening Analysis feedback (Apr 4): "3 analyst crons timing out at 600s" when running full evening-brief pipeline. The briefs compute 9-14 sections sequentially; agents that only need alerts + scenarios shouldn't wait for the full pipeline. Section filtering provides 7-31× speedup for targeted queries.
+- Performance: `morning-brief --section alerts,scenarios`: 157ms (was 4851ms, 31× faster). `evening-brief --section narrative,conviction_changes`: 829ms (was 6357ms, 7.7× faster). Full brief without `--section`: unchanged.
+- Sections: Morning-brief: `situation`, `deltas`, `synthesis`, `scenarios`, `correlation_breaks`, `catalysts`, `impact`, `alerts`, `news_sentiment`. Evening-brief adds: `narrative`, `opportunities`, `conviction_changes`, `prediction_stats`, `cross_timeframe_resolution`.
+- Files: `src/commands/brief_common.rs` (new, +528: shared types, builders, parse_sections, include_section, terminal helpers, 13 tests), `src/commands/morning_brief.rs` (+451/-451: refactored to use brief_common, added section filter, 3 new tests), `src/commands/evening_brief.rs` (+524/-524: refactored to use brief_common, added section filter, 3 new tests), `src/cli.rs` (+60: `--section` flag on both variants, 2 new CLI parse tests), `src/commands/mod.rs` (+1: brief_common module), `src/main.rs` (+8/-8: pass section through)
+- Tests: 2518 passing (+13 new), 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** `--section` is opt-in. Default behavior (all sections) unchanged. Existing JSON shape preserved when no filter applied.
+
 ### 2026-04-04 — feat: add urgency tier to alerts check JSON output + --urgency filter
 
 - What: `analytics alerts check --json` and `data alerts check --json` now include an `urgency` field on each alert result. Urgency is derived from the existing `classify_urgency()` triage logic: `critical` (newly triggered), `high` (previously triggered, not yet acknowledged), `watch` (armed, within 5% of threshold), `low` (armed, far from threshold). Acknowledged alerts omit the field entirely (`skip_serializing_if`). New `--urgency <tier>` filter flag on both `analytics alerts check` and `data alerts check` allows agents to filter results by urgency tier, composable with existing `--kind`, `--condition`, `--symbol`, `--status`, and `--newly-triggered` filters.
