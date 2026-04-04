@@ -68,14 +68,16 @@ _(none)_
 8. ✅ Stale/missing analyst views in analytics guidance (#598)
 9. ✅ Holiday-aware staleness on data prices + market-snapshot (#606)
 10. ✅ Urgency tier in alerts check JSON + --urgency filter (#617)
-10. ✅ Polymarket pipeline fix + 6 new tag slugs (#607)
-11. ✅ Postgres timestamp parsing fixes (#603, #604)
-12. ✅ Research-ingestion skill + routine integration
-13. ✅ Yahoo Finance retry with exponential backoff (#609)
-14. ✅ Macro market indicators in asset_names registry (#611)
-15. ✅ Partial-success reporting for price refresh pipeline (#613)
-16. ✅ Yahoo Finance semaphore-based concurrency limiting (#615)
+11. ✅ Polymarket pipeline fix + 6 new tag slugs (#607)
+12. ✅ Postgres timestamp parsing fixes (#603, #604)
+13. ✅ Research-ingestion skill + routine integration
+14. ✅ Yahoo Finance retry with exponential backoff (#609)
+15. ✅ Macro market indicators in asset_names registry (#611)
+16. ✅ Partial-success reporting for price refresh pipeline (#613)
+17. ✅ Yahoo Finance semaphore-based concurrency limiting (#615)
+18. ✅ --section filter for morning-brief and evening-brief (#620)
+19. ✅ Bulk-ack alerts with --all-triggered and filter flags (#624)
 
-**Release status:** v0.26.0 released Apr 4. 2505 tests passing, clippy clean. No P0 bugs.
+**Release status:** v0.26.0 released Apr 4. 2527 tests passing, clippy clean. No P0 bugs.
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.
