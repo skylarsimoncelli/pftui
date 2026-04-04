@@ -2340,11 +2340,32 @@ pub enum AnalyticsAlertsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Acknowledge one or more alerts by ID
+    /// Acknowledge one or more alerts by ID, or bulk-ack by filter
+    #[command(after_help = "Acknowledge by ID:\n  pftui analytics alerts ack 1 2 3\n\nBulk-acknowledge all triggered:\n  pftui analytics alerts ack --all-triggered\n\nBulk-acknowledge with filters:\n  pftui analytics alerts ack --all-triggered --condition correlation_break\n  pftui analytics alerts ack --all-triggered --kind macro\n  pftui analytics alerts ack --all-triggered --symbol GC=F\n  pftui analytics alerts ack --all-triggered --kind price --symbol BTC --json")]
     Ack {
         /// One or more alert IDs to acknowledge
-        #[arg(required = true)]
+        #[arg(conflicts_with_all = ["all_triggered", "ack_condition", "ack_kind", "ack_symbol"])]
         ids: Vec<i64>,
+
+        /// Acknowledge ALL triggered alerts (optionally filtered by --condition/--kind/--symbol)
+        #[arg(long = "all-triggered", id = "all_triggered")]
+        all_triggered: bool,
+
+        /// Filter bulk-ack by condition (e.g. correlation_break, price_above_sma200)
+        #[arg(long = "condition", id = "ack_condition", requires = "all_triggered")]
+        condition: Option<String>,
+
+        /// Filter bulk-ack by alert kind (price, technical, macro, scenario, ratio)
+        #[arg(long = "kind", id = "ack_kind", requires = "all_triggered")]
+        kind: Option<String>,
+
+        /// Filter bulk-ack by symbol (e.g. GC=F, BTC)
+        #[arg(long = "symbol", id = "ack_symbol", requires = "all_triggered")]
+        symbol: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Rearm alert by ID
     Rearm { id: i64 },
@@ -9383,5 +9404,130 @@ mod tests {
         assert_eq!(urgency.as_deref(), Some("watch"));
         assert!(json);
         Ok(())
+    }
+
+    #[test]
+    fn parse_alerts_ack_by_ids() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "analytics", "alerts", "ack", "1", "2", "3"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected alerts");
+        };
+        let AnalyticsAlertsCommand::Ack {
+            ids,
+            all_triggered,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected ack");
+        };
+        assert_eq!(ids, vec![1, 2, 3]);
+        assert!(!all_triggered);
+        assert!(!json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_alerts_ack_all_triggered() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "alerts",
+            "ack",
+            "--all-triggered",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected alerts");
+        };
+        let AnalyticsAlertsCommand::Ack {
+            ids,
+            all_triggered,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected ack");
+        };
+        assert!(ids.is_empty());
+        assert!(all_triggered);
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_alerts_ack_all_triggered_with_filters() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "alerts",
+            "ack",
+            "--all-triggered",
+            "--condition",
+            "correlation_break",
+            "--kind",
+            "macro",
+            "--symbol",
+            "GC=F",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected alerts");
+        };
+        let AnalyticsAlertsCommand::Ack {
+            ids,
+            all_triggered,
+            condition,
+            kind,
+            symbol,
+            json,
+        } = command
+        else {
+            panic!("expected ack");
+        };
+        assert!(ids.is_empty());
+        assert!(all_triggered);
+        assert_eq!(condition.as_deref(), Some("correlation_break"));
+        assert_eq!(kind.as_deref(), Some("macro"));
+        assert_eq!(symbol.as_deref(), Some("GC=F"));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_alerts_ack_ids_conflicts_with_all_triggered() {
+        // IDs and --all-triggered are mutually exclusive.
+        let result = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "alerts",
+            "ack",
+            "1",
+            "--all-triggered",
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_alerts_ack_filter_requires_all_triggered() {
+        // --condition without --all-triggered should fail.
+        let result = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "alerts",
+            "ack",
+            "--condition",
+            "price_cross",
+        ]);
+        assert!(result.is_err());
     }
 }
