@@ -7,6 +7,7 @@ static NAMES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
         ("GC=F", "Gold"),
         ("SI=F", "Silver"),
         ("CL=F", "Crude Oil"),
+        ("BZ=F", "Brent Crude"),
         ("PL=F", "Platinum"),
         ("PA=F", "Palladium"),
         ("HG=F", "Copper"),
@@ -99,6 +100,23 @@ static NAMES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
         ("COIN", "Coinbase"),
         ("MSTR", "MicroStrat"),
         ("PLTR", "Palantir"),
+        ("HOOD", "Robinhood"),
+        ("RKLB", "Rocket Lab"),
+        // Market indices
+        ("^GSPC", "S&P 500"),
+        ("^NDX", "Nasdaq 100"),
+        ("^IXIC", "Nasdaq Comp"),
+        ("^DJI", "Dow Jones"),
+        ("^RUT", "Russell 2000"),
+        ("^VIX", "CBOE VIX"),
+        // Treasury yields
+        ("^TNX", "10Y Treasury"),
+        ("^TYX", "30Y Treasury"),
+        ("^FVX", "5Y Treasury"),
+        ("^IRX", "13W T-Bill"),
+        // Dollar index
+        ("DX-Y.NYB", "Dollar Index"),
+        ("DXY", "Dollar Index"),
         // Popular ETFs/Funds
         ("SPY", "S&P 500"),
         ("QQQ", "Nasdaq 100"),
@@ -118,7 +136,13 @@ static NAMES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
         ("ITA", "Aerospace & Defense ETF"),
         ("XAR", "S&P Aerospace & Defense ETF"),
         ("PPA", "Aerospace & Defense ETF"),
+        ("HYG", "High Yield Corp"),
+        ("LQD", "Invest Grade Corp"),
         // Forex
+        ("GBPUSD=X", "GBP/USD"),
+        ("EURUSD=X", "EUR/USD"),
+        ("JPY=X", "USD/JPY"),
+        ("CNY=X", "USD/CNY"),
         ("USDGBP=X", "USD/GBP"),
         ("USDEUR=X", "USD/EUR"),
         ("USDJPY=X", "USD/JPY"),
@@ -241,9 +265,17 @@ pub fn infer_category(symbol: &str) -> AssetCategory {
         return AssetCategory::Commodity;
     }
 
-    // Forex pairs
+    // Forex pairs (=X suffix) and Dollar Index (DX-Y.NYB / DXY alias)
     if upper.ends_with("=X") {
         return AssetCategory::Forex;
+    }
+    if upper == "DX-Y.NYB" || upper == "DXY" {
+        return AssetCategory::Forex;
+    }
+
+    // Market indices (^ prefix: ^GSPC, ^VIX, ^TNX, ^DJI, etc.)
+    if upper.starts_with('^') {
+        return AssetCategory::Fund;
     }
 
     // Known crypto (check coingecko mapping)
@@ -274,6 +306,8 @@ pub fn infer_category(symbol: &str) -> AssetCategory {
             | "PPA"
             | "URA"
             | "URNM"
+            | "HYG"
+            | "LQD"
     ) {
         return AssetCategory::Fund;
     }
@@ -478,5 +512,81 @@ mod tests {
     fn fuzzy_score_no_match() {
         assert_eq!(fuzzy_score("xyz", "Bitcoin"), 0);
         assert_eq!(fuzzy_score("zzz", "Apple"), 0);
+    }
+
+    #[test]
+    fn resolve_name_macro_indicators() {
+        assert_eq!(resolve_name("^GSPC"), "S&P 500");
+        assert_eq!(resolve_name("^VIX"), "CBOE VIX");
+        assert_eq!(resolve_name("^TNX"), "10Y Treasury");
+        assert_eq!(resolve_name("^TYX"), "30Y Treasury");
+        assert_eq!(resolve_name("^FVX"), "5Y Treasury");
+        assert_eq!(resolve_name("^IRX"), "13W T-Bill");
+        assert_eq!(resolve_name("DX-Y.NYB"), "Dollar Index");
+        assert_eq!(resolve_name("DXY"), "Dollar Index");
+        assert_eq!(resolve_name("GBPUSD=X"), "GBP/USD");
+        assert_eq!(resolve_name("EURUSD=X"), "EUR/USD");
+    }
+
+    #[test]
+    fn resolve_name_additional_assets() {
+        assert_eq!(resolve_name("^NDX"), "Nasdaq 100");
+        assert_eq!(resolve_name("^DJI"), "Dow Jones");
+        assert_eq!(resolve_name("^RUT"), "Russell 2000");
+        assert_eq!(resolve_name("BZ=F"), "Brent Crude");
+        assert_eq!(resolve_name("HOOD"), "Robinhood");
+        assert_eq!(resolve_name("RKLB"), "Rocket Lab");
+        assert_eq!(resolve_name("HYG"), "High Yield Corp");
+        assert_eq!(resolve_name("LQD"), "Invest Grade Corp");
+        assert_eq!(resolve_name("JPY=X"), "USD/JPY");
+        assert_eq!(resolve_name("CNY=X"), "USD/CNY");
+    }
+
+    #[test]
+    fn infer_category_market_indices() {
+        assert_eq!(infer_category("^GSPC"), AssetCategory::Fund);
+        assert_eq!(infer_category("^VIX"), AssetCategory::Fund);
+        assert_eq!(infer_category("^TNX"), AssetCategory::Fund);
+        assert_eq!(infer_category("^DJI"), AssetCategory::Fund);
+        assert_eq!(infer_category("^RUT"), AssetCategory::Fund);
+        assert_eq!(infer_category("^TYX"), AssetCategory::Fund);
+        assert_eq!(infer_category("^FVX"), AssetCategory::Fund);
+        assert_eq!(infer_category("^IRX"), AssetCategory::Fund);
+    }
+
+    #[test]
+    fn infer_category_dollar_index() {
+        assert_eq!(infer_category("DX-Y.NYB"), AssetCategory::Forex);
+        assert_eq!(infer_category("DXY"), AssetCategory::Forex);
+        assert_eq!(infer_category("dx-y.nyb"), AssetCategory::Forex);
+        assert_eq!(infer_category("dxy"), AssetCategory::Forex);
+    }
+
+    #[test]
+    fn infer_category_credit_etfs() {
+        assert_eq!(infer_category("HYG"), AssetCategory::Fund);
+        assert_eq!(infer_category("LQD"), AssetCategory::Fund);
+    }
+
+    #[test]
+    fn search_names_finds_macro_indicators() {
+        let results = search_names("VIX");
+        let tickers: Vec<&str> = results.iter().map(|(t, _)| *t).collect();
+        assert!(tickers.contains(&"^VIX"));
+
+        let results = search_names("Dollar");
+        let tickers: Vec<&str> = results.iter().map(|(t, _)| *t).collect();
+        assert!(tickers.contains(&"DX-Y.NYB") || tickers.contains(&"DXY"));
+
+        let results = search_names("Treasury");
+        let tickers: Vec<&str> = results.iter().map(|(t, _)| *t).collect();
+        assert!(tickers.contains(&"^TNX"));
+    }
+
+    #[test]
+    fn search_names_finds_gbpusd() {
+        let results = search_names("GBP/USD");
+        let tickers: Vec<&str> = results.iter().map(|(t, _)| *t).collect();
+        assert!(tickers.contains(&"GBPUSD=X"));
     }
 }
