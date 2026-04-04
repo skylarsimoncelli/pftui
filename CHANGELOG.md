@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-04-04 — feat: add urgency tier to alerts check JSON output + --urgency filter
+
+- What: `analytics alerts check --json` and `data alerts check --json` now include an `urgency` field on each alert result. Urgency is derived from the existing `classify_urgency()` triage logic: `critical` (newly triggered), `high` (previously triggered, not yet acknowledged), `watch` (armed, within 5% of threshold), `low` (armed, far from threshold). Acknowledged alerts omit the field entirely (`skip_serializing_if`). New `--urgency <tier>` filter flag on both `analytics alerts check` and `data alerts check` allows agents to filter results by urgency tier, composable with existing `--kind`, `--condition`, `--symbol`, `--status`, and `--newly-triggered` filters.
+- Why: Low-Timeframe Analyst feedback (Apr 3): "alert severity calibration (some minor scan alerts overshadowed major correlation signals)." Previously, `alerts check --json` returned alerts with no urgency/severity indicator — agents had to infer priority from status and distance fields manually. Now agents can run `pftui analytics alerts check --urgency critical --json` to focus on the alerts that matter most, or sort/group by urgency in their analysis. The urgency tier was already computed internally for the triage dashboard but was not exposed in the standard check JSON output.
+- Files: `src/cli.rs` (+28: `--urgency` flag on `AnalyticsAlertsCommand::Check` and `DataAlertsRedirect::Check`, 2 new CLI parse tests), `src/commands/alerts.rs` (+155: `urgency` field on `AlertCheckJson` with `skip_serializing_if`, urgency filter in `run_check()`, `urgency_filter` on `AlertsArgs`, 3 new unit tests), `src/main.rs` (+9: pass `urgency_filter` through all 9 `AlertsArgs` constructors)
+- Tests: 2505 passing (+5 new: `test_check_urgency_field_in_json`, `test_check_urgency_filter`, `test_urgency_json_omitted_when_acknowledged`, `parse_alerts_check_urgency_filter`, `parse_data_alerts_check_urgency_filter`), 0 failed, 2 ignored. Clippy clean.
+- **Non-breaking:** New `urgency` field uses `skip_serializing_if = "Option::is_none"`. Existing JSON shape preserved for acknowledged alerts (no urgency field). New `--urgency` flag is opt-in — default behavior unchanged.
+
 ### 2026-04-04 — feat: Yahoo Finance semaphore-based concurrency limiting
 
 - What: Replace sequential Yahoo Finance price fetching (100ms delay between each request) with semaphore-gated concurrent fetching via `tokio::sync::Semaphore`. Up to `YAHOO_MAX_CONCURRENT` (4) requests run in-flight simultaneously. Both the main Yahoo fetch loop and the crypto Yahoo fallback loop use semaphore concurrency. New `fetch_yahoo_price_with_timeout()` helper extracts the per-symbol fetch-with-timeout pattern.

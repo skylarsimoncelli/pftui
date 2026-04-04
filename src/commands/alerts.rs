@@ -61,6 +61,8 @@ pub struct AlertsArgs {
     pub recent_hours: i64,
     /// Only show newly triggered alerts (check command).
     pub newly_triggered_only: bool,
+    /// Filter by urgency tier: critical, high, watch, low (check command).
+    pub urgency_filter: Option<String>,
 }
 
 fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
@@ -409,6 +411,14 @@ fn run_check(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     if let Some(status_filter) = &args.status_filter {
         let status_lower = status_filter.to_lowercase();
         results.retain(|r| r.rule.status.to_string().to_lowercase() == status_lower);
+    }
+    if let Some(urgency_filter) = &args.urgency_filter {
+        let urgency_lower = urgency_filter.to_lowercase();
+        results.retain(|r| {
+            classify_urgency(r)
+                .map(|u| u.to_string().to_lowercase() == urgency_lower)
+                .unwrap_or(false)
+        });
     }
 
     if results.is_empty() {
@@ -846,6 +856,11 @@ struct AlertCheckJson {
     direction: String,
     current_value: Option<String>,
     newly_triggered: bool,
+    /// Urgency tier: critical (newly triggered), high (previously triggered),
+    /// watch (armed, within 5% of threshold), low (armed, far from threshold).
+    /// None for acknowledged alerts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    urgency: Option<String>,
     distance_pct: Option<String>,
     triggered_at: Option<String>,
     recurring: bool,
@@ -870,6 +885,7 @@ impl From<&AlertCheckResult> for AlertCheckJson {
             direction: r.rule.direction.to_string(),
             current_value: r.current_value.map(|v| v.to_string()),
             newly_triggered: r.newly_triggered,
+            urgency: classify_urgency(r).map(|u| u.to_string()),
             distance_pct: r.distance_pct.map(|d| d.round_dp(2).to_string()),
             triggered_at: r.rule.triggered_at.clone(),
             recurring: r.rule.recurring,
@@ -1450,6 +1466,7 @@ mod tests {
             recent: false,
             recent_hours: 24,
             newly_triggered_only: false,
+            urgency_filter: None,
         }
     }
 
@@ -1859,6 +1876,201 @@ mod tests {
         acked.retain(|r| r.rule.status.to_string().to_lowercase() == status_lower);
         assert_eq!(acked.len(), 1);
         assert_eq!(acked[0].rule.rule_text, "GC=F above 5500");
+    }
+
+    #[test]
+    fn test_check_urgency_field_in_json() {
+        // Verify AlertCheckJson includes urgency from classify_urgency()
+
+        // Newly triggered → critical
+        let r = AlertCheckResult {
+            rule: AlertRule {
+                id: 1,
+                kind: crate::alerts::AlertKind::Price,
+                symbol: "BTC-USD".to_string(),
+                direction: crate::alerts::AlertDirection::Above,
+                condition: None,
+                threshold: "100000".to_string(),
+                rule_text: "BTC above 100000".to_string(),
+                status: crate::alerts::AlertStatus::Triggered,
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".to_string(),
+                triggered_at: Some("2026-04-04".to_string()),
+            },
+            current_value: Some(Decimal::from(105000)),
+            distance_pct: None,
+            newly_triggered: true,
+            trigger_data: serde_json::json!({}),
+        };
+        let json: AlertCheckJson = AlertCheckJson::from(&r);
+        assert_eq!(json.urgency.as_deref(), Some("critical"));
+
+        // Armed, far from threshold → low
+        let r2 = AlertCheckResult {
+            rule: AlertRule {
+                id: 2,
+                kind: crate::alerts::AlertKind::Price,
+                symbol: "GC=F".to_string(),
+                direction: crate::alerts::AlertDirection::Above,
+                condition: None,
+                threshold: "99999".to_string(),
+                rule_text: "GC=F above 99999".to_string(),
+                status: crate::alerts::AlertStatus::Armed,
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".to_string(),
+                triggered_at: None,
+            },
+            current_value: Some(Decimal::from(3000)),
+            distance_pct: Some(Decimal::from(50)),
+            newly_triggered: false,
+            trigger_data: serde_json::json!({}),
+        };
+        let json2: AlertCheckJson = AlertCheckJson::from(&r2);
+        assert_eq!(json2.urgency.as_deref(), Some("low"));
+
+        // Armed, within 5% → watch
+        let r3 = AlertCheckResult {
+            rule: AlertRule {
+                id: 3,
+                kind: crate::alerts::AlertKind::Price,
+                symbol: "GC=F".to_string(),
+                direction: crate::alerts::AlertDirection::Above,
+                condition: None,
+                threshold: "3100".to_string(),
+                rule_text: "GC=F above 3100".to_string(),
+                status: crate::alerts::AlertStatus::Armed,
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".to_string(),
+                triggered_at: None,
+            },
+            current_value: Some(Decimal::from(3000)),
+            distance_pct: Some(Decimal::from(3)),
+            newly_triggered: false,
+            trigger_data: serde_json::json!({}),
+        };
+        let json3: AlertCheckJson = AlertCheckJson::from(&r3);
+        assert_eq!(json3.urgency.as_deref(), Some("watch"));
+
+        // Acknowledged → None (omitted from JSON)
+        let r4 = AlertCheckResult {
+            rule: AlertRule {
+                id: 4,
+                kind: crate::alerts::AlertKind::Price,
+                symbol: "GC=F".to_string(),
+                direction: crate::alerts::AlertDirection::Above,
+                condition: None,
+                threshold: "5500".to_string(),
+                rule_text: "GC=F above 5500".to_string(),
+                status: crate::alerts::AlertStatus::Acknowledged,
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".to_string(),
+                triggered_at: Some("2026-04-01".to_string()),
+            },
+            current_value: Some(Decimal::from(5600)),
+            distance_pct: None,
+            newly_triggered: false,
+            trigger_data: serde_json::json!({}),
+        };
+        let json4: AlertCheckJson = AlertCheckJson::from(&r4);
+        assert!(json4.urgency.is_none());
+    }
+
+    #[test]
+    fn test_check_urgency_filter() {
+        let backend = setup_backend();
+        // Create an alert that will trigger (threshold = 5500, gold above that)
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5500",
+                rule_text: "GC=F above 5500",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        // Create an alert that stays armed (threshold = 99999)
+        alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "99999",
+                rule_text: "GC=F above 99999",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+
+        // Run check to evaluate
+        let results = check_alerts_backend_only(&backend).unwrap();
+        assert!(results.len() >= 2, "expected at least 2 alerts");
+
+        // Filter by urgency "critical" — should only include newly triggered
+        let mut critical = results.clone();
+        critical.retain(|r| {
+            classify_urgency(r)
+                .map(|u| u.to_string() == "critical")
+                .unwrap_or(false)
+        });
+        assert!(
+            critical.iter().all(|r| r.newly_triggered),
+            "critical urgency should only contain newly triggered alerts"
+        );
+
+        // Filter by urgency "low" — should only include armed alerts far from threshold
+        let mut low = results.clone();
+        low.retain(|r| {
+            classify_urgency(r)
+                .map(|u| u.to_string() == "low")
+                .unwrap_or(false)
+        });
+        for r in &low {
+            assert_eq!(r.rule.status, AlertStatus::Armed);
+            assert!(!r.newly_triggered);
+        }
+    }
+
+    #[test]
+    fn test_urgency_json_omitted_when_acknowledged() {
+        // Verify that urgency is omitted from serialized JSON for acknowledged alerts
+        let r = AlertCheckResult {
+            rule: AlertRule {
+                id: 1,
+                kind: crate::alerts::AlertKind::Price,
+                symbol: "BTC-USD".to_string(),
+                direction: crate::alerts::AlertDirection::Above,
+                condition: None,
+                threshold: "100000".to_string(),
+                rule_text: "BTC above 100000".to_string(),
+                status: crate::alerts::AlertStatus::Acknowledged,
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".to_string(),
+                triggered_at: Some("2026-04-01".to_string()),
+            },
+            current_value: Some(Decimal::from(105000)),
+            distance_pct: None,
+            newly_triggered: false,
+            trigger_data: serde_json::json!({}),
+        };
+        let json: AlertCheckJson = AlertCheckJson::from(&r);
+        let serialized = serde_json::to_string(&json).unwrap();
+        assert!(
+            !serialized.contains("\"urgency\""),
+            "urgency should be omitted for acknowledged alerts"
+        );
     }
 
     #[test]
