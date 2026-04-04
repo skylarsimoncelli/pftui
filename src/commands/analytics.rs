@@ -1106,6 +1106,14 @@ fn parse_dt(raw: &str) -> Option<DateTime<Utc>> {
     if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
         return Some(dt.with_timezone(&Utc));
     }
+    // Postgres-style timestamps: "2026-04-04 00:10:41.656262+00"
+    // %#z handles both short (+00) and full (+00:00) timezone offsets.
+    if let Ok(dt) = DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f%#z") {
+        return Some(dt.with_timezone(&Utc));
+    }
+    if let Ok(dt) = DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%#z") {
+        return Some(dt.with_timezone(&Utc));
+    }
     if let Ok(dt) = NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S") {
         return Some(DateTime::from_naive_utc_and_offset(dt, Utc));
     }

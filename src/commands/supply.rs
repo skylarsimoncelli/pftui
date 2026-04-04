@@ -112,6 +112,22 @@ fn display_metal(backend: &BackendConnection, symbol: &str, json: bool) -> Resul
 /// Get cached inventory or fetch fresh if stale.
 ///
 /// Cache policy: refresh if data is >24 hours old.
+/// Parse a timestamp string flexibly (RFC3339, Postgres-style, naive).
+fn parse_timestamp_flexible(raw: &str) -> Option<chrono::DateTime<Utc>> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    chrono::DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f%#z")
+        .or_else(|_| chrono::DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%#z"))
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc))
+        .or_else(|| {
+            chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
+                .ok()
+                .map(|dt| chrono::DateTime::from_naive_utc_and_offset(dt, Utc))
+        })
+}
+
 fn get_or_fetch_inventory(
     backend: &BackendConnection,
     symbol: &str,
@@ -119,9 +135,8 @@ fn get_or_fetch_inventory(
     // Try cache first
     if let Some(cached) = get_latest_inventory_backend(backend, symbol)? {
         // Parse fetched_at timestamp
-        let fetched_at = chrono::DateTime::parse_from_rfc3339(&cached.fetched_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now());
+        let fetched_at = parse_timestamp_flexible(&cached.fetched_at)
+            .unwrap_or_else(Utc::now);
 
         let age = Utc::now().signed_duration_since(fetched_at);
 

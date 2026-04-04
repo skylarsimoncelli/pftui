@@ -141,12 +141,23 @@ pub fn validate_reading(
 }
 
 pub fn is_fresh(fetched_at: &str, freshness_secs: i64) -> bool {
-    chrono::DateTime::parse_from_rfc3339(fetched_at)
+    parse_timestamp_utc(fetched_at)
         .map(|ts| {
-            let age = chrono::Utc::now().signed_duration_since(ts.with_timezone(&chrono::Utc));
+            let age = chrono::Utc::now().signed_duration_since(ts);
             age.num_seconds() <= freshness_secs
         })
         .unwrap_or(false)
+}
+
+/// Parse a timestamp string flexibly (RFC3339, Postgres-style, naive).
+fn parse_timestamp_utc(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&chrono::Utc));
+    }
+    chrono::DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f%#z")
+        .or_else(|_| chrono::DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%#z"))
+        .ok()
+        .map(|dt| dt.with_timezone(&chrono::Utc))
 }
 
 fn parse_snapshot(html: &str) -> Result<FedWatchSnapshot> {

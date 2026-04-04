@@ -431,6 +431,22 @@ async fn test_bls_api() -> DiagnosticCheck {
     }
 }
 
+/// Parse a timestamp string flexibly (RFC3339, Postgres-style, naive).
+fn parse_timestamp_flexible(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&chrono::Utc));
+    }
+    chrono::DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f%#z")
+        .or_else(|_| chrono::DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%#z"))
+        .ok()
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .or_else(|| {
+            chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
+                .ok()
+                .map(|dt| chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc))
+        })
+}
+
 async fn test_cache_freshness(
     backend: &DatabaseBackend,
     postgres_url: Option<&str>,
@@ -540,8 +556,8 @@ async fn test_cache_freshness(
     };
 
     let status = if let Some(ref last_fetch) = price_age {
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(last_fetch) {
-            let age = chrono::Utc::now().signed_duration_since(dt.with_timezone(&chrono::Utc));
+        if let Some(dt) = parse_timestamp_flexible(last_fetch) {
+            let age = chrono::Utc::now().signed_duration_since(dt);
             let age_mins = age.num_minutes();
 
             if age_mins < 15 {
