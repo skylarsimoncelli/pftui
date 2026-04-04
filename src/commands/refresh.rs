@@ -44,8 +44,9 @@ use crate::notify;
 use crate::price::{coingecko, yahoo};
 use crate::tui::views::economy;
 
-/// Delay between sequential Yahoo Finance API requests to avoid rate limiting.
-const YAHOO_RATE_LIMIT_DELAY: Duration = Duration::from_millis(100);
+/// Maximum number of concurrent Yahoo Finance API requests.
+/// Limits parallelism to avoid rate-limiting while still being faster than sequential.
+const YAHOO_MAX_CONCURRENT: usize = 4;
 /// Per-request timeout for remote price/history calls.
 const PRICE_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -655,11 +656,27 @@ async fn fetch_history_for_symbol(
     }
 }
 
+/// Fetch a single Yahoo symbol with timeout. Returns Ok(quote) or Err(error string).
+async fn fetch_yahoo_price_with_timeout(sym: &str) -> Result<PriceQuote, String> {
+    match tokio::time::timeout(PRICE_REQUEST_TIMEOUT, yahoo::fetch_price(sym)).await {
+        Ok(Ok(quote)) => Ok(quote),
+        Ok(Err(e)) => Err(format!("{}: {}", sym, e)),
+        Err(_) => Err(format!("{}: request timed out", sym)),
+    }
+}
+
 /// Fetch prices for all given symbols and return the results.
+///
+/// Yahoo Finance requests are limited to [`YAHOO_MAX_CONCURRENT`] in-flight
+/// at a time via a [`tokio::sync::Semaphore`], providing ~4× speedup over
+/// the previous sequential loop while staying well within rate limits.
 async fn fetch_all_prices(
     symbols: &[(String, AssetCategory)],
     config: &Config,
 ) -> (Vec<PriceQuote>, Vec<String>) {
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
+
     let mut quotes = Vec::new();
     let mut errors = Vec::new();
 
@@ -693,15 +710,22 @@ async fn fetch_all_prices(
         yahoo_symbols.push(pair);
     }
 
-    // Fetch Yahoo prices with rate limiting (~100ms between requests)
-    for (i, sym) in yahoo_symbols.iter().enumerate() {
-        if i > 0 {
-            tokio::time::sleep(YAHOO_RATE_LIMIT_DELAY).await;
-        }
-        match tokio::time::timeout(PRICE_REQUEST_TIMEOUT, yahoo::fetch_price(sym)).await {
+    // Fetch Yahoo prices concurrently, limited by semaphore
+    let semaphore = Arc::new(Semaphore::new(YAHOO_MAX_CONCURRENT));
+    let mut handles = Vec::with_capacity(yahoo_symbols.len());
+    for sym in &yahoo_symbols {
+        let sem = Arc::clone(&semaphore);
+        let sym = sym.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await.expect("semaphore closed");
+            fetch_yahoo_price_with_timeout(&sym).await
+        }));
+    }
+    for handle in handles {
+        match handle.await {
             Ok(Ok(quote)) => quotes.push(quote),
-            Ok(Err(e)) => errors.push(format!("{}: {}", sym, e)),
-            Err(_) => errors.push(format!("{}: request timed out", sym)),
+            Ok(Err(e)) => errors.push(e),
+            Err(e) => errors.push(format!("task panicked: {}", e)),
         }
     }
 
@@ -735,27 +759,33 @@ async fn fetch_all_prices(
         }
 
         if !cg_ok {
-            for (i, sym) in crypto_symbols.iter().enumerate() {
-                if i > 0 {
-                    tokio::time::sleep(YAHOO_RATE_LIMIT_DELAY).await;
-                }
-                let yahoo_sym = yahoo_crypto_symbol(sym);
-                match tokio::time::timeout(PRICE_REQUEST_TIMEOUT, yahoo::fetch_price(&yahoo_sym))
-                    .await
-                {
-                    Ok(Ok(mut quote)) => {
-                        quote.symbol = sym.clone();
-                        quotes.push(quote);
+            // Crypto Yahoo fallback also uses semaphore concurrency
+            let sem = Arc::new(Semaphore::new(YAHOO_MAX_CONCURRENT));
+            let mut crypto_handles = Vec::with_capacity(crypto_symbols.len());
+            for sym in &crypto_symbols {
+                let sem = Arc::clone(&sem);
+                let sym = sym.clone();
+                crypto_handles.push(tokio::spawn(async move {
+                    let _permit = sem.acquire().await.expect("semaphore closed");
+                    let yahoo_sym = yahoo_crypto_symbol(&sym);
+                    match fetch_yahoo_price_with_timeout(&yahoo_sym).await {
+                        Ok(mut quote) => {
+                            quote.symbol = sym;
+                            Ok(quote)
+                        }
+                        Err(e) => Err(format!(
+                            "{}: CoinGecko + Yahoo both failed: {}",
+                            sym,
+                            e.split(": ").last().unwrap_or(&e)
+                        )),
                     }
-                    Ok(Err(e)) => {
-                        errors.push(format!("{}: CoinGecko + Yahoo both failed: {}", sym, e));
-                    }
-                    Err(_) => {
-                        errors.push(format!(
-                            "{}: CoinGecko + Yahoo both failed: request timed out",
-                            sym
-                        ));
-                    }
+                }));
+            }
+            for handle in crypto_handles {
+                match handle.await {
+                    Ok(Ok(quote)) => quotes.push(quote),
+                    Ok(Err(e)) => errors.push(e),
+                    Err(e) => errors.push(format!("task panicked: {}", e)),
                 }
             }
         }
@@ -4548,5 +4578,59 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("Unknown refresh source"));
+    }
+
+    #[test]
+    fn yahoo_max_concurrent_is_reasonable() {
+        // Must be at least 1 (otherwise nothing fetches) and at most 10
+        // (Yahoo rate-limits aggressively above ~5 concurrent).
+        const _: () = assert!(YAHOO_MAX_CONCURRENT >= 1 && YAHOO_MAX_CONCURRENT <= 10);
+    }
+
+    #[tokio::test]
+    async fn semaphore_limits_concurrency() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::sync::Semaphore;
+
+        let sem = Arc::new(Semaphore::new(YAHOO_MAX_CONCURRENT));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let active = Arc::new(AtomicUsize::new(0));
+
+        let mut handles = Vec::new();
+        for _ in 0..20 {
+            let sem = Arc::clone(&sem);
+            let peak = Arc::clone(&peak);
+            let active = Arc::clone(&active);
+            handles.push(tokio::spawn(async move {
+                let _permit = sem.acquire().await.unwrap();
+                let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                peak.fetch_max(current, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                active.fetch_sub(1, Ordering::SeqCst);
+            }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+        let peak_val = peak.load(Ordering::SeqCst);
+        assert!(
+            peak_val <= YAHOO_MAX_CONCURRENT,
+            "peak concurrency {} exceeded limit {}",
+            peak_val, YAHOO_MAX_CONCURRENT
+        );
+        // Verify concurrency actually happened (not all sequential)
+        assert!(
+            peak_val > 1,
+            "peak concurrency {} — should be >1 for parallel execution",
+            peak_val
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_yahoo_price_with_timeout_handles_bad_symbol() {
+        // An invalid symbol should return an Err, not panic
+        let result = fetch_yahoo_price_with_timeout("ZZZZ_NONEXISTENT_SYMBOL_999").await;
+        assert!(result.is_err(), "expected error for invalid symbol");
     }
 }
