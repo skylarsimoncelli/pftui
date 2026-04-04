@@ -20,6 +20,12 @@ _(none)_
 **Scope:** Detect high-impact events from news sentiment spikes + catalyst scoring, auto-suggest `journal scenario add` with pre-filled parameters. Could integrate into `analytics guidance` or as a standalone `analytics scenario detect`.
 **Effort:** 1-2 weeks.
 
+### [Feedback] Yahoo Finance rate-limit resilience for parallel price fetches
+**Source:** Evening Analysis (Apr 4, 82/78).
+**Why:** Yahoo Finance rate-limiting during parallel price fetches causes data gaps. 3 analyst crons timing out at 600s may be related to slow/failing Yahoo requests blocking the refresh pipeline.
+**Scope:** Add staggered/throttled Yahoo API calls (e.g. semaphore limiting concurrent requests to 3-5), exponential backoff on 429s (similar to FRED retry in #490), and partial-success reporting so one failed symbol doesn't block the entire refresh.
+**Effort:** 3-5 days.
+
 ## P3 - Long Term
 
 ### F59: Capital Flow Tracking
@@ -39,31 +45,36 @@ _(none)_
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
 | Evening Analyst | 72% | 68% | Apr 1 | ↓ (78→72 use, 75→68 overall. Backtest 26.7% WR — routine/strategy issue, not tooling.) **Lowest overall scorer.** |
-| Medium-Timeframe Analyst | 85% | 88% | Apr 3 | ↑ (75→85 use, 80→88 overall. Alert thresholds shipped #572. Recovery.) |
-| Evening Analysis | 82% | 78% | Apr 4 | → (82→82 use, 78→78 overall. Holiday-aware staleness shipped #606. Wants auto event detection for scenarios.) |
+| Evening Analysis | 82% | 78% | Apr 4 | → (82→82 use, 78→78 overall. Holiday-aware staleness shipped #606. Wants auto event detection + Yahoo rate-limit fix.) |
+| Medium-Timeframe Analyst | 85% | 88% | Apr 3 | ↑ (75→85 use, 80→88 overall. Alert thresholds shipped #572.) |
 | Low-Timeframe Analyst | 85% | 88% | Apr 3 | ↑ (85→85 use, 80→88 overall. Break history shipped #588.) |
 | Macro-Timeframe Analyst | 80% | 85% | Mar 29 | → (stable.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 30 | → (stable.) |
 | Morning Intelligence | 75% | 85% | Mar 28 | → (stable.) |
 | Morning Brief Cron | 85% | 80% | Apr 2 | → (stable.) |
-| Morning Brief | 85% | 88% | Apr 3 | ↑ (85→85 use, 80→88 overall. ISM services already in brief; no code change needed.) |
+| Morning Brief | 85% | 88% | Apr 3 | ↑ (85→85 use, 80→88 overall.) |
 | Public Daily Report | 82% | 80% | Mar 28 | → (stable.) |
 | Dev Agent | 92% | 94% | Apr 3 | → (stable high.) |
 
 **Top 3 priorities based on feedback:**
 1. **Evening Analyst prediction quality** — lowest overall at 68%. Backtest shows 26.7% win rate. Not a tooling issue — routine over-weights mean reversion. Backtest diagnostics (#525) surfaces this automatically.
-2. **Evening Analysis auto-event detection** — 82/78. Portfolio-matrix coverage at 4% (now surfaced in `analytics guidance` via stale views tracking #599). Wants automatic scenario creation when major events occur. P2 item above.
-3. **Morning Intelligence stale** — 75/85 since Mar 28. No new feedback. Monitor.
+2. **Evening Analysis auto-event detection** — 82/78. Wants automatic scenario creation when major events occur. P2 item above.
+3. **Yahoo Finance rate-limit resilience** — Evening Analysis (Apr 4) reports rate-limiting during parallel fetches causing data gaps and cron timeouts. P2 item above.
 
-**Shipped since last review (Apr 3-4):**
-1. ✅ Configurable alert thresholds for correlation breaks + scenario probability shifts (#572) — addresses Medium-Timeframe Apr 3
-2. ✅ Portfolio snapshot alias for portfolio status (#575) — addresses Evening Analysis Apr 3
-3. ✅ Correlation break historical context + confirmation tracking (#588) — addresses Low-Timeframe Apr 3
-4. ✅ N+1 fix in movers command with batch history fetching (#590) — performance
-5. ✅ N+1 fix in load_or_compute_snapshots with batch snapshot fetching (#593) — performance (brief, summary, scan, watchlist)
-6. ✅ Stale/missing analyst views in analytics guidance (#599) — addresses Evening Analysis Apr 3 (4% coverage visibility)
-7. ✅ Holiday-aware staleness on data prices + market-snapshot (#606) — addresses Evening Analysis Apr 4 (stale-from-close vs stale-from-error)
+**Shipped since last review (Apr 3):**
+1. ✅ Configurable alert thresholds for correlation breaks + scenario probability shifts (#572)
+2. ✅ Portfolio snapshot alias for portfolio status (#575)
+3. ✅ Correlation break historical context + confirmation tracking (#588)
+4. ✅ N+1 query fixes: trends (#579), situation room (#581), movers (#590), snapshots (#593)
+5. ✅ --timing global flag for CLI latency monitoring (#583)
+6. ✅ Flaky World Bank tests marked #[ignore] (#585)
+7. ✅ --newly-triggered/--kind/--condition/--symbol/--status filters on alerts check (#596, #601)
+8. ✅ Stale/missing analyst views in analytics guidance (#598)
+9. ✅ Holiday-aware staleness on data prices + market-snapshot (#606)
+10. ✅ Polymarket pipeline fix + 6 new tag slugs (#607)
+11. ✅ Postgres timestamp parsing fixes (#603, #604)
+12. ✅ Research-ingestion skill + routine integration
 
-**Release status:** v0.25.0 tagged Apr 2. 20 feat/fix commits since tag. No P0 bugs. 2480 tests passing, clippy clean.
+**Release status:** v0.26.0 released Apr 4. 2480 tests passing, clippy clean. No P0 bugs.
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.
