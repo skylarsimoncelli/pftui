@@ -50,14 +50,14 @@ _(none)_
 | Morning Brief Cron | 85% | 80% | Apr 2 | → (stable.) |
 | Morning Brief | 85% | 88% | Apr 3 | ↑ (85→85 use, 80→88 overall.) |
 | Public Daily Report | 82% | 80% | Mar 28 | → (stable.) |
-| Dev Agent | 92% | 94% | Apr 3 | → (stable high.) |
+| Dev Agent | 92% | 94% | Apr 4 | → (stable high.) |
 
 **Top 3 priorities based on feedback:**
 1. **Evening Analyst prediction quality** — lowest overall at 68%. Backtest shows 26.7% win rate. Not a tooling issue — routine over-weights mean reversion. Backtest diagnostics (#525) surfaces this automatically.
 2. **Evening Analysis auto-event detection** — 82/78. Wants automatic scenario creation when major events occur. P2 item above.
 3. **Yahoo Finance rate-limit resilience** — ✅ Complete. Semaphore concurrency (#615), retry (#609), partial-success (#613), macro indicators (#611) all shipped.
 
-**Shipped since last review (Apr 3):**
+**Shipped since last review (Apr 4):**
 1. ✅ Configurable alert thresholds for correlation breaks + scenario probability shifts (#572)
 2. ✅ Portfolio snapshot alias for portfolio status (#575)
 3. ✅ Correlation break historical context + confirmation tracking (#588)
@@ -67,6 +67,7 @@ _(none)_
 7. ✅ --newly-triggered/--kind/--condition/--symbol/--status filters on alerts check (#596, #601)
 8. ✅ Stale/missing analyst views in analytics guidance (#598)
 9. ✅ Holiday-aware staleness on data prices + market-snapshot (#606)
+10. ✅ Urgency tier in alerts check JSON + --urgency filter (#617)
 10. ✅ Polymarket pipeline fix + 6 new tag slugs (#607)
 11. ✅ Postgres timestamp parsing fixes (#603, #604)
 12. ✅ Research-ingestion skill + routine integration
@@ -75,6 +76,6 @@ _(none)_
 15. ✅ Partial-success reporting for price refresh pipeline (#613)
 16. ✅ Yahoo Finance semaphore-based concurrency limiting (#615)
 
-**Release status:** v0.26.0 released Apr 4. 2500 tests passing, clippy clean. No P0 bugs.
+**Release status:** v0.26.0 released Apr 4. 2505 tests passing, clippy clean. No P0 bugs.
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.
