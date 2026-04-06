@@ -3133,6 +3133,21 @@ pub enum AnalyticsScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Detect high-impact news/catalyst clusters that may warrant new scenarios
+    #[command(
+        after_help = "Scans recent news sentiment plus upcoming catalysts to suggest new macro\nscenarios before they are added manually.\n\nThis command is suggestion-only. It never writes scenarios automatically.\nUse the emitted `journal scenario add ...` command after review.\n\nExamples:\n  pftui analytics scenario detect\n  pftui analytics scenario detect --hours 48 --limit 5 --json\n\nSee also: analytics catalysts, analytics news-sentiment, journal scenario add"
+    )]
+    Detect {
+        /// Lookback window for recent news items (default: 72h)
+        #[arg(long, default_value = "72")]
+        hours: i64,
+        /// Maximum suggestions to return
+        #[arg(long, default_value = "5")]
+        limit: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// Consolidated portfolio impact matrix across all scenarios and presets
     #[command(
         name = "impact-matrix",
@@ -5732,6 +5747,36 @@ mod tests {
         };
 
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_detect_with_options() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "detect",
+            "--hours",
+            "48",
+            "--limit",
+            "3",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command: AnalyticsScenarioCommand::Detect { hours, limit, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario detect command");
+        };
+
+        assert_eq!(hours, 48);
+        assert_eq!(limit, 3);
+        assert!(json);
     }
 
     #[test]

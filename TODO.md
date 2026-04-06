@@ -86,7 +86,7 @@
 **Scope:** Add a `data predictions suggest-mappings` or enrich `analytics guidance` with a "unmapped high-relevance contracts" section (top N contracts by liquidity that match active scenario keywords). Files: `src/data/predictions.rs`, `src/commands/guidance.rs`.
 **Effort:** 2–4 hours.
 
-### [Feedback] Automatic event detection for scenario creation
+### [x] [Feedback] Automatic event detection for scenario creation
 **Source:** Evening Analysis (Apr 3, 82/78).
 **Why:** When major macro events occur (e.g. Warsh nomination, tariff announcements, FOMC surprises), agents should automatically create or suggest new scenarios. Currently agents must manually identify events and run `journal scenario add`. Auto-detection from news/calendar/catalyst feeds would close this gap.
 **Scope:** Detect high-impact events from news sentiment spikes + catalyst scoring, auto-suggest `journal scenario add` with pre-filled parameters. Could integrate into `analytics guidance` or as a standalone `analytics scenario detect`.

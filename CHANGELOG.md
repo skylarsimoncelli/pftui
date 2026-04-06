@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — feat: add scenario event detection
+
+- What: added `pftui analytics scenario detect`, a suggestion-only workflow that scans recent news sentiment plus upcoming catalysts to surface new macro-scenario candidates before agents add them manually. Each suggestion includes seeded probability, description, triggers, impact notes, supporting evidence, and a ready-to-run `journal scenario add` command.
+- Why: major macro events were being handled manually, which meant new scenario tracking lagged behind news and catalyst clusters.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/scenario_detect.rs`
+- Tests: added CLI parse coverage plus focused detection tests for new-theme creation, duplicate suppression against active scenarios, and bullish-theme sentiment matching.
+
 ### 2026-04-06 — feat: add bulk prediction-lesson workflows
 
 - What: `pftui journal prediction lessons` now supports `--unresolved` to show only wrong predictions still missing structured lessons, and `pftui journal prediction lessons bulk --input <file.json>` to add many lessons in one run from a JSON array. The bulk path also supports `--unresolved` to skip already-covered predictions and `--dry-run` for backlog review without writes.

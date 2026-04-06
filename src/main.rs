@@ -4149,6 +4149,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 cli::AnalyticsScenarioCommand::Suggest { json } => {
                     commands::scenario_suggest::run(&backend, json)
                 }
+                cli::AnalyticsScenarioCommand::Detect { hours, limit, json } => {
+                    commands::scenario_detect::run(&backend, hours, limit, json)
+                }
                 cli::AnalyticsScenarioCommand::ImpactMatrix { json } => {
                     commands::impact_matrix::run(&backend, &config, json)
                 }
