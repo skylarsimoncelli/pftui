@@ -3723,6 +3723,16 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         #[command(subcommand)]
         command: AnalyticsPowerFlowCommand,
     },
+    /// Ranked power-structure checklist combining regime flows, FIC/MIC balance, and conflict stress
+    #[command(name = "power-signals", after_help = "Aggregates the existing power-structure stack into one ranked checklist:\n  - `analytics regime-flows`\n  - `analytics power-flow assess`\n  - `analytics power-flow conflicts`\n\nUse this when an agent needs one JSON call for geopolitical stress, safe-haven rotation,\nand FIC/MIC/TIC balance instead of stitching three commands together.")]
+    PowerSignals {
+        /// Number of days to use for power-flow/conflict lookback (default: 30)
+        #[arg(long, default_value_t = 30)]
+        days: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// News sentiment analysis: keyword-based scoring and aggregation of cached news
     #[command(name = "news-sentiment")]
     NewsSentiment {
@@ -7966,6 +7976,19 @@ mod tests {
             panic!("expected RegimeFlows");
         };
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_power_signals_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "power-signals", "--days", "14", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::PowerSignals { days, json } = command else {
+            panic!("expected PowerSignals");
+        };
+        assert_eq!(days, 14);
+        assert!(json);
     }
 
     #[test]

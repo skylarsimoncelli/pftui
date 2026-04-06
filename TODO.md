@@ -74,7 +74,7 @@
 **Scope:** Add `after_help` on `analytics macro` commands pointing to `journal scenario update`. Optionally add a thin alias `analytics macro outcomes update` that delegates to the journal path. Files: `src/cli.rs`, `src/analytics/macro_cmd.rs`.
 **Effort:** 30 minutes.
 
-### [Feedback] Power composite signal dashboard (`analytics power-signals`)
+### [x] [Feedback] Power composite signal dashboard (`analytics power-signals`)
 **Source:** Low-Timeframe Analyst (Apr 5, 80/78).
 **Why:** Analyst manually checks gold/oil/defense/VIX as a "power structure checklist" each run. A first-class `analytics power-signals` command would standardize this across agents and save time per session.
 **Scope:** New `analytics power-signals` command aggregating regime-flows, power-flow assess, and FIC/MIC conflict output into a single ranked signal table. JSON + terminal output. Reuse existing `analytics regime-flows` and `analytics power-flow conflicts` backends. Files: `src/analytics/power_signals.rs` (new), `src/cli.rs`, `src/main.rs`.

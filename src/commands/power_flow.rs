@@ -174,102 +174,91 @@ pub fn run_balance(
 // ── Assess ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
-struct AssessOutput {
-    period_days: usize,
-    total_events: usize,
-    complexes: Vec<ComplexAssessment>,
-    dominant_complex: Option<String>,
-    power_shifts: Vec<PowerShift>,
-    key_events: Vec<KeyEvent>,
-    trend_analysis: TrendAnalysis,
-    summary: String,
+pub struct AssessOutput {
+    pub period_days: usize,
+    pub total_events: usize,
+    pub complexes: Vec<ComplexAssessment>,
+    pub dominant_complex: Option<String>,
+    pub power_shifts: Vec<PowerShift>,
+    pub key_events: Vec<KeyEvent>,
+    pub trend_analysis: TrendAnalysis,
+    pub summary: String,
 }
 
 #[derive(Debug, Serialize)]
-struct ComplexAssessment {
-    complex: String,
-    net_score: i64,
-    gaining_events: usize,
-    losing_events: usize,
-    gaining_magnitude: i64,
-    losing_magnitude: i64,
+pub struct ComplexAssessment {
+    pub complex: String,
+    pub net_score: i64,
+    pub gaining_events: usize,
+    pub losing_events: usize,
+    pub gaining_magnitude: i64,
+    pub losing_magnitude: i64,
     /// "ascending", "descending", "stable", "volatile"
-    trend: String,
+    pub trend: String,
     /// First-half vs second-half net score
-    first_half_net: i64,
-    second_half_net: i64,
+    pub first_half_net: i64,
+    pub second_half_net: i64,
     /// Average magnitude of events involving this complex
-    avg_magnitude: f64,
-    top_events: Vec<String>,
+    pub avg_magnitude: f64,
+    pub top_events: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
-struct PowerShift {
+pub struct PowerShift {
     /// e.g. "FIC → MIC"
-    flow: String,
-    event_count: usize,
-    total_magnitude: i64,
+    pub flow: String,
+    pub event_count: usize,
+    pub total_magnitude: i64,
     /// Most recent event in this flow
-    latest_event: String,
-    latest_date: String,
+    pub latest_event: String,
+    pub latest_date: String,
 }
 
 #[derive(Debug, Serialize)]
-struct KeyEvent {
-    date: String,
-    event: String,
-    source_complex: String,
-    direction: String,
-    target_complex: Option<String>,
-    magnitude: i32,
+pub struct KeyEvent {
+    pub date: String,
+    pub event: String,
+    pub source_complex: String,
+    pub direction: String,
+    pub target_complex: Option<String>,
+    pub magnitude: i32,
 }
 
 #[derive(Debug, Serialize)]
-struct TrendAnalysis {
+pub struct TrendAnalysis {
     /// "FIC-dominant", "MIC-dominant", "TIC-dominant", "contested", "no-data"
-    regime: String,
+    pub regime: String,
     /// How concentrated power is (0.0 = evenly split, 1.0 = one complex has all)
-    concentration: f64,
+    pub concentration: f64,
     /// Whether the period saw a regime change
-    regime_shift_detected: bool,
+    pub regime_shift_detected: bool,
     /// Description of the shift if detected
-    shift_description: Option<String>,
+    pub shift_description: Option<String>,
 }
 
-pub fn run_assess(
+pub fn build_assess_output(
     backend: &BackendConnection,
     days: usize,
-    complex_filter: Option<&str>,
-    json_output: bool,
-) -> Result<()> {
+) -> Result<AssessOutput> {
     let entries = power_flows::list_power_flows_backend(backend, None, None, days)?;
     let balances = power_flows::compute_balance_backend(backend, days)?;
 
     if entries.is_empty() {
-        if json_output {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json!({
-                    "period_days": days,
-                    "total_events": 0,
-                    "complexes": [],
-                    "dominant_complex": null,
-                    "power_shifts": [],
-                    "key_events": [],
-                    "trend_analysis": {
-                        "regime": "no-data",
-                        "concentration": 0.0,
-                        "regime_shift_detected": false,
-                        "shift_description": null,
-                    },
-                    "summary": format!("No power flow data in the last {} days.", days),
-                }))?
-            );
-        } else {
-            println!("No power flow data in the last {} days.", days);
-            println!("Use `pftui analytics power-flow add` to log power shift events.");
-        }
-        return Ok(());
+        return Ok(AssessOutput {
+            period_days: days,
+            total_events: 0,
+            complexes: vec![],
+            dominant_complex: None,
+            power_shifts: vec![],
+            key_events: vec![],
+            trend_analysis: TrendAnalysis {
+                regime: "no-data".to_string(),
+                concentration: 0.0,
+                regime_shift_detected: false,
+                shift_description: None,
+            },
+            summary: format!("No power flow data in the last {} days.", days),
+        });
     }
 
     // Sort entries by date ascending for trend analysis
@@ -418,27 +407,38 @@ pub fn run_assess(
         sorted_entries.len(),
     );
 
+    Ok(AssessOutput {
+        period_days: days,
+        total_events: sorted_entries.len(),
+        complexes: complex_assessments,
+        dominant_complex,
+        power_shifts,
+        key_events,
+        trend_analysis,
+        summary,
+    })
+}
+
+pub fn run_assess(
+    backend: &BackendConnection,
+    days: usize,
+    complex_filter: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let output = build_assess_output(backend, days)?;
+
     // Apply complex filter for display if specified
     let filtered_assessments: Vec<&ComplexAssessment> = if let Some(filter) = complex_filter {
-        complex_assessments
+        output
+            .complexes
             .iter()
             .filter(|c| c.complex == filter)
             .collect()
     } else {
-        complex_assessments.iter().collect()
+        output.complexes.iter().collect()
     };
 
     if json_output {
-        let output = AssessOutput {
-            period_days: days,
-            total_events: sorted_entries.len(),
-            complexes: complex_assessments,
-            dominant_complex,
-            power_shifts,
-            key_events,
-            trend_analysis,
-            summary,
-        };
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         println!("POWER FLOW ASSESSMENT (last {} days)", days);
@@ -482,10 +482,10 @@ pub fn run_assess(
         }
 
         if complex_filter.is_none() {
-            if !power_shifts.is_empty() {
+            if !output.power_shifts.is_empty() {
                 println!("POWER SHIFTS");
                 println!("{}", "─".repeat(70));
-                for ps in &power_shifts {
+                for ps in &output.power_shifts {
                     println!(
                         "  {} — {} events, total mag {} (latest: {})",
                         ps.flow, ps.event_count, ps.total_magnitude, ps.latest_date
@@ -494,10 +494,10 @@ pub fn run_assess(
                 println!();
             }
 
-            if !key_events.is_empty() {
+            if !output.key_events.is_empty() {
                 println!("KEY EVENTS (magnitude ≥ 4)");
                 println!("{}", "─".repeat(70));
-                for ke in &key_events {
+                for ke in &output.key_events {
                     let target_str = ke
                         .target_complex
                         .as_deref()
@@ -516,14 +516,15 @@ pub fn run_assess(
                 println!();
             }
 
-            println!("REGIME: {}", trend_analysis.regime);
+            println!("REGIME: {}", output.trend_analysis.regime);
             println!(
                 "Concentration: {:.0}%{}",
-                trend_analysis.concentration * 100.0,
-                if trend_analysis.regime_shift_detected {
+                output.trend_analysis.concentration * 100.0,
+                if output.trend_analysis.regime_shift_detected {
                     format!(
                         " — SHIFT DETECTED: {}",
-                        trend_analysis
+                        output
+                            .trend_analysis
                             .shift_description
                             .as_deref()
                             .unwrap_or("unknown")
@@ -533,7 +534,7 @@ pub fn run_assess(
                 }
             );
             println!();
-            println!("{}", summary);
+            println!("{}", output.summary);
         }
     }
 

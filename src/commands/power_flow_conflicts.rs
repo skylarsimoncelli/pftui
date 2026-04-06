@@ -634,11 +634,10 @@ fn build_assessment(
 
 // ── Public Entry Point ───────────────────────────────────────────────
 
-pub fn run(
+pub fn build_output(
     backend: &BackendConnection,
     days: usize,
-    json_output: bool,
-) -> Result<()> {
+) -> Result<ConflictsOutput> {
     // 1. Get current regime
     let regime_snap = regime_snapshots::get_current_backend(backend)?;
     let regime_str = regime_snap
@@ -680,7 +679,7 @@ pub fn run(
     // 7. Assessment
     let assessment = build_assessment(&indicators, &power_flow, &regime_ctx, &defense, &energy);
 
-    let output = ConflictsOutput {
+    Ok(ConflictsOutput {
         regime: regime_ctx,
         defense,
         energy,
@@ -689,8 +688,15 @@ pub fn run(
         conflict_indicators: indicators,
         power_flow_context: power_flow,
         assessment,
-    };
+    })
+}
 
+pub fn run(
+    backend: &BackendConnection,
+    days: usize,
+    json_output: bool,
+) -> Result<()> {
+    let output = build_output(backend, days)?;
     if json_output {
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {

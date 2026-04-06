@@ -4258,6 +4258,9 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::AnalyticsCommand::RegimeFlows { json } => {
                 commands::regime_flows::run(&backend, json)
             }
+            cli::AnalyticsCommand::PowerSignals { days, json } => {
+                commands::power_signals::run(&backend, days, json)
+            }
             cli::AnalyticsCommand::RegimeTransitions { json } => {
                 commands::regime_transitions::run(&backend, json)
             }

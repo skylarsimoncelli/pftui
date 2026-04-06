@@ -672,7 +672,7 @@ fn build_summary(
 
 // ── Public Entry Point ───────────────────────────────────────────────
 
-pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
+pub fn build_output(backend: &BackendConnection) -> Result<RegimeFlowsOutput> {
     // 1. Get current regime
     let regime_snap = regime_snapshots::get_current_backend(backend)?;
     let regime_str = regime_snap
@@ -710,14 +710,17 @@ pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
     // 6. Build summary
     let summary = build_summary(&ratios, &flows, &patterns, &regime_str);
 
-    let output = RegimeFlowsOutput {
+    Ok(RegimeFlowsOutput {
         regime: regime_ctx,
         ratios,
         flow_signals: flows,
         patterns,
         summary,
-    };
+    })
+}
 
+pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let output = build_output(backend)?;
     if json_output {
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {

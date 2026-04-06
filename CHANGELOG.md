@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — feat: add `analytics power-signals`
+
+- What: added `pftui analytics power-signals` as a single ranked power-structure checklist for agents. The new command aggregates `analytics regime-flows`, `analytics power-flow assess`, and `analytics power-flow conflicts` into one JSON/terminal view with an overall bias, composite score, dominant complex, and ranked signal rows covering regime patterns, conflict triggers, power-flow imbalances, and defense/energy ratio moves.
+- Why: P2 feedback from Low-Timeframe Analyst reported manually stitching together gold/oil, defense, VIX, and FIC/MIC checks every run. This standardizes that workflow into one command and one payload.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/power_signals.rs`, `src/commands/regime_flows.rs`, `src/commands/power_flow.rs`, `src/commands/power_flow_conflicts.rs`, `src/commands/mod.rs`
+- Tests: added CLI parse coverage for `analytics power-signals` and unit coverage for the new signal-ranking helpers.
+
 ### 2026-04-06 — docs: point `analytics macro outcomes` users to `journal scenario update`
 
 - What: `pftui analytics macro outcomes --help` now explicitly states that the command is read-only and points users to the supported probability-edit path: `pftui journal scenario update ... --probability ...`, including both name-based and `--id` examples.
