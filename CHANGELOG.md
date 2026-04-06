@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — feat: add multi-tag support to `journal entry add`
+
+- What: `pftui journal entry add` now accepts repeated `--tag` flags and a comma-separated `--tags` alias. Tags are normalized into one stored comma-separated value, and journal tag filters/stats/tag listing now understand multi-tag entries instead of treating the whole string as one opaque tag.
+- Why: P2 feedback from medium-agent reported having to collapse several relevant tags into one, which made later filtering and stats less useful.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/journal.rs`, `src/db/journal.rs`
+- Tests: added CLI parse coverage for `--tags`, normalization tests, and SQLite journal tests covering multi-tag filter and tag aggregation behavior.
+
 ### 2026-04-06 — feat: add `analytics power-signals`
 
 - What: added `pftui analytics power-signals` as a single ranked power-structure checklist for agents. The new command aggregates `analytics regime-flows`, `analytics power-flow assess`, and `analytics power-flow conflicts` into one JSON/terminal view with an overall bias, composite score, dominant complex, and ranked signal rows covering regime patterns, conflict triggers, power-flow imbalances, and defense/energy ratio moves.

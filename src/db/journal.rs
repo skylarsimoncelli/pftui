@@ -6,6 +6,31 @@ use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 use crate::db::backend::BackendConnection;
 use crate::db::query;
 
+fn split_tags(tag_value: &str) -> Vec<String> {
+    tag_value
+        .split(',')
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn aggregate_tags<I>(tag_values: I) -> Vec<(String, usize)>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for value in tag_values {
+        for tag in split_tags(&value) {
+            *counts.entry(tag).or_insert(0) += 1;
+        }
+    }
+
+    let mut tags: Vec<(String, usize)> = counts.into_iter().collect();
+    tags.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    tags
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JournalEntry {
     pub id: i64,
@@ -105,9 +130,19 @@ pub fn list_entries(
         query.push_str(&format!(" AND timestamp >= '{}'", since_date));
     }
     if let Some(tag_filter) = tag {
-        let tags: Vec<&str> = tag_filter.split(',').collect();
-        let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        query.push_str(&format!(" AND tag IN ({})", placeholders));
+        let tags: Vec<&str> = tag_filter
+            .split(',')
+            .map(str::trim)
+            .filter(|tag| !tag.is_empty())
+            .collect();
+        if !tags.is_empty() {
+            let clauses = tags
+                .iter()
+                .map(|_| "(',' || COALESCE(tag, '') || ',') LIKE ?")
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            query.push_str(&format!(" AND ({})", clauses));
+        }
     }
     if let Some(sym) = symbol {
         query.push_str(&format!(" AND symbol = '{}'", sym));
@@ -124,9 +159,16 @@ pub fn list_entries(
 
     let mut stmt = conn.prepare(&query)?;
     let rows = if let Some(tag_filter) = tag {
-        let tags: Vec<&str> = tag_filter.split(',').collect();
-        let params: Vec<&dyn rusqlite::ToSql> =
-            tags.iter().map(|t| t as &dyn rusqlite::ToSql).collect();
+        let tag_patterns: Vec<String> = tag_filter
+            .split(',')
+            .map(str::trim)
+            .filter(|tag| !tag.is_empty())
+            .map(|tag| format!("%,{},%", tag))
+            .collect();
+        let params: Vec<&dyn rusqlite::ToSql> = tag_patterns
+            .iter()
+            .map(|pattern| pattern as &dyn rusqlite::ToSql)
+            .collect();
         stmt.query_map(&params[..], JournalEntry::from_row)?
     } else {
         stmt.query_map([], JournalEntry::from_row)?
@@ -244,14 +286,14 @@ pub fn remove_entry_backend(backend: &BackendConnection, id: i64) -> Result<()> 
 }
 
 pub fn get_all_tags(conn: &Connection) -> Result<Vec<(String, usize)>> {
-    let mut stmt = conn.prepare("SELECT tag, COUNT(*) as count FROM journal WHERE tag IS NOT NULL GROUP BY tag ORDER BY count DESC")?;
-    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let mut stmt = conn.prepare("SELECT tag FROM journal WHERE tag IS NOT NULL")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
 
-    let mut tags = Vec::new();
+    let mut tag_values = Vec::new();
     for tag in rows {
-        tags.push(tag?);
+        tag_values.push(tag?);
     }
-    Ok(tags)
+    Ok(aggregate_tags(tag_values))
 }
 
 pub fn get_all_tags_backend(backend: &BackendConnection) -> Result<Vec<(String, usize)>> {
@@ -403,12 +445,13 @@ fn list_entries_postgres(
                 .filter(|s| !s.is_empty())
                 .collect();
             if !tags.is_empty() {
-                qb.push(" AND tag IN (");
-                let mut separated = qb.separated(", ");
+                qb.push(" AND (");
+                let mut separated = qb.separated(" OR ");
                 for t in tags {
-                    separated.push_bind(t);
+                    separated.push("(',' || COALESCE(tag, '') || ',') LIKE ");
+                    separated.push_bind(format!("%,{},%", t));
                 }
-                separated.push_unseparated(")");
+                qb.push(")");
             }
         }
 
@@ -517,21 +560,12 @@ fn remove_entry_postgres(pool: &PgPool, id: i64) -> Result<()> {
 
 fn get_all_tags_postgres(pool: &PgPool) -> Result<Vec<(String, usize)>> {
     ensure_tables_postgres(pool)?;
-    let rows: Vec<(String, i64)> = crate::db::pg_runtime::block_on(async {
-        sqlx::query_as(
-            "SELECT tag, COUNT(*)::bigint
-             FROM journal
-             WHERE tag IS NOT NULL
-             GROUP BY tag
-             ORDER BY COUNT(*) DESC",
-        )
-        .fetch_all(pool)
-        .await
+    let rows: Vec<String> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar("SELECT tag FROM journal WHERE tag IS NOT NULL")
+            .fetch_all(pool)
+            .await
     })?;
-    Ok(rows
-        .into_iter()
-        .map(|(tag, count)| (tag, count as usize))
-        .collect())
+    Ok(aggregate_tags(rows))
 }
 
 fn get_stats_postgres(pool: &PgPool) -> Result<JournalStats> {
@@ -664,6 +698,27 @@ mod tests {
     }
 
     #[test]
+    fn test_list_entries_with_comma_separated_tags() {
+        let conn = setup_test_db();
+        add_entry(
+            &conn,
+            &NewJournalEntry {
+                timestamp: "2026-03-04T20:00:00Z".to_string(),
+                content: "Macro oil entry".to_string(),
+                tag: Some("macro,oil".to_string()),
+                symbol: None,
+                conviction: None,
+                status: "open".to_string(),
+            },
+        )
+        .unwrap();
+
+        let entries = list_entries(&conn, None, None, Some("oil"), None, None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].content, "Macro oil entry");
+    }
+
+    #[test]
     fn test_search_entries() {
         let conn = setup_test_db();
         add_entry(
@@ -783,6 +838,40 @@ mod tests {
         assert_eq!(tags.len(), 2);
         assert_eq!(tags[0], ("trade".to_string(), 2));
         assert_eq!(tags[1], ("thesis".to_string(), 1));
+    }
+
+    #[test]
+    fn test_get_all_tags_splits_comma_separated_values() {
+        let conn = setup_test_db();
+        add_entry(
+            &conn,
+            &NewJournalEntry {
+                timestamp: "2026-03-04T20:00:00Z".to_string(),
+                content: "Entry 1".to_string(),
+                tag: Some("macro,oil".to_string()),
+                symbol: None,
+                conviction: None,
+                status: "open".to_string(),
+            },
+        )
+        .unwrap();
+        add_entry(
+            &conn,
+            &NewJournalEntry {
+                timestamp: "2026-03-03T20:00:00Z".to_string(),
+                content: "Entry 2".to_string(),
+                tag: Some("oil,geopolitical".to_string()),
+                symbol: None,
+                conviction: None,
+                status: "open".to_string(),
+            },
+        )
+        .unwrap();
+
+        let tags = get_all_tags(&conn).unwrap();
+        assert_eq!(tags[0], ("oil".to_string(), 2));
+        assert!(tags.contains(&("macro".to_string(), 1)));
+        assert!(tags.contains(&("geopolitical".to_string(), 1)));
     }
 
     #[test]

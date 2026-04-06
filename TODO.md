@@ -98,7 +98,7 @@
 **Scope:** New `journal prediction lessons bulk` command — either interactive (prompt per unresolved prediction) or file-based (read lessons from JSON/CSV). Include `--unresolved` flag on `journal prediction lessons list` to surface the backlog. Files: `src/journal/lessons.rs` (or equivalent).
 **Effort:** 2–4 hours.
 
-### [Feedback] Support --tags as comma-separated list for journal entry add
+### [x] [Feedback] Support --tags as comma-separated list for journal entry add
 **Source:** medium-agent (Apr 5, 78/82).
 **Why:** `journal entry add` only accepts a single `--tag` flag. Agents had to use a single tag when multiple apply. Comma-separated `--tags` (e.g. `--tags iran,oil,geopolitical`) would match the multi-value pattern used elsewhere.
 **Scope:** Change `--tag` to accept either multiple `--tag` flags or a comma-separated `--tags` alias. Parse and split on comma. Files: `src/cli.rs`, `src/journal/entries.rs`.

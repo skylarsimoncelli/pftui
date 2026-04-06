@@ -36,6 +36,7 @@ fn run_agent_journal(
                 content,
                 date,
                 tag,
+                tags,
                 symbol,
                 conviction,
                 json,
@@ -49,11 +50,12 @@ fn run_agent_journal(
                          Run 'pftui journal entry add --help' for all options."
                     )
                 })?;
+                let normalized_tags = commands::journal::normalize_tags(&tag, tags.as_deref());
                 commands::journal::run_add(
                     backend,
                     &resolved,
                     date.as_deref(),
-                    tag.as_deref(),
+                    normalized_tags.as_deref(),
                     symbol.as_deref(),
                     conviction.as_deref(),
                     json,

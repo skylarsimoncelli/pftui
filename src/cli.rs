@@ -1677,6 +1677,7 @@ pub enum JournalEntryCommand {
     ///
     /// Examples:
     ///   pftui journal entry add "Gold looking strong" --tag macro --symbol GC=F
+    ///   pftui journal entry add "Iran update" --tags iran,oil,geopolitical
     ///   pftui journal entry add --content "Fed meeting notes" --date 2026-03-27
     ///   pftui journal entry add "BTC thesis update" --conviction high --tag btc
     Add {
@@ -1687,8 +1688,10 @@ pub enum JournalEntryCommand {
         content: Option<String>,
         #[arg(long, help = "Entry date (YYYY-MM-DD). Defaults to today.")]
         date: Option<String>,
-        #[arg(long, help = "Tag for categorization (e.g. macro, btc, trade).")]
-        tag: Option<String>,
+        #[arg(long, action = clap::ArgAction::Append, help = "Tag for categorization (repeatable, e.g. --tag macro --tag btc).")]
+        tag: Vec<String>,
+        #[arg(long, help = "Comma-separated tags (e.g. macro,btc,trade).")]
+        tags: Option<String>,
         #[arg(long, help = "Related asset symbol (e.g. BTC-USD, GC=F).")]
         symbol: Option<String>,
         #[arg(long, help = "Conviction level (e.g. high, medium, low).")]
@@ -8404,6 +8407,56 @@ mod tests {
     }
 
     #[test]
+    fn journal_entry_add_accepts_tags_alias() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "entry",
+            "add",
+            "note",
+            "--tags",
+            "macro,oil,geopolitical",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        let JournalCommand::Entry { command: entry_cmd } = command.unwrap() else {
+            panic!("expected Entry");
+        };
+        let JournalEntryCommand::Add { tags, .. } = entry_cmd else {
+            panic!("expected Add");
+        };
+        assert_eq!(tags.as_deref(), Some("macro,oil,geopolitical"));
+    }
+
+    #[test]
+    fn journal_entry_add_accepts_repeated_tag_flags() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "entry",
+            "add",
+            "note",
+            "--tag",
+            "macro",
+            "--tag",
+            "oil",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        let JournalCommand::Entry { command: entry_cmd } = command.unwrap() else {
+            panic!("expected Entry");
+        };
+        let JournalEntryCommand::Add { tag, .. } = entry_cmd else {
+            panic!("expected Add");
+        };
+        assert_eq!(tag, vec!["macro".to_string(), "oil".to_string()]);
+    }
+
+    #[test]
     fn journal_entry_add_help_shows_content_flag() -> Result<()> {
         let help = subcommand_help(&["journal", "entry", "add"])?;
         assert!(help.contains("--content"), "help should show --content flag");
@@ -8415,6 +8468,7 @@ mod tests {
             help.contains("YYYY-MM-DD"),
             "help should describe date format"
         );
+        assert!(help.contains("--tags"), "help should show --tags flag");
         Ok(())
     }
 
