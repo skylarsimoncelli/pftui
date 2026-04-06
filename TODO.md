@@ -80,7 +80,7 @@
 **Scope:** New `analytics power-signals` command aggregating regime-flows, power-flow assess, and FIC/MIC conflict output into a single ranked signal table. JSON + terminal output. Reuse existing `analytics regime-flows` and `analytics power-flow conflicts` backends. Files: `src/analytics/power_signals.rs` (new), `src/cli.rs`, `src/main.rs`.
 **Effort:** 3–5 hours.
 
-### [Feedback] Scenario-to-prediction-market mapping: surface unmapped contracts
+### [x] [Feedback] Scenario-to-prediction-market mapping: surface unmapped contracts
 **Source:** Evening Analysis (Apr 6, 78/75).
 **Why:** 1699 Polymarket contracts are flowing but zero are mapped to active scenarios. The `data predictions map` command exists (PR #422) but agents have no visibility into which contracts are good candidates for mapping. Guidance or `analytics calibration` should surface unmapped high-relevance contracts.
 **Scope:** Add a `data predictions suggest-mappings` or enrich `analytics guidance` with a "unmapped high-relevance contracts" section (top N contracts by liquidity that match active scenario keywords). Files: `src/data/predictions.rs`, `src/commands/guidance.rs`.

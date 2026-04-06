@@ -771,6 +771,16 @@ fn dispatch_predictions(
             list,
             j || json,
         ),
+        Some(cli::DataPredictionsCommand::SuggestMappings {
+            scenario,
+            limit: lim,
+            json: j,
+        }) => commands::predictions_map::run_suggest_mappings(
+            backend,
+            scenario.as_deref(),
+            lim,
+            j || json,
+        ),
         Some(cli::DataPredictionsCommand::Unmap {
             scenario,
             contract,

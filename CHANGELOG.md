@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — feat: add `data predictions suggest-mappings`
+
+- What: added `pftui data predictions suggest-mappings`, which scans active scenarios and the enriched prediction-contract table to surface unmapped, high-liquidity candidate contracts. Suggestions are ranked by scenario-keyword overlap, category alignment, and liquidity, and each candidate includes a ready-to-run `data predictions map --scenario ... --contract ...` command.
+- Why: P2 feedback from Evening Analysis reported agents having zero visibility into which of the many Polymarket contracts were worth mapping to active scenarios, even though the mapping and calibration infrastructure already existed.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/predictions_map.rs`
+- Tests: added CLI parse coverage plus focused ranking/filter tests for keyword extraction, unmapped-contract exclusion, and scenario filtering.
+
 ### 2026-04-06 — feat: add `data refresh --stale`
 
 - What: `pftui data refresh` now supports `--stale`, which reuses the same freshness checks behind `data status` to refresh only feeds currently marked stale or empty. The flag is mutually exclusive with `--only` and `--skip`, and returns an immediate no-op message when no degraded status-tracked feeds are present.

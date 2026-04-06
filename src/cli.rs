@@ -880,6 +880,24 @@ pub enum DataPredictionsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Suggest high-relevance unmapped contracts for active scenarios
+    #[command(
+        name = "suggest-mappings",
+        after_help = "Surfaces high-liquidity prediction market contracts that appear relevant\nto active scenarios but are not mapped yet.\n\nExamples:\n  pftui data predictions suggest-mappings\n  pftui data predictions suggest-mappings --scenario \"US Recession 2026\" --limit 3 --json\n\nSee also: `data predictions map`, `analytics calibration`, `analytics scenario list`"
+    )]
+    SuggestMappings {
+        /// Restrict suggestions to one scenario name
+        #[arg(long)]
+        scenario: Option<String>,
+
+        /// Maximum suggested contracts per scenario
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Remove a scenario-contract mapping
     #[command(
         after_help = "Removes the link between a scenario and a prediction market contract.\nThe contract and scenario remain intact; only the mapping is deleted.\n\nUse --scenario to remove all mappings for a scenario, or provide\nboth --scenario and --contract to remove a specific mapping.\n\nSee also: `data predictions map --list`"
@@ -7507,6 +7525,36 @@ mod tests {
                 assert!(!json);
             }
             _ => panic!("expected unmap subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_suggest_mappings() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "suggest-mappings",
+            "--scenario",
+            "US Recession 2026",
+            "--limit",
+            "3",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::SuggestMappings { scenario, limit, json }) => {
+                assert_eq!(scenario.as_deref(), Some("US Recession 2026"));
+                assert_eq!(limit, 3);
+                assert!(json);
+            }
+            _ => panic!("expected suggest-mappings subcommand"),
         }
     }
 
