@@ -18,7 +18,7 @@
 **Scope:** Investigate each command's data source — likely stale/missing cache rows or a backend dispatch bug. Add diagnostic output when result set is empty (e.g. "No technical signals found — run `data refresh` first"). Files: `src/analytics/technicals.rs`, `src/analytics/regime.rs`, possibly `src/data/supply.rs`.
 **Effort:** 1–2 hours investigation + fix.
 
-### [Feedback] Fix prediction scorecard per-date returning zeros despite new predictions
+### [x] [Feedback] Fix prediction scorecard per-date returning zeros despite new predictions
 **Source:** Evening Analysis (Apr 5, 72/68 — lowest overall scorer).
 **Why:** Agent added 5 new predictions on Apr 5, then ran prediction scorecard and got zero counts per-date — a clear data pipeline bug that breaks the accountability/feedback loop.
 **Scope:** Investigate `journal prediction scorecard` date-bucketing logic. Likely a timezone mismatch (UTC insert vs local date grouping) or a query filter cutting off same-day predictions. Files: `src/journal/predictions.rs`, related `_backend` DB functions.

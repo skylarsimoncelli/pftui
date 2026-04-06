@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-05 — fix: prediction scorecard now buckets by local day
+
+- What: `journal prediction scorecard --date today|yesterday|YYYY-MM-DD` now resolves the target day in local time and converts stored `created_at` / `scored_at` timestamps into the local calendar day before filtering. This fixes same-day predictions disappearing from the scorecard when timestamps were stored in UTC.
+- Why: Evening Analysis feedback (Apr 5, 72/68) reported adding predictions on Apr 5 and immediately getting zero counts from the per-date scorecard. The command was comparing a local-day intent against raw UTC date prefixes from stored timestamps.
+- Files: `src/commands/predict.rs`
+- Tests: added regression coverage for UTC-naive and RFC3339 timestamps crossing the local midnight boundary.
+
 ### 2026-04-05 — fix: fall back before technicals/regime/supply go empty
 
 - What: `analytics technicals` now computes live snapshots from cached price history when persisted technical snapshots are missing, and returns an additive `warning` in JSON when it had to fall back or when no usable data exists. `analytics macro regime current --json` now returns a diagnostic `warning` instead of silent `{"current": null}` output, and includes a `live` regime assessment when cached prices/history are sufficient but no persisted regime snapshot exists. `data supply` now falls back to stale cached COMEX inventory when the live CME fetch fails, instead of dropping to empty output.

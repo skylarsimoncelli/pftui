@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{Duration, FixedOffset, Local, NaiveDate, Offset, Utc};
 use regex::Regex;
 use rust_decimal::Decimal;
 use serde_json::json;
@@ -58,7 +58,7 @@ fn parse_date_filter(value: Option<&str>) -> Result<Option<NaiveDate>> {
         return Ok(None);
     };
     let normalized = raw.trim().to_lowercase();
-    let today = Utc::now().date_naive();
+    let today = Local::now().date_naive();
     if normalized == "today" {
         return Ok(Some(today));
     }
@@ -75,6 +75,37 @@ fn parse_date_filter(value: Option<&str>) -> Result<Option<NaiveDate>> {
 }
 
 fn extract_date(raw: &str) -> Option<NaiveDate> {
+    timestamp_date_in_timezone(raw, local_fixed_offset())
+}
+
+fn local_fixed_offset() -> FixedOffset {
+    Local::now().offset().fix()
+}
+
+fn timestamp_date_in_timezone(raw: &str, offset: FixedOffset) -> Option<NaiveDate> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&offset).date_naive());
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f%#z") {
+        return Some(dt.with_timezone(&offset).date_naive());
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%#z") {
+        return Some(dt.with_timezone(&offset).date_naive());
+    }
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f") {
+        return Some(
+            chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc)
+                .with_timezone(&offset)
+                .date_naive(),
+        );
+    }
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S") {
+        return Some(
+            chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc)
+                .with_timezone(&offset)
+                .date_naive(),
+        );
+    }
     if let Ok(d) = NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
         return Some(d);
     }
@@ -1300,5 +1331,25 @@ mod tests {
     #[test]
     fn resolve_symbol_alias_unknown() {
         assert_eq!(resolve_symbol_alias("XYZZY"), None);
+    }
+
+    #[test]
+    fn extract_date_converts_utc_naive_timestamp_to_local_calendar_day() {
+        let offset = FixedOffset::west_opt(6 * 3600).unwrap();
+        let date = timestamp_date_in_timezone("2026-04-06 00:30:00", offset).unwrap();
+        assert_eq!(
+            date,
+            NaiveDate::from_ymd_opt(2026, 4, 5).unwrap()
+        );
+    }
+
+    #[test]
+    fn extract_date_converts_rfc3339_timestamp_to_local_calendar_day() {
+        let offset = FixedOffset::west_opt(6 * 3600).unwrap();
+        let date = timestamp_date_in_timezone("2026-04-06T00:30:00Z", offset).unwrap();
+        assert_eq!(
+            date,
+            NaiveDate::from_ymd_opt(2026, 4, 5).unwrap()
+        );
     }
 }
