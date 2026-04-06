@@ -1895,6 +1895,7 @@ pub enum JournalPredictionCommand {
     ///
     /// Examples:
     ///   pftui journal prediction lessons --json
+    ///   pftui journal prediction lessons --unresolved --json
     ///   pftui journal prediction lessons --miss-type timing --json
     ///   pftui journal prediction lessons add --prediction-id 42 --miss-type directional \
     ///     --what-happened "BTC dropped to 60k" --why-wrong "Ignored macro headwinds"
@@ -1904,6 +1905,9 @@ pub enum JournalPredictionCommand {
         /// Filter by miss type: directional, timing, magnitude
         #[arg(long = "miss-type")]
         miss_type: Option<String>,
+        /// Show only wrong predictions that still have no structured lesson
+        #[arg(long)]
+        unresolved: bool,
         /// Maximum lessons to show
         #[arg(long)]
         limit: Option<usize>,
@@ -1937,6 +1941,24 @@ pub enum JournalPredictionLessonsCommand {
         /// What signal was misread or missed (optional)
         #[arg(long = "signal-misread")]
         signal_misread: Option<String>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add many lessons from a JSON file in one run
+    ///
+    /// File format: JSON array of objects with fields:
+    ///   prediction_id, miss_type, what_happened, why_wrong, signal_misread(optional)
+    Bulk {
+        /// Path to a JSON file containing lesson entries
+        #[arg(long)]
+        input: String,
+        /// Skip predictions that already have structured lessons
+        #[arg(long)]
+        unresolved: bool,
+        /// Preview what would be written without changing the database
+        #[arg(long)]
+        dry_run: bool,
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -8521,6 +8543,76 @@ mod tests {
         );
         assert!(help.contains("--tags"), "help should show --tags flag");
         Ok(())
+    }
+
+    #[test]
+    fn parse_prediction_lessons_unresolved_list() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "lessons",
+            "--unresolved",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Journal { command }) = cli.command else {
+            panic!("expected journal command");
+        };
+        let Some(JournalCommand::Prediction { command }) = command else {
+            panic!("expected prediction command");
+        };
+        let JournalPredictionCommand::Lessons {
+            command,
+            unresolved,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected lessons command");
+        };
+        assert!(command.is_none());
+        assert!(unresolved);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_prediction_lessons_bulk_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "lessons",
+            "bulk",
+            "--input",
+            "/tmp/lessons.json",
+            "--unresolved",
+            "--dry-run",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Journal { command }) = cli.command else {
+            panic!("expected journal command");
+        };
+        let Some(JournalCommand::Prediction { command }) = command else {
+            panic!("expected prediction command");
+        };
+        let JournalPredictionCommand::Lessons { command, .. } = command else {
+            panic!("expected lessons command");
+        };
+        let Some(JournalPredictionLessonsCommand::Bulk {
+            input,
+            unresolved,
+            dry_run,
+            json,
+        }) = command
+        else {
+            panic!("expected bulk subcommand");
+        };
+        assert_eq!(input, "/tmp/lessons.json");
+        assert!(unresolved);
+        assert!(dry_run);
+        assert!(json);
     }
 
     #[test]

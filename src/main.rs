@@ -257,12 +257,14 @@ fn run_agent_journal(
             cli::JournalPredictionCommand::Lessons {
                 command,
                 miss_type,
+                unresolved,
                 limit,
                 json,
             } => match command {
                 None => commands::predict::run_lessons(
                     backend,
                     miss_type.as_deref(),
+                    unresolved,
                     limit,
                     json,
                 ),
@@ -280,6 +282,18 @@ fn run_agent_journal(
                     &what_happened,
                     &why_wrong,
                     signal_misread.as_deref(),
+                    json_flag,
+                ),
+                Some(cli::JournalPredictionLessonsCommand::Bulk {
+                    input,
+                    unresolved: unresolved_only,
+                    dry_run,
+                    json: json_flag,
+                }) => commands::predict::run_bulk_lessons(
+                    backend,
+                    &input,
+                    unresolved_only,
+                    dry_run,
                     json_flag,
                 ),
             },
