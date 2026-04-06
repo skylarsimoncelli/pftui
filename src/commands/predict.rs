@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use chrono::{Duration, FixedOffset, Local, NaiveDate, Offset, Utc};
 use regex::Regex;
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::db::backend::BackendConnection;
@@ -984,6 +985,7 @@ pub fn run_auto_score(backend: &BackendConnection, dry_run: bool, json_output: b
 pub fn run_lessons(
     backend: &BackendConnection,
     miss_type: Option<&str>,
+    unresolved_only: bool,
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
@@ -994,8 +996,14 @@ pub fn run_lessons(
         prediction_lessons::validate_miss_type_str(mt)?;
     }
 
-    let views = prediction_lessons::list_lesson_views_backend(backend, miss_type, limit)?;
+    let backend_limit = if unresolved_only { None } else { limit };
+    let mut views = prediction_lessons::list_lesson_views_backend(backend, miss_type, backend_limit)?;
+    filter_lesson_views(&mut views, unresolved_only);
+    if let Some(limit) = limit {
+        views.truncate(limit);
+    }
     let (total_wrong, with_lessons) = prediction_lessons::lesson_coverage_backend(backend)?;
+    let unresolved_count = total_wrong.saturating_sub(with_lessons);
 
     if json_output {
         let json_views: Vec<serde_json::Value> = views
@@ -1034,7 +1042,8 @@ pub fn run_lessons(
         let output = serde_json::json!({
             "total_wrong": total_wrong,
             "with_lessons": with_lessons,
-            "without_lessons": total_wrong.saturating_sub(with_lessons),
+            "without_lessons": unresolved_count,
+            "unresolved_only": unresolved_only,
             "coverage_pct": if total_wrong > 0 {
                 (with_lessons as f64 / total_wrong as f64 * 100.0).round()
             } else {
@@ -1054,9 +1063,16 @@ pub fn run_lessons(
                 0.0
             }
         );
+        if unresolved_only {
+            println!("Showing only unresolved backlog ({} without lessons)\n", unresolved_count);
+        }
 
         if views.is_empty() {
-            println!("No wrong predictions found.");
+            if unresolved_only {
+                println!("No wrong predictions without lessons found.");
+            } else {
+                println!("No wrong predictions found.");
+            }
             return Ok(());
         }
 
@@ -1088,6 +1104,175 @@ pub fn run_lessons(
                 println!("  ⚠ No lesson extracted yet");
             }
             println!();
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct BulkLessonInput {
+    prediction_id: i64,
+    miss_type: String,
+    what_happened: String,
+    why_wrong: String,
+    signal_misread: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct BulkLessonResult {
+    prediction_id: i64,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lesson_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+fn filter_lesson_views(
+    views: &mut Vec<crate::db::prediction_lessons::PredictionLessonView>,
+    unresolved_only: bool,
+) {
+    if unresolved_only {
+        views.retain(|view| view.lesson.is_none());
+    }
+}
+
+fn parse_bulk_lessons_input(raw: &str) -> Result<Vec<BulkLessonInput>> {
+    let parsed: Vec<BulkLessonInput> = serde_json::from_str(raw).map_err(|err| {
+        anyhow::anyhow!(
+            "invalid bulk lessons JSON: {}. Expected an array of {{prediction_id, miss_type, what_happened, why_wrong, signal_misread?}} objects",
+            err
+        )
+    })?;
+    if parsed.is_empty() {
+        bail!("bulk lessons input is empty");
+    }
+    Ok(parsed)
+}
+
+pub fn run_bulk_lessons(
+    backend: &BackendConnection,
+    input_path: &str,
+    unresolved_only: bool,
+    dry_run: bool,
+    json_output: bool,
+) -> Result<()> {
+    use crate::db::prediction_lessons;
+    use crate::db::user_predictions;
+
+    let raw = std::fs::read_to_string(input_path)
+        .map_err(|err| anyhow::anyhow!("failed to read '{}': {}", input_path, err))?;
+    let entries = parse_bulk_lessons_input(&raw)?;
+    let predictions = user_predictions::list_predictions_backend(backend, None, None, None, None)?;
+    let lesson_views = prediction_lessons::list_lesson_views_backend(backend, None, None)?;
+
+    let prediction_map: std::collections::HashMap<i64, _> =
+        predictions.into_iter().map(|prediction| (prediction.id, prediction)).collect();
+    let existing_lessons: std::collections::HashSet<i64> = lesson_views
+        .into_iter()
+        .filter(|view| view.lesson.is_some())
+        .map(|view| view.prediction_id)
+        .collect();
+
+    let mut results = Vec::new();
+
+    for entry in entries {
+        prediction_lessons::validate_miss_type_str(&entry.miss_type)?;
+
+        let Some(prediction) = prediction_map.get(&entry.prediction_id) else {
+            results.push(BulkLessonResult {
+                prediction_id: entry.prediction_id,
+                status: "skipped".to_string(),
+                lesson_id: None,
+                reason: Some("prediction not found".to_string()),
+            });
+            continue;
+        };
+
+        if prediction.outcome != "wrong" {
+            results.push(BulkLessonResult {
+                prediction_id: entry.prediction_id,
+                status: "skipped".to_string(),
+                lesson_id: None,
+                reason: Some(format!("prediction outcome is '{}', not 'wrong'", prediction.outcome)),
+            });
+            continue;
+        }
+
+        if unresolved_only && existing_lessons.contains(&entry.prediction_id) {
+            results.push(BulkLessonResult {
+                prediction_id: entry.prediction_id,
+                status: "skipped".to_string(),
+                lesson_id: None,
+                reason: Some("prediction already has a lesson".to_string()),
+            });
+            continue;
+        }
+
+        if dry_run {
+            results.push(BulkLessonResult {
+                prediction_id: entry.prediction_id,
+                status: "dry_run".to_string(),
+                lesson_id: None,
+                reason: None,
+            });
+            continue;
+        }
+
+        let lesson_id = prediction_lessons::add_lesson_backend(
+            backend,
+            entry.prediction_id,
+            &entry.miss_type,
+            &prediction.claim,
+            &entry.what_happened,
+            &entry.why_wrong,
+            entry.signal_misread.as_deref(),
+        )?;
+        results.push(BulkLessonResult {
+            prediction_id: entry.prediction_id,
+            status: "added".to_string(),
+            lesson_id: Some(lesson_id),
+            reason: None,
+        });
+    }
+
+    let added = results.iter().filter(|result| result.status == "added").count();
+    let skipped = results.iter().filter(|result| result.status == "skipped").count();
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "input_path": input_path,
+                "dry_run": dry_run,
+                "unresolved_only": unresolved_only,
+                "added": added,
+                "skipped": skipped,
+                "results": results,
+            }))?
+        );
+    } else {
+        println!(
+            "Bulk prediction lessons: {} added, {} skipped{}",
+            added,
+            skipped,
+            if dry_run { " (dry run)" } else { "" }
+        );
+        for result in &results {
+            match result.status.as_str() {
+                "added" => println!(
+                    "  added   #{} -> lesson #{}",
+                    result.prediction_id,
+                    result.lesson_id.unwrap_or_default()
+                ),
+                "dry_run" => println!("  dry-run #{}", result.prediction_id),
+                _ => println!(
+                    "  skipped #{} ({})",
+                    result.prediction_id,
+                    result.reason.as_deref().unwrap_or("unknown reason")
+                ),
+            }
         }
     }
 
@@ -1162,6 +1347,7 @@ pub fn run_add_lesson(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db;
 
     #[test]
     fn resolve_alias_short_to_low() {
@@ -1351,5 +1537,193 @@ mod tests {
             date,
             NaiveDate::from_ymd_opt(2026, 4, 5).unwrap()
         );
+    }
+
+    #[test]
+    fn parse_bulk_lessons_input_accepts_array() {
+        let items = parse_bulk_lessons_input(
+            r#"[{"prediction_id":42,"miss_type":"timing","what_happened":"late","why_wrong":"timing drift"}]"#,
+        )
+        .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].prediction_id, 42);
+        assert_eq!(items[0].miss_type, "timing");
+    }
+
+    #[test]
+    fn parse_bulk_lessons_input_rejects_empty() {
+        let err = parse_bulk_lessons_input("[]").unwrap_err().to_string();
+        assert!(err.contains("empty"));
+    }
+
+    #[test]
+    fn filter_lesson_views_keeps_only_unresolved_when_requested() {
+        let mut views = vec![
+            crate::db::prediction_lessons::PredictionLessonView {
+                prediction_id: 1,
+                claim: "one".to_string(),
+                symbol: None,
+                conviction: "medium".to_string(),
+                timeframe: None,
+                confidence: None,
+                source_agent: None,
+                target_date: None,
+                outcome: "wrong".to_string(),
+                score_notes: None,
+                created_at: "2026-04-06T00:00:00Z".to_string(),
+                scored_at: None,
+                lesson: None,
+            },
+            crate::db::prediction_lessons::PredictionLessonView {
+                prediction_id: 2,
+                claim: "two".to_string(),
+                symbol: None,
+                conviction: "medium".to_string(),
+                timeframe: None,
+                confidence: None,
+                source_agent: None,
+                target_date: None,
+                outcome: "wrong".to_string(),
+                score_notes: None,
+                created_at: "2026-04-06T00:00:00Z".to_string(),
+                scored_at: None,
+                lesson: Some(crate::db::prediction_lessons::PredictionLesson {
+                    id: 9,
+                    prediction_id: 2,
+                    miss_type: "timing".to_string(),
+                    what_predicted: "two".to_string(),
+                    what_happened: "other".to_string(),
+                    why_wrong: "wrong".to_string(),
+                    signal_misread: None,
+                    created_at: "2026-04-06T00:00:00Z".to_string(),
+                }),
+            },
+        ];
+        filter_lesson_views(&mut views, true);
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].prediction_id, 1);
+    }
+
+    #[test]
+    fn unresolved_limit_applies_after_filtering() {
+        let mut views = vec![
+            crate::db::prediction_lessons::PredictionLessonView {
+                prediction_id: 1,
+                claim: "resolved".to_string(),
+                symbol: None,
+                conviction: "medium".to_string(),
+                timeframe: None,
+                confidence: None,
+                source_agent: None,
+                target_date: None,
+                outcome: "wrong".to_string(),
+                score_notes: None,
+                created_at: "2026-04-06T00:00:00Z".to_string(),
+                scored_at: None,
+                lesson: Some(crate::db::prediction_lessons::PredictionLesson {
+                    id: 1,
+                    prediction_id: 1,
+                    miss_type: "timing".to_string(),
+                    what_predicted: "resolved".to_string(),
+                    what_happened: "resolved".to_string(),
+                    why_wrong: "resolved".to_string(),
+                    signal_misread: None,
+                    created_at: "2026-04-06T00:00:00Z".to_string(),
+                }),
+            },
+            crate::db::prediction_lessons::PredictionLessonView {
+                prediction_id: 2,
+                claim: "unresolved-a".to_string(),
+                symbol: None,
+                conviction: "medium".to_string(),
+                timeframe: None,
+                confidence: None,
+                source_agent: None,
+                target_date: None,
+                outcome: "wrong".to_string(),
+                score_notes: None,
+                created_at: "2026-04-06T00:00:00Z".to_string(),
+                scored_at: None,
+                lesson: None,
+            },
+            crate::db::prediction_lessons::PredictionLessonView {
+                prediction_id: 3,
+                claim: "unresolved-b".to_string(),
+                symbol: None,
+                conviction: "medium".to_string(),
+                timeframe: None,
+                confidence: None,
+                source_agent: None,
+                target_date: None,
+                outcome: "wrong".to_string(),
+                score_notes: None,
+                created_at: "2026-04-06T00:00:00Z".to_string(),
+                scored_at: None,
+                lesson: None,
+            },
+        ];
+
+        filter_lesson_views(&mut views, true);
+        views.truncate(1);
+
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].prediction_id, 2);
+    }
+
+    #[test]
+    fn run_bulk_lessons_dry_run_skips_non_wrong_and_existing() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+
+        crate::db::user_predictions::add_prediction_backend(
+            &backend,
+            "Wrong call",
+            None,
+            Some("medium"),
+            Some("low"),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        crate::db::user_predictions::score_prediction_backend(&backend, 1, "wrong", None, None)
+            .unwrap();
+        crate::db::user_predictions::add_prediction_backend(
+            &backend,
+            "Correct call",
+            None,
+            Some("medium"),
+            Some("low"),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        crate::db::user_predictions::score_prediction_backend(&backend, 2, "correct", None, None)
+            .unwrap();
+        crate::db::prediction_lessons::add_lesson_backend(
+            &backend,
+            1,
+            "timing",
+            "Wrong call",
+            "moved later",
+            "late",
+            None,
+        )
+        .unwrap();
+
+        let path = std::env::temp_dir().join("pftui-bulk-lessons-test.json");
+        std::fs::write(
+            &path,
+            r#"[{"prediction_id":1,"miss_type":"timing","what_happened":"later","why_wrong":"late"},
+                {"prediction_id":2,"miss_type":"directional","what_happened":"up","why_wrong":"not wrong"}]"#,
+        )
+        .unwrap();
+
+        let result = run_bulk_lessons(&backend, path.to_str().unwrap(), true, true, true);
+        std::fs::remove_file(&path).ok();
+        assert!(result.is_ok());
     }
 }

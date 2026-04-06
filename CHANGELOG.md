@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — feat: add bulk prediction-lesson workflows
+
+- What: `pftui journal prediction lessons` now supports `--unresolved` to show only wrong predictions still missing structured lessons, and `pftui journal prediction lessons bulk --input <file.json>` to add many lessons in one run from a JSON array. The bulk path also supports `--unresolved` to skip already-covered predictions and `--dry-run` for backlog review without writes.
+- Why: P2 feedback from Evening Analysis reported a large lesson backlog and no practical batch workflow for catching up on wrong predictions.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/predict.rs`
+- Tests: added CLI parse coverage for unresolved/bulk usage plus focused command tests for bulk input parsing, unresolved filtering, and dry-run skip behavior.
+
 ### 2026-04-06 — feat: add `data predictions suggest-mappings`
 
 - What: added `pftui data predictions suggest-mappings`, which scans active scenarios and the enriched prediction-contract table to surface unmapped, high-liquidity candidate contracts. Suggestions are ranked by scenario-keyword overlap, category alignment, and liquidity, and each candidate includes a ready-to-run `data predictions map --scenario ... --contract ...` command.

@@ -92,7 +92,7 @@
 **Scope:** Detect high-impact events from news sentiment spikes + catalyst scoring, auto-suggest `journal scenario add` with pre-filled parameters. Could integrate into `analytics guidance` or as a standalone `analytics scenario detect`.
 **Effort:** 1-2 weeks.
 
-### [Feedback] prediction lesson bulk command for batch processing wrong predictions
+### [x] [Feedback] prediction lesson bulk command for batch processing wrong predictions
 **Source:** Evening Analysis (Apr 5, 72/68 — lowest overall scorer). 45–63 unresolved lessons in backlog.
 **Why:** `journal prediction lessons add` is one-at-a-time. With 45+ wrong predictions needing lessons, agents need a bulk workflow to catch up and maintain the improvement loop.
 **Scope:** New `journal prediction lessons bulk` command — either interactive (prompt per unresolved prediction) or file-based (read lessons from JSON/CSV). Include `--unresolved` flag on `journal prediction lessons list` to surface the backlog. Files: `src/journal/lessons.rs` (or equivalent).
