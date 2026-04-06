@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: include linked situation indicators in `analytics situation`
+
+- What: `pftui analytics situation` now carries a top-level `situation_indicators` payload with total/watching/triggered counts plus the most recently triggered linked indicators, and terminal output now surfaces the same section. Active-situation indicators are collected in batch from the situation engine instead of being omitted from the snapshot entirely.
+- Why: P1 feedback from Low-Timeframe Analyst reported that the situation room could show active Iran situation data while the linked indicator list still looked empty. The indicators existed in the database, but the top-level situation snapshot never included them.
+- Files: `src/analytics/situation.rs`, `src/commands/analytics.rs`, `src/analytics/deltas.rs`, `src/mobile/server.rs`
+- Tests: updated situation snapshot coverage to assert indicator summaries and triggered-indicator watch-now surfacing.
+
 ### 2026-04-06 — fix: honor comma-separated `analytics technicals --symbols` filters
 
 - What: `pftui analytics technicals` now accepts `--symbols` as an explicit alias for `--symbol` and correctly applies comma-separated symbol filters like `BTC,GC=F`. The backend now batch-loads only the requested symbols from cached technical snapshots and falls back to live computation from price history for missing requested symbols instead of dumping the full symbol set.

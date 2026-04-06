@@ -34,7 +34,7 @@
 **Scope:** Investigate `analytics technicals` backend — apply the `--symbols` filter at the DB level, same pattern as the list_trends_filtered_backend fix. Files: `src/analytics/technicals.rs`, `src/db/technicals.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Fix analytics situation indicator list returning empty despite indicators existing
+### [x] [Feedback] Fix analytics situation indicator list returning empty despite indicators existing
 **Source:** Low-Timeframe Analyst (Apr 5, 80/78).
 **Why:** Agent confirmed 3 indicators existed for the Iran situation but `analytics situation` indicator list returned empty — data routing or filter bug in the situation room's indicator fetch.
 **Scope:** Trace the indicator query path in `analytics situation`. Likely a join or filter mismatch between situation rows and their linked indicators. Files: `src/analytics/situation.rs`, `src/db/situation.rs`.

@@ -2150,6 +2150,28 @@ fn run_situation(backend: &BackendConnection, json_output: bool) -> Result<()> {
             }
         }
 
+        if snapshot.situation_indicators.total > 0 {
+            println!();
+            println!("SITUATION INDICATORS");
+            println!(
+                "- total: {}  watching: {}  triggered: {}",
+                snapshot.situation_indicators.total,
+                snapshot.situation_indicators.watching,
+                snapshot.situation_indicators.triggered
+            );
+            for indicator in snapshot
+                .situation_indicators
+                .recently_triggered
+                .iter()
+                .take(3)
+            {
+                println!(
+                    "- [{}] {} / {} ({})",
+                    indicator.symbol, indicator.situation, indicator.label, indicator.metric
+                );
+            }
+        }
+
         if !snapshot.portfolio_impacts.is_empty() {
             println!();
             println!("PORTFOLIO IMPACT");
