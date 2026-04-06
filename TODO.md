@@ -62,7 +62,7 @@
 
 ## P2 - Coverage And Agent Consumption
 
-### [Feedback] journal scenario update: support partial name match or ID-based lookup
+### [x] [Feedback] journal scenario update: support partial name match or ID-based lookup
 **Source:** medium-agent (Apr 6, 65/72).
 **Why:** `journal scenario update` requires an exact full-string name match. When the name doesn't match precisely (case, whitespace, abbreviation), the update fails with no suggestions. Agents waste cycles on trial-and-error or fall back to the timestamp-prone retry path.
 **Scope:** Add fuzzy/case-insensitive name matching (LIKE or LOWER()) as a fallback when exact match returns 0 rows, or support `--id <N>` as an alternative. Display candidate matches when multiple fuzzy results exist. Files: `src/journal/scenario.rs`, `src/db/scenarios.rs`.

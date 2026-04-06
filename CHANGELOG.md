@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: make `journal scenario update` resolve by `--id` or fuzzy name
+
+- What: `pftui journal scenario update` now accepts `--id <N>` as an explicit lookup path and no longer requires an exact case-sensitive full-name match. The update flow now tries exact name, case-insensitive exact name, then unique partial-name matching, and returns candidate scenario IDs/names when a partial match is ambiguous.
+- Why: P2 feedback from medium-agent reported scenario updates failing on minor name mismatches, forcing trial-and-error even when the intended scenario was already present.
+- Files: `src/cli.rs`, `src/commands/scenario.rs`, `src/main.rs`
+- Tests: added CLI parse coverage for `--id` plus scenario-update resolution tests for case-insensitive, partial, ambiguous, and ID-based lookups.
+
 ### 2026-04-06 — fix: normalize scenario indicator timestamps across backends
 
 - What: Scenario-indicator evaluation now writes one explicit UTC RFC3339 timestamp through both SQLite and Postgres paths for `last_checked`, `triggered_at`, and `updated_at` instead of relying on backend-side `now()` expressions with backend-specific coercion. Postgres now binds the timestamp consistently as `timestamptz`, while SQLite stores the same string directly.

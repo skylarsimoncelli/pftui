@@ -2073,7 +2073,10 @@ pub enum JournalScenarioCommand {
     },
     /// Update a scenario's probability, description, triggers, or status
     Update {
-        value: String,
+        #[arg(required_unless_present = "id")]
+        value: Option<String>,
+        #[arg(long)]
+        id: Option<i64>,
         /// History note / driver (positional shorthand)
         note_pos: Option<String>,
         #[arg(long)]
@@ -4769,6 +4772,7 @@ mod tests {
                     command:
                         JournalScenarioCommand::Update {
                             value,
+                            id,
                             note_pos,
                             probability,
                             ..
@@ -4779,8 +4783,44 @@ mod tests {
             panic!("expected journal scenario update command");
         };
 
-        assert_eq!(value, "Hard Landing");
+        assert_eq!(value.as_deref(), Some("Hard Landing"));
+        assert_eq!(id, None);
         assert_eq!(note_pos.as_deref(), Some("labor rolling over"));
+        assert_eq!(probability, Some(65.0));
+    }
+
+    #[test]
+    fn parse_scenario_update_with_id() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "scenario",
+            "update",
+            "--id",
+            "42",
+            "--probability",
+            "65",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Scenario {
+                    command:
+                        JournalScenarioCommand::Update {
+                            value,
+                            id,
+                            probability,
+                            ..
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal scenario update command");
+        };
+
+        assert_eq!(value, None);
+        assert_eq!(id, Some(42));
         assert_eq!(probability, Some(65.0));
     }
 

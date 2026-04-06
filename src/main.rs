@@ -433,6 +433,7 @@ fn run_agent_journal(
             ),
             cli::JournalScenarioCommand::Update {
                 value,
+                id,
                 note_pos,
                 probability,
                 description,
@@ -448,8 +449,8 @@ fn run_agent_journal(
                 commands::scenario::run(
                     backend,
                     "update",
-                    Some(&value),
-                    None,
+                    value.as_deref(),
+                    id,
                     None,
                     probability,
                     description.as_deref(),

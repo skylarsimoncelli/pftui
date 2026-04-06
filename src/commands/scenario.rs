@@ -3,6 +3,63 @@ use crate::db::scenarios;
 use anyhow::{bail, Result};
 use serde_json::json;
 
+fn resolve_scenario_for_update(
+    backend: &BackendConnection,
+    id: Option<i64>,
+    name: Option<&str>,
+) -> Result<scenarios::Scenario> {
+    if let Some(id) = id {
+        let scenarios_list = scenarios::list_scenarios_backend(backend, None)?;
+        return scenarios_list
+            .into_iter()
+            .find(|scenario| scenario.id == id)
+            .ok_or_else(|| anyhow::anyhow!("scenario id {} not found", id));
+    }
+
+    let name = name.ok_or_else(|| anyhow::anyhow!("scenario name or --id required"))?;
+    if let Some(scenario) = scenarios::get_scenario_by_name_backend(backend, name)? {
+        return Ok(scenario);
+    }
+
+    let needle = name.trim().to_lowercase();
+    let scenarios_list = scenarios::list_scenarios_backend(backend, None)?;
+
+    let exact_ci: Vec<_> = scenarios_list
+        .iter()
+        .filter(|scenario| scenario.name.to_lowercase() == needle)
+        .cloned()
+        .collect();
+    if let [scenario] = exact_ci.as_slice() {
+        return Ok(scenario.clone());
+    }
+    if exact_ci.len() > 1 {
+        let matches = exact_ci
+            .iter()
+            .map(|scenario| format!("#{} {}", scenario.id, scenario.name))
+            .collect::<Vec<_>>()
+            .join("; ");
+        bail!("multiple scenarios match '{}': {}", name, matches);
+    }
+
+    let fuzzy: Vec<_> = scenarios_list
+        .into_iter()
+        .filter(|scenario| scenario.name.to_lowercase().contains(&needle))
+        .collect();
+    if let [scenario] = fuzzy.as_slice() {
+        return Ok(scenario.clone());
+    }
+    if !fuzzy.is_empty() {
+        let matches = fuzzy
+            .iter()
+            .map(|scenario| format!("#{} {}", scenario.id, scenario.name))
+            .collect::<Vec<_>>()
+            .join("; ");
+        bail!("scenario '{}' not found exactly. candidates: {}", name, matches);
+    }
+
+    bail!("scenario '{}' not found", name)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     backend: &BackendConnection,
@@ -82,16 +139,14 @@ pub fn run(
         }
 
         "update" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("scenario name required"))?;
-            let scenario = scenarios::get_scenario_by_name_backend(backend, name)?
-                .ok_or_else(|| anyhow::anyhow!("scenario '{}' not found", name))?;
+            let scenario = resolve_scenario_for_update(backend, id, value)?;
             let history_note = driver.or(notes);
 
             // If probability is being updated, use special handler
             if let Some(prob) = probability {
                 scenarios::update_scenario_probability_backend(backend, scenario.id, prob, history_note)?;
                 if !json_output {
-                    println!("Updated probability for '{}' to {:.1}%", name, prob);
+                    println!("Updated probability for '{}' to {:.1}%", scenario.name, prob);
                 }
             }
 
@@ -107,12 +162,13 @@ pub fn run(
                     status,
                 )?;
                 if !json_output && probability.is_none() {
-                    println!("Updated scenario '{}'", name);
+                    println!("Updated scenario '{}'", scenario.name);
                 }
             }
 
             if json_output {
-                let updated = scenarios::get_scenario_by_name_backend(backend, name)?.unwrap();
+                let updated =
+                    scenarios::get_scenario_by_name_backend(backend, &scenario.name)?.unwrap();
                 println!("{}", serde_json::to_string_pretty(&updated)?);
             }
         }
@@ -334,4 +390,83 @@ pub fn run(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_backend() -> BackendConnection {
+        BackendConnection::Sqlite {
+            conn: crate::db::open_in_memory(),
+        }
+    }
+
+    #[test]
+    fn resolve_scenario_update_accepts_case_insensitive_name() {
+        let backend = test_backend();
+        scenarios::add_scenario_backend(
+            &backend,
+            "Iran-US War Escalation",
+            45.0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let scenario =
+            resolve_scenario_for_update(&backend, None, Some("iran-us war escalation")).unwrap();
+        assert_eq!(scenario.name, "Iran-US War Escalation");
+    }
+
+    #[test]
+    fn resolve_scenario_update_accepts_unique_partial_name() {
+        let backend = test_backend();
+        scenarios::add_scenario_backend(
+            &backend,
+            "Iran-US War Escalation",
+            45.0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let scenario = resolve_scenario_for_update(&backend, None, Some("War Escal")).unwrap();
+        assert_eq!(scenario.name, "Iran-US War Escalation");
+    }
+
+    #[test]
+    fn resolve_scenario_update_returns_candidates_for_ambiguous_partial() {
+        let backend = test_backend();
+        scenarios::add_scenario_backend(&backend, "US Recession 2026", 40.0, None, None, None, None)
+            .unwrap();
+        scenarios::add_scenario_backend(&backend, "EU Recession 2026", 35.0, None, None, None, None)
+            .unwrap();
+
+        let err = resolve_scenario_for_update(&backend, None, Some("Recession")).unwrap_err();
+        assert!(err.to_string().contains("candidates"));
+        assert!(err.to_string().contains("US Recession 2026"));
+    }
+
+    #[test]
+    fn resolve_scenario_update_accepts_id() {
+        let backend = test_backend();
+        let id = scenarios::add_scenario_backend(
+            &backend,
+            "Hard Landing",
+            55.0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let scenario = resolve_scenario_for_update(&backend, Some(id), None).unwrap();
+        assert_eq!(scenario.id, id);
+    }
 }
