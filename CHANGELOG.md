@@ -1,5 +1,26 @@
 # Changelog
 
+### 2026-04-05 — fix: prediction scorecard now buckets by local day
+
+- What: `journal prediction scorecard --date today|yesterday|YYYY-MM-DD` now resolves the target day in local time and converts stored `created_at` / `scored_at` timestamps into the local calendar day before filtering. This fixes same-day predictions disappearing from the scorecard when timestamps were stored in UTC.
+- Why: Evening Analysis feedback (Apr 5, 72/68) reported adding predictions on Apr 5 and immediately getting zero counts from the per-date scorecard. The command was comparing a local-day intent against raw UTC date prefixes from stored timestamps.
+- Files: `src/commands/predict.rs`
+- Tests: added regression coverage for UTC-naive and RFC3339 timestamps crossing the local midnight boundary.
+
+### 2026-04-05 — fix: fall back before technicals/regime/supply go empty
+
+- What: `analytics technicals` now computes live snapshots from cached price history when persisted technical snapshots are missing, and returns an additive `warning` in JSON when it had to fall back or when no usable data exists. `analytics macro regime current --json` now returns a diagnostic `warning` instead of silent `{"current": null}` output, and includes a `live` regime assessment when cached prices/history are sufficient but no persisted regime snapshot exists. `data supply` now falls back to stale cached COMEX inventory when the live CME fetch fails, instead of dropping to empty output.
+- Why: Evening Analysis feedback (Apr 5, 72/68) reported these three commands coming back empty, forcing web-search fallback for data pftui is supposed to own. The root causes were distinct: technicals only read persisted snapshots, regime current had no fallback or diagnostic for missing snapshots, and supply discarded stale cache rows on fetch failure.
+- Files: `src/commands/analytics.rs` (+ technical snapshot fallback + warning), `src/commands/regime.rs` (+ current payload diagnostics + live fallback), `src/commands/supply.rs` (+ stale-cache fallback on fetch failure, tests)
+- Tests: added focused coverage for computed technical fallback, regime diagnostic output on empty state, and stale cached COMEX fallback.
+
+### 2026-04-05 — feat: add `analytics macro log add` subcommand
+
+- What: `pftui analytics macro log add` now exists in the typed CLI tree instead of only in low-level dispatch. The new subcommand accepts either positional development text or `--development`, plus `--cycle-impact`, `--outcome-shift`, optional `--date`, and `--json`. When `--date` is omitted it defaults to today in local time. Existing `pftui analytics macro log --limit N` list behavior is unchanged.
+- Why: Macro-Timeframe Analyst feedback (Apr 5, 55/62) identified this as the top `P0` workflow gap. The backend already supported adding structural log rows, but the clap tree exposed only read-only `analytics macro log`, so agents could not discover or use the write path consistently.
+- Files: `src/cli.rs` (+ new `AnalyticsMacroLogCommand`, parse test), `src/main.rs` (+ dispatch for `analytics macro log add`)
+- Tests: added CLI parse coverage for `analytics macro log add`.
+
 ### 2026-04-04 — feat: bulk-ack alerts with --all-triggered and filter flags
 
 - What: `analytics alerts ack` now supports `--all-triggered` flag to bulk-acknowledge all triggered alerts in one command. Optional filter flags `--condition`, `--kind`, and `--symbol` narrow the scope. `--json` flag added for structured output. IDs and `--all-triggered` are mutually exclusive (enforced by clap). Filter flags require `--all-triggered`.

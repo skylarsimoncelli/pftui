@@ -1471,32 +1471,38 @@ fn run_technicals(
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    let mut rows = if let Some(sym) = symbol {
-        technical_snapshots::get_latest_snapshot_backend(backend, &sym.to_uppercase(), timeframe)?
-            .into_iter()
-            .collect::<Vec<_>>()
-    } else {
-        technical_snapshots::list_latest_snapshots_backend(backend, timeframe, limit)?
-    };
+    let (mut rows, warning) = technical_rows_with_warning(backend, symbol, timeframe, limit)?;
     if let Some(limit) = limit {
         rows.truncate(limit);
     }
 
     if json_output {
+        let mut payload = serde_json::Map::new();
+        payload.insert("timeframe".to_string(), json!(timeframe));
+        payload.insert("technicals".to_string(), serde_json::to_value(&rows)?);
+        payload.insert("count".to_string(), json!(rows.len()));
+        if let Some(warning) = &warning {
+            payload.insert("warning".to_string(), json!(warning));
+        }
         println!(
             "{}",
-            serde_json::to_string_pretty(&json!({
-                "timeframe": timeframe,
-                "technicals": rows,
-                "count": rows.len(),
-            }))?
+            serde_json::to_string_pretty(&serde_json::Value::Object(payload))?
         );
     } else if rows.is_empty() {
         println!(
-            "No technical snapshots found for timeframe '{}'.",
-            timeframe
+            "{}",
+            warning.unwrap_or_else(|| {
+                format!(
+                    "No technical snapshots found for timeframe '{}'. Run `pftui data refresh` first.",
+                    timeframe
+                )
+            })
         );
     } else {
+        if let Some(warning) = &warning {
+            println!("{warning}");
+            println!();
+        }
         println!("Technical Snapshots ({})", timeframe);
         println!(
             "{:<10} {:>7} {:>8} {:>8} {:>8} {:>8} {:>8} {:>7} {:<8}",
@@ -1520,6 +1526,89 @@ fn run_technicals(
     }
 
     Ok(())
+}
+
+fn technical_rows_with_warning(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    timeframe: &str,
+    limit: Option<usize>,
+) -> Result<(
+    Vec<crate::db::technical_snapshots::TechnicalSnapshotRecord>,
+    Option<String>,
+)> {
+    if let Some(sym) = symbol {
+        let normalized = sym.to_uppercase();
+        if let Some(snapshot) =
+            technical_snapshots::get_latest_snapshot_backend(backend, &normalized, timeframe)?
+        {
+            return Ok((vec![snapshot], None));
+        }
+
+        let computed = load_or_compute_snapshots_backend(
+            backend,
+            std::slice::from_ref(&normalized),
+            timeframe,
+        );
+        if let Some(snapshot) = computed.get(&normalized).cloned() {
+            return Ok((
+                vec![snapshot],
+                Some(format!(
+                    "No persisted technical snapshot found for {} ({}). Computed live from price history.",
+                    normalized, timeframe
+                )),
+            ));
+        }
+
+        return Ok((
+            Vec::new(),
+            Some(format!(
+                "No technical snapshots found for {} ({}). Run `pftui data refresh` first or ensure price history exists.",
+                normalized, timeframe
+            )),
+        ));
+    }
+
+    let mut rows = technical_snapshots::list_latest_snapshots_backend(backend, timeframe, limit)?;
+    if !rows.is_empty() {
+        return Ok((rows, None));
+    }
+
+    let symbols = discover_alignment_symbols(backend, None);
+    if symbols.is_empty() {
+        return Ok((
+            Vec::new(),
+            Some(format!(
+                "No technical snapshots found for timeframe '{}'. Run `pftui data refresh` first.",
+                timeframe
+            )),
+        ));
+    }
+
+    let computed = load_or_compute_snapshots_backend(backend, &symbols, timeframe);
+    rows = computed.into_values().collect();
+    rows.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+    if let Some(limit) = limit {
+        rows.truncate(limit);
+    }
+
+    if rows.is_empty() {
+        Ok((
+            Vec::new(),
+            Some(format!(
+                "No technical snapshots found for timeframe '{}'. Run `pftui data refresh` first or ensure price history exists.",
+                timeframe
+            )),
+        ))
+    } else {
+        Ok((
+            rows,
+            Some(format!(
+                "No persisted technical snapshots found for timeframe '{}'. Computed live from cached price history.",
+                timeframe
+            )),
+        ))
+    }
 }
 
 fn fmt_opt(value: Option<f64>, precision: usize) -> String {
@@ -4693,6 +4782,36 @@ mod tests {
             result.is_ok(),
             "run_synthesis should not error: {:?}",
             result
+        );
+    }
+
+    #[test]
+    fn technical_rows_compute_from_history_when_snapshot_missing() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        let history: Vec<crate::models::price::HistoryRecord> = (0..30)
+            .map(|day| crate::models::price::HistoryRecord {
+                date: format!("2026-03-{:02}", day + 1),
+                close: rust_decimal::Decimal::from(100 + day),
+                open: Some(rust_decimal::Decimal::from(99 + day)),
+                high: Some(rust_decimal::Decimal::from(101 + day)),
+                low: Some(rust_decimal::Decimal::from(98 + day)),
+                volume: Some(1_000 + day as u64),
+            })
+            .collect();
+
+        price_history::upsert_history_backend(&backend, "AAPL", "test", &history).unwrap();
+
+        let (rows, warning) =
+            technical_rows_with_warning(&backend, Some("AAPL"), DEFAULT_TIMEFRAME, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].symbol, "AAPL");
+        assert!(
+            warning
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Computed live from price history")
         );
     }
 

@@ -7,7 +7,7 @@ use anyhow::Result;
 use chrono::Utc;
 use serde::Serialize;
 
-use crate::data::comex::{fetch_inventory, COMEX_METALS};
+use crate::data::comex::{fetch_inventory, ComexInventory, COMEX_METALS};
 use crate::db::backend::BackendConnection;
 use crate::db::comex_cache::{
     get_latest_inventory_backend, upsert_inventory_backend, ComexCacheEntry,
@@ -46,7 +46,11 @@ fn display_all(backend: &BackendConnection, json: bool) -> Result<()> {
     let mut outputs = Vec::new();
 
     for metal_meta in COMEX_METALS {
-        match get_or_fetch_inventory(backend, metal_meta.symbol)? {
+        let (output, warning) = get_or_fetch_inventory(backend, metal_meta.symbol)?;
+        if let Some(warning) = warning {
+            eprintln!("Warning: {warning}");
+        }
+        match output {
             Some(data) => outputs.push(data),
             None => {
                 if !json {
@@ -89,7 +93,10 @@ fn display_metal(backend: &BackendConnection, symbol: &str, json: bool) -> Resul
         );
     }
 
-    let output = get_or_fetch_inventory(backend, symbol)?;
+    let (output, warning) = get_or_fetch_inventory(backend, symbol)?;
+    if let Some(warning) = warning {
+        eprintln!("Warning: {warning}");
+    }
 
     if let Some(data) = output {
         if json {
@@ -131,44 +138,35 @@ fn parse_timestamp_flexible(raw: &str) -> Option<chrono::DateTime<Utc>> {
 fn get_or_fetch_inventory(
     backend: &BackendConnection,
     symbol: &str,
-) -> Result<Option<SupplyOutput>> {
+) -> Result<(Option<SupplyOutput>, Option<String>)> {
+    get_or_fetch_inventory_with(backend, symbol, fetch_inventory)
+}
+
+fn get_or_fetch_inventory_with<F>(
+    backend: &BackendConnection,
+    symbol: &str,
+    fetcher: F,
+) -> Result<(Option<SupplyOutput>, Option<String>)>
+where
+    F: Fn(&str) -> Result<ComexInventory>,
+{
     // Try cache first
-    if let Some(cached) = get_latest_inventory_backend(backend, symbol)? {
+    let cached = get_latest_inventory_backend(backend, symbol)?;
+    if let Some(ref cached_entry) = cached {
         // Parse fetched_at timestamp
-        let fetched_at = parse_timestamp_flexible(&cached.fetched_at)
+        let fetched_at = parse_timestamp_flexible(&cached_entry.fetched_at)
             .unwrap_or_else(Utc::now);
 
         let age = Utc::now().signed_duration_since(fetched_at);
 
         // Use cache if <24 hours old
         if age < chrono::Duration::hours(24) {
-            let metal_name = COMEX_METALS
-                .iter()
-                .find(|m| m.symbol == symbol)
-                .map(|m| m.metal)
-                .unwrap_or("Unknown");
-
-            let unit = COMEX_METALS
-                .iter()
-                .find(|m| m.symbol == symbol)
-                .map(|m| m.unit)
-                .unwrap_or("units");
-
-            return Ok(Some(SupplyOutput {
-                symbol: cached.symbol,
-                metal: metal_name.to_string(),
-                date: cached.date,
-                registered: cached.registered,
-                eligible: cached.eligible,
-                total: cached.total,
-                reg_ratio: cached.reg_ratio,
-                unit: unit.to_string(),
-            }));
+            return Ok((Some(supply_output_from_cache(cached_entry)), None));
         }
     }
 
     // Cache miss or stale — fetch fresh data
-    match fetch_inventory(symbol) {
+    match fetcher(symbol) {
         Ok(inv) => {
             // Cache the fresh data
             let entry = ComexCacheEntry {
@@ -183,33 +181,53 @@ fn get_or_fetch_inventory(
 
             upsert_inventory_backend(backend, &entry)?;
 
-            let metal_name = COMEX_METALS
-                .iter()
-                .find(|m| m.symbol == symbol)
-                .map(|m| m.metal)
-                .unwrap_or("Unknown");
-
-            let unit = COMEX_METALS
-                .iter()
-                .find(|m| m.symbol == symbol)
-                .map(|m| m.unit)
-                .unwrap_or("units");
-
-            Ok(Some(SupplyOutput {
+            Ok((Some(SupplyOutput {
                 symbol: inv.symbol,
-                metal: metal_name.to_string(),
+                metal: metal_metadata(symbol).metal.to_string(),
                 date: inv.date,
                 registered: inv.registered,
                 eligible: inv.eligible,
                 total: inv.total,
                 reg_ratio: inv.reg_ratio,
-                unit: unit.to_string(),
-            }))
+                unit: metal_metadata(symbol).unit.to_string(),
+            }), None))
         }
         Err(e) => {
-            eprintln!("Warning: Failed to fetch {} inventory: {}", symbol, e);
-            Ok(None)
+            if let Some(cached_entry) = cached {
+                Ok((
+                    Some(supply_output_from_cache(&cached_entry)),
+                    Some(format!(
+                        "Failed to fetch {} inventory live ({}). Returning stale cached data from {}.",
+                        symbol, e, cached_entry.date
+                    )),
+                ))
+            } else {
+                Ok((
+                    None,
+                    Some(format!("Failed to fetch {} inventory live: {}", symbol, e)),
+                ))
+            }
         }
+    }
+}
+
+fn metal_metadata(symbol: &str) -> &'static crate::data::comex::ComexMetal {
+    COMEX_METALS
+        .iter()
+        .find(|m| m.symbol == symbol)
+        .unwrap_or(&COMEX_METALS[0])
+}
+
+fn supply_output_from_cache(cached: &ComexCacheEntry) -> SupplyOutput {
+    SupplyOutput {
+        symbol: cached.symbol.clone(),
+        metal: metal_metadata(&cached.symbol).metal.to_string(),
+        date: cached.date.clone(),
+        registered: cached.registered,
+        eligible: cached.eligible,
+        total: cached.total,
+        reg_ratio: cached.reg_ratio,
+        unit: metal_metadata(&cached.symbol).unit.to_string(),
     }
 }
 
@@ -233,6 +251,41 @@ fn print_inventory(inv: &SupplyOutput) {
         inv.unit
     );
     println!("  Reg Ratio:      {:.1}%", inv.reg_ratio);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stale_cached_inventory_is_returned_when_live_fetch_fails() {
+        let backend = BackendConnection::Sqlite {
+            conn: crate::db::open_in_memory(),
+        };
+
+        upsert_inventory_backend(
+            &backend,
+            &ComexCacheEntry {
+                symbol: "GC=F".to_string(),
+                date: "2026-04-01".to_string(),
+                registered: 100.0,
+                eligible: 200.0,
+                total: 300.0,
+                reg_ratio: 33.3,
+                fetched_at: "2026-04-01T00:00:00Z".to_string(),
+            },
+        )
+        .unwrap();
+
+        let (output, warning) =
+            get_or_fetch_inventory_with(&backend, "GC=F", |_| anyhow::bail!("network down"))
+                .unwrap();
+
+        let output = output.expect("expected stale cached output");
+        assert_eq!(output.symbol, "GC=F");
+        assert_eq!(output.date, "2026-04-01");
+        assert!(warning.unwrap().contains("Returning stale cached data"));
+    }
 }
 
 /// Format a number with thousands separators.

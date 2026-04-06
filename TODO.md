@@ -6,19 +6,19 @@
 
 ## P0 - Critical
 
-### [Feedback] Add `analytics macro log add` subcommand
+### [x] [Feedback] Add `analytics macro log add` subcommand
 **Source:** Macro-Timeframe Analyst (Apr 5, 55/62 — lowest usefulness score of any tester).
 **Why:** `analytics macro log` is read-only; there is no `add`/`write` subcommand. Analyst had to use `journal entry add` as an awkward workaround, which severs the macro-specific workflow and loses structured fields. This is the primary pain point for the lowest-scoring tester.
 **Scope:** Add `analytics macro log add` subcommand with flags matching analyst needs: `--development <text>`, `--cycle-impact <text>`, `--outcome-shift <text>`, `--date <YYYY-MM-DD>` (default today). Store in existing macro log table. Mirror the `journal entry add --content` pattern established in PR #375. Files: `src/analytics/macro_cmd.rs` (or equivalent), `src/cli.rs`, `src/main.rs`.
 **Effort:** 2–3 hours.
 
-### [Feedback] Fix technicals / regime / supply commands returning empty for evening-analysis agent
+### [x] [Feedback] Fix technicals / regime / supply commands returning empty for evening-analysis agent
 **Source:** Evening Analysis (Apr 5, 72/68 — lowest overall scorer).
 **Why:** Three commands that evening-analysis relies on for core analysis returned empty output: `analytics technicals`, `analytics macro regime`, and `analytics supply`. This forces fallback to web_search and significantly reduces pftui's analytical value for the lowest-scoring tester.
 **Scope:** Investigate each command's data source — likely stale/missing cache rows or a backend dispatch bug. Add diagnostic output when result set is empty (e.g. "No technical signals found — run `data refresh` first"). Files: `src/analytics/technicals.rs`, `src/analytics/regime.rs`, possibly `src/data/supply.rs`.
 **Effort:** 1–2 hours investigation + fix.
 
-### [Feedback] Fix prediction scorecard per-date returning zeros despite new predictions
+### [x] [Feedback] Fix prediction scorecard per-date returning zeros despite new predictions
 **Source:** Evening Analysis (Apr 5, 72/68 — lowest overall scorer).
 **Why:** Agent added 5 new predictions on Apr 5, then ran prediction scorecard and got zero counts per-date — a clear data pipeline bug that breaks the accountability/feedback loop.
 **Scope:** Investigate `journal prediction scorecard` date-bucketing logic. Likely a timezone mismatch (UTC insert vs local date grouping) or a query filter cutting off same-day predictions. Files: `src/journal/predictions.rs`, related `_backend` DB functions.
