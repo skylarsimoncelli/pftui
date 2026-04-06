@@ -40,7 +40,7 @@
 **Scope:** Trace the indicator query path in `analytics situation`. Likely a join or filter mismatch between situation rows and their linked indicators. Files: `src/analytics/situation.rs`, `src/db/situation.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] COT data 13 days stale — investigate refresh path
+### [x] [Feedback] COT data 13 days stale — investigate refresh path
 **Source:** Evening Analysis (Apr 6, 78/75).
 **Why:** COT (Commitment of Traders) data was 13 days stale, forcing fallback to web search for positioning data that pftui should own. Staleness this extreme suggests the refresh source failed silently or the COT source was not included in recent refresh runs.
 **Scope:** Check COT refresh source for silent failures; add staleness warning to `data economy` / `data refresh` output when COT is >7 days old; ensure COT is included in all full refresh plans. Files: `src/data/cot.rs` (or equivalent), `src/data/refresh.rs`.

@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: treat stale COT report dates as stale even after refetch
+
+- What: COT freshness now keys off the latest cached `report_date`, not just `fetched_at`. If the newest CFTC report is older than a week, `data refresh` will keep retrying COT on subsequent runs instead of deferring for another week, `data status` marks the source stale from the report date age, and refresh output now carries explicit stale-report warnings plus partial-failure diagnostics for failed contracts.
+- Why: P1 feedback from Evening Analysis reported COT data sitting 13 days stale. The old logic could refetch an already-stale weekly report, mark it fresh because the fetch time was recent, and then skip COT again for a week.
+- Files: `src/commands/refresh.rs`, `src/commands/status.rs`
+- Tests: added regression coverage for report-date-based COT staleness in both refresh and status helpers.
+
 ### 2026-04-06 — fix: include linked situation indicators in `analytics situation`
 
 - What: `pftui analytics situation` now carries a top-level `situation_indicators` payload with total/watching/triggered counts plus the most recently triggered linked indicators, and terminal output now surfaces the same section. Active-situation indicators are collected in batch from the situation engine instead of being omitted from the snapshot entirely.
