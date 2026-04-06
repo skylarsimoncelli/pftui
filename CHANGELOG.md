@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-05 — fix: fall back before technicals/regime/supply go empty
+
+- What: `analytics technicals` now computes live snapshots from cached price history when persisted technical snapshots are missing, and returns an additive `warning` in JSON when it had to fall back or when no usable data exists. `analytics macro regime current --json` now returns a diagnostic `warning` instead of silent `{"current": null}` output, and includes a `live` regime assessment when cached prices/history are sufficient but no persisted regime snapshot exists. `data supply` now falls back to stale cached COMEX inventory when the live CME fetch fails, instead of dropping to empty output.
+- Why: Evening Analysis feedback (Apr 5, 72/68) reported these three commands coming back empty, forcing web-search fallback for data pftui is supposed to own. The root causes were distinct: technicals only read persisted snapshots, regime current had no fallback or diagnostic for missing snapshots, and supply discarded stale cache rows on fetch failure.
+- Files: `src/commands/analytics.rs` (+ technical snapshot fallback + warning), `src/commands/regime.rs` (+ current payload diagnostics + live fallback), `src/commands/supply.rs` (+ stale-cache fallback on fetch failure, tests)
+- Tests: added focused coverage for computed technical fallback, regime diagnostic output on empty state, and stale cached COMEX fallback.
+
 ### 2026-04-05 — feat: add `analytics macro log add` subcommand
 
 - What: `pftui analytics macro log add` now exists in the typed CLI tree instead of only in low-level dispatch. The new subcommand accepts either positional development text or `--development`, plus `--cycle-impact`, `--outcome-shift`, optional `--date`, and `--json`. When `--date` is omitted it defaults to today in local time. Existing `pftui analytics macro log --limit N` list behavior is unchanged.

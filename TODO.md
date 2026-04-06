@@ -12,7 +12,7 @@
 **Scope:** Add `analytics macro log add` subcommand with flags matching analyst needs: `--development <text>`, `--cycle-impact <text>`, `--outcome-shift <text>`, `--date <YYYY-MM-DD>` (default today). Store in existing macro log table. Mirror the `journal entry add --content` pattern established in PR #375. Files: `src/analytics/macro_cmd.rs` (or equivalent), `src/cli.rs`, `src/main.rs`.
 **Effort:** 2–3 hours.
 
-### [Feedback] Fix technicals / regime / supply commands returning empty for evening-analysis agent
+### [x] [Feedback] Fix technicals / regime / supply commands returning empty for evening-analysis agent
 **Source:** Evening Analysis (Apr 5, 72/68 — lowest overall scorer).
 **Why:** Three commands that evening-analysis relies on for core analysis returned empty output: `analytics technicals`, `analytics macro regime`, and `analytics supply`. This forces fallback to web_search and significantly reduces pftui's analytical value for the lowest-scoring tester.
 **Scope:** Investigate each command's data source — likely stale/missing cache rows or a backend dispatch bug. Add diagnostic output when result set is empty (e.g. "No technical signals found — run `data refresh` first"). Files: `src/analytics/technicals.rs`, `src/analytics/regime.rs`, possibly `src/data/supply.rs`.

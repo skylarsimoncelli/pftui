@@ -21,6 +21,15 @@ pub struct RegimeAssessment {
     pub btc: Option<f64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RegimeCurrentOutput {
+    current: Option<crate::db::regime_snapshots::RegimeSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    live: Option<RegimeAssessment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning: Option<String>,
+}
+
 fn latest_price(backend: &BackendConnection, symbol: &str) -> Option<f64> {
     get_cached_price_backend(backend, symbol, "USD")
         .ok()
@@ -187,13 +196,13 @@ pub fn run(
 ) -> Result<()> {
     match action {
         "current" => {
-            let current = regime_snapshots::get_current_backend(backend)?;
+            let output = current_output(backend)?;
             if json_output {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&json!({ "current": current }))?
+                    serde_json::to_string_pretty(&output)?
                 );
-            } else if let Some(c) = current {
+            } else if let Some(c) = output.current {
                 println!(
                     "Current Regime: {} (confidence: {:.2})",
                     c.regime.to_uppercase(),
@@ -207,8 +216,33 @@ pub fn run(
                     c.vix, c.dxy, c.yield_10y, c.oil, c.gold, c.btc
                 );
                 println!("  Recorded: {}", c.recorded_at);
+            } else if let Some(live) = output.live {
+                println!(
+                    "{}",
+                    output.warning.unwrap_or_else(|| {
+                        "No persisted regime snapshot found. Returning live classification."
+                            .to_string()
+                    })
+                );
+                println!(
+                    "Live Regime: {} (confidence: {:.2})",
+                    live.regime.to_uppercase(),
+                    live.confidence
+                );
+                if !live.drivers.is_empty() {
+                    println!("  Drivers: {}", live.drivers.join("; "));
+                }
+                println!(
+                    "  VIX: {:?} | DXY: {:?} | 10Y: {:?} | Oil: {:?} | Gold: {:?} | BTC: {:?}",
+                    live.vix, live.dxy, live.yield_10y, live.oil, live.gold, live.btc
+                );
             } else {
-                println!("No regime snapshots yet. Run `pftui refresh`.");
+                println!(
+                    "{}",
+                    output.warning.unwrap_or_else(|| {
+                        "No regime snapshots yet. Run `pftui data refresh`.".to_string()
+                    })
+                );
             }
         }
         "history" => {
@@ -260,6 +294,36 @@ pub fn run(
     }
 
     Ok(())
+}
+
+fn current_output(backend: &BackendConnection) -> Result<RegimeCurrentOutput> {
+    let current = regime_snapshots::get_current_backend(backend)?;
+    if current.is_some() {
+        return Ok(RegimeCurrentOutput {
+            current,
+            live: None,
+            warning: None,
+        });
+    }
+
+    let live = classify_regime(backend);
+    let has_market_inputs = live.vix.is_some()
+        || live.dxy.is_some()
+        || live.yield_10y.is_some()
+        || live.oil.is_some()
+        || live.gold.is_some()
+        || live.btc.is_some()
+        || !live.drivers.is_empty();
+
+    Ok(RegimeCurrentOutput {
+        current: None,
+        live: has_market_inputs.then_some(live),
+        warning: Some(if has_market_inputs {
+            "No persisted regime snapshot found. Returning live classification from cached prices/history.".to_string()
+        } else {
+            "No regime snapshots or cached market inputs found. Run `pftui data refresh` first.".to_string()
+        }),
+    })
 }
 
 /// Summary statistics for regime history: time in each regime, transition counts, durations.
@@ -972,6 +1036,23 @@ mod tests {
         }
         assert_eq!(counts["risk-on"], 2);
         assert_eq!(counts["risk-off"], 1);
+    }
+
+    #[test]
+    fn current_output_warns_when_no_snapshots_or_inputs() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        let output = current_output(&backend).unwrap();
+        assert!(output.current.is_none());
+        assert!(output.live.is_none());
+        assert!(
+            output
+                .warning
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Run `pftui data refresh` first")
+        );
     }
 
     #[test]
