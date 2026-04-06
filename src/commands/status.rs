@@ -260,16 +260,14 @@ fn check_cot(conn: &Connection) -> Result<DataSourceStatus> {
         });
     }
 
-    let now = chrono::Utc::now();
-    let (most_recent, is_stale) = most_recent_and_stale_from_fetched(
-        reports.iter().map(|report| report.fetched_at.clone()),
-        now,
-        COT_FRESHNESS_SECS,
+    let (most_recent_report_date, is_stale) = most_recent_cot_report_date(
+        reports.iter().map(|report| report.report_date.clone()),
+        chrono::Utc::now().date_naive(),
     );
 
     Ok(DataSourceStatus {
         name: "COT",
-        last_fetch: most_recent.map(|dt| dt.to_rfc3339()),
+        last_fetch: most_recent_report_date.map(|date| format!("{date}T00:00:00Z")),
         records: count,
         status: if is_stale {
             SourceStatus::Stale
@@ -277,6 +275,76 @@ fn check_cot(conn: &Connection) -> Result<DataSourceStatus> {
             SourceStatus::Fresh
         },
     })
+}
+
+fn check_cot_postgres(pool: &PgPool) -> DataSourceStatus {
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(_) => {
+            return DataSourceStatus {
+                name: "COT",
+                last_fetch: None,
+                records: 0,
+                status: SourceStatus::Empty,
+            };
+        }
+    };
+
+    let count = runtime
+        .block_on(async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*)::BIGINT FROM cot_cache")
+                .fetch_one(pool)
+                .await
+        })
+        .unwrap_or(0);
+    if count == 0 {
+        return DataSourceStatus {
+            name: "COT",
+            last_fetch: None,
+            records: 0,
+            status: SourceStatus::Empty,
+        };
+    }
+
+    let report_dates = runtime
+        .block_on(async {
+            sqlx::query_scalar::<_, String>(
+                "SELECT MAX(report_date)::TEXT FROM cot_cache GROUP BY cftc_code",
+            )
+            .fetch_all(pool)
+            .await
+        })
+        .unwrap_or_default();
+    let (most_recent_report_date, is_stale) =
+        most_recent_cot_report_date(report_dates, chrono::Utc::now().date_naive());
+
+    DataSourceStatus {
+        name: "COT",
+        last_fetch: most_recent_report_date.map(|date| format!("{date}T00:00:00Z")),
+        records: count as usize,
+        status: if is_stale {
+            SourceStatus::Stale
+        } else {
+            SourceStatus::Fresh
+        },
+    }
+}
+
+fn most_recent_cot_report_date<I>(
+    report_dates: I,
+    today: chrono::NaiveDate,
+) -> (Option<chrono::NaiveDate>, bool)
+where
+    I: IntoIterator<Item = String>,
+{
+    let most_recent = report_dates
+        .into_iter()
+        .filter_map(|raw| chrono::NaiveDate::parse_from_str(&raw, "%Y-%m-%d").ok())
+        .max();
+    let is_stale = most_recent
+        .map(|date| (today - date).num_days() * 24 * 60 * 60 > COT_FRESHNESS_SECS)
+        .unwrap_or(true);
+    (most_recent, is_stale)
 }
 
 fn check_sentiment(conn: &Connection) -> Result<DataSourceStatus> {
@@ -565,13 +633,7 @@ fn run_postgres(pool: &PgPool, json: bool) -> Result<()> {
             "MAX(fetched_at)::TEXT",
             Some(NEWS_FRESHNESS_SECS),
         ),
-        check_source_postgres(
-            pool,
-            "COT",
-            "cot_cache",
-            "MAX(fetched_at)::TEXT",
-            Some(COT_FRESHNESS_SECS),
-        ),
+        check_cot_postgres(pool),
         check_source_postgres(
             pool,
             "Sentiment",
@@ -810,6 +872,23 @@ mod tests {
         let (_latest, is_stale) =
             most_recent_and_stale_from_fetched(vec![old, fresh], now, 15 * 60);
         assert!(!is_stale);
+    }
+
+    #[test]
+    fn cot_staleness_uses_report_date_age() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 4, 6).unwrap();
+        let (latest, is_stale) = most_recent_cot_report_date(
+            vec!["2026-04-01".to_string(), "2026-03-25".to_string()],
+            today,
+        );
+        assert_eq!(
+            latest,
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 1).unwrap())
+        );
+        assert!(!is_stale);
+
+        let (_, stale) = most_recent_cot_report_date(vec!["2026-03-20".to_string()], today);
+        assert!(stale);
     }
 
     #[test]

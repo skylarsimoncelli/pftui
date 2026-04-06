@@ -896,7 +896,7 @@ pub enum DataPredictionsCommand {
     },
     /// Add a personal prediction (convenience alias for `journal prediction add`)
     #[command(
-        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`.\n\nTimeframe accepts: low, medium, high, macro (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
+        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`.\n\nTimeframe accepts: low, medium, high, macro (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\nUse either `--source-agent` or the shorter alias `--agent`.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high --agent medium-agent\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
     )]
     Add {
         /// The prediction claim text
@@ -920,7 +920,7 @@ pub enum DataPredictionsCommand {
         confidence: Option<f64>,
 
         /// Source agent name (e.g. low-timeframe, evening-analyst)
-        #[arg(long = "source-agent")]
+        #[arg(long = "source-agent", visible_alias = "agent")]
         source_agent: Option<String>,
 
         /// Target date for evaluation (YYYY-MM-DD)
@@ -1779,7 +1779,7 @@ pub enum JournalPredictionCommand {
         timeframe: Option<String>,
         #[arg(long)]
         confidence: Option<f64>,
-        #[arg(long = "source-agent")]
+        #[arg(long = "source-agent", visible_alias = "agent")]
         source_agent: Option<String>,
         #[arg(long)]
         target_date: Option<String>,
@@ -3388,7 +3388,8 @@ pub enum AnalyticsCommand {
     },
     /// Technical indicators for one or all assets (RSI, MACD, SMA, Bollinger, ATR)
     Technicals {
-        #[arg(long)]
+        /// Filter to a single symbol or a comma-separated symbol list (e.g. BTC,GC=F)
+        #[arg(long, visible_alias = "symbols")]
         symbol: Option<String>,
         #[arg(long, default_value = "1d")]
         timeframe: String,
@@ -6179,6 +6180,29 @@ mod tests {
     }
 
     #[test]
+    fn parse_analytics_technicals_symbols_alias() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "technicals",
+            "--symbols",
+            "BTC,GC=F",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Technicals { symbol, json, .. },
+        }) = cli.command
+        else {
+            panic!("expected analytics technicals command");
+        };
+
+        assert_eq!(symbol.as_deref(), Some("BTC,GC=F"));
+        assert!(json);
+    }
+
+    #[test]
     fn parse_analytics_macro_log_add_command() {
         let cli = Cli::try_parse_from([
             "pftui",
@@ -6659,6 +6683,32 @@ mod tests {
         assert_eq!(symbol.as_deref(), Some("BTC"));
         assert_eq!(source_agent.as_deref(), Some("evening-analyst"));
         assert!(json);
+    }
+
+    #[test]
+    fn parse_prediction_add_agent_alias() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "add",
+            "BTC above 70k",
+            "--agent",
+            "medium-agent",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command: JournalPredictionCommand::Add { source_agent, .. },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction add command");
+        };
+
+        assert_eq!(source_agent.as_deref(), Some("medium-agent"));
     }
 
     #[test]

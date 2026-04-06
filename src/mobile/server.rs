@@ -927,6 +927,7 @@ fn situation_payload(
         armed_alert_count: monitoring.armed_alert_count,
         acknowledged_alert_count: monitoring.acknowledged_alert_count,
         recent_triggered_alerts: monitoring.recent_triggered_alerts.clone(),
+        situation_indicators: situation::SituationIndicatorSummary::default(),
         market_pulse: monitoring
             .market_pulse
             .iter()

@@ -20,6 +20,7 @@ pub struct SituationSnapshot {
     pub subtitle: String,
     pub summary_stats: Vec<SituationStat>,
     pub alert_summary: AlertSummary,
+    pub situation_indicators: SituationIndicatorSummary,
     pub watch_now: Vec<SituationInsight>,
     pub portfolio_impacts: Vec<PortfolioImpact>,
     pub risk_matrix: Vec<RiskState>,
@@ -62,6 +63,23 @@ pub struct AlertDetail {
     pub rule_text: String,
     pub symbol: String,
     pub kind: String,
+    pub triggered_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SituationIndicatorSummary {
+    pub total: usize,
+    pub watching: usize,
+    pub triggered: usize,
+    pub recently_triggered: Vec<TriggeredSituationIndicator>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriggeredSituationIndicator {
+    pub situation: String,
+    pub label: String,
+    pub symbol: String,
+    pub metric: String,
     pub triggered_at: Option<String>,
 }
 
@@ -123,6 +141,8 @@ pub struct SituationInputs {
     pub acknowledged_alert_count: usize,
     #[serde(default)]
     pub recent_triggered_alerts: Vec<AlertDetail>,
+    #[serde(default)]
+    pub situation_indicators: SituationIndicatorSummary,
     pub market_pulse: Vec<MarketPulseItem>,
     pub stale_sources: usize,
     pub scenarios: Vec<ScenarioState>,
@@ -368,8 +388,55 @@ pub fn collect_inputs_backend(backend: &BackendConnection) -> Result<SituationIn
             day_change_pct: day_change_pct_backend(backend, &spec.symbol),
         })
         .collect();
-    let scenarios = db::scenarios::list_scenarios_backend(backend, Some("active"))
-        .unwrap_or_default()
+    let active_scenarios = db::scenarios::list_scenarios_by_phase_backend(backend, "active")
+        .unwrap_or_default();
+    let scenario_ids: Vec<i64> = active_scenarios.iter().map(|row| row.id).collect();
+    let indicators_by_scenario =
+        db::scenarios::list_indicators_batch_backend(backend, &scenario_ids).unwrap_or_default();
+    let mut recently_triggered_situation_indicators = active_scenarios
+        .iter()
+        .flat_map(|scenario| {
+            indicators_by_scenario
+                .get(&scenario.id)
+                .into_iter()
+                .flatten()
+                .filter(|indicator| indicator.status == "triggered")
+                .map(|indicator| TriggeredSituationIndicator {
+                    situation: scenario.name.clone(),
+                    label: indicator.label.clone(),
+                    symbol: indicator.symbol.clone(),
+                    metric: indicator.metric.clone(),
+                    triggered_at: indicator.triggered_at.clone(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    recently_triggered_situation_indicators
+        .sort_by(|left, right| right.triggered_at.cmp(&left.triggered_at));
+    recently_triggered_situation_indicators.truncate(5);
+    let situation_indicators = SituationIndicatorSummary {
+        total: indicators_by_scenario.values().map(Vec::len).sum(),
+        watching: indicators_by_scenario
+            .values()
+            .map(|indicators| {
+                indicators
+                    .iter()
+                    .filter(|indicator| indicator.status == "watching")
+                    .count()
+            })
+            .sum(),
+        triggered: indicators_by_scenario
+            .values()
+            .map(|indicators| {
+                indicators
+                    .iter()
+                    .filter(|indicator| indicator.status == "triggered")
+                    .count()
+            })
+            .sum(),
+        recently_triggered: recently_triggered_situation_indicators,
+    };
+    let scenarios = active_scenarios
         .into_iter()
         .map(|row| ScenarioState {
             name: row.name,
@@ -407,6 +474,7 @@ pub fn collect_inputs_backend(backend: &BackendConnection) -> Result<SituationIn
         armed_alert_count,
         acknowledged_alert_count,
         recent_triggered_alerts,
+        situation_indicators,
         market_pulse,
         stale_sources: count_stale_sources(backend),
         scenarios,
@@ -511,6 +579,7 @@ pub fn build_snapshot(
             acknowledged: inputs.acknowledged_alert_count,
             recent_triggered: inputs.recent_triggered_alerts.clone(),
         },
+        situation_indicators: inputs.situation_indicators.clone(),
         watch_now,
         portfolio_impacts,
         risk_matrix,
@@ -581,6 +650,44 @@ fn situation_watch_now(inputs: &SituationInputs, average_score: f64) -> Vec<Situ
             detail: "Triggered rules are active in the current monitoring stack.".to_string(),
             value: "alert".to_string(),
             severity: "critical".to_string(),
+        });
+    }
+
+    if inputs.situation_indicators.triggered > 0 {
+        let latest = inputs
+            .situation_indicators
+            .recently_triggered
+            .first()
+            .map(|indicator| format!("Latest: {} / {}", indicator.situation, indicator.label))
+            .unwrap_or_else(|| "Mechanical situation triggers are active.".to_string());
+        items.push(SituationInsight {
+            title: format!(
+                "{} triggered situation indicator{}",
+                inputs.situation_indicators.triggered,
+                if inputs.situation_indicators.triggered == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ),
+            detail: latest,
+            value: "indicator".to_string(),
+            severity: "elevated".to_string(),
+        });
+    } else if inputs.situation_indicators.total > 0 {
+        items.push(SituationInsight {
+            title: format!(
+                "{} situation indicator{} watching",
+                inputs.situation_indicators.watching,
+                if inputs.situation_indicators.watching == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ),
+            detail: "Active situations have linked mechanical indicators.".to_string(),
+            value: "watching".to_string(),
+            severity: "normal".to_string(),
         });
     }
 
@@ -956,6 +1063,15 @@ fn day_change_pct_backend(backend: &BackendConnection, symbol: &str) -> Option<D
 mod tests {
     use super::*;
 
+    fn empty_indicator_summary() -> SituationIndicatorSummary {
+        SituationIndicatorSummary {
+            total: 0,
+            watching: 0,
+            triggered: 0,
+            recently_triggered: Vec::new(),
+        }
+    }
+
     #[test]
     fn empty_snapshot_has_stable_defaults() {
         let snapshot = build_snapshot(
@@ -971,6 +1087,7 @@ mod tests {
                 armed_alert_count: 0,
                 acknowledged_alert_count: 0,
                 recent_triggered_alerts: Vec::new(),
+                situation_indicators: empty_indicator_summary(),
                 market_pulse: Vec::new(),
                 stale_sources: 0,
                 scenarios: Vec::new(),
@@ -987,6 +1104,7 @@ mod tests {
         assert_eq!(snapshot.cross_timeframe.len(), 0);
         assert_eq!(snapshot.alert_summary.total, 0);
         assert_eq!(snapshot.alert_summary.triggered, 0);
+        assert_eq!(snapshot.situation_indicators.total, 0);
         assert!(snapshot.correlation_breaks.is_empty());
         assert!(snapshot.scan_highlights.is_empty());
     }
@@ -1049,6 +1167,18 @@ mod tests {
                     triggered_at: Some("2026-03-23T09:30:00Z".to_string()),
                 },
             ],
+            situation_indicators: SituationIndicatorSummary {
+                total: 3,
+                watching: 2,
+                triggered: 1,
+                recently_triggered: vec![TriggeredSituationIndicator {
+                    situation: "Iran Escalation".to_string(),
+                    label: "Brent > 95".to_string(),
+                    symbol: "BZ=F".to_string(),
+                    metric: "close".to_string(),
+                    triggered_at: Some("2026-03-23T11:00:00Z".to_string()),
+                }],
+            },
             market_pulse: vec![MarketPulseItem {
                 symbol: "BTC-USD".to_string(),
                 name: "Bitcoin".to_string(),
@@ -1067,6 +1197,10 @@ mod tests {
             .watch_now
             .iter()
             .any(|item| item.title.contains("live alerts")));
+        assert!(snapshot
+            .watch_now
+            .iter()
+            .any(|item| item.title.contains("triggered situation indicator")));
         assert_eq!(snapshot.risk_matrix[0].severity, "critical");
 
         // Alert summary assertions
@@ -1076,6 +1210,8 @@ mod tests {
         assert_eq!(snapshot.alert_summary.acknowledged, 1);
         assert_eq!(snapshot.alert_summary.recent_triggered.len(), 2);
         assert_eq!(snapshot.alert_summary.recent_triggered[0].symbol, "BTC-USD");
+        assert_eq!(snapshot.situation_indicators.total, 3);
+        assert_eq!(snapshot.situation_indicators.triggered, 1);
     }
 
     #[test]
@@ -1115,6 +1251,7 @@ mod tests {
                 armed_alert_count: 0,
                 acknowledged_alert_count: 0,
                 recent_triggered_alerts: Vec::new(),
+                situation_indicators: empty_indicator_summary(),
                 market_pulse: Vec::new(),
                 stale_sources: 0,
                 scenarios: Vec::new(),
@@ -1164,6 +1301,7 @@ mod tests {
                 armed_alert_count: 0,
                 acknowledged_alert_count: 0,
                 recent_triggered_alerts: Vec::new(),
+                situation_indicators: empty_indicator_summary(),
                 market_pulse: Vec::new(),
                 stale_sources: 0,
                 scenarios: Vec::new(),
@@ -1218,6 +1356,7 @@ mod tests {
                 armed_alert_count: 0,
                 acknowledged_alert_count: 0,
                 recent_triggered_alerts: Vec::new(),
+                situation_indicators: empty_indicator_summary(),
                 market_pulse: Vec::new(),
                 stale_sources: 0,
                 scenarios: Vec::new(),
@@ -1250,6 +1389,7 @@ mod tests {
                 armed_alert_count: 0,
                 acknowledged_alert_count: 0,
                 recent_triggered_alerts: Vec::new(),
+                situation_indicators: empty_indicator_summary(),
                 market_pulse: Vec::new(),
                 stale_sources: 0,
                 scenarios: Vec::new(),

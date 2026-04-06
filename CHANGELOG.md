@@ -1,5 +1,40 @@
 # Changelog
 
+### 2026-04-06 — fix: normalize scenario indicator timestamps across backends
+
+- What: Scenario-indicator evaluation now writes one explicit UTC RFC3339 timestamp through both SQLite and Postgres paths for `last_checked`, `triggered_at`, and `updated_at` instead of relying on backend-side `now()` expressions with backend-specific coercion. Postgres now binds the timestamp consistently as `timestamptz`, while SQLite stores the same string directly.
+- Why: P1 feedback reported an intermittent `triggered_at` timestamp type mismatch surfacing during scenario-update workflows. Normalizing the write path removes the backend-dependent timestamp coercion that could cause one run to fail and the next to succeed.
+- Files: `src/db/scenarios.rs`
+- Tests: verified existing indicator evaluation regression tests still pass for triggered and non-triggered updates.
+
+### 2026-04-06 — fix: add `--agent` alias to prediction add commands
+
+- What: `journal prediction add` and the convenience `data predictions add` path now accept `--agent` as a visible alias for `--source-agent`. The data-predictions help text now calls out the short alias directly.
+- Why: P1 feedback from medium-agent reported agents naturally trying `--agent` and getting a clap error instead of discovering `--source-agent`.
+- Files: `src/cli.rs`
+- Tests: added CLI parse coverage for `journal prediction add --agent ...`.
+
+### 2026-04-06 — fix: treat stale COT report dates as stale even after refetch
+
+- What: COT freshness now keys off the latest cached `report_date`, not just `fetched_at`. If the newest CFTC report is older than a week, `data refresh` will keep retrying COT on subsequent runs instead of deferring for another week, `data status` marks the source stale from the report date age, and refresh output now carries explicit stale-report warnings plus partial-failure diagnostics for failed contracts.
+- Why: P1 feedback from Evening Analysis reported COT data sitting 13 days stale. The old logic could refetch an already-stale weekly report, mark it fresh because the fetch time was recent, and then skip COT again for a week.
+- Files: `src/commands/refresh.rs`, `src/commands/status.rs`
+- Tests: added regression coverage for report-date-based COT staleness in both refresh and status helpers.
+
+### 2026-04-06 — fix: include linked situation indicators in `analytics situation`
+
+- What: `pftui analytics situation` now carries a top-level `situation_indicators` payload with total/watching/triggered counts plus the most recently triggered linked indicators, and terminal output now surfaces the same section. Active-situation indicators are collected in batch from the situation engine instead of being omitted from the snapshot entirely.
+- Why: P1 feedback from Low-Timeframe Analyst reported that the situation room could show active Iran situation data while the linked indicator list still looked empty. The indicators existed in the database, but the top-level situation snapshot never included them.
+- Files: `src/analytics/situation.rs`, `src/commands/analytics.rs`, `src/analytics/deltas.rs`, `src/mobile/server.rs`
+- Tests: updated situation snapshot coverage to assert indicator summaries and triggered-indicator watch-now surfacing.
+
+### 2026-04-06 — fix: honor comma-separated `analytics technicals --symbols` filters
+
+- What: `pftui analytics technicals` now accepts `--symbols` as an explicit alias for `--symbol` and correctly applies comma-separated symbol filters like `BTC,GC=F`. The backend now batch-loads only the requested symbols from cached technical snapshots and falls back to live computation from price history for missing requested symbols instead of dumping the full symbol set.
+- Why: P1 feedback from medium-agent and Low-Timeframe Analyst reported that `analytics technicals --symbols BTC,GC=F` was accepted but silently ignored, forcing agents to grep large JSON payloads by hand.
+- Files: `src/cli.rs`, `src/commands/analytics.rs`
+- Tests: added CLI coverage for `--symbols` parsing and command coverage for comma-separated symbol filtering.
+
 ### 2026-04-05 — fix: prediction scorecard now buckets by local day
 
 - What: `journal prediction scorecard --date today|yesterday|YYYY-MM-DD` now resolves the target day in local time and converts stored `created_at` / `scored_at` timestamps into the local calendar day before filtering. This fixes same-day predictions disappearing from the scorecard when timestamps were stored in UTC.

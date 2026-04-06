@@ -28,31 +28,31 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Fix `analytics technicals --symbols` filter silently ignored
+### [x] [Feedback] Fix `analytics technicals --symbols` filter silently ignored
 **Source:** medium-agent (Apr 6, 65/72 — new low). Corroborated by Low-Timeframe Analyst (Apr 5, 80/78).
 **Why:** `analytics technicals --symbols BTC,GC=F` is accepted by the CLI but dumps the full symbol set — the filter has no effect. Agents are forced to manually grep the JSON output. Similar silent-ignore bug was previously fixed on `analytics trends list` (PR #566).
 **Scope:** Investigate `analytics technicals` backend — apply the `--symbols` filter at the DB level, same pattern as the list_trends_filtered_backend fix. Files: `src/analytics/technicals.rs`, `src/db/technicals.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Fix analytics situation indicator list returning empty despite indicators existing
+### [x] [Feedback] Fix analytics situation indicator list returning empty despite indicators existing
 **Source:** Low-Timeframe Analyst (Apr 5, 80/78).
 **Why:** Agent confirmed 3 indicators existed for the Iran situation but `analytics situation` indicator list returned empty — data routing or filter bug in the situation room's indicator fetch.
 **Scope:** Trace the indicator query path in `analytics situation`. Likely a join or filter mismatch between situation rows and their linked indicators. Files: `src/analytics/situation.rs`, `src/db/situation.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] COT data 13 days stale — investigate refresh path
+### [x] [Feedback] COT data 13 days stale — investigate refresh path
 **Source:** Evening Analysis (Apr 6, 78/75).
 **Why:** COT (Commitment of Traders) data was 13 days stale, forcing fallback to web search for positioning data that pftui should own. Staleness this extreme suggests the refresh source failed silently or the COT source was not included in recent refresh runs.
 **Scope:** Check COT refresh source for silent failures; add staleness warning to `data economy` / `data refresh` output when COT is >7 days old; ensure COT is included in all full refresh plans. Files: `src/data/cot.rs` (or equivalent), `src/data/refresh.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Fix journal scenario update triggered_at timestamp type mismatch
+### [x] [Feedback] Fix journal scenario update triggered_at timestamp type mismatch
 **Source:** medium-agent (Apr 5, 78/82).
 **Why:** `journal scenario update` for "Iran-US War Escalation" hit a DB error on first attempt (column `triggered_at` timestamp type mismatch) but succeeded on retry — intermittent type coercion bug that could silently corrupt scenario state.
 **Scope:** Investigate the `triggered_at` column handling in `journal scenario update` SQLite and Postgres paths. Likely a bind-type inconsistency (string vs NaiveDateTime). Files: `src/journal/scenario.rs`, `src/db/scenarios.rs`.
 **Effort:** < 1 hour.
 
-### [Feedback] Add `--agent` alias for `--source-agent` on prediction add
+### [x] [Feedback] Add `--agent` alias for `--source-agent` on prediction add
 **Source:** medium-agent (Apr 6, 65/72).
 **Why:** Agent used `prediction add --agent` which silently failed (clap rejected unknown flag). The correct flag is `--source-agent`. Adding a clap alias eliminates the discoverability gap, consistent with the `data quotes` / `portfolio snapshot` alias pattern.
 **Scope:** Add `#[arg(alias = "agent")]` on the `--source-agent` flag in the prediction add CLI definition. Also add cross-reference in `after_help`. Files: `src/cli.rs`.

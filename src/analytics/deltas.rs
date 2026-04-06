@@ -693,7 +693,7 @@ mod tests {
     use super::*;
     use crate::analytics::situation::{
         ConvictionState, LatestSignal, MarketPulseItem, RegimeContext, ScenarioState,
-        SentimentGauge, SituationInputs, TimeframeScore,
+        SentimentGauge, SituationIndicatorSummary, SituationInputs, TimeframeScore,
     };
     use rust_decimal_macros::dec;
 
@@ -741,6 +741,7 @@ mod tests {
                 armed_alert_count: 3,
                 acknowledged_alert_count: 0,
                 recent_triggered_alerts: Vec::new(),
+                situation_indicators: SituationIndicatorSummary::default(),
                 market_pulse: vec![MarketPulseItem {
                     symbol: "BTC-USD".to_string(),
                     name: "Bitcoin".to_string(),

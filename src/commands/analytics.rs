@@ -1537,6 +1537,13 @@ fn technical_rows_with_warning(
     Vec<crate::db::technical_snapshots::TechnicalSnapshotRecord>,
     Option<String>,
 )> {
+    if let Some(filter) = symbol {
+        let symbols = parse_symbol_filter(filter);
+        if symbols.len() > 1 {
+            return technical_rows_for_symbols_with_warning(backend, &symbols, timeframe, limit);
+        }
+    }
+
     if let Some(sym) = symbol {
         let normalized = sym.to_uppercase();
         if let Some(snapshot) =
@@ -1609,6 +1616,70 @@ fn technical_rows_with_warning(
             )),
         ))
     }
+}
+
+fn technical_rows_for_symbols_with_warning(
+    backend: &BackendConnection,
+    symbols: &[String],
+    timeframe: &str,
+    limit: Option<usize>,
+) -> Result<(
+    Vec<crate::db::technical_snapshots::TechnicalSnapshotRecord>,
+    Option<String>,
+)> {
+    let mut rows = technical_snapshots::get_latest_snapshots_batch_backend(backend, symbols, timeframe)?
+        .into_values()
+        .collect::<Vec<_>>();
+    let found_symbols: BTreeSet<String> = rows.iter().map(|row| row.symbol.clone()).collect();
+    let missing: Vec<String> = symbols
+        .iter()
+        .filter(|symbol| !found_symbols.contains(*symbol))
+        .cloned()
+        .collect();
+
+    if !missing.is_empty() {
+        let computed = load_or_compute_snapshots_backend(backend, &missing, timeframe);
+        rows.extend(computed.into_values());
+    }
+
+    rows.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+    if let Some(limit) = limit {
+        rows.truncate(limit);
+    }
+
+    if rows.is_empty() {
+        return Ok((
+            Vec::new(),
+            Some(format!(
+                "No technical snapshots found for {} ({}). Run `pftui data refresh` first or ensure price history exists.",
+                symbols.join(","),
+                timeframe
+            )),
+        ));
+    }
+
+    let matched_symbols: BTreeSet<String> = rows.iter().map(|row| row.symbol.clone()).collect();
+    let unmatched: Vec<&str> = symbols
+        .iter()
+        .filter_map(|symbol| (!matched_symbols.contains(symbol)).then_some(symbol.as_str()))
+        .collect();
+    let warning = (!unmatched.is_empty()).then(|| {
+        format!(
+            "No technical snapshots found for {} ({}). Returned {} matched symbol(s).",
+            unmatched.join(","),
+            timeframe,
+            rows.len()
+        )
+    });
+
+    Ok((rows, warning))
+}
+
+fn parse_symbol_filter(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(|value| value.trim().to_uppercase())
+        .filter(|value| !value.is_empty())
+        .collect()
 }
 
 fn fmt_opt(value: Option<f64>, precision: usize) -> String {
@@ -2075,6 +2146,28 @@ fn run_situation(backend: &BackendConnection, json_output: bool) -> Result<()> {
                 println!(
                     "- [{}] {} — {} ({})",
                     item.severity, item.title, item.detail, item.value
+                );
+            }
+        }
+
+        if snapshot.situation_indicators.total > 0 {
+            println!();
+            println!("SITUATION INDICATORS");
+            println!(
+                "- total: {}  watching: {}  triggered: {}",
+                snapshot.situation_indicators.total,
+                snapshot.situation_indicators.watching,
+                snapshot.situation_indicators.triggered
+            );
+            for indicator in snapshot
+                .situation_indicators
+                .recently_triggered
+                .iter()
+                .take(3)
+            {
+                println!(
+                    "- [{}] {} / {} ({})",
+                    indicator.symbol, indicator.situation, indicator.label, indicator.metric
                 );
             }
         }
@@ -4813,6 +4906,35 @@ mod tests {
                 .unwrap_or_default()
                 .contains("Computed live from price history")
         );
+    }
+
+    #[test]
+    fn technical_rows_honor_comma_separated_symbol_filter() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        let history: Vec<crate::models::price::HistoryRecord> = (0..30)
+            .map(|day| crate::models::price::HistoryRecord {
+                date: format!("2026-03-{:02}", day + 1),
+                close: rust_decimal::Decimal::from(100 + day),
+                open: Some(rust_decimal::Decimal::from(99 + day)),
+                high: Some(rust_decimal::Decimal::from(101 + day)),
+                low: Some(rust_decimal::Decimal::from(98 + day)),
+                volume: Some(1_000 + day as u64),
+            })
+            .collect();
+
+        price_history::upsert_history_backend(&backend, "BTC", "test", &history).unwrap();
+        price_history::upsert_history_backend(&backend, "GC=F", "test", &history).unwrap();
+        price_history::upsert_history_backend(&backend, "AAPL", "test", &history).unwrap();
+
+        let (rows, warning) =
+            technical_rows_with_warning(&backend, Some("BTC,GC=F"), DEFAULT_TIMEFRAME, None)
+                .unwrap();
+
+        let symbols: Vec<&str> = rows.iter().map(|row| row.symbol.as_str()).collect();
+        assert_eq!(symbols, vec!["BTC", "GC=F"]);
+        assert!(warning.is_none());
     }
 
     #[test]

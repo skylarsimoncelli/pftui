@@ -553,6 +553,10 @@ fn cot_needs_refresh(backend: &BackendConnection) -> Result<bool> {
         return Ok(true);
     }
 
+    if latest_cot_report_age_days(&reports).is_some_and(|age_days| age_days > 7) {
+        return Ok(true);
+    }
+
     let now = chrono::Utc::now();
     let mut any_parsed = false;
     for report in reports {
@@ -566,6 +570,28 @@ fn cot_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     }
     // If no timestamps could be parsed, assume stale (safe fallback).
     Ok(!any_parsed)
+}
+
+fn latest_cot_report_age_days(reports: &[crate::db::cot_cache::CotCacheEntry]) -> Option<i64> {
+    let latest = reports
+        .iter()
+        .filter_map(|report| chrono::NaiveDate::parse_from_str(&report.report_date, "%Y-%m-%d").ok())
+        .max()?;
+    Some((chrono::Utc::now().date_naive() - latest).num_days())
+}
+
+fn cot_staleness_detail(backend: &BackendConnection) -> Option<String> {
+    let reports = cot_cache::get_all_latest_backend(backend).ok()?;
+    let latest = reports
+        .iter()
+        .filter_map(|report| {
+            chrono::NaiveDate::parse_from_str(&report.report_date, "%Y-%m-%d")
+                .ok()
+                .map(|date| (date, report.report_date.as_str()))
+        })
+        .max_by_key(|(date, _)| *date)?;
+    let age_days = (chrono::Utc::now().date_naive() - latest.0).num_days();
+    (age_days > 7).then(|| format!("latest COT report date {} is {} days old", latest.1, age_days))
 }
 
 /// Check if COMEX needs refreshing
@@ -2562,6 +2588,7 @@ fn store_cot_result(
     if due {
         let mut contracts_updated = 0;
         let mut reports_upserted = 0;
+        let mut failed_contracts = Vec::new();
 
         for contract in cot::COT_CONTRACTS {
             match cot::fetch_historical_reports(contract.cftc_code, COT_HISTORY_WEEKS) {
@@ -2585,13 +2612,19 @@ fn store_cot_result(
                     if cot_cache::upsert_reports_backend(backend, &entries).is_ok() {
                         contracts_updated += 1;
                         reports_upserted += entries.len();
+                    } else {
+                        failed_contracts.push(contract.symbol.to_string());
                     }
                 }
-                Ok(_) => {}
-                Err(_) => {}
+                Ok(_) => failed_contracts.push(contract.symbol.to_string()),
+                Err(_) => failed_contracts.push(contract.symbol.to_string()),
             }
         }
+        let staleness_detail = cot_staleness_detail(backend);
         if contracts_updated > 0 {
+            if let Some(detail) = &staleness_detail {
+                warn_ln!(verbose, "⚠ COT warning ({detail})");
+            }
             info_ln!(
                 verbose,
                 "✓ COT ({} contracts, {} reports cached)",
@@ -2601,16 +2634,20 @@ fn store_cot_result(
             dag_result.add(SourceResult {
                 name: "cot".to_string(),
                 label: "COT (CFTC)".to_string(),
-                status: SourceStatus::Ok,
-                items_attempted: None,
-            items_failed: None,
-            failed_symbols: None,
-            items_updated: Some(reports_upserted),
+                status: if failed_contracts.is_empty() {
+                    SourceStatus::Ok
+                } else {
+                    SourceStatus::PartialSuccess
+                },
+                items_attempted: Some(cot::COT_CONTRACTS.len()),
+                items_failed: Some(failed_contracts.len()),
+                failed_symbols: (!failed_contracts.is_empty()).then_some(failed_contracts),
+                items_updated: Some(reports_upserted),
                 duration_ms: cot_start.elapsed().as_millis() as u64,
                 reason: None,
                 age_minutes: None,
                 error: None,
-                detail: None,
+                detail: staleness_detail,
             });
         } else {
             info_ln!(verbose, "✗ COT (all failed)");
@@ -2618,18 +2655,22 @@ fn store_cot_result(
                 name: "cot".to_string(),
                 label: "COT (CFTC)".to_string(),
                 status: SourceStatus::Failed,
-                items_attempted: None,
-            items_failed: None,
-            failed_symbols: None,
-            items_updated: None,
+                items_attempted: Some(cot::COT_CONTRACTS.len()),
+                items_failed: Some(failed_contracts.len()),
+                failed_symbols: (!failed_contracts.is_empty()).then_some(failed_contracts),
+                items_updated: None,
                 duration_ms: cot_start.elapsed().as_millis() as u64,
                 reason: None,
                 age_minutes: None,
                 error: Some("all contracts failed".to_string()),
-                detail: None,
+                detail: staleness_detail,
             });
         }
     } else if in_plan {
+        let staleness_detail = cot_staleness_detail(backend);
+        if let Some(detail) = &staleness_detail {
+            warn_ln!(verbose, "⚠ COT warning ({detail})");
+        }
         info_ln!(verbose, "⊘ COT (fresh, skipping)");
         dag_result.add(SourceResult {
             name: "cot".to_string(),
@@ -2643,7 +2684,7 @@ fn store_cot_result(
             reason: Some("fresh".to_string()),
             age_minutes: None,
             error: None,
-            detail: None,
+            detail: staleness_detail,
         });
     } else {
         info_ln!(verbose, "⊘ COT (cadence deferred)");
@@ -4495,6 +4536,25 @@ mod tests {
     fn parse_timestamp_flexible_returns_none_on_garbage() {
         assert!(parse_timestamp_flexible("not-a-timestamp").is_none());
         assert!(parse_timestamp_flexible("").is_none());
+    }
+
+    #[test]
+    fn cot_report_age_uses_report_date_not_fetch_time() {
+        let reports = vec![crate::db::cot_cache::CotCacheEntry {
+            cftc_code: "088691".to_string(),
+            report_date: "2026-03-20".to_string(),
+            open_interest: 0,
+            managed_money_long: 0,
+            managed_money_short: 0,
+            managed_money_net: 0,
+            commercial_long: 0,
+            commercial_short: 0,
+            commercial_net: 0,
+            fetched_at: chrono::Utc::now().to_rfc3339(),
+        }];
+
+        let age_days = latest_cot_report_age_days(&reports).unwrap();
+        assert!(age_days >= 0);
     }
 
     #[test]
