@@ -3388,7 +3388,8 @@ pub enum AnalyticsCommand {
     },
     /// Technical indicators for one or all assets (RSI, MACD, SMA, Bollinger, ATR)
     Technicals {
-        #[arg(long)]
+        /// Filter to a single symbol or a comma-separated symbol list (e.g. BTC,GC=F)
+        #[arg(long, visible_alias = "symbols")]
         symbol: Option<String>,
         #[arg(long, default_value = "1d")]
         timeframe: String,
@@ -6175,6 +6176,29 @@ mod tests {
 
         assert_eq!(symbol.as_deref(), Some("AAPL"));
         assert_eq!(timeframe, "1d");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_technicals_symbols_alias() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "technicals",
+            "--symbols",
+            "BTC,GC=F",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Technicals { symbol, json, .. },
+        }) = cli.command
+        else {
+            panic!("expected analytics technicals command");
+        };
+
+        assert_eq!(symbol.as_deref(), Some("BTC,GC=F"));
         assert!(json);
     }
 

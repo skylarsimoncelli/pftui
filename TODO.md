@@ -28,7 +28,7 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Fix `analytics technicals --symbols` filter silently ignored
+### [x] [Feedback] Fix `analytics technicals --symbols` filter silently ignored
 **Source:** medium-agent (Apr 6, 65/72 — new low). Corroborated by Low-Timeframe Analyst (Apr 5, 80/78).
 **Why:** `analytics technicals --symbols BTC,GC=F` is accepted by the CLI but dumps the full symbol set — the filter has no effect. Agents are forced to manually grep the JSON output. Similar silent-ignore bug was previously fixed on `analytics trends list` (PR #566).
 **Scope:** Investigate `analytics technicals` backend — apply the `--symbols` filter at the DB level, same pattern as the list_trends_filtered_backend fix. Files: `src/analytics/technicals.rs`, `src/db/technicals.rs`.

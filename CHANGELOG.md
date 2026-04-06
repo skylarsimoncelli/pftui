@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: honor comma-separated `analytics technicals --symbols` filters
+
+- What: `pftui analytics technicals` now accepts `--symbols` as an explicit alias for `--symbol` and correctly applies comma-separated symbol filters like `BTC,GC=F`. The backend now batch-loads only the requested symbols from cached technical snapshots and falls back to live computation from price history for missing requested symbols instead of dumping the full symbol set.
+- Why: P1 feedback from medium-agent and Low-Timeframe Analyst reported that `analytics technicals --symbols BTC,GC=F` was accepted but silently ignored, forcing agents to grep large JSON payloads by hand.
+- Files: `src/cli.rs`, `src/commands/analytics.rs`
+- Tests: added CLI coverage for `--symbols` parsing and command coverage for comma-separated symbol filtering.
+
 ### 2026-04-05 — fix: prediction scorecard now buckets by local day
 
 - What: `journal prediction scorecard --date today|yesterday|YYYY-MM-DD` now resolves the target day in local time and converts stored `created_at` / `scored_at` timestamps into the local calendar day before filtering. This fixes same-day predictions disappearing from the scorecard when timestamps were stored in UTC.
