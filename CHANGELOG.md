@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: add `--agent` alias to prediction add commands
+
+- What: `journal prediction add` and the convenience `data predictions add` path now accept `--agent` as a visible alias for `--source-agent`. The data-predictions help text now calls out the short alias directly.
+- Why: P1 feedback from medium-agent reported agents naturally trying `--agent` and getting a clap error instead of discovering `--source-agent`.
+- Files: `src/cli.rs`
+- Tests: added CLI parse coverage for `journal prediction add --agent ...`.
+
 ### 2026-04-06 — fix: treat stale COT report dates as stale even after refetch
 
 - What: COT freshness now keys off the latest cached `report_date`, not just `fetched_at`. If the newest CFTC report is older than a week, `data refresh` will keep retrying COT on subsequent runs instead of deferring for another week, `data status` marks the source stale from the report date age, and refresh output now carries explicit stale-report warnings plus partial-failure diagnostics for failed contracts.

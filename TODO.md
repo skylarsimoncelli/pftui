@@ -52,7 +52,7 @@
 **Scope:** Investigate the `triggered_at` column handling in `journal scenario update` SQLite and Postgres paths. Likely a bind-type inconsistency (string vs NaiveDateTime). Files: `src/journal/scenario.rs`, `src/db/scenarios.rs`.
 **Effort:** < 1 hour.
 
-### [Feedback] Add `--agent` alias for `--source-agent` on prediction add
+### [x] [Feedback] Add `--agent` alias for `--source-agent` on prediction add
 **Source:** medium-agent (Apr 6, 65/72).
 **Why:** Agent used `prediction add --agent` which silently failed (clap rejected unknown flag). The correct flag is `--source-agent`. Adding a clap alias eliminates the discoverability gap, consistent with the `data quotes` / `portfolio snapshot` alias pattern.
 **Scope:** Add `#[arg(alias = "agent")]` on the `--source-agent` flag in the prediction add CLI definition. Also add cross-reference in `after_help`. Files: `src/cli.rs`.
