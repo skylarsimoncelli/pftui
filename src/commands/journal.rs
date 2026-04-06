@@ -4,6 +4,34 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde_json::json;
 
+pub fn normalize_tags(repeated_tags: &[String], csv_tags: Option<&str>) -> Option<String> {
+    let mut normalized = Vec::new();
+
+    for raw in repeated_tags {
+        for tag in raw.split(',') {
+            let trimmed = tag.trim();
+            if !trimmed.is_empty() && !normalized.iter().any(|existing| existing == trimmed) {
+                normalized.push(trimmed.to_string());
+            }
+        }
+    }
+
+    if let Some(csv) = csv_tags {
+        for tag in csv.split(',') {
+            let trimmed = tag.trim();
+            if !trimmed.is_empty() && !normalized.iter().any(|existing| existing == trimmed) {
+                normalized.push(trimmed.to_string());
+            }
+        }
+    }
+
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized.join(","))
+    }
+}
+
 pub fn run_add(
     backend: &BackendConnection,
     content: &str,
@@ -249,6 +277,20 @@ pub fn run_stats(backend: &BackendConnection, json_output: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_tags;
+
+    #[test]
+    fn normalize_tags_merges_repeat_and_csv_inputs() {
+        let normalized = normalize_tags(
+            &["macro".to_string(), "oil,geopolitical".to_string()],
+            Some("oil, rates "),
+        );
+        assert_eq!(normalized.as_deref(), Some("macro,oil,geopolitical,rates"));
+    }
 }
 
 fn parse_since(since: &str) -> Result<String> {

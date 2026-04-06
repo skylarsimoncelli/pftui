@@ -1,5 +1,47 @@
 # Changelog
 
+### 2026-04-06 — feat: add `data predictions suggest-mappings`
+
+- What: added `pftui data predictions suggest-mappings`, which scans active scenarios and the enriched prediction-contract table to surface unmapped, high-liquidity candidate contracts. Suggestions are ranked by scenario-keyword overlap, category alignment, and liquidity, and each candidate includes a ready-to-run `data predictions map --scenario ... --contract ...` command.
+- Why: P2 feedback from Evening Analysis reported agents having zero visibility into which of the many Polymarket contracts were worth mapping to active scenarios, even though the mapping and calibration infrastructure already existed.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/predictions_map.rs`
+- Tests: added CLI parse coverage plus focused ranking/filter tests for keyword extraction, unmapped-contract exclusion, and scenario filtering.
+
+### 2026-04-06 — feat: add `data refresh --stale`
+
+- What: `pftui data refresh` now supports `--stale`, which reuses the same freshness checks behind `data status` to refresh only feeds currently marked stale or empty. The flag is mutually exclusive with `--only` and `--skip`, and returns an immediate no-op message when no degraded status-tracked feeds are present.
+- Why: P2 feedback from medium-agent reported wanting a fast path to refresh only degraded feeds without manually reading `data status` and reconstructing an `--only` list.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/status.rs`
+- Tests: added CLI coverage for `--stale` parsing/conflicts and status-source mapping coverage for refresh-plan source selection.
+
+### 2026-04-06 — feat: add multi-tag support to `journal entry add`
+
+- What: `pftui journal entry add` now accepts repeated `--tag` flags and a comma-separated `--tags` alias. Tags are normalized into one stored comma-separated value, and journal tag filters/stats/tag listing now understand multi-tag entries instead of treating the whole string as one opaque tag.
+- Why: P2 feedback from medium-agent reported having to collapse several relevant tags into one, which made later filtering and stats less useful.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/journal.rs`, `src/db/journal.rs`
+- Tests: added CLI parse coverage for `--tags`, normalization tests, and SQLite journal tests covering multi-tag filter and tag aggregation behavior.
+
+### 2026-04-06 — feat: add `analytics power-signals`
+
+- What: added `pftui analytics power-signals` as a single ranked power-structure checklist for agents. The new command aggregates `analytics regime-flows`, `analytics power-flow assess`, and `analytics power-flow conflicts` into one JSON/terminal view with an overall bias, composite score, dominant complex, and ranked signal rows covering regime patterns, conflict triggers, power-flow imbalances, and defense/energy ratio moves.
+- Why: P2 feedback from Low-Timeframe Analyst reported manually stitching together gold/oil, defense, VIX, and FIC/MIC checks every run. This standardizes that workflow into one command and one payload.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/power_signals.rs`, `src/commands/regime_flows.rs`, `src/commands/power_flow.rs`, `src/commands/power_flow_conflicts.rs`, `src/commands/mod.rs`
+- Tests: added CLI parse coverage for `analytics power-signals` and unit coverage for the new signal-ranking helpers.
+
+### 2026-04-06 — docs: point `analytics macro outcomes` users to `journal scenario update`
+
+- What: `pftui analytics macro outcomes --help` now explicitly states that the command is read-only and points users to the supported probability-edit path: `pftui journal scenario update ... --probability ...`, including both name-based and `--id` examples.
+- Why: P2 feedback from Macro-Timeframe Analyst concluded macro outcomes had no CLI edit path because the read command offered no cross-reference to the journal scenario update workflow.
+- Files: `src/cli.rs`
+- Tests: added help-text coverage asserting the outcomes help includes `journal scenario update` guidance.
+
+### 2026-04-06 — fix: make `journal scenario update` resolve by `--id` or fuzzy name
+
+- What: `pftui journal scenario update` now accepts `--id <N>` as an explicit lookup path and no longer requires an exact case-sensitive full-name match. The update flow now tries exact name, case-insensitive exact name, then unique partial-name matching, and returns candidate scenario IDs/names when a partial match is ambiguous.
+- Why: P2 feedback from medium-agent reported scenario updates failing on minor name mismatches, forcing trial-and-error even when the intended scenario was already present.
+- Files: `src/cli.rs`, `src/commands/scenario.rs`, `src/main.rs`
+- Tests: added CLI parse coverage for `--id` plus scenario-update resolution tests for case-insensitive, partial, ambiguous, and ID-based lookups.
+
 ### 2026-04-06 — fix: normalize scenario indicator timestamps across backends
 
 - What: Scenario-indicator evaluation now writes one explicit UTC RFC3339 timestamp through both SQLite and Postgres paths for `last_checked`, `triggered_at`, and `updated_at` instead of relying on backend-side `now()` expressions with backend-specific coercion. Postgres now binds the timestamp consistently as `timestamptz`, while SQLite stores the same string directly.

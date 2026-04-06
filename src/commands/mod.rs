@@ -66,6 +66,7 @@ pub mod portfolio;
 pub mod portfolio_status;
 pub mod power_flow;
 pub mod power_flow_conflicts;
+pub mod power_signals;
 pub mod predict;
 pub mod predictions;
 pub mod predictions_map;

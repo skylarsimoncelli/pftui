@@ -62,25 +62,25 @@
 
 ## P2 - Coverage And Agent Consumption
 
-### [Feedback] journal scenario update: support partial name match or ID-based lookup
+### [x] [Feedback] journal scenario update: support partial name match or ID-based lookup
 **Source:** medium-agent (Apr 6, 65/72).
 **Why:** `journal scenario update` requires an exact full-string name match. When the name doesn't match precisely (case, whitespace, abbreviation), the update fails with no suggestions. Agents waste cycles on trial-and-error or fall back to the timestamp-prone retry path.
 **Scope:** Add fuzzy/case-insensitive name matching (LIKE or LOWER()) as a fallback when exact match returns 0 rows, or support `--id <N>` as an alternative. Display candidate matches when multiple fuzzy results exist. Files: `src/journal/scenario.rs`, `src/db/scenarios.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] analytics macro outcomes: cross-reference to scenario update for probability edits
+### [x] [Feedback] analytics macro outcomes: cross-reference to scenario update for probability edits
 **Source:** Macro-Timeframe Analyst (Apr 5, 55/62).
 **Why:** Analyst concluded macro outcomes was read-only with "no way to update scenario probabilities via CLI." The actual path is `journal scenario update --probability X` but there is no cross-reference from `analytics macro` help text. Add `after_help` guidance and optionally a thin `analytics macro outcomes update` alias.
 **Scope:** Add `after_help` on `analytics macro` commands pointing to `journal scenario update`. Optionally add a thin alias `analytics macro outcomes update` that delegates to the journal path. Files: `src/cli.rs`, `src/analytics/macro_cmd.rs`.
 **Effort:** 30 minutes.
 
-### [Feedback] Power composite signal dashboard (`analytics power-signals`)
+### [x] [Feedback] Power composite signal dashboard (`analytics power-signals`)
 **Source:** Low-Timeframe Analyst (Apr 5, 80/78).
 **Why:** Analyst manually checks gold/oil/defense/VIX as a "power structure checklist" each run. A first-class `analytics power-signals` command would standardize this across agents and save time per session.
 **Scope:** New `analytics power-signals` command aggregating regime-flows, power-flow assess, and FIC/MIC conflict output into a single ranked signal table. JSON + terminal output. Reuse existing `analytics regime-flows` and `analytics power-flow conflicts` backends. Files: `src/analytics/power_signals.rs` (new), `src/cli.rs`, `src/main.rs`.
 **Effort:** 3–5 hours.
 
-### [Feedback] Scenario-to-prediction-market mapping: surface unmapped contracts
+### [x] [Feedback] Scenario-to-prediction-market mapping: surface unmapped contracts
 **Source:** Evening Analysis (Apr 6, 78/75).
 **Why:** 1699 Polymarket contracts are flowing but zero are mapped to active scenarios. The `data predictions map` command exists (PR #422) but agents have no visibility into which contracts are good candidates for mapping. Guidance or `analytics calibration` should surface unmapped high-relevance contracts.
 **Scope:** Add a `data predictions suggest-mappings` or enrich `analytics guidance` with a "unmapped high-relevance contracts" section (top N contracts by liquidity that match active scenario keywords). Files: `src/data/predictions.rs`, `src/commands/guidance.rs`.
@@ -98,13 +98,13 @@
 **Scope:** New `journal prediction lessons bulk` command — either interactive (prompt per unresolved prediction) or file-based (read lessons from JSON/CSV). Include `--unresolved` flag on `journal prediction lessons list` to surface the backlog. Files: `src/journal/lessons.rs` (or equivalent).
 **Effort:** 2–4 hours.
 
-### [Feedback] Support --tags as comma-separated list for journal entry add
+### [x] [Feedback] Support --tags as comma-separated list for journal entry add
 **Source:** medium-agent (Apr 5, 78/82).
 **Why:** `journal entry add` only accepts a single `--tag` flag. Agents had to use a single tag when multiple apply. Comma-separated `--tags` (e.g. `--tags iran,oil,geopolitical`) would match the multi-value pattern used elsewhere.
 **Scope:** Change `--tag` to accept either multiple `--tag` flags or a comma-separated `--tags` alias. Parse and split on comma. Files: `src/cli.rs`, `src/journal/entries.rs`.
 **Effort:** < 1 hour.
 
-### [Feedback] pftui data refresh --stale flag to selectively refresh only degraded feeds
+### [x] [Feedback] pftui data refresh --stale flag to selectively refresh only degraded feeds
 **Source:** medium-agent (Apr 5, 78/82). Analytics situation showed 3 stale data sources.
 **Why:** Agents want to refresh only stale/degraded feeds without triggering a full refresh (which is slow). `--only` and `--skip` flags exist but require knowing which sources are stale. A `--stale` flag that auto-detects and refreshes only degraded sources would be more ergonomic.
 **Scope:** Add `--stale` flag to `data refresh`. Query each source's `fetched_at` and include only those beyond their freshness threshold in the RefreshPlan. Mutually exclusive with `--only`/`--skip`. Files: `src/data/refresh.rs`, `src/cli.rs`.

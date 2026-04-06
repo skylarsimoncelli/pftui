@@ -36,6 +36,7 @@ fn run_agent_journal(
                 content,
                 date,
                 tag,
+                tags,
                 symbol,
                 conviction,
                 json,
@@ -49,11 +50,12 @@ fn run_agent_journal(
                          Run 'pftui journal entry add --help' for all options."
                     )
                 })?;
+                let normalized_tags = commands::journal::normalize_tags(&tag, tags.as_deref());
                 commands::journal::run_add(
                     backend,
                     &resolved,
                     date.as_deref(),
-                    tag.as_deref(),
+                    normalized_tags.as_deref(),
                     symbol.as_deref(),
                     conviction.as_deref(),
                     json,
@@ -433,6 +435,7 @@ fn run_agent_journal(
             ),
             cli::JournalScenarioCommand::Update {
                 value,
+                id,
                 note_pos,
                 probability,
                 description,
@@ -448,8 +451,8 @@ fn run_agent_journal(
                 commands::scenario::run(
                     backend,
                     "update",
-                    Some(&value),
-                    None,
+                    value.as_deref(),
+                    id,
                     None,
                     probability,
                     description.as_deref(),
@@ -768,6 +771,16 @@ fn dispatch_predictions(
             list,
             j || json,
         ),
+        Some(cli::DataPredictionsCommand::SuggestMappings {
+            scenario,
+            limit: lim,
+            json: j,
+        }) => commands::predictions_map::run_suggest_mappings(
+            backend,
+            scenario.as_deref(),
+            lim,
+            j || json,
+        ),
         Some(cli::DataPredictionsCommand::Unmap {
             scenario,
             contract,
@@ -921,6 +934,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 json,
                 only,
                 skip,
+                stale,
             } => {
                 if cached_only {
                     if json {
@@ -930,7 +944,21 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                     Ok(())
                 } else {
-                    let plan = if !only.is_empty() {
+                    let plan = if stale {
+                        let stale_sources =
+                            commands::status::stale_refresh_sources_backend(&backend)?;
+                        if stale_sources.is_empty() {
+                            if json {
+                                println!(
+                                    "{{\"refreshed_sources\":[],\"message\":\"No stale or empty status-tracked feeds detected.\"}}"
+                                );
+                            } else {
+                                println!("No stale or empty status-tracked feeds detected.");
+                            }
+                            return Ok(());
+                        }
+                        commands::refresh::RefreshPlan::from_only(&stale_sources)?
+                    } else if !only.is_empty() {
                         commands::refresh::RefreshPlan::from_only(&only)?
                     } else if !skip.is_empty() {
                         commands::refresh::RefreshPlan::from_skip(&skip)?
@@ -4256,6 +4284,9 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
             cli::AnalyticsCommand::RegimeFlows { json } => {
                 commands::regime_flows::run(&backend, json)
+            }
+            cli::AnalyticsCommand::PowerSignals { days, json } => {
+                commands::power_signals::run(&backend, days, json)
             }
             cli::AnalyticsCommand::RegimeTransitions { json } => {
                 commands::regime_transitions::run(&backend, json)

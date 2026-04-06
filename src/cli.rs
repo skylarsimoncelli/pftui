@@ -371,7 +371,7 @@ pub enum DashboardCommand {
 #[derive(Subcommand)]
 pub enum DataCommand {
     /// Fetch and cache current prices for tracked symbols
-    #[command(after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n\n--only and --skip are mutually exclusive.")]
+    #[command(after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n  pftui data refresh --stale                    # only stale/empty status-tracked feeds\n\n--only, --skip, and --stale are mutually exclusive.")]
     Refresh {
         /// Send OS notification for newly triggered alerts
         #[arg(long)]
@@ -380,11 +380,14 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
         /// Run only these sources (comma-separated). Mutually exclusive with --skip.
-        #[arg(long, conflicts_with = "skip", value_delimiter = ',')]
+        #[arg(long, conflicts_with_all = ["skip", "stale"], value_delimiter = ',')]
         only: Vec<String>,
         /// Skip these sources (comma-separated). Mutually exclusive with --only.
-        #[arg(long, conflicts_with = "only", value_delimiter = ',')]
+        #[arg(long, conflicts_with_all = ["only", "stale"], value_delimiter = ',')]
         skip: Vec<String>,
+        /// Refresh only feeds currently marked stale/empty by `data status`.
+        #[arg(long, conflicts_with_all = ["only", "skip"])]
+        stale: bool,
     },
     /// Show data freshness status for all cached sources
     Status {
@@ -872,6 +875,24 @@ pub enum DataPredictionsCommand {
         /// List all existing scenario-contract mappings
         #[arg(long)]
         list: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Suggest high-relevance unmapped contracts for active scenarios
+    #[command(
+        name = "suggest-mappings",
+        after_help = "Surfaces high-liquidity prediction market contracts that appear relevant\nto active scenarios but are not mapped yet.\n\nExamples:\n  pftui data predictions suggest-mappings\n  pftui data predictions suggest-mappings --scenario \"US Recession 2026\" --limit 3 --json\n\nSee also: `data predictions map`, `analytics calibration`, `analytics scenario list`"
+    )]
+    SuggestMappings {
+        /// Restrict suggestions to one scenario name
+        #[arg(long)]
+        scenario: Option<String>,
+
+        /// Maximum suggested contracts per scenario
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
 
         /// Output as JSON
         #[arg(long)]
@@ -1677,6 +1698,7 @@ pub enum JournalEntryCommand {
     ///
     /// Examples:
     ///   pftui journal entry add "Gold looking strong" --tag macro --symbol GC=F
+    ///   pftui journal entry add "Iran update" --tags iran,oil,geopolitical
     ///   pftui journal entry add --content "Fed meeting notes" --date 2026-03-27
     ///   pftui journal entry add "BTC thesis update" --conviction high --tag btc
     Add {
@@ -1687,8 +1709,10 @@ pub enum JournalEntryCommand {
         content: Option<String>,
         #[arg(long, help = "Entry date (YYYY-MM-DD). Defaults to today.")]
         date: Option<String>,
-        #[arg(long, help = "Tag for categorization (e.g. macro, btc, trade).")]
-        tag: Option<String>,
+        #[arg(long, action = clap::ArgAction::Append, help = "Tag for categorization (repeatable, e.g. --tag macro --tag btc).")]
+        tag: Vec<String>,
+        #[arg(long, help = "Comma-separated tags (e.g. macro,btc,trade).")]
+        tags: Option<String>,
         #[arg(long, help = "Related asset symbol (e.g. BTC-USD, GC=F).")]
         symbol: Option<String>,
         #[arg(long, help = "Conviction level (e.g. high, medium, low).")]
@@ -2073,7 +2097,10 @@ pub enum JournalScenarioCommand {
     },
     /// Update a scenario's probability, description, triggers, or status
     Update {
-        value: String,
+        #[arg(required_unless_present = "id")]
+        value: Option<String>,
+        #[arg(long)]
+        id: Option<i64>,
         /// History note / driver (positional shorthand)
         note_pos: Option<String>,
         #[arg(long)]
@@ -2710,6 +2737,9 @@ pub enum AnalyticsMacroCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(
+        after_help = "This command is read-only: it shows current macro outcome probabilities.\n\nTo change a scenario probability, use:\n  pftui journal scenario update \"Scenario Name\" --probability 65\n  pftui journal scenario update --id 42 --probability 65\n\nSee also: analytics scenario list, journal scenario history"
+    )]
     /// Scenario-to-outcome mapping: what happens to assets under each macro scenario
     Outcomes {
         #[arg(long)]
@@ -3716,6 +3746,16 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
     PowerFlow {
         #[command(subcommand)]
         command: AnalyticsPowerFlowCommand,
+    },
+    /// Ranked power-structure checklist combining regime flows, FIC/MIC balance, and conflict stress
+    #[command(name = "power-signals", after_help = "Aggregates the existing power-structure stack into one ranked checklist:\n  - `analytics regime-flows`\n  - `analytics power-flow assess`\n  - `analytics power-flow conflicts`\n\nUse this when an agent needs one JSON call for geopolitical stress, safe-haven rotation,\nand FIC/MIC/TIC balance instead of stitching three commands together.")]
+    PowerSignals {
+        /// Number of days to use for power-flow/conflict lookback (default: 30)
+        #[arg(long, default_value_t = 30)]
+        days: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
     },
     /// News sentiment analysis: keyword-based scoring and aggregation of cached news
     #[command(name = "news-sentiment")]
@@ -4769,6 +4809,7 @@ mod tests {
                     command:
                         JournalScenarioCommand::Update {
                             value,
+                            id,
                             note_pos,
                             probability,
                             ..
@@ -4779,8 +4820,44 @@ mod tests {
             panic!("expected journal scenario update command");
         };
 
-        assert_eq!(value, "Hard Landing");
+        assert_eq!(value.as_deref(), Some("Hard Landing"));
+        assert_eq!(id, None);
         assert_eq!(note_pos.as_deref(), Some("labor rolling over"));
+        assert_eq!(probability, Some(65.0));
+    }
+
+    #[test]
+    fn parse_scenario_update_with_id() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "scenario",
+            "update",
+            "--id",
+            "42",
+            "--probability",
+            "65",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Scenario {
+                    command:
+                        JournalScenarioCommand::Update {
+                            value,
+                            id,
+                            probability,
+                            ..
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal scenario update command");
+        };
+
+        assert_eq!(value, None);
+        assert_eq!(id, Some(42));
         assert_eq!(probability, Some(65.0));
     }
 
@@ -6252,6 +6329,14 @@ mod tests {
     }
 
     #[test]
+    fn macro_outcomes_help_points_to_scenario_update() -> Result<()> {
+        let help = subcommand_help(&["analytics", "macro", "outcomes"])?;
+        assert!(help.contains("journal scenario update"));
+        assert!(help.contains("--id 42 --probability 65"));
+        Ok(())
+    }
+
+    #[test]
     fn parse_analytics_levels_command() {
         let cli =
             Cli::try_parse_from(["pftui", "analytics", "levels", "--symbol", "BTC", "--json"])
@@ -7444,6 +7529,36 @@ mod tests {
     }
 
     #[test]
+    fn parse_data_predictions_suggest_mappings() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "suggest-mappings",
+            "--scenario",
+            "US Recession 2026",
+            "--limit",
+            "3",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::SuggestMappings { scenario, limit, json }) => {
+                assert_eq!(scenario.as_deref(), Some("US Recession 2026"));
+                assert_eq!(limit, 3);
+                assert!(json);
+            }
+            _ => panic!("expected suggest-mappings subcommand"),
+        }
+    }
+
+    #[test]
     fn parse_data_predictions_unmap_all() {
         let cli = Cli::try_parse_from([
             "pftui",
@@ -7918,6 +8033,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_analytics_power_signals_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "power-signals", "--days", "14", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::PowerSignals { days, json } = command else {
+            panic!("expected PowerSignals");
+        };
+        assert_eq!(days, 14);
+        assert!(json);
+    }
+
+    #[test]
     fn parse_analytics_regime_transitions_json() {
         let cli = Cli::parse_from(["pftui", "analytics", "regime-transitions", "--json"]);
         let Some(Command::Analytics { command }) = cli.command else {
@@ -8330,6 +8458,56 @@ mod tests {
     }
 
     #[test]
+    fn journal_entry_add_accepts_tags_alias() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "entry",
+            "add",
+            "note",
+            "--tags",
+            "macro,oil,geopolitical",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        let JournalCommand::Entry { command: entry_cmd } = command.unwrap() else {
+            panic!("expected Entry");
+        };
+        let JournalEntryCommand::Add { tags, .. } = entry_cmd else {
+            panic!("expected Add");
+        };
+        assert_eq!(tags.as_deref(), Some("macro,oil,geopolitical"));
+    }
+
+    #[test]
+    fn journal_entry_add_accepts_repeated_tag_flags() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "entry",
+            "add",
+            "note",
+            "--tag",
+            "macro",
+            "--tag",
+            "oil",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        let JournalCommand::Entry { command: entry_cmd } = command.unwrap() else {
+            panic!("expected Entry");
+        };
+        let JournalEntryCommand::Add { tag, .. } = entry_cmd else {
+            panic!("expected Add");
+        };
+        assert_eq!(tag, vec!["macro".to_string(), "oil".to_string()]);
+    }
+
+    #[test]
     fn journal_entry_add_help_shows_content_flag() -> Result<()> {
         let help = subcommand_help(&["journal", "entry", "add"])?;
         assert!(help.contains("--content"), "help should show --content flag");
@@ -8341,6 +8519,7 @@ mod tests {
             help.contains("YYYY-MM-DD"),
             "help should describe date format"
         );
+        assert!(help.contains("--tags"), "help should show --tags flag");
         Ok(())
     }
 
@@ -9029,11 +9208,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_refresh_stale_flag() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "data", "refresh", "--stale"]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Refresh { stale, only, skip, .. } = command else {
+            panic!("expected refresh");
+        };
+        assert!(stale);
+        assert!(only.is_empty());
+        assert!(skip.is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn parse_refresh_only_and_skip_conflict() {
         let result = Cli::try_parse_from([
             "pftui", "data", "refresh", "--only", "prices", "--skip", "bls",
         ]);
         assert!(result.is_err(), "--only and --skip should conflict");
+    }
+
+    #[test]
+    fn parse_refresh_stale_and_only_conflict() {
+        let result = Cli::try_parse_from([
+            "pftui", "data", "refresh", "--stale", "--only", "prices",
+        ]);
+        assert!(result.is_err(), "--stale and --only should conflict");
     }
 
     #[test]
