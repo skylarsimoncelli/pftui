@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: normalize scenario indicator timestamps across backends
+
+- What: Scenario-indicator evaluation now writes one explicit UTC RFC3339 timestamp through both SQLite and Postgres paths for `last_checked`, `triggered_at`, and `updated_at` instead of relying on backend-side `now()` expressions with backend-specific coercion. Postgres now binds the timestamp consistently as `timestamptz`, while SQLite stores the same string directly.
+- Why: P1 feedback reported an intermittent `triggered_at` timestamp type mismatch surfacing during scenario-update workflows. Normalizing the write path removes the backend-dependent timestamp coercion that could cause one run to fail and the next to succeed.
+- Files: `src/db/scenarios.rs`
+- Tests: verified existing indicator evaluation regression tests still pass for triggered and non-triggered updates.
+
 ### 2026-04-06 — fix: add `--agent` alias to prediction add commands
 
 - What: `journal prediction add` and the convenience `data predictions add` path now accept `--agent` as a visible alias for `--source-agent`. The data-predictions help text now calls out the short alias directly.

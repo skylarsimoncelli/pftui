@@ -46,7 +46,7 @@
 **Scope:** Check COT refresh source for silent failures; add staleness warning to `data economy` / `data refresh` output when COT is >7 days old; ensure COT is included in all full refresh plans. Files: `src/data/cot.rs` (or equivalent), `src/data/refresh.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Fix journal scenario update triggered_at timestamp type mismatch
+### [x] [Feedback] Fix journal scenario update triggered_at timestamp type mismatch
 **Source:** medium-agent (Apr 5, 78/82).
 **Why:** `journal scenario update` for "Iran-US War Escalation" hit a DB error on first attempt (column `triggered_at` timestamp type mismatch) but succeeded on retry — intermittent type coercion bug that could silently corrupt scenario state.
 **Scope:** Investigate the `triggered_at` column handling in `journal scenario update` SQLite and Postgres paths. Likely a bind-type inconsistency (string vs NaiveDateTime). Files: `src/journal/scenario.rs`, `src/db/scenarios.rs`.

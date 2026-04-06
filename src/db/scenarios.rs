@@ -540,15 +540,16 @@ pub fn update_indicator_evaluation(
     last_value: &str,
     triggered: bool,
 ) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
     if triggered {
         conn.execute(
-            "UPDATE scenario_indicators SET last_value = ?, last_checked = datetime('now'), status = 'triggered', triggered_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-            params![last_value, indicator_id],
+            "UPDATE scenario_indicators SET last_value = ?, last_checked = ?, status = 'triggered', triggered_at = ?, updated_at = ? WHERE id = ?",
+            params![last_value, now, now, now, indicator_id],
         )?;
     } else {
         conn.execute(
-            "UPDATE scenario_indicators SET last_value = ?, last_checked = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-            params![last_value, indicator_id],
+            "UPDATE scenario_indicators SET last_value = ?, last_checked = ?, updated_at = ? WHERE id = ?",
+            params![last_value, now, now, indicator_id],
         )?;
     }
     Ok(())
@@ -2143,12 +2144,22 @@ fn update_indicator_evaluation_postgres(
     triggered: bool,
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
+    let now = Utc::now().to_rfc3339();
     if triggered {
         crate::db::pg_runtime::block_on(async {
             sqlx::query(
-                "UPDATE scenario_indicators SET last_value = $1, last_checked = now(), status = 'triggered', triggered_at = now(), updated_at = now() WHERE id = $2",
+                "UPDATE scenario_indicators
+                 SET last_value = $1,
+                     last_checked = $2::timestamptz,
+                     status = 'triggered',
+                     triggered_at = $3::timestamptz,
+                     updated_at = $4::timestamptz
+                 WHERE id = $5",
             )
             .bind(last_value)
+            .bind(&now)
+            .bind(&now)
+            .bind(&now)
             .bind(indicator_id)
             .execute(pool)
             .await
@@ -2156,9 +2167,15 @@ fn update_indicator_evaluation_postgres(
     } else {
         crate::db::pg_runtime::block_on(async {
             sqlx::query(
-                "UPDATE scenario_indicators SET last_value = $1, last_checked = now(), updated_at = now() WHERE id = $2",
+                "UPDATE scenario_indicators
+                 SET last_value = $1,
+                     last_checked = $2::timestamptz,
+                     updated_at = $3::timestamptz
+                 WHERE id = $4",
             )
             .bind(last_value)
+            .bind(&now)
+            .bind(&now)
             .bind(indicator_id)
             .execute(pool)
             .await
