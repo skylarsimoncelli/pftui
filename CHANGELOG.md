@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-05 — feat: add `analytics macro log add` subcommand
+
+- What: `pftui analytics macro log add` now exists in the typed CLI tree instead of only in low-level dispatch. The new subcommand accepts either positional development text or `--development`, plus `--cycle-impact`, `--outcome-shift`, optional `--date`, and `--json`. When `--date` is omitted it defaults to today in local time. Existing `pftui analytics macro log --limit N` list behavior is unchanged.
+- Why: Macro-Timeframe Analyst feedback (Apr 5, 55/62) identified this as the top `P0` workflow gap. The backend already supported adding structural log rows, but the clap tree exposed only read-only `analytics macro log`, so agents could not discover or use the write path consistently.
+- Files: `src/cli.rs` (+ new `AnalyticsMacroLogCommand`, parse test), `src/main.rs` (+ dispatch for `analytics macro log add`)
+- Tests: added CLI parse coverage for `analytics macro log add`.
+
 ### 2026-04-04 — feat: bulk-ack alerts with --all-triggered and filter flags
 
 - What: `analytics alerts ack` now supports `--all-triggered` flag to bulk-acknowledge all triggered alerts in one command. Optional filter flags `--condition`, `--kind`, and `--symbol` narrow the scope. `--json` flag added for structured output. IDs and `--all-triggered` are mutually exclusive (enforced by clap). Filter flags require `--all-triggered`.

@@ -2666,6 +2666,29 @@ pub enum AnalyticsMacroRegimeCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsMacroLogCommand {
+    /// Add a structured macro log entry
+    Add {
+        /// Development text (positional). Alternative: use --development.
+        value: Option<String>,
+        /// Development text (named flag). Overrides positional value if both given.
+        #[arg(long)]
+        development: Option<String>,
+        /// Date for the log entry (YYYY-MM-DD). Defaults to today.
+        #[arg(long)]
+        date: Option<String>,
+        /// How this development changes cycle interpretation.
+        #[arg(long = "cycle-impact", visible_alias = "impact")]
+        cycle_impact: Option<String>,
+        /// How this development changes macro outcome probabilities.
+        #[arg(long = "outcome-shift", visible_alias = "outcome")]
+        outcome_shift: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsMacroCommand {
     /// Show macro power metrics for a country (education, trade, military, innovation, etc.)
     Metrics {
@@ -2699,6 +2722,8 @@ pub enum AnalyticsMacroCommand {
     },
     /// Macro analysis log: timestamped agent observations and regime notes
     Log {
+        #[command(subcommand)]
+        command: Option<AnalyticsMacroLogCommand>,
         #[arg(long)]
         limit: Option<usize>,
         #[arg(long)]
@@ -6150,6 +6175,55 @@ mod tests {
 
         assert_eq!(symbol.as_deref(), Some("AAPL"));
         assert_eq!(timeframe, "1d");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_log_add_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "log",
+            "add",
+            "--development",
+            "Fed credibility slipping",
+            "--cycle-impact",
+            "Late-cycle fragility",
+            "--outcome-shift",
+            "Higher stagflation odds",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Log {
+                            command:
+                                Some(AnalyticsMacroLogCommand::Add {
+                                    value,
+                                    development,
+                                    date,
+                                    cycle_impact,
+                                    outcome_shift,
+                                    json,
+                                }),
+                            ..
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro log add command");
+        };
+
+        assert!(value.is_none());
+        assert_eq!(development.as_deref(), Some("Fed credibility slipping"));
+        assert!(date.is_none());
+        assert_eq!(cycle_impact.as_deref(), Some("Late-cycle fragility"));
+        assert_eq!(outcome_shift.as_deref(), Some("Higher stagflation odds"));
         assert!(json);
     }
 

@@ -6,7 +6,7 @@
 
 ## P0 - Critical
 
-### [Feedback] Add `analytics macro log add` subcommand
+### [x] [Feedback] Add `analytics macro log add` subcommand
 **Source:** Macro-Timeframe Analyst (Apr 5, 55/62 — lowest usefulness score of any tester).
 **Why:** `analytics macro log` is read-only; there is no `add`/`write` subcommand. Analyst had to use `journal entry add` as an awkward workaround, which severs the macro-specific workflow and loses structured fields. This is the primary pain point for the lowest-scoring tester.
 **Scope:** Add `analytics macro log add` subcommand with flags matching analyst needs: `--development <text>`, `--cycle-impact <text>`, `--outcome-shift <text>`, `--date <YYYY-MM-DD>` (default today). Store in existing macro log table. Mirror the `journal entry add --content` pattern established in PR #375. Files: `src/analytics/macro_cmd.rs` (or equivalent), `src/cli.rs`, `src/main.rs`.
