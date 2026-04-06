@@ -33,6 +33,22 @@ enum SourceStatus {
     Empty,
 }
 
+fn refresh_source_name(status_name: &str) -> Option<&'static str> {
+    match status_name {
+        "Prices" => Some("prices"),
+        "Predictions" => Some("predictions"),
+        "News" => Some("news"),
+        "COT" => Some("cot"),
+        "Sentiment" => Some("sentiment"),
+        "Calendar" => Some("calendar"),
+        "BLS" => Some("bls"),
+        "WorldBank" => Some("worldbank"),
+        "COMEX" => Some("comex"),
+        "Onchain" => Some("onchain"),
+        _ => None,
+    }
+}
+
 impl SourceStatus {
     fn symbol(&self) -> &'static str {
         match self {
@@ -608,6 +624,89 @@ pub fn run_backend(backend: &BackendConnection, json: bool) -> Result<()> {
     }
 }
 
+pub fn stale_refresh_sources_backend(backend: &BackendConnection) -> Result<Vec<String>> {
+    let sources = match backend {
+        BackendConnection::Sqlite { conn } => vec![
+            check_prices(conn)?,
+            check_predictions(conn)?,
+            check_news(conn)?,
+            check_cot(conn)?,
+            check_sentiment(conn)?,
+            check_calendar(conn)?,
+            check_bls(conn)?,
+            check_worldbank(conn)?,
+            check_comex(conn)?,
+            check_onchain(conn)?,
+        ],
+        BackendConnection::Postgres { pool } => vec![
+            check_source_postgres(
+                pool,
+                "Prices",
+                "price_cache",
+                "MAX(fetched_at)::TEXT",
+                Some(PRICE_FRESHNESS_SECS),
+            ),
+            check_source_postgres(
+                pool,
+                "Predictions",
+                "predictions_cache",
+                "MAX(updated_at)::TEXT",
+                Some(PREDICTIONS_FRESHNESS_SECS),
+            ),
+            check_source_postgres(
+                pool,
+                "News",
+                "news_cache",
+                "MAX(fetched_at)::TEXT",
+                Some(NEWS_FRESHNESS_SECS),
+            ),
+            check_cot_postgres(pool),
+            check_source_postgres(
+                pool,
+                "Sentiment",
+                "sentiment_cache",
+                "MAX(fetched_at)::TEXT",
+                Some(SENTIMENT_FRESHNESS_SECS),
+            ),
+            check_source_postgres(
+                pool,
+                "Calendar",
+                "calendar_events",
+                "MAX(fetched_at)::TEXT",
+                Some(CALENDAR_FRESHNESS_SECS),
+            ),
+            check_source_postgres(pool, "BLS", "bls_cache", "MAX(date)", None),
+            check_source_postgres(
+                pool,
+                "WorldBank",
+                "worldbank_cache",
+                "MAX(fetched_at)::TEXT",
+                None,
+            ),
+            check_source_postgres(
+                pool,
+                "COMEX",
+                "comex_cache",
+                "MAX(fetched_at)::TEXT",
+                Some(COMEX_FRESHNESS_SECS),
+            ),
+            check_source_postgres(
+                pool,
+                "Onchain",
+                "onchain_cache",
+                "MAX(fetched_at)::TEXT",
+                Some(24 * 60 * 60),
+            ),
+        ],
+    };
+
+    Ok(sources
+        .into_iter()
+        .filter(|source| source.status != SourceStatus::Fresh)
+        .filter_map(|source| refresh_source_name(source.name).map(str::to_string))
+        .collect())
+}
+
 fn run_postgres(pool: &PgPool, json: bool) -> Result<()> {
     let config = load_config()?;
 
@@ -975,5 +1074,12 @@ mod tests {
             most_recent_and_stale_from_fetched(vec![old_pg, fresh_pg], now, 15 * 60);
         assert!(latest.is_some(), "should parse Postgres-format timestamps in staleness check");
         assert!(!is_stale, "fresh Postgres timestamp should not be stale");
+    }
+
+    #[test]
+    fn refresh_source_name_maps_status_rows_to_refresh_plan_names() {
+        assert_eq!(refresh_source_name("News"), Some("news"));
+        assert_eq!(refresh_source_name("COMEX"), Some("comex"));
+        assert_eq!(refresh_source_name("Unknown"), None);
     }
 }

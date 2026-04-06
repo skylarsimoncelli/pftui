@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — feat: add `data refresh --stale`
+
+- What: `pftui data refresh` now supports `--stale`, which reuses the same freshness checks behind `data status` to refresh only feeds currently marked stale or empty. The flag is mutually exclusive with `--only` and `--skip`, and returns an immediate no-op message when no degraded status-tracked feeds are present.
+- Why: P2 feedback from medium-agent reported wanting a fast path to refresh only degraded feeds without manually reading `data status` and reconstructing an `--only` list.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/status.rs`
+- Tests: added CLI coverage for `--stale` parsing/conflicts and status-source mapping coverage for refresh-plan source selection.
+
 ### 2026-04-06 — feat: add multi-tag support to `journal entry add`
 
 - What: `pftui journal entry add` now accepts repeated `--tag` flags and a comma-separated `--tags` alias. Tags are normalized into one stored comma-separated value, and journal tag filters/stats/tag listing now understand multi-tag entries instead of treating the whole string as one opaque tag.

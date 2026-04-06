@@ -924,6 +924,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 json,
                 only,
                 skip,
+                stale,
             } => {
                 if cached_only {
                     if json {
@@ -933,7 +934,21 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                     Ok(())
                 } else {
-                    let plan = if !only.is_empty() {
+                    let plan = if stale {
+                        let stale_sources =
+                            commands::status::stale_refresh_sources_backend(&backend)?;
+                        if stale_sources.is_empty() {
+                            if json {
+                                println!(
+                                    "{{\"refreshed_sources\":[],\"message\":\"No stale or empty status-tracked feeds detected.\"}}"
+                                );
+                            } else {
+                                println!("No stale or empty status-tracked feeds detected.");
+                            }
+                            return Ok(());
+                        }
+                        commands::refresh::RefreshPlan::from_only(&stale_sources)?
+                    } else if !only.is_empty() {
                         commands::refresh::RefreshPlan::from_only(&only)?
                     } else if !skip.is_empty() {
                         commands::refresh::RefreshPlan::from_skip(&skip)?

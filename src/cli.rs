@@ -371,7 +371,7 @@ pub enum DashboardCommand {
 #[derive(Subcommand)]
 pub enum DataCommand {
     /// Fetch and cache current prices for tracked symbols
-    #[command(after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n\n--only and --skip are mutually exclusive.")]
+    #[command(after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n  pftui data refresh --stale                    # only stale/empty status-tracked feeds\n\n--only, --skip, and --stale are mutually exclusive.")]
     Refresh {
         /// Send OS notification for newly triggered alerts
         #[arg(long)]
@@ -380,11 +380,14 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
         /// Run only these sources (comma-separated). Mutually exclusive with --skip.
-        #[arg(long, conflicts_with = "skip", value_delimiter = ',')]
+        #[arg(long, conflicts_with_all = ["skip", "stale"], value_delimiter = ',')]
         only: Vec<String>,
         /// Skip these sources (comma-separated). Mutually exclusive with --only.
-        #[arg(long, conflicts_with = "only", value_delimiter = ',')]
+        #[arg(long, conflicts_with_all = ["only", "stale"], value_delimiter = ',')]
         skip: Vec<String>,
+        /// Refresh only feeds currently marked stale/empty by `data status`.
+        #[arg(long, conflicts_with_all = ["only", "skip"])]
+        stale: bool,
     },
     /// Show data freshness status for all cached sources
     Status {
@@ -9157,11 +9160,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_refresh_stale_flag() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "data", "refresh", "--stale"]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Refresh { stale, only, skip, .. } = command else {
+            panic!("expected refresh");
+        };
+        assert!(stale);
+        assert!(only.is_empty());
+        assert!(skip.is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn parse_refresh_only_and_skip_conflict() {
         let result = Cli::try_parse_from([
             "pftui", "data", "refresh", "--only", "prices", "--skip", "bls",
         ]);
         assert!(result.is_err(), "--only and --skip should conflict");
+    }
+
+    #[test]
+    fn parse_refresh_stale_and_only_conflict() {
+        let result = Cli::try_parse_from([
+            "pftui", "data", "refresh", "--stale", "--only", "prices",
+        ]);
+        assert!(result.is_err(), "--stale and --only should conflict");
     }
 
     #[test]

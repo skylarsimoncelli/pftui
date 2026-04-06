@@ -104,7 +104,7 @@
 **Scope:** Change `--tag` to accept either multiple `--tag` flags or a comma-separated `--tags` alias. Parse and split on comma. Files: `src/cli.rs`, `src/journal/entries.rs`.
 **Effort:** < 1 hour.
 
-### [Feedback] pftui data refresh --stale flag to selectively refresh only degraded feeds
+### [x] [Feedback] pftui data refresh --stale flag to selectively refresh only degraded feeds
 **Source:** medium-agent (Apr 5, 78/82). Analytics situation showed 3 stale data sources.
 **Why:** Agents want to refresh only stale/degraded feeds without triggering a full refresh (which is slow). `--only` and `--skip` flags exist but require knowing which sources are stale. A `--stale` flag that auto-detects and refreshes only degraded sources would be more ergonomic.
 **Scope:** Add `--stale` flag to `data refresh`. Query each source's `fetched_at` and include only those beyond their freshness threshold in the RefreshPlan. Mutually exclusive with `--only`/`--skip`. Files: `src/data/refresh.rs`, `src/cli.rs`.
