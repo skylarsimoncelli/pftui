@@ -68,7 +68,7 @@
 **Scope:** Add fuzzy/case-insensitive name matching (LIKE or LOWER()) as a fallback when exact match returns 0 rows, or support `--id <N>` as an alternative. Display candidate matches when multiple fuzzy results exist. Files: `src/journal/scenario.rs`, `src/db/scenarios.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] analytics macro outcomes: cross-reference to scenario update for probability edits
+### [x] [Feedback] analytics macro outcomes: cross-reference to scenario update for probability edits
 **Source:** Macro-Timeframe Analyst (Apr 5, 55/62).
 **Why:** Analyst concluded macro outcomes was read-only with "no way to update scenario probabilities via CLI." The actual path is `journal scenario update --probability X` but there is no cross-reference from `analytics macro` help text. Add `after_help` guidance and optionally a thin `analytics macro outcomes update` alias.
 **Scope:** Add `after_help` on `analytics macro` commands pointing to `journal scenario update`. Optionally add a thin alias `analytics macro outcomes update` that delegates to the journal path. Files: `src/cli.rs`, `src/analytics/macro_cmd.rs`.

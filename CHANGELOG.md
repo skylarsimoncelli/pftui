@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — docs: point `analytics macro outcomes` users to `journal scenario update`
+
+- What: `pftui analytics macro outcomes --help` now explicitly states that the command is read-only and points users to the supported probability-edit path: `pftui journal scenario update ... --probability ...`, including both name-based and `--id` examples.
+- Why: P2 feedback from Macro-Timeframe Analyst concluded macro outcomes had no CLI edit path because the read command offered no cross-reference to the journal scenario update workflow.
+- Files: `src/cli.rs`
+- Tests: added help-text coverage asserting the outcomes help includes `journal scenario update` guidance.
+
 ### 2026-04-06 — fix: make `journal scenario update` resolve by `--id` or fuzzy name
 
 - What: `pftui journal scenario update` now accepts `--id <N>` as an explicit lookup path and no longer requires an exact case-sensitive full-name match. The update flow now tries exact name, case-insensitive exact name, then unique partial-name matching, and returns candidate scenario IDs/names when a partial match is ambiguous.

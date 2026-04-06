@@ -2713,6 +2713,9 @@ pub enum AnalyticsMacroCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(
+        after_help = "This command is read-only: it shows current macro outcome probabilities.\n\nTo change a scenario probability, use:\n  pftui journal scenario update \"Scenario Name\" --probability 65\n  pftui journal scenario update --id 42 --probability 65\n\nSee also: analytics scenario list, journal scenario history"
+    )]
     /// Scenario-to-outcome mapping: what happens to assets under each macro scenario
     Outcomes {
         #[arg(long)]
@@ -6289,6 +6292,14 @@ mod tests {
         assert_eq!(cycle_impact.as_deref(), Some("Late-cycle fragility"));
         assert_eq!(outcome_shift.as_deref(), Some("Higher stagflation odds"));
         assert!(json);
+    }
+
+    #[test]
+    fn macro_outcomes_help_points_to_scenario_update() -> Result<()> {
+        let help = subcommand_help(&["analytics", "macro", "outcomes"])?;
+        assert!(help.contains("journal scenario update"));
+        assert!(help.contains("--id 42 --probability 65"));
+        Ok(())
     }
 
     #[test]
