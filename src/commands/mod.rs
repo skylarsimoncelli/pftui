@@ -82,6 +82,7 @@ pub mod remove_tx;
 pub mod research;
 pub mod scan;
 pub mod scenario;
+pub mod scenario_detect;
 pub mod scenario_suggest;
 pub mod search;
 pub mod sector;
