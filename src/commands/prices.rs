@@ -135,6 +135,11 @@ struct PriceRow {
     change_pct: Option<Decimal>,
     source: String,
     fetched_at: String,
+    /// Machine-readable freshness contract for agents:
+    /// - fresh: cached quote is recent enough to use
+    /// - stale: cached quote exists but should be treated as degraded/fallback-only
+    /// - missing: no cached quote is available
+    status: String,
     /// Whether this specific symbol's cached price is stale (>2h old or missing).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     stale: bool,
@@ -148,6 +153,16 @@ struct PriceRow {
     /// Asset category (used internally; not serialized in output).
     #[serde(skip)]
     category: AssetCategory,
+}
+
+fn compute_row_status(row: &PriceRow) -> &'static str {
+    if row.price.is_none() {
+        "missing"
+    } else if row.stale {
+        "stale"
+    } else {
+        "fresh"
+    }
 }
 
 /// Annotate each price row with per-symbol staleness and market closure info.
@@ -176,6 +191,7 @@ fn annotate_per_symbol_staleness(rows: &mut [PriceRow]) {
             row.stale = true;
             row.age_hours = None;
         }
+        row.status = compute_row_status(row).to_string();
     }
 }
 
@@ -468,6 +484,7 @@ pub fn run(
             change_pct,
             source,
             fetched_at,
+            status: "missing".to_string(),
             stale: false,
             age_hours: None,
             market_closed: false,
@@ -765,6 +782,7 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            status: "fresh".to_string(),
             stale: false,
             age_hours: None,
             market_closed: false,
@@ -785,6 +803,7 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            status: "stale".to_string(),
             stale: true,
             age_hours: Some(3.0),
             market_closed: false,
@@ -814,6 +833,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "stale".to_string(),
                 stale: true,
                 age_hours: Some(5.0),
                 market_closed: false,
@@ -827,6 +847,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "fresh".to_string(),
                 stale: false,
                 age_hours: None,
                 market_closed: false,
@@ -854,6 +875,7 @@ mod tests {
                 change_pct: None,
                 source: String::new(),
                 fetched_at: String::new(),
+                status: "missing".to_string(),
                 stale: true,
                 age_hours: None,
                 market_closed: false,
@@ -867,6 +889,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "fresh".to_string(),
                 stale: false,
                 age_hours: None,
                 market_closed: false,
@@ -953,6 +976,7 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            status: "fresh".to_string(),
             stale: false,
             age_hours: None,
             market_closed: false,
@@ -975,6 +999,7 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            status: "fresh".to_string(),
             stale: false,
             age_hours: None,
             market_closed: false,
@@ -995,6 +1020,7 @@ mod tests {
             change_pct: None,
             source: String::new(),
             fetched_at: String::new(),
+            status: "missing".to_string(),
             stale: false,
             age_hours: None,
             market_closed: false,
@@ -1019,6 +1045,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "fresh".to_string(),
                 stale: false,
                 age_hours: None,
                 market_closed: false,
@@ -1032,6 +1059,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: fresh.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "fresh".to_string(),
                 stale: false,
                 age_hours: None,
                 market_closed: false,
@@ -1055,6 +1083,7 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: "2026-04-02T12:00:00+00".to_string(),
+            status: "fresh".to_string(),
             stale: false,
             age_hours: None,
             market_closed: false,
@@ -1075,6 +1104,7 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: "2026-04-02T08:00:00+00".to_string(),
+            status: "stale".to_string(),
             stale: true,
             age_hours: Some(4.2),
             market_closed: false,
@@ -1083,6 +1113,65 @@ mod tests {
         let json_str = serde_json::to_string(&row).unwrap();
         assert!(json_str.contains("\"stale\":true"), "stale row should contain stale:true");
         assert!(json_str.contains("\"age_hours\":4.2"), "stale row should contain age_hours");
+    }
+
+    #[test]
+    fn per_symbol_status_serializes_for_agent_fallbacks() {
+        let row = PriceRow {
+            symbol: "SI=F".to_string(),
+            name: "Silver".to_string(),
+            price: Some(dec!(81)),
+            change: None,
+            change_pct: None,
+            source: "yahoo".to_string(),
+            fetched_at: "2026-03-16T21:31:08+00".to_string(),
+            status: "stale".to_string(),
+            stale: true,
+            age_hours: Some(509.5),
+            market_closed: false,
+            category: AssetCategory::Commodity,
+        };
+        let json_str = serde_json::to_string(&row).unwrap();
+        assert!(json_str.contains("\"status\":\"stale\""));
+    }
+
+    #[test]
+    fn annotate_updates_status_for_missing_and_stale_rows() {
+        let now = Utc::now();
+        let old = now - chrono::Duration::hours(5);
+        let mut rows = vec![
+            PriceRow {
+                symbol: "SI=F".to_string(),
+                name: "Silver".to_string(),
+                price: Some(dec!(81)),
+                change: None,
+                change_pct: None,
+                source: "yahoo".to_string(),
+                fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "fresh".to_string(),
+                stale: false,
+                age_hours: None,
+                market_closed: false,
+                category: AssetCategory::Commodity,
+            },
+            PriceRow {
+                symbol: "MISSING".to_string(),
+                name: "Missing".to_string(),
+                price: None,
+                change: None,
+                change_pct: None,
+                source: String::new(),
+                fetched_at: String::new(),
+                status: "fresh".to_string(),
+                stale: false,
+                age_hours: None,
+                market_closed: false,
+                category: AssetCategory::Equity,
+            },
+        ];
+        annotate_per_symbol_staleness(&mut rows);
+        assert_eq!(rows[0].status, "stale");
+        assert_eq!(rows[1].status, "missing");
     }
 
     #[test]
@@ -1098,6 +1187,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "stale".to_string(),
                 stale: true,
                 age_hours: Some(3.0),
                 market_closed: false,
@@ -1111,6 +1201,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: old.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "stale".to_string(),
                 stale: true,
                 age_hours: Some(3.0),
                 market_closed: false,
@@ -1318,6 +1409,7 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: "2026-04-02T12:00:00+00".to_string(),
+            status: "fresh".to_string(),
             stale: false,
             age_hours: None,
             market_closed: false,
@@ -1337,6 +1429,7 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: "2026-04-04T08:00:00+00".to_string(),
+            status: "stale".to_string(),
             stale: true,
             age_hours: Some(16.0),
             market_closed: true,
@@ -1360,6 +1453,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "stale".to_string(),
                 stale: true,
                 age_hours: Some(16.0),
                 market_closed: true,
@@ -1373,6 +1467,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "stale".to_string(),
                 stale: true,
                 age_hours: Some(16.0),
                 market_closed: true,
@@ -1400,6 +1495,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "stale".to_string(),
                 stale: true,
                 age_hours: Some(16.0),
                 market_closed: true,
@@ -1413,6 +1509,7 @@ mod tests {
                 change_pct: None,
                 source: "yahoo".to_string(),
                 fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+                status: "stale".to_string(),
                 stale: true,
                 age_hours: Some(16.0),
                 market_closed: false, // Crypto is 24/7 — this IS an error
@@ -1474,6 +1571,7 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            status: "fresh".to_string(),
             stale: false,
             age_hours: None,
             market_closed: false,
@@ -1495,6 +1593,7 @@ mod tests {
             change_pct: None,
             source: "yahoo".to_string(),
             fetched_at: fetched.format("%Y-%m-%d %H:%M:%S%.6f+00").to_string(),
+            status: "fresh".to_string(),
             stale: false,
             age_hours: None,
             market_closed: false,

@@ -112,7 +112,7 @@
 
 ---
 
-### [P1] Silver price stale — fallback to web_search when pftui returns stale value
+### [x] [P1] Silver price stale — fallback to web_search when pftui returns stale value
 **Source:** Evening analysis data integrity audit (Apr 7). Silver showing $70.28 from portfolio vs ~$72 from web.
 **Why:** pftui `data prices` for silver returns portfolio cost basis when live price is unavailable, misleading agents. Should either return live XAG/USD or explicit STALE error so agents fall back to web_search.
 **Scope:** Check `data prices` silver fetch path. If last refresh > 4h, mark stale in output (`"status": "stale"`) or return error. Agents already have logic to fall back to web_search on stale. Files: `src/data/fx.rs` or price fetch module, `src/cli/data.rs`.

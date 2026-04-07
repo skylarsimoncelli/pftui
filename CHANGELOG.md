@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: expose explicit stale price status for agent fallbacks
+
+- What: `pftui data prices --json` now emits a per-symbol `status` field (`fresh`, `stale`, or `missing`) alongside the existing staleness metadata. This makes stale cached silver and other degraded quotes machine-readable for agents that should fall back to web search instead of trusting the cached number.
+- Why: stale silver quotes were still numerically present in `data prices`, which made it too easy for agents to treat an old cache entry as usable live data.
+- Files: `src/commands/prices.rs`
+- Tests: added focused price-status coverage for stale serialization and annotation-driven status updates, alongside existing staleness/market-closure tests.
+
 ### 2026-04-06 — feat: add scenario event detection
 
 - What: added `pftui analytics scenario detect`, a suggestion-only workflow that scans recent news sentiment plus upcoming catalysts to surface new macro-scenario candidates before agents add them manually. Each suggestion includes seeded probability, description, triggers, impact notes, supporting evidence, and a ready-to-run `journal scenario add` command.
