@@ -16,7 +16,7 @@ use crate::analytics::synthesis;
 use crate::analytics::technicals::{load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME};
 use crate::db::backend::BackendConnection;
 use crate::db::{
-    agent_messages, alerts, convictions, correlation_snapshots, price_cache, regime_snapshots,
+    agent_messages, alerts, analyst_views, convictions, correlation_snapshots, price_cache, regime_snapshots,
     research_questions, scenarios, structural, technical_levels, technical_snapshots, thesis,
     timeframe_signals, transactions, trends, user_predictions, watchlist,
 };
@@ -2672,33 +2672,209 @@ fn run_medium(backend: &BackendConnection, json_output: bool) -> Result<()> {
         scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let thesis_sections = thesis::list_thesis_backend(backend).unwrap_or_default();
     let conviction_rows = convictions::list_current_backend(backend).unwrap_or_default();
+    let conviction_changes = convictions::get_changes_backend(backend, 30).unwrap_or_default();
     let questions =
         research_questions::list_questions_backend(backend, Some("open")).unwrap_or_default();
     let predictions =
         user_predictions::list_predictions_backend(backend, Some("pending"), None, None, Some(20))
             .unwrap_or_default();
+    let portfolio_symbols = portfolio_view_symbols(backend);
+    let portfolio_matrix = analyst_views::get_portfolio_view_matrix_backend(backend, &portfolio_symbols)
+        .unwrap_or_default();
+    let medium_views = analyst_views::list_views_backend(backend, Some("medium"), None, Some(12))
+        .unwrap_or_default();
+    let coverage = compute_medium_view_coverage(&portfolio_matrix);
+    let diagnostics = medium_diagnostics(
+        &coverage,
+        &medium_views,
+        &scenarios_list,
+        &questions,
+        &predictions,
+    );
 
     if json_output {
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
+                "view_coverage": coverage,
+                "medium_views": medium_views,
+                "portfolio_matrix": portfolio_matrix,
                 "scenarios": scenarios_list,
                 "thesis": thesis_sections,
                 "convictions": conviction_rows,
+                "conviction_changes": conviction_changes,
                 "research_questions": questions,
                 "predictions": predictions,
+                "diagnostics": diagnostics,
             }))?
         );
     } else {
         println!("MEDIUM Layer");
-        println!("  Scenarios: {}", scenarios_list.len());
+        println!(
+            "  View coverage: {}/{} cells ({}%)",
+            coverage["filled_cells"].as_u64().unwrap_or(0),
+            coverage["total_cells"].as_u64().unwrap_or(0),
+            coverage["coverage_pct"].as_u64().unwrap_or(0)
+        );
+        println!("  Medium analyst views: {}", medium_views.len());
+        println!("  Active scenarios: {}", scenarios_list.len());
         println!("  Thesis sections: {}", thesis_sections.len());
         println!("  Convictions: {}", conviction_rows.len());
+        println!("  Conviction changes (30d): {}", conviction_changes.len());
         println!("  Open questions: {}", questions.len());
         println!("  Pending predictions: {}", predictions.len());
+
+        if !medium_views.is_empty() {
+            println!("  Top medium views:");
+            for view in medium_views.iter().take(5) {
+                println!(
+                    "    {} {} {} ({})",
+                    view.asset,
+                    view.direction,
+                    view.conviction,
+                    view.updated_at
+                );
+            }
+        }
+
+        if !scenarios_list.is_empty() {
+            println!("  Scenario state:");
+            for s in scenarios_list.iter().take(5) {
+                println!("    {}: {:.1}% [{}]", s.name, s.probability, s.phase);
+            }
+        }
+
+        if !conviction_changes.is_empty() {
+            println!("  Recent conviction shifts:");
+            for change in conviction_changes.iter().take(5) {
+                println!(
+                    "    {} {} -> {} ({:+})",
+                    change.symbol, change.old_score, change.new_score, change.change_delta
+                );
+            }
+        }
+
+        if !questions.is_empty() {
+            println!("  Open research questions:");
+            for question in questions.iter().take(5) {
+                println!("    [{}] {}", question.evidence_tilt, question.question);
+            }
+        }
+
+        if !diagnostics.is_empty() {
+            println!("  Diagnostics:");
+            for item in diagnostics {
+                println!(
+                    "    [{}] {}",
+                    item["priority"].as_str().unwrap_or("info"),
+                    item["message"].as_str().unwrap_or("")
+                );
+            }
+        }
     }
 
     Ok(())
+}
+
+fn portfolio_view_symbols(backend: &BackendConnection) -> Vec<String> {
+    let mut symbols = BTreeSet::new();
+
+    if let Ok(rows) = transactions::get_unique_symbols_backend(backend) {
+        for (sym, cat) in rows {
+            if cat != AssetCategory::Cash {
+                symbols.insert(sym.to_uppercase());
+            }
+        }
+    }
+    if let Ok(rows) = watchlist::get_watchlist_symbols_backend(backend) {
+        for (sym, _) in rows {
+            symbols.insert(sym.to_uppercase());
+        }
+    }
+
+    symbols.into_iter().collect()
+}
+
+fn compute_medium_view_coverage(
+    portfolio_matrix: &[analyst_views::AssetViewMatrix],
+) -> serde_json::Value {
+    let total_assets = portfolio_matrix.len() as u64;
+    let total_cells = total_assets * 4;
+    let filled_cells: u64 = portfolio_matrix
+        .iter()
+        .map(|row| row.views.len() as u64)
+        .sum();
+    let medium_views = portfolio_matrix
+        .iter()
+        .filter(|row| row.views.iter().any(|view| view.analyst == "medium"))
+        .count() as u64;
+    let coverage_pct = if total_cells > 0 {
+        ((filled_cells as f64 / total_cells as f64) * 100.0).round() as u64
+    } else {
+        0
+    };
+
+    json!({
+        "total_assets": total_assets,
+        "total_cells": total_cells,
+        "filled_cells": filled_cells,
+        "coverage_pct": coverage_pct,
+        "assets_with_medium_view": medium_views,
+        "assets_missing_medium_view": total_assets.saturating_sub(medium_views),
+    })
+}
+
+fn medium_diagnostics(
+    coverage: &serde_json::Value,
+    medium_views: &[analyst_views::AnalystView],
+    scenarios_list: &[scenarios::Scenario],
+    questions: &[research_questions::ResearchQuestion],
+    predictions: &[user_predictions::UserPrediction],
+) -> Vec<serde_json::Value> {
+    let mut diagnostics = Vec::new();
+    let coverage_pct = coverage
+        .get("coverage_pct")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let missing_medium = coverage
+        .get("assets_missing_medium_view")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    if medium_views.is_empty() {
+        diagnostics.push(json!({
+            "priority": "high",
+            "message": "No medium analyst views found. Seed them with `pftui analytics views set --analyst medium --asset BTC --direction bull --conviction 2 --reasoning-summary ...`."
+        }));
+    } else if coverage_pct < 25 || missing_medium > 0 {
+        diagnostics.push(json!({
+            "priority": "medium",
+            "message": format!("Portfolio analyst-view coverage is {}% with {} asset(s) still missing a medium view.", coverage_pct, missing_medium)
+        }));
+    }
+
+    if scenarios_list.is_empty() {
+        diagnostics.push(json!({
+            "priority": "medium",
+            "message": "No active scenarios found. `journal scenario add` and `journal scenario update` drive the medium layer's scenario context."
+        }));
+    }
+
+    if questions.is_empty() {
+        diagnostics.push(json!({
+            "priority": "low",
+            "message": "No open research questions found. Add one when a medium-timeframe uncertainty needs explicit tracking."
+        }));
+    }
+
+    if predictions.is_empty() {
+        diagnostics.push(json!({
+            "priority": "low",
+            "message": "No pending predictions found. Medium review is more useful when active predictions exist to monitor and score."
+        }));
+    }
+
+    diagnostics
 }
 
 fn run_high(backend: &BackendConnection, json_output: bool) -> Result<()> {
@@ -4983,6 +5159,54 @@ mod tests {
             result.is_ok(),
             "run_alignment_summary terminal should not error on empty db: {:?}",
             result
+        );
+    }
+
+    #[test]
+    fn medium_json_never_errors_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_medium(&backend, true);
+        assert!(result.is_ok(), "run_medium should not error: {:?}", result);
+    }
+
+    #[test]
+    fn medium_view_coverage_handles_empty_matrix() {
+        let coverage = compute_medium_view_coverage(&[]);
+        assert_eq!(coverage["total_assets"], 0);
+        assert_eq!(coverage["total_cells"], 0);
+        assert_eq!(coverage["filled_cells"], 0);
+        assert_eq!(coverage["coverage_pct"], 0);
+        assert_eq!(coverage["assets_with_medium_view"], 0);
+        assert_eq!(coverage["assets_missing_medium_view"], 0);
+    }
+
+    #[test]
+    fn medium_diagnostics_warn_when_views_missing() {
+        let coverage = json!({
+            "coverage_pct": 0,
+            "assets_missing_medium_view": 2
+        });
+
+        let diagnostics = medium_diagnostics(&coverage, &[], &[], &[], &[]);
+        let messages: Vec<&str> = diagnostics
+            .iter()
+            .filter_map(|item| item.get("message").and_then(|v| v.as_str()))
+            .collect();
+
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("No medium analyst views found")),
+            "expected missing medium views diagnostic, got {:?}",
+            messages
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("No active scenarios found")),
+            "expected missing scenarios diagnostic, got {:?}",
+            messages
         );
     }
 

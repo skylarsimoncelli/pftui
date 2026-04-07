@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: make `analytics medium` return a real medium-timeframe snapshot
+
+- What: `pftui analytics medium` now returns a synthesized medium-layer payload instead of mostly raw counts. The command surfaces active medium analyst views, portfolio view-matrix coverage, active scenarios, thesis sections, current convictions, recent conviction changes, open research questions, pending predictions, and explicit diagnostics when key medium-layer inputs are missing. The CLI help for `analytics medium` now also explains that the command is most useful after seeding `analytics views set --analyst medium ...` data and points to the portfolio-matrix view for inspection.
+- Why: medium-agent feedback reported that `analytics medium` returned empty or otherwise unhelpful output, forcing agents to manually stitch together `analytics synthesis`, convictions, and scenario commands just to understand the medium timeframe.
+- Files: `src/commands/analytics.rs`, `src/cli.rs`
+- Tests: added focused coverage for empty-db `analytics medium` execution, empty portfolio coverage math, and missing-medium-view diagnostics.
+
 ### 2026-04-06 — fix: add COT report schedule metadata and Friday release retry
 
 - What: `pftui data cot --json` and `pftui data sentiment --json` now expose `next_report_date` and `next_release_date` alongside each COT `report_date`, and the detailed `data cot` terminal view now prints the next scheduled report/release. COT freshness checks in both `data refresh` and `data status` now compare cached report dates against the expected post-Friday-release Tuesday report instead of waiting for a blunt seven-day timeout.
