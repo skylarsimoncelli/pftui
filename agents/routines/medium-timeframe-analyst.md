@@ -257,7 +257,7 @@ pftui journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] 
 ## Output to Evening Analyst
 
 ```bash
-DIGEST=$(pftui analytics digest --from medium-agent --json)
+DIGEST=$(pftui analytics digest --agent-filter medium-agent --json)
 pftui agent message send "MEDIUM LAYER DIGEST [date]: ${DIGEST}" \
   --from medium-agent --to evening-analyst --priority normal --category signal --layer medium
 ```

@@ -3639,9 +3639,18 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         json: bool,
     },
     /// Daily digest: condensed summary of market activity and portfolio changes
+    #[command(after_help = "\
+EXAMPLES:
+  pftui analytics digest --agent-filter low-agent --json
+  pftui analytics digest --from 2026-04-06 --json
+  pftui analytics digest --from yesterday --agent-filter medium-agent --json")]
     Digest {
+        /// Include only digest items on or after this date (YYYY-MM-DD, today, yesterday)
         #[arg(long)]
         from: Option<String>,
+        /// Build the role-aware digest for a specific agent
+        #[arg(long = "agent-filter")]
+        agent_filter: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
         #[arg(long)]
@@ -10110,5 +10119,38 @@ mod tests {
             "price_cross",
         ]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_analytics_digest_with_from_and_agent_filter() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "digest",
+            "--from",
+            "2026-04-06",
+            "--agent-filter",
+            "low-agent",
+            "--limit",
+            "5",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Digest {
+            from,
+            agent_filter,
+            limit,
+            json,
+        } = command
+        else {
+            panic!("expected digest");
+        };
+        assert_eq!(from.as_deref(), Some("2026-04-06"));
+        assert_eq!(agent_filter.as_deref(), Some("low-agent"));
+        assert_eq!(limit, Some(5));
+        assert!(json);
+        Ok(())
     }
 }

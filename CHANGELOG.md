@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-07 — feat: add date and agent filters to `analytics digest`
+
+- What: `pftui analytics digest` now supports a real `--from` date filter for time-scoping digest content plus a dedicated `--agent-filter` flag for role-aware output. Signals, pending predictions, and unacknowledged agent messages now honor the new filters, and the CLI help includes concrete examples for both flags.
+- Why: low-timeframe agents were overloading `--from` as an agent selector because there was no date filter and no explicit per-agent flag, which made digest calls ambiguous and forced post-processing.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`, `AGENTS.md`, `agents/routines/high-timeframe-analyst.md`, `agents/routines/low-timeframe-analyst.md`, `agents/routines/medium-timeframe-analyst.md`
+- Tests: added CLI parse coverage for digest filters plus command-layer coverage for RFC3339/SQLite timestamp parsing and digest prediction filtering.
+
 ### 2026-04-07 — fix: document valid severities for `analytics situation update log`
 
 - What: `pftui analytics situation update log --severity ...` now advertises its accepted values directly in `--help` and clap validation. The command help includes the four valid severities (`low`, `normal`, `elevated`, `critical`) with a concrete example, and invalid values are rejected before execution with the allowed set listed in the error.

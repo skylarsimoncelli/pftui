@@ -242,7 +242,7 @@ pftui journal prediction stats --json
 
 13. Send comprehensive EOD data package to Evening Analyst:
 ```bash
-DIGEST=$(pftui analytics digest --from low-agent --json)
+DIGEST=$(pftui analytics digest --agent-filter low-agent --json)
 pftui agent message send "LOW EOD DIGEST [date]: ${DIGEST}" \
   --from low-agent --to evening-analyst --priority normal --category signal --layer low
 ```
