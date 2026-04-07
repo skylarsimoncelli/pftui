@@ -142,7 +142,7 @@
 **Scope:** Investigate `analytics medium` backend — ensure it returns synthesized medium-TF data (analyst views, scenario state, conviction scores). Add diagnostics when data is missing rather than silently returning empty. If the command requires prior `analytics views set` data to be meaningful, document this clearly in `--help` with an example. Files: `src/commands/analytics.rs` (or medium-specific handler), `src/cli.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Show stale data warning at session start / on first analytics call
+### [x] [Feedback] Show stale data warning at session start / on first analytics call
 **Source:** medium-agent (Apr 7, 72/78). medium-agent (Apr 5). medium-agent (Apr 5): "12/17 stale FRED series — a stale data warning at session start would save inference time."
 **Why:** When FRED/COT/other feeds are degraded, agents discover this mid-analysis rather than at the start of a session. Proactive surfacing saves inference time and prevents agents from building analysis on stale inputs.
 **Scope:** Enrich `analytics guidance --json` with a `data_health` summary showing stale/degraded sources. Alternatively, add a brief staleness banner to `portfolio brief --json` when >30% of tracked sources are stale. Both approaches reuse existing `data status` staleness checks. Files: `src/commands/guidance.rs`, `src/data/refresh.rs`.

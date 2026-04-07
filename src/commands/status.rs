@@ -19,16 +19,16 @@ const COT_FRESHNESS_SECS: i64 = 7 * 24 * 60 * 60; // 1 week
 const COMEX_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
 const BLS_FRESHNESS_DAYS: i64 = 30; // 1 month
 
-#[derive(Debug)]
-struct DataSourceStatus {
-    name: &'static str,
-    last_fetch: Option<String>,
-    records: usize,
-    status: SourceStatus,
+#[derive(Debug, Clone)]
+pub struct DataSourceStatus {
+    pub name: &'static str,
+    pub last_fetch: Option<String>,
+    pub records: usize,
+    pub status: SourceStatus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum SourceStatus {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceStatus {
     Fresh,
     Stale,
     Empty,
@@ -64,6 +64,14 @@ impl SourceStatus {
             SourceStatus::Fresh => "Fresh",
             SourceStatus::Stale => "Stale",
             SourceStatus::Empty => "Empty",
+        }
+    }
+
+    pub fn as_lowercase_str(&self) -> &'static str {
+        match self {
+            SourceStatus::Fresh => "fresh",
+            SourceStatus::Stale => "stale",
+            SourceStatus::Empty => "empty",
         }
     }
 }
@@ -631,9 +639,9 @@ pub fn run_backend(backend: &BackendConnection, json: bool) -> Result<()> {
     }
 }
 
-pub fn stale_refresh_sources_backend(backend: &BackendConnection) -> Result<Vec<String>> {
-    let sources = match backend {
-        BackendConnection::Sqlite { conn } => vec![
+pub fn source_statuses_backend(backend: &BackendConnection) -> Result<Vec<DataSourceStatus>> {
+    match backend {
+        BackendConnection::Sqlite { conn } => Ok(vec![
             check_prices(conn)?,
             check_predictions(conn)?,
             check_news(conn)?,
@@ -644,8 +652,8 @@ pub fn stale_refresh_sources_backend(backend: &BackendConnection) -> Result<Vec<
             check_worldbank(conn)?,
             check_comex(conn)?,
             check_onchain(conn)?,
-        ],
-        BackendConnection::Postgres { pool } => vec![
+        ]),
+        BackendConnection::Postgres { pool } => Ok(vec![
             check_source_postgres(
                 pool,
                 "Prices",
@@ -704,8 +712,12 @@ pub fn stale_refresh_sources_backend(backend: &BackendConnection) -> Result<Vec<
                 "MAX(fetched_at)::TEXT",
                 Some(24 * 60 * 60),
             ),
-        ],
-    };
+        ]),
+    }
+}
+
+pub fn stale_refresh_sources_backend(backend: &BackendConnection) -> Result<Vec<String>> {
+    let sources = source_statuses_backend(backend)?;
 
     Ok(sources
         .into_iter()
@@ -892,7 +904,7 @@ fn print_json(config: &crate::config::Config, sources: &[DataSourceStatus]) -> R
                 "name": s.name,
                 "last_fetch": s.last_fetch,
                 "records": s.records,
-                "status": s.status.name().to_lowercase(),
+                "status": s.status.as_lowercase_str(),
             })
         })
         .collect();

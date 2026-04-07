@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: surface stale data warnings in `analytics guidance`
+
+- What: `pftui analytics guidance` now includes a top-level `data_health` summary built from the same stale/empty source checks used by `pftui data status`. When feeds are degraded, guidance now emits a dedicated `data_health` action item and terminal banner showing how many tracked sources are stale or empty and which sources need attention first.
+- Why: agents were discovering stale FRED, COT, and other feeds halfway through analysis instead of at session start, wasting cycles on conclusions built from degraded data.
+- Files: `src/commands/guidance.rs`, `src/commands/status.rs`
+- Tests: added focused guidance coverage for degraded-source ordering, data-health summary serialization, and the new guidance summary field.
+
 ### 2026-04-06 — fix: make `analytics medium` return a real medium-timeframe snapshot
 
 - What: `pftui analytics medium` now returns a synthesized medium-layer payload instead of mostly raw counts. The command surfaces active medium analyst views, portfolio view-matrix coverage, active scenarios, thesis sections, current convictions, recent conviction changes, open research questions, pending predictions, and explicit diagnostics when key medium-layer inputs are missing. The CLI help for `analytics medium` now also explains that the command is most useful after seeding `analytics views set --analyst medium ...` data and points to the portfolio-matrix view for inspection.
