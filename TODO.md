@@ -120,7 +120,7 @@
 **Scope:** (1) Diagnose why FRED CPI/PPI fetch is failing silently — check error handling in `src/data/fred.rs`. (2) Add explicit staleness status to `pftui data economy --json` output with `last_updated` and `stale: true/false`. (3) Add BLS.gov direct fallback for CPI/PPI when FRED fails. (4) If data > 45 days old, return explicit error string rather than stale value so agents know to web_search.
 **Effort:** 4–6 hours.
 
-### [Feedback] GDP series stale 188 days — add GDPNow as primary source, BEA as fallback
+### [x] [Feedback] GDP series stale 188 days — add GDPNow as primary source, BEA as fallback
 **Source:** Evening analysis data integrity audit (Apr 7). FRED GDP stale since Oct 2025, GDPNow also stale. evening-analyst (Apr 7): "GDP 188 days stale."
 **Why:** GDP is a quarterly series; quarterly = expected staleness between prints. But the GDPNow nowcast updates daily and should always have a current estimate. Both being stale means the fetch is broken.
 **Scope:** (1) Fix GDPNow fetch in economy module — Atlanta Fed endpoint may have changed. (2) Add staleness context to output: "GDP last print: Q3 2025. Next print: Apr 30. GDPNow nowcast: X%" — so agents understand the data rhythm rather than flagging it as broken. (3) If GDPNow unreachable, note that in output explicitly.

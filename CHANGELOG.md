@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: restore GDPNow freshness and add GDP release cadence context
+
+- What: `pftui data refresh` now stores an Atlanta Fed web fallback as `GDPNOW_WEB` whenever the FRED `GDPNOW` series is stale, empty, or unavailable. `pftui data economy` now prefers that fallback for `gdp_nowcast`, exposes GDP-specific context for both `gdp` and `gdp_nowcast`, and includes a top-level `gdp_context` block with last-print quarter, next GDP release date, BEA release label, and explicit GDPNow-unavailable errors when no fresh nowcast exists.
+- Why: agents were treating quarterly GDP cadence as a broken data feed because both the cached GDP print and the GDPNow nowcast had gone stale, with no context about the next BEA release or whether the Atlanta Fed nowcast was still reachable.
+- Files: `src/data/fred.rs`, `src/commands/refresh.rs`, `src/commands/economy.rs`
+- Tests: added focused coverage for Atlanta Fed main-page/commentary parsing, BEA GDP release-date parsing, stale-GDPNOW fallback selection, quarter-label formatting, and GDP cadence summary rendering.
+
 ### 2026-04-06 — fix: add BLS CPI/PPI fallback and explicit stale economy status
 
 - What: `pftui data economy --json` now emits `last_updated` and `stale` fields for indicator rows, keeps stale CPI/PPI FRED-derived values from overriding fresher BLS fallback data, and returns an explicit stale/error state when stale CPI/PPI data has no BLS fallback. The BLS fallback path now also computes headline PPI YoY from the official Final Demand BLS series.
