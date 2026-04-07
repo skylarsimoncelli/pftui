@@ -253,6 +253,20 @@ fn print_inventory(inv: &SupplyOutput) {
     println!("  Reg Ratio:      {:.1}%", inv.reg_ratio);
 }
 
+/// Format a number with thousands separators.
+fn format_with_commas(n: f64) -> String {
+    let n_str = format!("{:.0}", n);
+    let mut result = String::new();
+    let chars: Vec<char> = n_str.chars().collect();
+    for (i, ch) in chars.iter().enumerate() {
+        if i > 0 && (chars.len() - i).is_multiple_of(3) {
+            result.push(',');
+        }
+        result.push(*ch);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,18 +300,4 @@ mod tests {
         assert_eq!(output.date, "2026-04-01");
         assert!(warning.unwrap().contains("Returning stale cached data"));
     }
-}
-
-/// Format a number with thousands separators.
-fn format_with_commas(n: f64) -> String {
-    let n_str = format!("{:.0}", n);
-    let mut result = String::new();
-    let chars: Vec<char> = n_str.chars().collect();
-    for (i, ch) in chars.iter().enumerate() {
-        if i > 0 && (chars.len() - i).is_multiple_of(3) {
-            result.push(',');
-        }
-        result.push(*ch);
-    }
-    result
 }

@@ -74,7 +74,7 @@ pub fn build_output(backend: &BackendConnection, days: usize) -> Result<PowerSig
     }
 
     for complex in power.complexes.iter().filter(|complex| complex.net_score != 0) {
-        let score = ((complex.net_score.abs() as u32) * 10).min(90);
+        let score = (complex.net_score.unsigned_abs() * 10).min(90) as u32;
         let direction = if complex.net_score > 0 {
             "gaining"
         } else {
