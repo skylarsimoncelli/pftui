@@ -701,12 +701,7 @@ fn run_update(
             json,
         } => {
             let scenario = find_active_situation(backend, &situation)?;
-            if !["low", "normal", "elevated", "critical"].contains(&severity.as_str()) {
-                bail!(
-                    "Invalid severity: {}. Use low, normal, elevated, or critical.",
-                    severity
-                );
-            }
+            validate_update_severity(&severity)?;
             let branch_id = if let Some(ref bn) = branch {
                 Some(find_branch_id(backend, scenario.id, bn)?)
             } else {
@@ -767,6 +762,17 @@ fn run_update(
         }
     }
     Ok(())
+}
+
+fn validate_update_severity(severity: &str) -> Result<()> {
+    if ["low", "normal", "elevated", "critical"].contains(&severity) {
+        Ok(())
+    } else {
+        bail!(
+            "Invalid severity '{}'. Valid values: low, normal, elevated, critical.",
+            severity
+        )
+    }
 }
 
 fn run_exposure(backend: &BackendConnection, symbol: &str, json_output: bool) -> Result<()> {
@@ -1846,6 +1852,13 @@ mod tests {
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0].headline, "Tariffs announced");
         assert_eq!(updates[0].severity, "elevated");
+    }
+
+    #[test]
+    fn validate_update_severity_rejects_unknown_value() {
+        let err = validate_update_severity("high").unwrap_err().to_string();
+        assert!(err.contains("Invalid severity 'high'"));
+        assert!(err.contains("low, normal, elevated, critical"));
     }
 
     #[test]

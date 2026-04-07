@@ -154,7 +154,7 @@
 **Scope:** Add `--lesson-coverage` flag to `journal prediction scorecard --json`. Join against `prediction_lessons` table to annotate each wrong prediction with lesson status (`has_lesson: bool`, `lesson_type` if present). Terminal output: append `[no lesson]` tag on unlessoned wrong predictions. Files: `src/commands/predict.rs`, `src/cli.rs`.
 **Effort:** 2–3 hours.
 
-### [Feedback] Fix analytics situation update log severity validation and docs
+### [x] [Feedback] Fix analytics situation update log severity validation and docs
 **Source:** low-timeframe-analyst (Apr 6, 55/72 — tied lowest usefulness). low-timeframe-analyst (Apr 6, 75/78).
 **Why:** `analytics situation update log --severity high` was rejected as an invalid value with no documentation of valid values. Agents were forced to discover valid severity values by trial and error, burning time in the lowest-scoring tester workflow.
 **Scope:** (1) Identify valid severity values accepted by `analytics situation update log`. (2) Add them to CLI help text via `value_parser` or `possible_values` so they appear in `--help`. (3) Improve the error message to list valid options. Files: `src/cli.rs`, `src/analytics/situation.rs`.
