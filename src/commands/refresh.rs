@@ -1121,12 +1121,24 @@ fn run_pipeline(
                                 Err(e) => results.push(("DGS10_YAHOO", Err(e))),
                             }
                         }
+                        if series.id == "GDPNOW" && latest_stale {
+                            match fred::fetch_gdpnow_web_fallback().await {
+                                Ok(fallback) => results.push(("GDPNOW_WEB", Ok(vec![fallback]))),
+                                Err(e) => results.push(("GDPNOW_WEB", Err(e))),
+                            }
+                        }
                     }
                     Ok(_) => {
                         if series.id == "DGS10" {
                             match fred::fetch_dgs10_yahoo_fallback().await {
                                 Ok(fallback) => results.push(("DGS10_YAHOO", Ok(vec![fallback]))),
                                 Err(e) => results.push(("DGS10_YAHOO", Err(e))),
+                            }
+                        }
+                        if series.id == "GDPNOW" {
+                            match fred::fetch_gdpnow_web_fallback().await {
+                                Ok(fallback) => results.push(("GDPNOW_WEB", Ok(vec![fallback]))),
+                                Err(e) => results.push(("GDPNOW_WEB", Err(e))),
                             }
                         }
                     }
@@ -1140,6 +1152,17 @@ fn run_pipeline(
                                 Err(fallback_err) => {
                                     results.push((series.id, Err(e)));
                                     results.push(("DGS10_YAHOO", Err(fallback_err)));
+                                }
+                            }
+                        } else if series.id == "GDPNOW" {
+                            match fred::fetch_gdpnow_web_fallback().await {
+                                Ok(fallback) => {
+                                    results.push((series.id, Err(e)));
+                                    results.push(("GDPNOW_WEB", Ok(vec![fallback])));
+                                }
+                                Err(fallback_err) => {
+                                    results.push((series.id, Err(e)));
+                                    results.push(("GDPNOW_WEB", Err(fallback_err)));
                                 }
                             }
                         } else {

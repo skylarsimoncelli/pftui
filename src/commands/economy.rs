@@ -1,9 +1,11 @@
 use anyhow::Result;
+use chrono::Datelike;
 use rust_decimal::Decimal;
 use std::collections::HashSet;
 
 use crate::data::fred;
 use crate::db::backend::BackendConnection;
+use crate::db::calendar_cache;
 use crate::db::economic_cache;
 use crate::db::economic_data;
 use crate::db::macro_events;
@@ -26,6 +28,7 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
 
     // Cross-reference with FRED data from economic_cache for discrepancy detection
     let fred_observations = economic_cache::get_all_latest_backend(backend).unwrap_or_default();
+    let gdp_context = build_gdp_context(backend, &fred_observations);
     let discrepancies = detect_fred_discrepancies(&rows, &fred_observations);
 
     if let Some(ind) = indicator {
@@ -138,6 +141,12 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                             "series_id": effective_series_id,
                             "source": "yahoo_tnx_fallback",
                         });
+                    } else if *effective_series_id == "GDPNOW_WEB" {
+                        obj["fallback"] = serde_json::json!({
+                            "reason": "fred_gdpnow_stale_or_unavailable",
+                            "series_id": effective_series_id,
+                            "source": "atlantafed_gdpnow",
+                        });
                     }
                 }
                 if let Some(d) = disc {
@@ -146,6 +155,9 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                         "other_value": d.other_value.to_string(),
                         "diff_pct": d.diff_pct.to_string(),
                     });
+                }
+                if r.indicator == "gdp" || r.indicator == "gdp_nowcast" {
+                    obj["context"] = gdp_context.clone();
                 }
 
                 // Add staleness warning for FRED-sourced indicators
@@ -205,6 +217,7 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
             serde_json::to_string_pretty(&serde_json::json!({
                 "indicators": indicators,
                 "macro_events": surprises,
+                "gdp_context": gdp_context,
                 "data_quality": fred_quality,
             }))?
         );
@@ -307,6 +320,11 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                 name, event.event_date, event.expected, event.actual, event.surprise_pct
             );
         }
+    }
+
+    if let Some(summary) = format_gdp_context_summary(&gdp_context) {
+        println!();
+        println!("GDP cadence: {}", summary);
     }
 
     Ok(())
@@ -414,6 +432,29 @@ fn fred_value_for_indicator(
             if let Some(obs) = fallback {
                 if !fred::is_series_stale("DGS10_YAHOO", &obs.date) {
                     return Some((obs.value, obs.date.clone(), "DGS10_YAHOO"));
+                }
+            }
+        }
+    }
+
+    if fred_series == "GDPNOW" {
+        let primary = fred_obs.iter().find(|o| o.series_id == "GDPNOW");
+        let primary_is_stale = primary
+            .map(|obs| fred::is_series_stale("GDPNOW", &obs.date))
+            .unwrap_or(true);
+        if primary_is_stale {
+            let fallback = fred_obs
+                .iter()
+                .find(|o| o.series_id == "GDPNOW_WEB")
+                .cloned()
+                .or_else(|| {
+                    economic_cache::get_latest_backend(backend, "GDPNOW_WEB")
+                        .ok()
+                        .flatten()
+                });
+            if let Some(obs) = fallback {
+                if !fred::is_series_stale("GDPNOW_WEB", &obs.date) {
+                    return Some((obs.value, obs.date.clone(), "GDPNOW_WEB"));
                 }
             }
         }
@@ -618,6 +659,99 @@ fn stale_data_reason(indicator: &str, last_updated: &str) -> String {
     )
 }
 
+fn build_gdp_context(
+    backend: &BackendConnection,
+    fred_obs: &[economic_cache::EconomicObservation],
+) -> serde_json::Value {
+    let latest_gdp = fred_obs
+        .iter()
+        .find(|obs| obs.series_id == "GDP")
+        .cloned()
+        .or_else(|| economic_cache::get_latest_backend(backend, "GDP").ok().flatten());
+    let bea_context = fred::fetch_bea_gdp_release_context().ok();
+    let next_print = next_gdp_release_date(backend).or_else(|| {
+        bea_context
+            .as_ref()
+            .and_then(|ctx| ctx.next_release_date.clone())
+    });
+    let bea_release_label = bea_context.and_then(|ctx| ctx.release_label);
+    let nowcast = fred_value_for_indicator("gdp_nowcast", fred_obs, backend);
+    let nowcast_json = match nowcast {
+        Some((value, updated, series_id)) if !fred::is_series_stale(series_id, &updated) => {
+            serde_json::json!({
+                "value": value.to_string(),
+                "updated": updated,
+                "source": source_label_for_series(series_id),
+                "stale": false,
+            })
+        }
+        Some((value, updated, series_id)) => serde_json::json!({
+            "value": value.to_string(),
+            "updated": updated,
+            "source": source_label_for_series(series_id),
+            "stale": true,
+            "error": "gdpnow_stale_refresh_or_web_search",
+        }),
+        None => serde_json::json!({
+            "value": serde_json::Value::Null,
+            "updated": serde_json::Value::Null,
+            "source": "unavailable",
+            "stale": true,
+            "error": "gdpnow_unreachable_refresh_or_web_search",
+        }),
+    };
+
+    serde_json::json!({
+        "last_print_quarter": latest_gdp.as_ref().and_then(|obs| quarter_label_from_date(&obs.date)),
+        "last_print_date": latest_gdp.as_ref().map(|obs| obs.date.clone()),
+        "next_print_date": next_print,
+        "bea_release_label": bea_release_label,
+        "nowcast": nowcast_json,
+    })
+}
+
+fn next_gdp_release_date(backend: &BackendConnection) -> Option<String> {
+    let today = chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string();
+    calendar_cache::get_upcoming_events_backend(backend, &today, 90)
+        .ok()?
+        .into_iter()
+        .find(|event| {
+            let name = event.name.to_ascii_lowercase();
+            name.contains("gross domestic product")
+                || (name.contains("gdp") && name.contains("estimate"))
+        })
+        .map(|event| event.date)
+}
+
+fn quarter_label_from_date(date: &str) -> Option<String> {
+    let parsed = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
+    let quarter = ((parsed.month() - 1) / 3) + 1;
+    Some(format!("Q{} {}", quarter, parsed.year()))
+}
+
+fn format_gdp_context_summary(gdp_context: &serde_json::Value) -> Option<String> {
+    let last_print = gdp_context.get("last_print_quarter")?.as_str()?;
+    let next_print = gdp_context
+        .get("next_print_date")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let nowcast = gdp_context.get("nowcast")?;
+    let nowcast_value = nowcast.get("value").and_then(|v| v.as_str());
+    let nowcast_updated = nowcast.get("updated").and_then(|v| v.as_str());
+
+    if let (Some(value), Some(updated)) = (nowcast_value, nowcast_updated) {
+        Some(format!(
+            "last print {}. Next print {}. GDPNow {}% (updated {}).",
+            last_print, next_print, value, updated
+        ))
+    } else {
+        Some(format!(
+            "last print {}. Next print {}. GDPNow unavailable; refresh or web search before using it.",
+            last_print, next_print
+        ))
+    }
+}
+
 /// Map economy indicator names to FRED series IDs for cross-referencing.
 /// Compute a top-level data quality summary for FRED data.
 ///
@@ -734,6 +868,19 @@ fn confidence_for_series_date(series_id: &str, date: &str) -> String {
         } else {
             "low".to_string()
         }
+    } else if series_id == "GDPNOW_WEB" {
+        use chrono::{NaiveDate, Utc};
+        let Ok(obs_date) = NaiveDate::parse_from_str(date, "%Y-%m-%d") else {
+            return "medium".to_string();
+        };
+        let age_days = (Utc::now().date_naive() - obs_date).num_days();
+        if age_days <= 2 {
+            "high".to_string()
+        } else if age_days <= 7 {
+            "medium".to_string()
+        } else {
+            "low".to_string()
+        }
     } else {
         confidence_for_fred_date(date)
     }
@@ -789,6 +936,16 @@ fn confidence_reason_for_series_date(series_id: &str, date: &str, indicator: &st
             "Yahoo Finance ^TNX fallback, used because FRED DGS10 is stale or unavailable, market quote {}d old",
             age_days
         )
+    } else if series_id == "GDPNOW_WEB" {
+        use chrono::{NaiveDate, Utc};
+        let Ok(obs_date) = NaiveDate::parse_from_str(date, "%Y-%m-%d") else {
+            return "Atlanta Fed GDPNow fallback, date unparseable".to_string();
+        };
+        let age_days = (Utc::now().date_naive() - obs_date).num_days();
+        format!(
+            "Atlanta Fed GDPNow fallback, used because FRED GDPNOW is stale or unavailable, nowcast {}d old",
+            age_days
+        )
     } else {
         confidence_reason_for_fred(date, indicator)
     }
@@ -797,6 +954,8 @@ fn confidence_reason_for_series_date(series_id: &str, date: &str, indicator: &st
 fn source_label_for_series(series_id: &str) -> &'static str {
     if series_id == "DGS10_YAHOO" {
         "yahoo_tnx_fallback"
+    } else if series_id == "GDPNOW_WEB" {
+        "atlantafed_gdpnow"
     } else {
         "fred"
     }
@@ -805,6 +964,8 @@ fn source_label_for_series(series_id: &str) -> &'static str {
 fn source_url_for_series(series_id: &str) -> Option<&'static str> {
     if series_id == "DGS10_YAHOO" {
         Some("https://finance.yahoo.com/quote/%5ETNX")
+    } else if series_id == "GDPNOW_WEB" {
+        Some("https://www.atlantafed.org/research-and-data/data/gdpnow")
     } else {
         None
     }
@@ -1246,6 +1407,65 @@ mod tests {
         assert_eq!(result.0, dec!(4.11));
         assert_eq!(result.1, today);
         assert_eq!(result.2, "DGS10");
+    }
+
+    #[test]
+    fn fred_value_uses_web_fallback_for_stale_gdpnow() {
+        let conn = crate::db::open_in_memory();
+        let today = chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        let stale_date = (chrono::Utc::now().date_naive() - chrono::Duration::days(14))
+            .format("%Y-%m-%d")
+            .to_string();
+        economic_cache::upsert_observation(
+            &conn,
+            &economic_cache::EconomicObservation {
+                series_id: "GDPNOW_WEB".to_string(),
+                date: today.clone(),
+                value: dec!(1.6),
+                fetched_at: "2026-04-07T00:00:00Z".to_string(),
+            },
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+        let obs = vec![economic_cache::EconomicObservation {
+            series_id: "GDPNOW".to_string(),
+            date: stale_date,
+            value: dec!(0.9),
+            fetched_at: "2026-04-07T00:00:00Z".to_string(),
+        }];
+
+        let result = fred_value_for_indicator("gdp_nowcast", &obs, &backend).unwrap();
+        assert_eq!(result.0, dec!(1.6));
+        assert_eq!(result.1, today);
+        assert_eq!(result.2, "GDPNOW_WEB");
+    }
+
+    #[test]
+    fn quarter_label_formats_fred_quarter_dates() {
+        assert_eq!(
+            quarter_label_from_date("2025-10-01").as_deref(),
+            Some("Q4 2025")
+        );
+        assert_eq!(
+            quarter_label_from_date("2026-01-01").as_deref(),
+            Some("Q1 2026")
+        );
+    }
+
+    #[test]
+    fn gdp_context_summary_mentions_nowcast_when_available() {
+        let context = serde_json::json!({
+            "last_print_quarter": "Q4 2025",
+            "next_print_date": "2026-04-09",
+            "nowcast": {
+                "value": "1.6",
+                "updated": "2026-04-02"
+            }
+        });
+        let summary = format_gdp_context_summary(&context).unwrap();
+        assert!(summary.contains("Q4 2025"));
+        assert!(summary.contains("2026-04-09"));
+        assert!(summary.contains("GDPNow 1.6%"));
     }
 
     #[test]

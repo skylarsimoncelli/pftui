@@ -18,10 +18,12 @@
 
 use anyhow::{bail, Result};
 use chrono::{NaiveDate, Utc};
+use regex::Regex;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -170,6 +172,21 @@ pub struct EconomicSurprise {
     pub surprise_pct: Decimal,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct GdpNowSnapshot {
+    pub quarter: String,
+    pub updated_date: String,
+    pub next_update: Option<String>,
+    pub value: Decimal,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BeaGdpReleaseContext {
+    pub current_release_date: String,
+    pub next_release_date: Option<String>,
+    pub release_label: Option<String>,
+}
+
 /// Raw JSON response from FRED API.
 #[derive(Debug, Deserialize)]
 struct FredResponse {
@@ -184,6 +201,11 @@ struct RawObservation {
 
 const FRED_BASE_URL: &str = "https://api.stlouisfed.org/fred/series/observations";
 const DGS10_STALE_THRESHOLD_DAYS: i64 = 2;
+const GDPNOW_STALE_THRESHOLD_DAYS: i64 = 7;
+const GDPNOW_PAGE_URL: &str = "https://www.atlantafed.org/research-and-data/data/gdpnow";
+const GDPNOW_COMMENTARY_URL: &str =
+    "https://www.atlantafed.org/research-and-data/data/gdpnow/current-and-past-gdpnow-commentaries";
+const BEA_GDP_URL: &str = "https://www.bea.gov/data/gdp/gross-domestic-product";
 
 /// Maximum number of retry attempts for FRED API calls.
 const MAX_RETRIES: u32 = 3;
@@ -380,6 +402,9 @@ pub fn is_series_stale(series_id: &str, date_str: &str) -> bool {
     if series_id == "DGS10" || series_id == "DGS10_YAHOO" {
         return age_days > DGS10_STALE_THRESHOLD_DAYS;
     }
+    if series_id == "GDPNOW" || series_id == "GDPNOW_WEB" {
+        return age_days > GDPNOW_STALE_THRESHOLD_DAYS;
+    }
 
     series_by_id(series_id)
         .map(|series| is_stale(date_str, series.frequency))
@@ -401,6 +426,166 @@ pub async fn fetch_dgs10_yahoo_fallback() -> Result<FredObservation> {
         date: Utc::now().date_naive().format("%Y-%m-%d").to_string(),
         value: normalize_tnx_quote_to_percent(quote.price),
     })
+}
+
+pub async fn fetch_gdpnow_web_fallback() -> Result<FredObservation> {
+    let client = build_client()?;
+    let main_html = get_with_retry(&client, GDPNOW_PAGE_URL).await?.text().await?;
+
+    let snapshot = if let Some(snapshot) = parse_gdpnow_main_page(&main_html) {
+        snapshot
+    } else {
+        let commentary_html = get_with_retry(&client, GDPNOW_COMMENTARY_URL)
+            .await?
+            .text()
+            .await?;
+        parse_gdpnow_commentary_page(&commentary_html)
+            .ok_or_else(|| anyhow::anyhow!("GDPNow web page parse failed"))?
+    };
+
+    Ok(FredObservation {
+        series_id: "GDPNOW_WEB".to_string(),
+        date: snapshot.updated_date,
+        value: snapshot.value.round_dp(1),
+    })
+}
+
+pub fn fetch_bea_gdp_release_context() -> Result<BeaGdpReleaseContext> {
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("pftui/1.0 (https://github.com/skylarsimoncelli/pftui)")
+        .timeout(Duration::from_secs(15))
+        .build()?;
+    let html = client
+        .get(BEA_GDP_URL)
+        .send()?
+        .error_for_status()?
+        .text()?;
+    parse_bea_gdp_page(&html).ok_or_else(|| anyhow::anyhow!("BEA GDP page parse failed"))
+}
+
+fn parse_gdpnow_main_page(html: &str) -> Option<GdpNowSnapshot> {
+    static VALUE_RE: OnceLock<Regex> = OnceLock::new();
+    static QUARTER_RE: OnceLock<Regex> = OnceLock::new();
+    static UPDATED_RE: OnceLock<Regex> = OnceLock::new();
+    static NEXT_RE: OnceLock<Regex> = OnceLock::new();
+
+    let value_re = VALUE_RE.get_or_init(|| {
+        Regex::new(r#"data-value">\s*([+-]?\d+(?:\.\d+)?)%"#).expect("valid GDPNow value regex")
+    });
+    let quarter_re = QUARTER_RE.get_or_init(|| {
+        Regex::new(r#"Latest GDPNow Estimate for\s+(\d{4}:Q[1-4])"#)
+            .expect("valid GDPNow quarter regex")
+    });
+    let updated_re = UPDATED_RE.get_or_init(|| {
+        Regex::new(r#"Updated:</strong>\s*([A-Za-z]+ \d{1,2}, \d{4})"#)
+            .expect("valid GDPNow updated regex")
+    });
+    let next_re = NEXT_RE.get_or_init(|| {
+        Regex::new(r#"Next update:</strong>\s*([A-Za-z]+ \d{1,2}, \d{4})"#)
+            .expect("valid GDPNow next-update regex")
+    });
+
+    let value = Decimal::from_str(value_re.captures(html)?.get(1)?.as_str()).ok()?;
+    let quarter = quarter_re.captures(html)?.get(1)?.as_str().to_string();
+    let updated_date = normalize_long_date(updated_re.captures(html)?.get(1)?.as_str())?;
+    let next_update = next_re
+        .captures(html)
+        .and_then(|captures| captures.get(1))
+        .and_then(|m| normalize_long_date(m.as_str()));
+
+    Some(GdpNowSnapshot {
+        quarter,
+        updated_date,
+        next_update,
+        value,
+    })
+}
+
+fn parse_gdpnow_commentary_page(html: &str) -> Option<GdpNowSnapshot> {
+    static ENTRY_RE: OnceLock<Regex> = OnceLock::new();
+    static NEXT_RE: OnceLock<Regex> = OnceLock::new();
+
+    let entry_re = ENTRY_RE.get_or_init(|| {
+        Regex::new(
+            r#"The GDPNow model estimate for real GDP growth .*? in the ([a-z]+) quarter of (\d{4}) is <strong>\s*([+-]?\d+(?:\.\d+)?) percent</strong> on ([A-Za-z]+ \d{1,2})"#,
+        )
+        .expect("valid GDPNow commentary regex")
+    });
+    let next_re = NEXT_RE.get_or_init(|| {
+        Regex::new(r#"The next(?:&nbsp;| )GDPNow(?:&nbsp;| )update is <strong>\s*(?:[A-Za-z]+,\s*)?([A-Za-z]+ \d{1,2})"#)
+            .expect("valid GDPNow commentary next-update regex")
+    });
+
+    let captures = entry_re.captures(html)?;
+    let quarter_word = captures.get(1)?.as_str();
+    let year = captures.get(2)?.as_str();
+    let value = Decimal::from_str(captures.get(3)?.as_str()).ok()?;
+    let updated_date = normalize_month_day_with_year(captures.get(4)?.as_str(), year)?;
+    let next_update = next_re
+        .captures(html)
+        .and_then(|c| c.get(1))
+        .and_then(|m| normalize_month_day_with_year(m.as_str(), year));
+
+    Some(GdpNowSnapshot {
+        quarter: format!("{}:Q{}", year, quarter_word_to_number(quarter_word)?),
+        updated_date,
+        next_update,
+        value,
+    })
+}
+
+fn parse_bea_gdp_page(html: &str) -> Option<BeaGdpReleaseContext> {
+    static CURRENT_RE: OnceLock<Regex> = OnceLock::new();
+    static NEXT_RE: OnceLock<Regex> = OnceLock::new();
+    static LABEL_RE: OnceLock<Regex> = OnceLock::new();
+
+    let current_re = CURRENT_RE.get_or_init(|| {
+        Regex::new(r#"Current Release:</strong>&nbsp;:\s*([A-Za-z]+ \d{1,2}, \d{4})"#)
+            .expect("valid BEA current-release regex")
+    });
+    let next_re = NEXT_RE.get_or_init(|| {
+        Regex::new(r#"Next Release:</strong>&nbsp;:\s*([A-Za-z]+ \d{1,2}, \d{4})"#)
+            .expect("valid BEA next-release regex")
+    });
+    let label_re = LABEL_RE.get_or_init(|| {
+        Regex::new(r#"field-subtitle[^>]*>\s*([^<]*GDP[^<]*)</div>"#)
+            .expect("valid BEA release-label regex")
+    });
+
+    Some(BeaGdpReleaseContext {
+        current_release_date: normalize_long_date(current_re.captures(html)?.get(1)?.as_str())?,
+        next_release_date: next_re
+            .captures(html)
+            .and_then(|captures| captures.get(1))
+            .and_then(|m| normalize_long_date(m.as_str())),
+        release_label: label_re
+            .captures(html)
+            .and_then(|captures| captures.get(1))
+            .map(|m| m.as_str().to_string()),
+    })
+}
+
+fn normalize_long_date(input: &str) -> Option<String> {
+    for fmt in ["%B %d, %Y", "%B %-d, %Y", "%B %e, %Y"] {
+        if let Ok(date) = NaiveDate::parse_from_str(input.trim(), fmt) {
+            return Some(date.format("%Y-%m-%d").to_string());
+        }
+    }
+    None
+}
+
+fn normalize_month_day_with_year(input: &str, year: &str) -> Option<String> {
+    normalize_long_date(&format!("{}, {}", input.trim().trim_end_matches('.'), year))
+}
+
+fn quarter_word_to_number(word: &str) -> Option<u8> {
+    match word.to_ascii_lowercase().as_str() {
+        "first" => Some(1),
+        "second" => Some(2),
+        "third" => Some(3),
+        "fourth" => Some(4),
+        _ => None,
+    }
 }
 
 /// Look up series metadata by ID.
@@ -535,6 +720,52 @@ mod tests {
     fn test_normalize_tnx_quote_to_percent_handles_yahoo_scale() {
         assert_eq!(normalize_tnx_quote_to_percent(Decimal::from_str("42.57").unwrap()), Decimal::from_str("4.257").unwrap());
         assert_eq!(normalize_tnx_quote_to_percent(Decimal::from_str("4.257").unwrap()), Decimal::from_str("4.257").unwrap());
+    }
+
+    #[test]
+    fn parse_gdpnow_main_page_extracts_latest_card() {
+        let html = r#"
+        <div class="card-content">
+            <p class="data-value">1.6%</p>
+            <p><strong>Latest GDPNow Estimate for 2026:Q1</strong></p>
+            <p><strong>Updated:</strong> April 02, 2026</p>
+            <p><strong>Next update:</strong> April 07, 2026</p>
+        </div>
+        "#;
+        let parsed = parse_gdpnow_main_page(html).expect("main page should parse");
+        assert_eq!(parsed.quarter, "2026:Q1");
+        assert_eq!(parsed.updated_date, "2026-04-02");
+        assert_eq!(parsed.next_update.as_deref(), Some("2026-04-07"));
+        assert_eq!(parsed.value, dec!(1.6));
+    }
+
+    #[test]
+    fn parse_gdpnow_commentary_page_extracts_latest_entry() {
+        let html = r#"
+        <p>The GDPNow model estimate for real GDP growth (seasonally adjusted annual rate) in the first quarter of 2026 is <strong>1.6 percent</strong> on April 2, <strong>down from 1.9 percent</strong> on April 1.</p>
+        <p><em>The next GDPNow update is <strong> Tuesday, April 7</strong>. Please see the "Release Dates" tab for a list of upcoming releases.</em></p>
+        "#;
+        let parsed =
+            parse_gdpnow_commentary_page(html).expect("commentary page should parse");
+        assert_eq!(parsed.quarter, "2026:Q1");
+        assert_eq!(parsed.updated_date, "2026-04-02");
+        assert_eq!(parsed.next_update.as_deref(), Some("2026-04-07"));
+        assert_eq!(parsed.value, dec!(1.6));
+    }
+
+    #[test]
+    fn parse_bea_gdp_page_extracts_release_dates() {
+        let html = r#"
+        <div class="field field--name-field-subtitle field--type-string field--label-hidden field--item">GDP (Second Estimate), 4th Quarter and Year 2025</div>
+        <div class="field field--name-field-description field--type-text-long field--label-hidden field--item"><ul><li><strong>Current Release:</strong>&nbsp;: March 13, 2026</li><li><strong>Next Release:</strong>&nbsp;: April 9, 2026</li></ul></div>
+        "#;
+        let parsed = parse_bea_gdp_page(html).expect("BEA page should parse");
+        assert_eq!(parsed.current_release_date, "2026-03-13");
+        assert_eq!(parsed.next_release_date.as_deref(), Some("2026-04-09"));
+        assert_eq!(
+            parsed.release_label.as_deref(),
+            Some("GDP (Second Estimate), 4th Quarter and Year 2025")
+        );
     }
 
     #[test]
