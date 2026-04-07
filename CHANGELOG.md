@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: add COT report schedule metadata and Friday release retry
+
+- What: `pftui data cot --json` and `pftui data sentiment --json` now expose `next_report_date` and `next_release_date` alongside each COT `report_date`, and the detailed `data cot` terminal view now prints the next scheduled report/release. COT freshness checks in both `data refresh` and `data status` now compare cached report dates against the expected post-Friday-release Tuesday report instead of waiting for a blunt seven-day timeout.
+- Why: agents could see the last Tuesday positioning date but not when the next report should exist, which made missed Friday CFTC releases look "fresh enough" for several extra days and delayed refresh retries during active markets.
+- Files: `src/data/cot.rs`, `src/commands/cot.rs`, `src/commands/sentiment.rs`, `src/commands/refresh.rs`, `src/commands/status.rs`
+- Tests: added focused coverage for next-report/next-release schedule derivation, Friday release-window expectations, `data cot` schedule fields, and status stale detection after a missed Friday release.
+
 ### 2026-04-06 — fix: restore GDPNow freshness and add GDP release cadence context
 
 - What: `pftui data refresh` now stores an Atlanta Fed web fallback as `GDPNOW_WEB` whenever the FRED `GDPNOW` series is stale, empty, or unavailable. `pftui data economy` now prefers that fallback for `gdp_nowcast`, exposes GDP-specific context for both `gdp` and `gdp_nowcast`, and includes a top-level `gdp_context` block with last-print quarter, next GDP release date, BEA release label, and explicit GDPNow-unavailable errors when no fresh nowcast exists.

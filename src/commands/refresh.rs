@@ -553,11 +553,18 @@ fn cot_needs_refresh(backend: &BackendConnection) -> Result<bool> {
         return Ok(true);
     }
 
+    let now = chrono::Utc::now();
+    let expected_report_date = cot::expected_latest_report_date(now);
+    let latest_report_date = latest_cot_report_date(&reports);
+
+    if latest_report_date.is_some_and(|date| date < expected_report_date) {
+        return Ok(true);
+    }
+
     if latest_cot_report_age_days(&reports).is_some_and(|age_days| age_days > 7) {
         return Ok(true);
     }
 
-    let now = chrono::Utc::now();
     let mut any_parsed = false;
     for report in reports {
         if let Some(fetched) = parse_timestamp_flexible(&report.fetched_at) {
@@ -573,25 +580,40 @@ fn cot_needs_refresh(backend: &BackendConnection) -> Result<bool> {
 }
 
 fn latest_cot_report_age_days(reports: &[crate::db::cot_cache::CotCacheEntry]) -> Option<i64> {
-    let latest = reports
+    let latest = latest_cot_report_date(reports)?;
+    Some((chrono::Utc::now().date_naive() - latest).num_days())
+}
+
+fn latest_cot_report_date(
+    reports: &[crate::db::cot_cache::CotCacheEntry],
+) -> Option<chrono::NaiveDate> {
+    reports
         .iter()
         .filter_map(|report| chrono::NaiveDate::parse_from_str(&report.report_date, "%Y-%m-%d").ok())
-        .max()?;
-    Some((chrono::Utc::now().date_naive() - latest).num_days())
+        .max()
 }
 
 fn cot_staleness_detail(backend: &BackendConnection) -> Option<String> {
     let reports = cot_cache::get_all_latest_backend(backend).ok()?;
-    let latest = reports
-        .iter()
-        .filter_map(|report| {
-            chrono::NaiveDate::parse_from_str(&report.report_date, "%Y-%m-%d")
-                .ok()
-                .map(|date| (date, report.report_date.as_str()))
-        })
-        .max_by_key(|(date, _)| *date)?;
-    let age_days = (chrono::Utc::now().date_naive() - latest.0).num_days();
-    (age_days > 7).then(|| format!("latest COT report date {} is {} days old", latest.1, age_days))
+    let latest = latest_cot_report_date(&reports)?;
+    let expected = cot::expected_latest_report_date(chrono::Utc::now());
+    let age_days = (chrono::Utc::now().date_naive() - latest).num_days();
+
+    if latest < expected {
+        Some(format!(
+            "latest COT report date {} lags expected report date {}",
+            latest.format("%Y-%m-%d"),
+            expected.format("%Y-%m-%d")
+        ))
+    } else if age_days > 7 {
+        Some(format!(
+            "latest COT report date {} is {} days old",
+            latest.format("%Y-%m-%d"),
+            age_days
+        ))
+    } else {
+        None
+    }
 }
 
 /// Check if COMEX needs refreshing

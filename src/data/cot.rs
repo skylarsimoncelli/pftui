@@ -14,6 +14,7 @@
 //! - Bitcoin (133741): CME Bitcoin Futures
 
 use anyhow::{anyhow, Result};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
 use serde::Deserialize;
 
 /// CFTC contract codes we track and their pftui symbol mappings.
@@ -204,6 +205,85 @@ pub fn symbol_to_cftc_code(symbol: &str) -> Option<&'static str> {
         .map(|c| c.cftc_code)
 }
 
+pub fn next_report_date(report_date: &str) -> Option<String> {
+    let report_date = NaiveDate::parse_from_str(report_date, "%Y-%m-%d").ok()?;
+    Some((report_date + Duration::days(7)).format("%Y-%m-%d").to_string())
+}
+
+pub fn next_release_date(report_date: &str) -> Option<String> {
+    let report_date = NaiveDate::parse_from_str(report_date, "%Y-%m-%d").ok()?;
+    Some((report_date + Duration::days(10)).format("%Y-%m-%d").to_string())
+}
+
+pub fn expected_latest_report_date(now_utc: DateTime<Utc>) -> NaiveDate {
+    let et_now = to_eastern(now_utc);
+    let weekday = et_now.weekday().num_days_from_monday() as i64;
+    let this_week_tuesday = et_now.date_naive() - Duration::days((weekday - 1).max(0));
+
+    if weekday > 4 || (weekday == 4 && cot_release_window_open(now_utc)) {
+        this_week_tuesday
+    } else {
+        this_week_tuesday - Duration::days(7)
+    }
+}
+
+pub fn cot_release_window_open(now_utc: DateTime<Utc>) -> bool {
+    let et_now = to_eastern(now_utc);
+    et_now.weekday() == chrono::Weekday::Fri
+        && (et_now.hour() > 15 || (et_now.hour() == 15 && et_now.minute() >= 30))
+}
+
+fn to_eastern(utc: DateTime<Utc>) -> DateTime<Utc> {
+    let offset_hours = if is_us_eastern_dst(utc, utc.year()) {
+        -4
+    } else {
+        -5
+    };
+    let ts = utc.timestamp() + offset_hours * 3600;
+    DateTime::from_timestamp(ts, 0).unwrap_or(utc)
+}
+
+fn is_us_eastern_dst(utc: DateTime<Utc>, year: i32) -> bool {
+    let march_start = match NaiveDate::from_ymd_opt(year, 3, 1) {
+        Some(d) => d,
+        None => return false,
+    };
+    let march_first_wd = march_start.weekday().num_days_from_sunday();
+    let first_sunday_day = if march_first_wd == 0 {
+        1
+    } else {
+        1 + (7 - march_first_wd)
+    };
+    let second_sunday_march = first_sunday_day + 7;
+    let dst_start = match NaiveDate::from_ymd_opt(year, 3, second_sunday_march)
+        .and_then(|d| d.and_hms_opt(7, 0, 0))
+        .map(|dt| dt.and_utc())
+    {
+        Some(dt) => dt,
+        None => return false,
+    };
+
+    let nov_start = match NaiveDate::from_ymd_opt(year, 11, 1) {
+        Some(d) => d,
+        None => return false,
+    };
+    let nov_first_wd = nov_start.weekday().num_days_from_sunday();
+    let first_sunday_nov = if nov_first_wd == 0 {
+        1
+    } else {
+        1 + (7 - nov_first_wd)
+    };
+    let dst_end = match NaiveDate::from_ymd_opt(year, 11, first_sunday_nov)
+        .and_then(|d| d.and_hms_opt(6, 0, 0))
+        .map(|dt| dt.and_utc())
+    {
+        Some(dt) => dt,
+        None => return false,
+    };
+
+    utc >= dst_start && utc < dst_end
+}
+
 pub fn interpret_managed_money(history_desc: &[i64]) -> Option<CotInterpretation> {
     let (&current, rest) = history_desc.split_first()?;
     if rest.is_empty() {
@@ -281,5 +361,30 @@ mod tests {
         let stats = interpret_managed_money(&history).expect("stats should compute");
         assert_eq!(stats.z_score, 0.0);
         assert!(stats.extreme);
+    }
+
+    #[test]
+    fn schedule_helpers_derive_next_report_and_release_dates() {
+        assert_eq!(next_report_date("2026-03-31").as_deref(), Some("2026-04-07"));
+        assert_eq!(next_release_date("2026-03-31").as_deref(), Some("2026-04-10"));
+    }
+
+    #[test]
+    fn expected_latest_report_date_switches_after_friday_release_window() {
+        let before_release = chrono::DateTime::parse_from_rfc3339("2026-04-10T19:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let after_release = chrono::DateTime::parse_from_rfc3339("2026-04-10T21:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert_eq!(
+            expected_latest_report_date(before_release).format("%Y-%m-%d").to_string(),
+            "2026-03-31"
+        );
+        assert_eq!(
+            expected_latest_report_date(after_release).format("%Y-%m-%d").to_string(),
+            "2026-04-07"
+        );
     }
 }

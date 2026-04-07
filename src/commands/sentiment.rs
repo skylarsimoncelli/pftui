@@ -163,6 +163,9 @@ fn print_overview_json(
                     "name": contract.name,
                     "category": contract.category,
                     "report_date": report.report_date,
+                    "next_report_date": crate::data::cot::next_report_date(&report.report_date),
+                    "next_release_date": crate::data::cot::next_release_date(&report.report_date),
+                    "release_time_et": "15:30",
                     "open_interest": report.open_interest,
                     "managed_money": {
                         "long": report.managed_money_long,
@@ -280,6 +283,9 @@ fn print_symbol_detail_json(report: &CotReport, contract: &CotContract) -> Resul
         "name": contract.name,
         "category": contract.category,
         "report_date": report.report_date,
+        "next_report_date": crate::data::cot::next_report_date(&report.report_date),
+        "next_release_date": crate::data::cot::next_release_date(&report.report_date),
+        "release_time_et": "15:30",
         "open_interest": report.open_interest,
         "managed_money": {
             "long": report.managed_money_long,
@@ -353,6 +359,8 @@ fn print_symbol_history_json(reports: &[CotReport], contract: &CotContract) -> R
 
             json!({
                 "report_date": report.report_date,
+                "next_report_date": crate::data::cot::next_report_date(&report.report_date),
+                "next_release_date": crate::data::cot::next_release_date(&report.report_date),
                 "open_interest": report.open_interest,
                 "managed_money": {
                     "long": report.managed_money_long,

@@ -11,6 +11,8 @@ struct CotAnalysisRow {
     name: String,
     category: String,
     report_date: String,
+    next_report_date: String,
+    next_release_date: String,
     net_long: i64,
     percentile_1y: f64,
     percentile_3y: f64,
@@ -43,13 +45,15 @@ pub fn run(backend: &BackendConnection, symbol: Option<&str>, json: bool) -> Res
                 (
                     normalize_key(&row.name),
                     json!({
-                        "symbol": row.symbol,
-                        "report_date": row.report_date,
-                        "net_long": row.net_long,
-                        "percentile_1y": row.percentile_1y,
-                        "percentile_3y": row.percentile_3y,
-                        "z_score": row.z_score,
-                        "extreme": row.extreme,
+                    "symbol": row.symbol,
+                    "report_date": row.report_date,
+                    "next_report_date": row.next_report_date,
+                    "next_release_date": row.next_release_date,
+                    "net_long": row.net_long,
+                    "percentile_1y": row.percentile_1y,
+                    "percentile_3y": row.percentile_3y,
+                    "z_score": row.z_score,
+                    "extreme": row.extreme,
                     }),
                 )
             })
@@ -95,6 +99,10 @@ fn analyze_symbol(backend: &BackendConnection, symbol: &str) -> Result<CotAnalys
         name: contract.name.to_string(),
         category: contract.category.to_string(),
         report_date: latest.report_date.clone(),
+        next_report_date: crate::data::cot::next_report_date(&latest.report_date)
+            .unwrap_or_else(|| "unknown".to_string()),
+        next_release_date: crate::data::cot::next_release_date(&latest.report_date)
+            .unwrap_or_else(|| "unknown".to_string()),
         net_long: latest.managed_money_net,
         percentile_1y: round1(interpretation.percentile_1y),
         percentile_3y: round1(interpretation.percentile_3y),
@@ -108,6 +116,8 @@ fn print_single(row: &CotAnalysisRow) {
     println!("  Asset: {}", row.name);
     println!("  Symbol: {}", row.symbol);
     println!("  Report date: {}", row.report_date);
+    println!("  Next report date: {}", row.next_report_date);
+    println!("  Next release date: {} (3:30 PM ET)", row.next_release_date);
     println!("  Managed money net: {}", format_signed(row.net_long));
     println!(
         "  Percentiles: 1Y {:.1} | 3Y {:.1}",
@@ -175,6 +185,8 @@ fn round1(value: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::backend::BackendConnection;
+    use crate::db::cot_cache;
 
     #[test]
     fn normalize_key_uses_leading_asset_name() {
@@ -186,5 +198,39 @@ mod tests {
     fn format_signed_adds_plus_for_positive() {
         assert_eq!(format_signed(12_000), "+12000");
         assert_eq!(format_signed(-8_000), "-8000");
+    }
+
+    #[test]
+    fn analyze_symbol_adds_report_schedule_fields() {
+        let conn = crate::db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+
+        for week in 0..60 {
+            let report_date = (chrono::NaiveDate::from_ymd_opt(2025, 1, 7).unwrap()
+                + chrono::Duration::days(7 * week))
+            .format("%Y-%m-%d")
+            .to_string();
+            cot_cache::upsert_report_backend(
+                &backend,
+                &cot_cache::CotCacheEntry {
+                    cftc_code: "088691".to_string(),
+                    report_date,
+                    open_interest: 100_000,
+                    managed_money_long: 60_000 + week as i64,
+                    managed_money_short: 30_000,
+                    managed_money_net: 30_000 + week as i64,
+                    commercial_long: 20_000,
+                    commercial_short: 40_000,
+                    commercial_net: -20_000,
+                    fetched_at: "2026-04-07T00:00:00Z".to_string(),
+                },
+            )
+            .unwrap();
+        }
+
+        let row = analyze_symbol(&backend, "GC=F").unwrap();
+        assert_eq!(row.report_date, "2026-02-24");
+        assert_eq!(row.next_report_date, "2026-03-03");
+        assert_eq!(row.next_release_date, "2026-03-06");
     }
 }
