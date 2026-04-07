@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: add DGS10 fallback when FRED 10Y yield is stale
+
+- What: `pftui data refresh` now stores a Yahoo Finance `^TNX` fallback as `DGS10_YAHOO` whenever the FRED `DGS10` fetch fails, returns empty, or arrives older than the stricter 2-day 10Y-yield threshold. `pftui data economy` now prefers that fallback for `treasury_10y`, exposes the fallback source in JSON, and applies the tighter DGS10 freshness rule in top-level FRED data-quality reporting.
+- Why: the daily 10Y yield series was staying stale for multiple days, which made agents read an old treasury yield as current instead of switching to a reliable market-quote fallback.
+- Files: `src/data/fred.rs`, `src/commands/refresh.rs`, `src/commands/economy.rs`
+- Tests: added focused coverage for the stricter DGS10 threshold, `^TNX` normalization, fallback selection when FRED is stale, fresh-FRED preference, and data-quality stale detection.
+
 ### 2026-04-06 — fix: expose explicit stale price status for agent fallbacks
 
 - What: `pftui data prices --json` now emits a per-symbol `status` field (`fresh`, `stale`, or `missing`) alongside the existing staleness metadata. This makes stale cached silver and other degraded quotes machine-readable for agents that should fall back to web search instead of trusting the cached number.

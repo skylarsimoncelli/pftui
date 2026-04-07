@@ -18,7 +18,97 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] 10Y Yield FRED series DGS10 stale — add fallback data source
+### [x] [Feedback] Fix `analytics technicals --symbols` filter silently ignored
+**Source:** medium-agent (Apr 6, 65/72 — new low). Corroborated by Low-Timeframe Analyst (Apr 5, 80/78).
+**Why:** `analytics technicals --symbols BTC,GC=F` is accepted by the CLI but dumps the full symbol set — the filter has no effect. Agents are forced to manually grep the JSON output. Similar silent-ignore bug was previously fixed on `analytics trends list` (PR #566).
+**Scope:** Investigate `analytics technicals` backend — apply the `--symbols` filter at the DB level, same pattern as the list_trends_filtered_backend fix. Files: `src/analytics/technicals.rs`, `src/db/technicals.rs`.
+**Effort:** 1–2 hours.
+
+### [x] [Feedback] Fix analytics situation indicator list returning empty despite indicators existing
+**Source:** Low-Timeframe Analyst (Apr 5, 80/78).
+**Why:** Agent confirmed 3 indicators existed for the Iran situation but `analytics situation` indicator list returned empty — data routing or filter bug in the situation room's indicator fetch.
+**Scope:** Trace the indicator query path in `analytics situation`. Likely a join or filter mismatch between situation rows and their linked indicators. Files: `src/analytics/situation.rs`, `src/db/situation.rs`.
+**Effort:** 1–2 hours.
+
+### [x] [Feedback] COT data 13 days stale — investigate refresh path
+**Source:** Evening Analysis (Apr 6, 78/75).
+**Why:** COT (Commitment of Traders) data was 13 days stale, forcing fallback to web search for positioning data that pftui should own. Staleness this extreme suggests the refresh source failed silently or the COT source was not included in recent refresh runs.
+**Scope:** Check COT refresh source for silent failures; add staleness warning to `data economy` / `data refresh` output when COT is >7 days old; ensure COT is included in all full refresh plans. Files: `src/data/cot.rs` (or equivalent), `src/data/refresh.rs`.
+**Effort:** 1–2 hours.
+
+### [x] [Feedback] Fix journal scenario update triggered_at timestamp type mismatch
+**Source:** medium-agent (Apr 5, 78/82).
+**Why:** `journal scenario update` for "Iran-US War Escalation" hit a DB error on first attempt (column `triggered_at` timestamp type mismatch) but succeeded on retry — intermittent type coercion bug that could silently corrupt scenario state.
+**Scope:** Investigate the `triggered_at` column handling in `journal scenario update` SQLite and Postgres paths. Likely a bind-type inconsistency (string vs NaiveDateTime). Files: `src/journal/scenario.rs`, `src/db/scenarios.rs`.
+**Effort:** < 1 hour.
+
+### [x] [Feedback] Add `--agent` alias for `--source-agent` on prediction add
+**Source:** medium-agent (Apr 6, 65/72).
+**Why:** Agent used `prediction add --agent` which silently failed (clap rejected unknown flag). The correct flag is `--source-agent`. Adding a clap alias eliminates the discoverability gap, consistent with the `data quotes` / `portfolio snapshot` alias pattern.
+**Scope:** Add `#[arg(alias = "agent")]` on the `--source-agent` flag in the prediction add CLI definition. Also add cross-reference in `after_help`. Files: `src/cli.rs`.
+**Effort:** < 30 minutes.
+
+---
+
+## P2 - Coverage And Agent Consumption
+
+### [x] [Feedback] journal scenario update: support partial name match or ID-based lookup
+**Source:** medium-agent (Apr 6, 65/72).
+**Why:** `journal scenario update` requires an exact full-string name match. When the name doesn't match precisely (case, whitespace, abbreviation), the update fails with no suggestions. Agents waste cycles on trial-and-error or fall back to the timestamp-prone retry path.
+**Scope:** Add fuzzy/case-insensitive name matching (LIKE or LOWER()) as a fallback when exact match returns 0 rows, or support `--id <N>` as an alternative. Display candidate matches when multiple fuzzy results exist. Files: `src/journal/scenario.rs`, `src/db/scenarios.rs`.
+**Effort:** 1–2 hours.
+
+### [x] [Feedback] analytics macro outcomes: cross-reference to scenario update for probability edits
+**Source:** Macro-Timeframe Analyst (Apr 5, 55/62).
+**Why:** Analyst concluded macro outcomes was read-only with "no way to update scenario probabilities via CLI." The actual path is `journal scenario update --probability X` but there is no cross-reference from `analytics macro` help text. Add `after_help` guidance and optionally a thin `analytics macro outcomes update` alias.
+**Scope:** Add `after_help` on `analytics macro` commands pointing to `journal scenario update`. Optionally add a thin alias `analytics macro outcomes update` that delegates to the journal path. Files: `src/cli.rs`, `src/analytics/macro_cmd.rs`.
+**Effort:** 30 minutes.
+
+### [x] [Feedback] Power composite signal dashboard (`analytics power-signals`)
+**Source:** Low-Timeframe Analyst (Apr 5, 80/78).
+**Why:** Analyst manually checks gold/oil/defense/VIX as a "power structure checklist" each run. A first-class `analytics power-signals` command would standardize this across agents and save time per session.
+**Scope:** New `analytics power-signals` command aggregating regime-flows, power-flow assess, and FIC/MIC conflict output into a single ranked signal table. JSON + terminal output. Reuse existing `analytics regime-flows` and `analytics power-flow conflicts` backends. Files: `src/analytics/power_signals.rs` (new), `src/cli.rs`, `src/main.rs`.
+**Effort:** 3–5 hours.
+
+### [x] [Feedback] Scenario-to-prediction-market mapping: surface unmapped contracts
+**Source:** Evening Analysis (Apr 6, 78/75).
+**Why:** 1699 Polymarket contracts are flowing but zero are mapped to active scenarios. The `data predictions map` command exists (PR #422) but agents have no visibility into which contracts are good candidates for mapping. Guidance or `analytics calibration` should surface unmapped high-relevance contracts.
+**Scope:** Add a `data predictions suggest-mappings` or enrich `analytics guidance` with a "unmapped high-relevance contracts" section (top N contracts by liquidity that match active scenario keywords). Files: `src/data/predictions.rs`, `src/commands/guidance.rs`.
+**Effort:** 2–4 hours.
+
+### [x] [Feedback] Automatic event detection for scenario creation
+**Source:** Evening Analysis (Apr 3, 82/78).
+**Why:** When major macro events occur (e.g. Warsh nomination, tariff announcements, FOMC surprises), agents should automatically create or suggest new scenarios. Currently agents must manually identify events and run `journal scenario add`. Auto-detection from news/calendar/catalyst feeds would close this gap.
+**Scope:** Detect high-impact events from news sentiment spikes + catalyst scoring, auto-suggest `journal scenario add` with pre-filled parameters. Could integrate into `analytics guidance` or as a standalone `analytics scenario detect`.
+**Effort:** 1-2 weeks.
+
+### [x] [Feedback] prediction lesson bulk command for batch processing wrong predictions
+**Source:** Evening Analysis (Apr 5, 72/68 — lowest overall scorer). 45–63 unresolved lessons in backlog.
+**Why:** `journal prediction lessons add` is one-at-a-time. With 45+ wrong predictions needing lessons, agents need a bulk workflow to catch up and maintain the improvement loop.
+**Scope:** New `journal prediction lessons bulk` command — either interactive (prompt per unresolved prediction) or file-based (read lessons from JSON/CSV). Include `--unresolved` flag on `journal prediction lessons list` to surface the backlog. Files: `src/journal/lessons.rs` (or equivalent).
+**Effort:** 2–4 hours.
+
+### [x] [Feedback] Support --tags as comma-separated list for journal entry add
+**Source:** medium-agent (Apr 5, 78/82).
+**Why:** `journal entry add` only accepts a single `--tag` flag. Agents had to use a single tag when multiple apply. Comma-separated `--tags` (e.g. `--tags iran,oil,geopolitical`) would match the multi-value pattern used elsewhere.
+**Scope:** Change `--tag` to accept either multiple `--tag` flags or a comma-separated `--tags` alias. Parse and split on comma. Files: `src/cli.rs`, `src/journal/entries.rs`.
+**Effort:** < 1 hour.
+
+### [x] [Feedback] pftui data refresh --stale flag to selectively refresh only degraded feeds
+**Source:** medium-agent (Apr 5, 78/82). Analytics situation showed 3 stale data sources.
+**Why:** Agents want to refresh only stale/degraded feeds without triggering a full refresh (which is slow). `--only` and `--skip` flags exist but require knowing which sources are stale. A `--stale` flag that auto-detects and refreshes only degraded sources would be more ergonomic.
+**Scope:** Add `--stale` flag to `data refresh`. Query each source's `fetched_at` and include only those beyond their freshness threshold in the RefreshPlan. Mutually exclusive with `--only`/`--skip`. Files: `src/data/refresh.rs`, `src/cli.rs`.
+**Effort:** 2–4 hours.
+
+---
+
+### [x] [P1] Silver price stale — fallback to web_search when pftui returns stale value
+**Source:** Evening analysis data integrity audit (Apr 7). Silver showing $70.28 from portfolio vs ~$72 from web.
+**Why:** pftui `data prices` for silver returns portfolio cost basis when live price is unavailable, misleading agents. Should either return live XAG/USD or explicit STALE error so agents fall back to web_search.
+**Scope:** Check `data prices` silver fetch path. If last refresh > 4h, mark stale in output (`"status": "stale"`) or return error. Agents already have logic to fall back to web_search on stale. Files: `src/data/fx.rs` or price fetch module, `src/cli/data.rs`.
+**Effort:** 2–3 hours.
+
+### [x] [Feedback] 10Y Yield FRED series DGS10 stale — add fallback data source
 **Source:** Evening analysis data integrity audit (Apr 7). DGS10 FRED series 4 days stale.
 **Why:** FRED DGS10 is updated with 1-day lag at most. 4-day staleness suggests fetch failure. Treasury.gov Direct API or Yahoo Finance `^TNX` are reliable fallbacks.
 **Scope:** Add fallback to `src/data/fred.rs` for DGS10: if FRED fetch fails or returns stale, try Yahoo Finance `^TNX` symbol. Log fallback source in output. Also add staleness threshold check — flag if > 2 days old.

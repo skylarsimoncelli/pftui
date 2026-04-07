@@ -1111,9 +1111,41 @@ fn run_pipeline(
             let mut results = Vec::new();
             for series in fred::FRED_SERIES {
                 match fred::fetch_series(api_key, series.id, 24).await {
-                    Ok(obs) if !obs.is_empty() => results.push((series.id, Ok(obs))),
-                    Ok(_) => {}
-                    Err(e) => results.push((series.id, Err(e))),
+                    Ok(obs) if !obs.is_empty() => {
+                        let latest_stale =
+                            obs.first().map(|row| fred::is_series_stale(series.id, &row.date)).unwrap_or(false);
+                        results.push((series.id, Ok(obs)));
+                        if series.id == "DGS10" && latest_stale {
+                            match fred::fetch_dgs10_yahoo_fallback().await {
+                                Ok(fallback) => results.push(("DGS10_YAHOO", Ok(vec![fallback]))),
+                                Err(e) => results.push(("DGS10_YAHOO", Err(e))),
+                            }
+                        }
+                    }
+                    Ok(_) => {
+                        if series.id == "DGS10" {
+                            match fred::fetch_dgs10_yahoo_fallback().await {
+                                Ok(fallback) => results.push(("DGS10_YAHOO", Ok(vec![fallback]))),
+                                Err(e) => results.push(("DGS10_YAHOO", Err(e))),
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if series.id == "DGS10" {
+                            match fred::fetch_dgs10_yahoo_fallback().await {
+                                Ok(fallback) => {
+                                    results.push((series.id, Err(e)));
+                                    results.push(("DGS10_YAHOO", Ok(vec![fallback])));
+                                }
+                                Err(fallback_err) => {
+                                    results.push((series.id, Err(e)));
+                                    results.push(("DGS10_YAHOO", Err(fallback_err)));
+                                }
+                            }
+                        } else {
+                            results.push((series.id, Err(e)));
+                        }
+                    }
                 }
             }
             Some((results, start.elapsed()))
