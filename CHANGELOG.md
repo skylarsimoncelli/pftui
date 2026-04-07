@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-07 — feat: add lesson coverage annotations to prediction scorecards
+
+- What: `pftui journal prediction scorecard --lesson-coverage` and the `data predictions scorecard` alias now annotate wrong predictions with structured-lesson coverage. JSON output includes a `wrong_predictions` array with `has_lesson`, optional `lesson_type`, and a ready-to-run `journal prediction lessons add ...` command when a lesson is still missing. Terminal output now marks wrong calls as `[lesson:<type>]` or `[no lesson]`.
+- Why: agents needed a single scorecard call to see which wrong predictions still lacked remediation work, instead of manually combining the scorecard with a separate unresolved-lessons query.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/predict.rs`
+- Tests: added CLI parse coverage for both scorecard entry points plus focused command coverage for missing-vs-present lesson annotations.
+
 ### 2026-04-06 — fix: surface stale data warnings in `analytics guidance`
 
 - What: `pftui analytics guidance` now includes a top-level `data_health` summary built from the same stale/empty source checks used by `pftui data status`. When feeds are degraded, guidance now emits a dedicated `data_health` action item and terminal banner showing how many tracked sources are stale or empty and which sources need attention first.
