@@ -2944,6 +2944,7 @@ pub enum SituationIndicatorCommand {
 #[derive(Subcommand)]
 pub enum SituationUpdateCommand {
     /// Log a structured event/update for a situation
+    #[command(after_help = "Valid severity values:\n  low       Minor update; watch but no immediate action.\n  normal    Default event/update severity.\n  elevated  Important development; likely follow-up needed.\n  critical  Urgent development with immediate portfolio or scenario impact.\n\nExample:\n  pftui analytics situation update log --situation \"Iran Escalation\" --headline \"Brent above 95\" --severity elevated")]
     Log {
         #[arg(long)]
         situation: String,
@@ -2951,7 +2952,7 @@ pub enum SituationUpdateCommand {
         headline: String,
         #[arg(long)]
         detail: Option<String>,
-        #[arg(long, default_value = "normal")]
+        #[arg(long, default_value = "normal", value_parser = ["low", "normal", "elevated", "critical"])]
         severity: String,
         #[arg(long)]
         source: Option<String>,
@@ -6582,6 +6583,74 @@ mod tests {
         assert_eq!(direction.as_deref(), Some("bullish"));
         assert_eq!(severity.as_deref(), Some("critical"));
         assert!(json);
+    }
+
+    #[test]
+    fn parse_situation_update_log_accepts_elevated_severity() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "situation",
+            "update",
+            "log",
+            "--situation",
+            "Iran Escalation",
+            "--headline",
+            "Brent above 95",
+            "--severity",
+            "elevated",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Situation {
+                    command:
+                        Some(SituationCommand::Update {
+                            command:
+                                SituationUpdateCommand::Log {
+                                    severity,
+                                    json,
+                                    ..
+                                },
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics situation update log command");
+        };
+
+        assert_eq!(severity, "elevated");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_situation_update_log_rejects_unknown_severity() {
+        let result = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "situation",
+            "update",
+            "log",
+            "--situation",
+            "Iran Escalation",
+            "--headline",
+            "Brent above 95",
+            "--severity",
+            "high",
+        ]);
+        let err = match result {
+            Ok(_) => panic!("expected clap to reject invalid severity"),
+            Err(err) => err.to_string(),
+        };
+
+        assert!(err.contains("possible values"));
+        assert!(err.contains("low"));
+        assert!(err.contains("normal"));
+        assert!(err.contains("elevated"));
+        assert!(err.contains("critical"));
     }
 
     #[test]

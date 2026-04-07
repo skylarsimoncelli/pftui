@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-07 — fix: document valid severities for `analytics situation update log`
+
+- What: `pftui analytics situation update log --severity ...` now advertises its accepted values directly in `--help` and clap validation. The command help includes the four valid severities (`low`, `normal`, `elevated`, `critical`) with a concrete example, and invalid values are rejected before execution with the allowed set listed in the error.
+- Why: agents were trying `--severity high`, getting rejected, and then discovering the real values by trial and error instead of from the CLI contract itself.
+- Files: `src/cli.rs`, `src/commands/situation.rs`
+- Tests: added CLI coverage for accepted/rejected severity parsing and handler coverage for the shared severity validator.
+
 ### 2026-04-07 — feat: add lesson coverage annotations to prediction scorecards
 
 - What: `pftui journal prediction scorecard --lesson-coverage` and the `data predictions scorecard` alias now annotate wrong predictions with structured-lesson coverage. JSON output includes a `wrong_predictions` array with `has_lesson`, optional `lesson_type`, and a ready-to-run `journal prediction lessons add ...` command when a lesson is still missing. Terminal output now marks wrong calls as `[lesson:<type>]` or `[no lesson]`.
