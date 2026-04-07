@@ -25,6 +25,8 @@ use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
 
+use crate::price::yahoo;
+
 /// Known FRED series IDs we track.
 pub const FRED_SERIES: &[FredSeries] = &[
     FredSeries {
@@ -181,6 +183,7 @@ struct RawObservation {
 }
 
 const FRED_BASE_URL: &str = "https://api.stlouisfed.org/fred/series/observations";
+const DGS10_STALE_THRESHOLD_DAYS: i64 = 2;
 
 /// Maximum number of retry attempts for FRED API calls.
 const MAX_RETRIES: u32 = 3;
@@ -366,6 +369,40 @@ pub fn is_stale(date_str: &str, frequency: Frequency) -> bool {
     }
 }
 
+pub fn is_series_stale(series_id: &str, date_str: &str) -> bool {
+    let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") else {
+        return true;
+    };
+
+    let today = Utc::now().date_naive();
+    let age_days = (today - date).num_days();
+
+    if series_id == "DGS10" || series_id == "DGS10_YAHOO" {
+        return age_days > DGS10_STALE_THRESHOLD_DAYS;
+    }
+
+    series_by_id(series_id)
+        .map(|series| is_stale(date_str, series.frequency))
+        .unwrap_or(true)
+}
+
+fn normalize_tnx_quote_to_percent(value: Decimal) -> Decimal {
+    if value >= Decimal::TEN {
+        (value / Decimal::TEN).round_dp(3)
+    } else {
+        value.round_dp(3)
+    }
+}
+
+pub async fn fetch_dgs10_yahoo_fallback() -> Result<FredObservation> {
+    let quote = yahoo::fetch_price("^TNX").await?;
+    Ok(FredObservation {
+        series_id: "DGS10_YAHOO".to_string(),
+        date: Utc::now().date_naive().format("%Y-%m-%d").to_string(),
+        value: normalize_tnx_quote_to_percent(quote.price),
+    })
+}
+
 /// Look up series metadata by ID.
 pub fn series_by_id(id: &str) -> Option<&'static FredSeries> {
     FRED_SERIES.iter().find(|s| s.id == id)
@@ -480,6 +517,24 @@ mod tests {
     fn test_is_stale_bad_date() {
         assert!(is_stale("not-a-date", Frequency::Daily));
         assert!(is_stale("", Frequency::Monthly));
+    }
+
+    #[test]
+    fn test_is_series_stale_uses_stricter_dgs10_threshold() {
+        let two_days_ago = (Utc::now().date_naive() - chrono::Duration::days(2))
+            .format("%Y-%m-%d")
+            .to_string();
+        let three_days_ago = (Utc::now().date_naive() - chrono::Duration::days(3))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(!is_series_stale("DGS10", &two_days_ago));
+        assert!(is_series_stale("DGS10", &three_days_ago));
+    }
+
+    #[test]
+    fn test_normalize_tnx_quote_to_percent_handles_yahoo_scale() {
+        assert_eq!(normalize_tnx_quote_to_percent(Decimal::from_str("42.57").unwrap()), Decimal::from_str("4.257").unwrap());
+        assert_eq!(normalize_tnx_quote_to_percent(Decimal::from_str("4.257").unwrap()), Decimal::from_str("4.257").unwrap());
     }
 
     #[test]

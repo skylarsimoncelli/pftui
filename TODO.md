@@ -118,7 +118,7 @@
 **Scope:** Check `data prices` silver fetch path. If last refresh > 4h, mark stale in output (`"status": "stale"`) or return error. Agents already have logic to fall back to web_search on stale. Files: `src/data/fx.rs` or price fetch module, `src/cli/data.rs`.
 **Effort:** 2–3 hours.
 
-### [P1] 10Y Yield FRED series DGS10 stale — add fallback data source
+### [x] [P1] 10Y Yield FRED series DGS10 stale — add fallback data source
 **Source:** Evening analysis data integrity audit (Apr 7). DGS10 FRED series 4 days stale.
 **Why:** FRED DGS10 is updated with 1-day lag at most. 4-day staleness suggests fetch failure. Treasury.gov Direct API or Yahoo Finance `^TNX` are reliable fallbacks.
 **Scope:** Add fallback to `src/data/fred.rs` for DGS10: if FRED fetch fails or returns stale, try Yahoo Finance `^TNX` symbol. Log fallback source in output. Also add staleness threshold check — flag if > 2 days old.

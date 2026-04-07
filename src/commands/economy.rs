@@ -40,15 +40,20 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                 let (unit, display_name) = indicator_metadata(&r.indicator);
                 // Check if FRED has a more authoritative value for this indicator.
                 // Try direct FRED value first, then derived (for PAYEMS/CPIAUCSL).
-                let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations)
-                    .or_else(|| fred_derived_value_for_indicator(&r.indicator, backend));
+                let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations, backend)
+                    .or_else(|| {
+                        fred_derived_value_for_indicator(&r.indicator, backend).and_then(|(value, date)| {
+                            indicator_to_fred_series(&r.indicator).map(|series_id| (value, date, series_id))
+                        })
+                    });
                 let (final_value, source, confidence, confidence_reason) =
-                    if let Some((fval, fred_date)) = &fred_override {
-                        let conf = confidence_for_fred_date(fred_date);
-                        let reason = confidence_reason_for_fred(fred_date, &r.indicator);
+                    if let Some((fval, fred_date, effective_series_id)) = &fred_override {
+                        let conf = confidence_for_series_date(effective_series_id, fred_date);
+                        let reason =
+                            confidence_reason_for_series_date(effective_series_id, fred_date, &r.indicator);
                         (
                             fval.to_string(),
-                            "fred".to_string(),
+                            source_label_for_series(effective_series_id).to_string(),
                             conf,
                             reason,
                         )
@@ -84,9 +89,22 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                     "sources_checked": sources_available,
                     "previous": prev.map(|v| v.to_string()),
                     "change": chg.map(|v| v.to_string()),
-                    "source_url": r.source_url,
+                    "source_url": fred_override
+                        .as_ref()
+                        .and_then(|(_, _, effective_series_id)| source_url_for_series(effective_series_id))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| r.source_url.clone()),
                     "fetched_at": r.fetched_at,
                 });
+                if let Some((_, _, effective_series_id)) = &fred_override {
+                    if *effective_series_id == "DGS10_YAHOO" {
+                        obj["fallback"] = serde_json::json!({
+                            "reason": "fred_dgs10_stale_or_unavailable",
+                            "series_id": effective_series_id,
+                            "source": "yahoo_tnx_fallback",
+                        });
+                    }
+                }
                 if let Some(d) = disc {
                     obj["discrepancy"] = serde_json::json!({
                         "other_source": d.other_source,
@@ -96,26 +114,28 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                 }
 
                 // Add staleness warning for FRED-sourced indicators
-                if let Some(fred_series_id) = indicator_to_fred_series(&r.indicator) {
-                    if let Some(cached) = fred_observations.iter().find(|o| o.series_id == fred_series_id) {
-                        if let Some(series_meta) = fred::series_by_id(fred_series_id) {
-                            let is_stale = fred::is_stale(&cached.date, series_meta.frequency);
-                            if is_stale {
-                                let age_days = chrono::NaiveDate::parse_from_str(&cached.date, "%Y-%m-%d")
-                                    .ok()
-                                    .map(|d| (chrono::Utc::now().date_naive() - d).num_days());
-                                obj["staleness"] = serde_json::json!({
-                                    "is_stale": true,
-                                    "data_date": cached.date,
-                                    "age_days": age_days,
-                                    "expected_frequency": format!("{:?}", series_meta.frequency).to_lowercase(),
-                                    "warning": format!(
-                                        "FRED data for {} is {} days old (expected {} updates)",
-                                        series_meta.name,
-                                        age_days.unwrap_or(0),
-                                        format!("{:?}", series_meta.frequency).to_lowercase()
-                                    ),
-                                });
+                if source == "fred" {
+                    if let Some(fred_series_id) = indicator_to_fred_series(&r.indicator) {
+                        if let Some(cached) = fred_observations.iter().find(|o| o.series_id == fred_series_id) {
+                            if let Some(series_meta) = fred::series_by_id(fred_series_id) {
+                                let is_stale = fred::is_series_stale(fred_series_id, &cached.date);
+                                if is_stale {
+                                    let age_days = chrono::NaiveDate::parse_from_str(&cached.date, "%Y-%m-%d")
+                                        .ok()
+                                        .map(|d| (chrono::Utc::now().date_naive() - d).num_days());
+                                    obj["staleness"] = serde_json::json!({
+                                        "is_stale": true,
+                                        "data_date": cached.date,
+                                        "age_days": age_days,
+                                        "expected_frequency": format!("{:?}", series_meta.frequency).to_lowercase(),
+                                        "warning": format!(
+                                            "FRED data for {} is {} days old (expected {} updates)",
+                                            series_meta.name,
+                                            age_days.unwrap_or(0),
+                                            format!("{:?}", series_meta.frequency).to_lowercase()
+                                        ),
+                                    });
+                                }
                             }
                         }
                     }
@@ -168,13 +188,17 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
     println!("{}", "─".repeat(96));
 
     for r in &rows {
-        let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations)
-            .or_else(|| fred_derived_value_for_indicator(&r.indicator, backend));
-        let (display_val, source_label, conf) = if let Some((fval, fred_date)) = fred_override {
+        let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations, backend)
+            .or_else(|| {
+                fred_derived_value_for_indicator(&r.indicator, backend).and_then(|(value, date)| {
+                    indicator_to_fred_series(&r.indicator).map(|series_id| (value, date, series_id))
+                })
+            });
+        let (display_val, source_label, conf) = if let Some((fval, fred_date, effective_series_id)) = fred_override {
             (
                 format!("{:.2}", fval),
-                "FRED".to_string(),
-                confidence_for_fred_date(&fred_date),
+                source_label_for_series(effective_series_id).to_uppercase(),
+                confidence_for_series_date(effective_series_id, &fred_date),
             )
         } else {
             (
@@ -316,7 +340,8 @@ fn detect_fred_discrepancies(
 fn fred_value_for_indicator(
     indicator: &str,
     fred_obs: &[economic_cache::EconomicObservation],
-) -> Option<(rust_decimal::Decimal, String)> {
+    backend: &BackendConnection,
+) -> Option<(rust_decimal::Decimal, String, &'static str)> {
     let fred_series = indicator_to_fred_series(indicator)?;
 
     // PAYEMS (total employment), CPIAUCSL (CPI index), PPIFIS (PPI index),
@@ -328,8 +353,31 @@ fn fred_value_for_indicator(
         _ => {}
     }
 
+    if fred_series == "DGS10" {
+        let primary = fred_obs.iter().find(|o| o.series_id == "DGS10");
+        let primary_is_stale = primary
+            .map(|obs| fred::is_series_stale("DGS10", &obs.date))
+            .unwrap_or(true);
+        if primary_is_stale {
+            let fallback = fred_obs
+                .iter()
+                .find(|o| o.series_id == "DGS10_YAHOO")
+                .cloned()
+                .or_else(|| {
+                    economic_cache::get_latest_backend(backend, "DGS10_YAHOO")
+                        .ok()
+                        .flatten()
+                });
+            if let Some(obs) = fallback {
+                if !fred::is_series_stale("DGS10_YAHOO", &obs.date) {
+                    return Some((obs.value, obs.date.clone(), "DGS10_YAHOO"));
+                }
+            }
+        }
+    }
+
     let obs = fred_obs.iter().find(|o| o.series_id == fred_series)?;
-    Some((obs.value, obs.date.clone()))
+    Some((obs.value, obs.date.clone(), fred_series))
 }
 
 /// Compute a FRED-derived economy value that requires historical data.
@@ -508,7 +556,7 @@ fn compute_fred_data_quality(
 
     for series in fred::FRED_SERIES {
         if let Some(obs) = fred_observations.iter().find(|o| o.series_id == series.id) {
-            if fred::is_stale(&obs.date, series.frequency) {
+            if fred::is_series_stale(series.id, &obs.date) {
                 let age_days = chrono::NaiveDate::parse_from_str(&obs.date, "%Y-%m-%d")
                     .ok()
                     .map(|d| (chrono::Utc::now().date_naive() - d).num_days());
@@ -595,6 +643,25 @@ fn confidence_for_fred_date(date: &str) -> String {
     }
 }
 
+fn confidence_for_series_date(series_id: &str, date: &str) -> String {
+    if series_id == "DGS10_YAHOO" {
+        use chrono::{NaiveDate, Utc};
+        let Ok(obs_date) = NaiveDate::parse_from_str(date, "%Y-%m-%d") else {
+            return "medium".to_string();
+        };
+        let age_days = (Utc::now().date_naive() - obs_date).num_days();
+        if age_days <= 2 {
+            "high".to_string()
+        } else if age_days <= 5 {
+            "medium".to_string()
+        } else {
+            "low".to_string()
+        }
+    } else {
+        confidence_for_fred_date(date)
+    }
+}
+
 /// Build a human-readable confidence reason for a FRED-sourced indicator.
 fn confidence_reason_for_fred(date: &str, indicator: &str) -> String {
     use chrono::{NaiveDate, Utc};
@@ -631,6 +698,38 @@ fn confidence_reason_for_fred(date: &str, indicator: &str) -> String {
             "FRED authoritative source, data {}d old ({}, stale — may not reflect current conditions)",
             age_days, freq_desc
         )
+    }
+}
+
+fn confidence_reason_for_series_date(series_id: &str, date: &str, indicator: &str) -> String {
+    if series_id == "DGS10_YAHOO" {
+        use chrono::{NaiveDate, Utc};
+        let Ok(obs_date) = NaiveDate::parse_from_str(date, "%Y-%m-%d") else {
+            return "Yahoo Finance ^TNX fallback, date unparseable".to_string();
+        };
+        let age_days = (Utc::now().date_naive() - obs_date).num_days();
+        format!(
+            "Yahoo Finance ^TNX fallback, used because FRED DGS10 is stale or unavailable, market quote {}d old",
+            age_days
+        )
+    } else {
+        confidence_reason_for_fred(date, indicator)
+    }
+}
+
+fn source_label_for_series(series_id: &str) -> &'static str {
+    if series_id == "DGS10_YAHOO" {
+        "yahoo_tnx_fallback"
+    } else {
+        "fred"
+    }
+}
+
+fn source_url_for_series(series_id: &str) -> Option<&'static str> {
+    if series_id == "DGS10_YAHOO" {
+        Some("https://finance.yahoo.com/quote/%5ETNX")
+    } else {
+        None
     }
 }
 
@@ -826,6 +925,10 @@ fn _truncate_url(url: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::backend::BackendConnection;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+    use std::str::FromStr;
 
     #[test]
     fn indicator_to_fred_series_mappings() {
@@ -955,7 +1058,8 @@ mod tests {
 
     #[test]
     fn fred_value_skips_derived_series() {
-        use rust_decimal_macros::dec;
+        let conn = crate::db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
         let obs = vec![
             economic_cache::EconomicObservation {
                 series_id: "PAYEMS".to_string(),
@@ -984,15 +1088,16 @@ mod tests {
         ];
 
         // Raw-level series should return None (need derived computation)
-        assert!(fred_value_for_indicator("nfp", &obs).is_none());
-        assert!(fred_value_for_indicator("cpi", &obs).is_none());
-        assert!(fred_value_for_indicator("retail_sales", &obs).is_none());
-        assert!(fred_value_for_indicator("industrial_production", &obs).is_none());
+        assert!(fred_value_for_indicator("nfp", &obs, &backend).is_none());
+        assert!(fred_value_for_indicator("cpi", &obs, &backend).is_none());
+        assert!(fred_value_for_indicator("retail_sales", &obs, &backend).is_none());
+        assert!(fred_value_for_indicator("industrial_production", &obs, &backend).is_none());
     }
 
     #[test]
     fn fred_value_returns_direct_series() {
-        use rust_decimal_macros::dec;
+        let conn = crate::db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
         let obs = vec![economic_cache::EconomicObservation {
             series_id: "FEDFUNDS".to_string(),
             date: "2026-03-01".to_string(),
@@ -1000,10 +1105,70 @@ mod tests {
             fetched_at: "2026-03-27T00:00:00Z".to_string(),
         }];
 
-        let result = fred_value_for_indicator("fed_funds_rate", &obs);
+        let result = fred_value_for_indicator("fed_funds_rate", &obs, &backend);
         assert!(result.is_some());
-        let (val, _) = result.unwrap();
+        let (val, _, source_series) = result.unwrap();
         assert_eq!(val, dec!(4.33));
+        assert_eq!(source_series, "FEDFUNDS");
+    }
+
+    #[test]
+    fn fred_value_uses_yahoo_fallback_for_stale_dgs10() {
+        let conn = crate::db::open_in_memory();
+        let today = chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        let stale_date = (chrono::Utc::now().date_naive() - chrono::Duration::days(3))
+            .format("%Y-%m-%d")
+            .to_string();
+        economic_cache::upsert_observation(
+            &conn,
+            &economic_cache::EconomicObservation {
+                series_id: "DGS10_YAHOO".to_string(),
+                date: today.clone(),
+                value: Decimal::from_str("4.271").unwrap(),
+                fetched_at: "2026-04-06T00:00:00Z".to_string(),
+            },
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+        let obs = vec![economic_cache::EconomicObservation {
+            series_id: "DGS10".to_string(),
+            date: stale_date,
+            value: dec!(4.18),
+            fetched_at: "2026-04-06T00:00:00Z".to_string(),
+        }];
+
+        let result = fred_value_for_indicator("treasury_10y", &obs, &backend).unwrap();
+        assert_eq!(result.0, Decimal::from_str("4.271").unwrap());
+        assert_eq!(result.1, today);
+        assert_eq!(result.2, "DGS10_YAHOO");
+    }
+
+    #[test]
+    fn fred_value_prefers_fred_when_dgs10_is_fresh() {
+        let conn = crate::db::open_in_memory();
+        let today = chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        economic_cache::upsert_observation(
+            &conn,
+            &economic_cache::EconomicObservation {
+                series_id: "DGS10_YAHOO".to_string(),
+                date: today.clone(),
+                value: Decimal::from_str("4.271").unwrap(),
+                fetched_at: "2026-04-06T00:00:00Z".to_string(),
+            },
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+        let obs = vec![economic_cache::EconomicObservation {
+            series_id: "DGS10".to_string(),
+            date: today.clone(),
+            value: dec!(4.11),
+            fetched_at: "2026-04-06T00:00:00Z".to_string(),
+        }];
+
+        let result = fred_value_for_indicator("treasury_10y", &obs, &backend).unwrap();
+        assert_eq!(result.0, dec!(4.11));
+        assert_eq!(result.1, today);
+        assert_eq!(result.2, "DGS10");
     }
 
     #[test]
@@ -1073,6 +1238,23 @@ mod tests {
         let quality = compute_fred_data_quality(&obs);
         assert_eq!(quality["fred_status"], "unavailable");
         assert_eq!(quality["cached_series"], 0);
+    }
+
+    #[test]
+    fn data_quality_marks_three_day_old_dgs10_stale() {
+        let stale_date = (chrono::Utc::now().date_naive() - chrono::Duration::days(3))
+            .format("%Y-%m-%d")
+            .to_string();
+        let obs = vec![economic_cache::EconomicObservation {
+            series_id: "DGS10".to_string(),
+            date: stale_date,
+            value: dec!(4.12),
+            fetched_at: "2026-04-06T00:00:00Z".to_string(),
+        }];
+
+        let quality = compute_fred_data_quality(&obs);
+        assert_eq!(quality["stale_series_count"], 1);
+        assert_eq!(quality["stale_series"][0]["series_id"], "DGS10");
     }
 
     #[test]
