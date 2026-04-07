@@ -112,6 +112,36 @@
 
 ---
 
+### [P1] Silver price stale — fallback to web_search when pftui returns stale value
+**Source:** Evening analysis data integrity audit (Apr 7). Silver showing $70.28 from portfolio vs ~$72 from web.
+**Why:** pftui `data prices` for silver returns portfolio cost basis when live price is unavailable, misleading agents. Should either return live XAG/USD or explicit STALE error so agents fall back to web_search.
+**Scope:** Check `data prices` silver fetch path. If last refresh > 4h, mark stale in output (`"status": "stale"`) or return error. Agents already have logic to fall back to web_search on stale. Files: `src/data/fx.rs` or price fetch module, `src/cli/data.rs`.
+**Effort:** 2–3 hours.
+
+### [P1] 10Y Yield FRED series DGS10 stale — add fallback data source
+**Source:** Evening analysis data integrity audit (Apr 7). DGS10 FRED series 4 days stale.
+**Why:** FRED DGS10 is updated with 1-day lag at most. 4-day staleness suggests fetch failure. Treasury.gov Direct API or Yahoo Finance `^TNX` are reliable fallbacks.
+**Scope:** Add fallback to `src/data/fred.rs` for DGS10: if FRED fetch fails or returns stale, try Yahoo Finance `^TNX` symbol. Log fallback source in output. Also add staleness threshold check — flag if > 2 days old.
+**Effort:** 3–4 hours.
+
+### [P1] CPI/PPI FRED series degraded — fix FRED fetch status + add staleness warning
+**Source:** Evening analysis data integrity audit (Apr 7). CPIAUCSL last fetched Feb 1, 2026 — 65 days stale.
+**Why:** FRED CPIAUCSL and PPIFIS should auto-refresh on schedule. 65-day staleness means the fetch is silently failing. Agents are hallucinating or using stale values for the most important macro indicator.
+**Scope:** (1) Diagnose why FRED CPI/PPI fetch is failing silently — check error handling in `src/data/fred.rs`. (2) Add explicit staleness status to `pftui data economy --json` output with `last_updated` and `stale: true/false`. (3) Add BLS.gov direct fallback for CPI/PPI when FRED fails. (4) If data > 45 days old, return explicit error string rather than stale value so agents know to web_search.
+**Effort:** 4–6 hours.
+
+### [P1] GDP series stale 188 days — add GDPNow as primary source, BEA as fallback
+**Source:** Evening analysis data integrity audit (Apr 7). FRED GDP stale since Oct 2025, GDPNow also stale.
+**Why:** GDP is a quarterly series; quarterly = expected staleness between prints. But the GDPNow nowcast updates daily and should always have a current estimate. Both being stale means the fetch is broken.
+**Scope:** (1) Fix GDPNow fetch in economy module — Atlanta Fed endpoint may have changed. (2) Add staleness context to output: "GDP last print: Q3 2025. Next print: Apr 30. GDPNow nowcast: X%" — so agents understand the data rhythm rather than flagging it as broken. (3) If GDPNow unreachable, note that in output explicitly.
+**Effort:** 3–4 hours.
+
+### [P1] COT data — add explicit next-report-date field and auto-retry on Friday
+**Source:** Evening analysis data integrity audit (Apr 7). COT last report Mar 31, weekly cadence, Apr 4 report may exist.
+**Why:** COT is published every Friday at 3:30 PM ET by CFTC for the prior Tuesday's positions. Agents can't tell if the latest report has been fetched or if a newer one is available. Stale COT during active markets (oil at 1.9th pct) is a significant intelligence gap.
+**Scope:** (1) Add `next_report_date` and `report_date` fields to `pftui data economy --json` COT section. (2) Add Friday auto-retry logic — if current time is Friday after 3:30 PM ET and last COT report is > 5 days old, trigger re-fetch. (3) Add CFTC API endpoint validation — confirm current URL is still valid.
+**Effort:** 3–4 hours.
+
 ## P3 - Long Term
 
 ### F59: Capital Flow Tracking
