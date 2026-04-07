@@ -6,9 +6,29 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::db::backend::BackendConnection;
+use crate::db::prediction_lessons;
 use crate::db::price_cache::get_cached_price_backend;
 use crate::db::price_history::get_price_at_date_backend;
 use crate::db::user_predictions;
+
+#[derive(Debug, Clone, Serialize)]
+struct ScorecardLessonCoverageRow {
+    id: i64,
+    claim: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    symbol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timeframe: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scored_at: Option<String>,
+    has_lesson: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lesson_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lesson_command: Option<String>,
+}
 
 fn validate_conviction(value: &str) -> Result<()> {
     match value {
@@ -138,6 +158,7 @@ pub fn run(
     filter: Option<&str>,
     date: Option<&str>,
     limit: Option<usize>,
+    lesson_coverage: bool,
     json_output: bool,
 ) -> Result<()> {
     match action {
@@ -414,6 +435,11 @@ pub fn run(
                 .filter(|r| r.outcome == "wrong")
                 .filter(|r| r.lesson.as_deref().is_none_or(|v| v.trim().is_empty()))
                 .count();
+            let lesson_coverage_rows = if lesson_coverage {
+                Some(build_scorecard_lesson_coverage(backend, &rows)?)
+            } else {
+                None
+            };
 
             // Current streak of consecutive "correct" outcomes among scored predictions.
             let mut scored_rows: Vec<_> = rows
@@ -447,6 +473,8 @@ pub fn run(
                 "hit_rate_pct": hit_rate_pct,
                 "current_correct_streak": current_correct_streak,
                 "wrong_without_lesson": wrong_without_lesson,
+                "lesson_coverage": lesson_coverage,
+                "wrong_predictions": lesson_coverage_rows,
             });
 
             if json_output {
@@ -468,6 +496,37 @@ pub fn run(
                 println!("  Hit rate: {:.1}%", hit_rate_pct);
                 println!("  Current correct streak: {}", current_correct_streak);
                 println!("  Wrong calls missing lesson: {}", wrong_without_lesson);
+                if let Some(rows) = lesson_coverage_rows.as_ref() {
+                    let missing = rows.iter().filter(|row| !row.has_lesson).count();
+                    if !rows.is_empty() {
+                        println!("  Lesson coverage for wrong calls:");
+                        for row in rows.iter().take(10) {
+                            let symbol = row.symbol.as_deref().unwrap_or("—");
+                            let status = if row.has_lesson {
+                                format!(
+                                    "[lesson:{}]",
+                                    row.lesson_type.as_deref().unwrap_or("present")
+                                )
+                            } else {
+                                "[no lesson]".to_string()
+                            };
+                            println!(
+                                "    #{} [{}] {} {}",
+                                row.id,
+                                symbol,
+                                truncate_claim(&row.claim, 55),
+                                status
+                            );
+                            if let Some(command) = row.lesson_command.as_deref() {
+                                println!("      add: {}", command);
+                            }
+                        }
+                        if rows.len() > 10 {
+                            println!("    ... and {} more", rows.len() - 10);
+                        }
+                        println!("  Wrong calls still missing lesson: {}", missing);
+                    }
+                }
             }
         }
 
@@ -478,6 +537,64 @@ pub fn run(
     }
 
     Ok(())
+}
+
+fn build_scorecard_lesson_coverage(
+    backend: &BackendConnection,
+    rows: &[user_predictions::UserPrediction],
+) -> Result<Vec<ScorecardLessonCoverageRow>> {
+    let lesson_views = prediction_lessons::list_lesson_views_backend(backend, None, None)?;
+    let lesson_map = lesson_views
+        .into_iter()
+        .filter_map(|view| view.lesson.map(|lesson| (view.prediction_id, lesson)))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    let mut items: Vec<_> = rows
+        .iter()
+        .filter(|row| row.outcome == "wrong")
+        .map(|row| {
+            let lesson = lesson_map.get(&row.id);
+            ScorecardLessonCoverageRow {
+                id: row.id,
+                claim: row.claim.clone(),
+                symbol: row.symbol.clone(),
+                timeframe: row.timeframe.clone(),
+                source_agent: row.source_agent.clone(),
+                scored_at: row.scored_at.clone(),
+                has_lesson: lesson.is_some(),
+                lesson_type: lesson.map(|lesson| lesson.miss_type.clone()),
+                lesson_command: lesson.is_none().then(|| lesson_add_command(row.id)),
+            }
+        })
+        .collect();
+
+    items.sort_by(|a, b| {
+        let a_rank = if a.has_lesson { 1 } else { 0 };
+        let b_rank = if b.has_lesson { 1 } else { 0 };
+        a_rank.cmp(&b_rank).then_with(|| {
+            b.scored_at
+                .as_deref()
+                .unwrap_or("")
+                .cmp(a.scored_at.as_deref().unwrap_or(""))
+        })
+    });
+
+    Ok(items)
+}
+
+fn lesson_add_command(prediction_id: i64) -> String {
+    format!(
+        "pftui journal prediction lessons add --prediction-id {} --miss-type timing --what-happened \"...\" --why-wrong \"...\"",
+        prediction_id
+    )
+}
+
+fn truncate_claim(value: &str, max_len: usize) -> String {
+    if value.len() <= max_len {
+        value.to_string()
+    } else {
+        format!("{}...", &value[..max_len])
+    }
 }
 
 /// Score multiple predictions at once. Each entry is `id:outcome` (e.g. `3:correct 7:wrong 12:partial`).
@@ -1602,6 +1719,84 @@ mod tests {
         filter_lesson_views(&mut views, true);
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].prediction_id, 1);
+    }
+
+    #[test]
+    fn scorecard_lesson_coverage_marks_missing_and_present_lessons() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+
+        crate::db::user_predictions::add_prediction_backend(
+            &backend,
+            "Wrong without lesson",
+            Some("BTC-USD"),
+            Some("medium"),
+            Some("low"),
+            None,
+            Some("low-agent"),
+            None,
+            None,
+        )
+        .unwrap();
+        crate::db::user_predictions::score_prediction_backend(&backend, 1, "wrong", None, None)
+            .unwrap();
+
+        crate::db::user_predictions::add_prediction_backend(
+            &backend,
+            "Wrong with lesson",
+            Some("GC=F"),
+            Some("high"),
+            Some("high"),
+            None,
+            Some("high-agent"),
+            None,
+            None,
+        )
+        .unwrap();
+        crate::db::user_predictions::score_prediction_backend(&backend, 2, "wrong", None, None)
+            .unwrap();
+        crate::db::prediction_lessons::add_lesson_backend(
+            &backend,
+            2,
+            "timing",
+            "Wrong with lesson",
+            "Gold stalled",
+            "Timing was off",
+            None,
+        )
+        .unwrap();
+
+        let rows = crate::db::user_predictions::list_predictions_backend(
+            &backend,
+            Some("wrong"),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let coverage = build_scorecard_lesson_coverage(&backend, &rows).unwrap();
+
+        assert_eq!(coverage.len(), 2);
+        assert_eq!(coverage[0].id, 1);
+        assert!(!coverage[0].has_lesson);
+        assert_eq!(
+            coverage[0].lesson_command.as_deref(),
+            Some(
+                "pftui journal prediction lessons add --prediction-id 1 --miss-type timing --what-happened \"...\" --why-wrong \"...\""
+            )
+        );
+        assert_eq!(coverage[1].id, 2);
+        assert!(coverage[1].has_lesson);
+        assert_eq!(coverage[1].lesson_type.as_deref(), Some("timing"));
+        assert!(coverage[1].lesson_command.is_none());
+    }
+
+    #[test]
+    fn lesson_add_command_formats_prediction_id() {
+        assert_eq!(
+            lesson_add_command(42),
+            "pftui journal prediction lessons add --prediction-id 42 --miss-type timing --what-happened \"...\" --why-wrong \"...\""
+        );
     }
 
     #[test]

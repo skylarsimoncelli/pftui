@@ -141,6 +141,7 @@ fn run_agent_journal(
                 None,
                 None,
                 None,
+                false,
                 json,
             )},
             cli::JournalPredictionCommand::List {
@@ -167,6 +168,7 @@ fn run_agent_journal(
                 filter.as_deref(),
                 None,
                 limit,
+                false,
                 json,
             ),
             cli::JournalPredictionCommand::Score {
@@ -199,6 +201,7 @@ fn run_agent_journal(
                     None,
                     None,
                     None,
+                    false,
                     json,
                 )
             }
@@ -227,9 +230,10 @@ fn run_agent_journal(
                 None,                          // filter
                 None,                          // date
                 None,                          // limit
+                false,                         // lesson_coverage
                 json,
             ),
-            cli::JournalPredictionCommand::Scorecard { date, limit, json } => {
+            cli::JournalPredictionCommand::Scorecard { date, limit, lesson_coverage, json } => {
                 commands::predict::run(
                     backend,
                     "scorecard",
@@ -248,6 +252,7 @@ fn run_agent_journal(
                     None,
                     date.as_deref(),
                     limit,
+                    lesson_coverage,
                     json,
                 )
             }
@@ -719,12 +724,14 @@ fn dispatch_predictions(
                 None,                          // filter
                 None,                          // date
                 None,                          // limit
+                false,                         // lesson_coverage
                 j || json,
             )
         }
         Some(cli::DataPredictionsCommand::Scorecard {
             date,
             limit: lim,
+            lesson_coverage,
             json: j,
         }) => commands::predict::run(
             backend,
@@ -744,6 +751,7 @@ fn dispatch_predictions(
             None,               // filter
             date.as_deref(),    // date
             lim,                // limit
+            lesson_coverage,
             j || json,
         ),
         Some(cli::DataPredictionsCommand::Unanswered {
@@ -769,6 +777,7 @@ fn dispatch_predictions(
             Some("pending"),               // filter = pending
             None,                          // date
             lim,                           // limit
+            false,                         // lesson_coverage
             j || json,
         ),
         Some(cli::DataPredictionsCommand::Map {
@@ -833,6 +842,7 @@ fn dispatch_predictions(
             None,
             None,
             None,
+            false,
             j || json,
         ),
     }

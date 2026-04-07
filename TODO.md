@@ -148,7 +148,7 @@
 **Scope:** Enrich `analytics guidance --json` with a `data_health` summary showing stale/degraded sources. Alternatively, add a brief staleness banner to `portfolio brief --json` when >30% of tracked sources are stale. Both approaches reuse existing `data status` staleness checks. Files: `src/commands/guidance.rs`, `src/data/refresh.rs`.
 **Effort:** 2–3 hours.
 
-### [Feedback] Add --lesson-coverage flag to prediction scorecard
+### [x] [Feedback] Add --lesson-coverage flag to prediction scorecard
 **Source:** evening-analyst (Apr 7, 72/75).
 **Why:** Agents want to surface unlessoned wrong predictions for remediation without running a separate `journal prediction lessons list --unresolved` query. A `--lesson-coverage` flag on the scorecard would annotate wrong predictions with their lesson status and a ready-to-run `lessons add` command.
 **Scope:** Add `--lesson-coverage` flag to `journal prediction scorecard --json`. Join against `prediction_lessons` table to annotate each wrong prediction with lesson status (`has_lesson: bool`, `lesson_type` if present). Terminal output: append `[no lesson]` tag on unlessoned wrong predictions. Files: `src/commands/predict.rs`, `src/cli.rs`.

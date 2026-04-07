@@ -833,6 +833,10 @@ pub enum DataPredictionsCommand {
         #[arg(long)]
         limit: Option<usize>,
 
+        /// Annotate wrong predictions with structured-lesson coverage
+        #[arg(long = "lesson-coverage")]
+        lesson_coverage: bool,
+
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -1873,6 +1877,8 @@ pub enum JournalPredictionCommand {
         date: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
+        #[arg(long = "lesson-coverage")]
+        lesson_coverage: bool,
         #[arg(long)]
         json: bool,
     },
@@ -7343,6 +7349,7 @@ mod tests {
             "scorecard",
             "--date",
             "2026-03-25",
+            "--lesson-coverage",
             "--json",
         ])
         .unwrap();
@@ -7353,12 +7360,53 @@ mod tests {
             panic!("expected predictions command");
         };
         match subcmd {
-            Some(DataPredictionsCommand::Scorecard { date, limit, json }) => {
+            Some(DataPredictionsCommand::Scorecard {
+                date,
+                limit,
+                lesson_coverage,
+                json,
+            }) => {
                 assert_eq!(date.as_deref(), Some("2026-03-25"));
                 assert!(limit.is_none());
+                assert!(lesson_coverage);
                 assert!(json);
             }
             _ => panic!("expected scorecard subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_journal_prediction_scorecard_with_lesson_coverage() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "scorecard",
+            "--date",
+            "today",
+            "--lesson-coverage",
+            "--json",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        match command {
+            Some(JournalCommand::Prediction { command }) => match command {
+                JournalPredictionCommand::Scorecard {
+                    date,
+                    limit,
+                    lesson_coverage,
+                    json,
+                } => {
+                    assert_eq!(date.as_deref(), Some("today"));
+                    assert!(limit.is_none());
+                    assert!(lesson_coverage);
+                    assert!(json);
+                }
+                _ => panic!("expected Scorecard"),
+            },
+            _ => panic!("expected Prediction"),
         }
     }
 
