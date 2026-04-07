@@ -114,7 +114,7 @@
 **Scope:** Add fallback to `src/data/fred.rs` for DGS10: if FRED fetch fails or returns stale, try Yahoo Finance `^TNX` symbol. Log fallback source in output. Also add staleness threshold check — flag if > 2 days old.
 **Effort:** 3–4 hours.
 
-### [Feedback] CPI/PPI FRED series degraded — fix FRED fetch status + add staleness warning
+### [x] [Feedback] CPI/PPI FRED series degraded — fix FRED fetch status + add staleness warning
 **Source:** Evening analysis data integrity audit (Apr 7). CPIAUCSL last fetched Feb 1, 2026 — 65 days stale. Corroborated by evening-analyst (Apr 7, 72/75): "CPI 65 days stale degrades macro data quality."
 **Why:** FRED CPIAUCSL and PPIFIS should auto-refresh on schedule. 65-day staleness means the fetch is silently failing. Agents are hallucinating or using stale values for the most important macro indicator.
 **Scope:** (1) Diagnose why FRED CPI/PPI fetch is failing silently — check error handling in `src/data/fred.rs`. (2) Add explicit staleness status to `pftui data economy --json` output with `last_updated` and `stale: true/false`. (3) Add BLS.gov direct fallback for CPI/PPI when FRED fails. (4) If data > 45 days old, return explicit error string rather than stale value so agents know to web_search.

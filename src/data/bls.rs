@@ -7,6 +7,7 @@ use std::str::FromStr;
 /// BLS series IDs for key economic indicators.
 /// Using v1 API (no registration) — 10 calls/day limit, 10 years max range, 25 series per request.
 pub const SERIES_CPI_U: &str = "CUUR0000SA0"; // CPI-U All Items
+pub const SERIES_PPI_FINAL_DEMAND: &str = "WPSFD4"; // Producer Price Index: Final Demand
 pub const SERIES_UNEMPLOYMENT: &str = "LNS14000000"; // Unemployment Rate
 pub const SERIES_NFP: &str = "CES0000000001"; // Nonfarm Payrolls
 pub const SERIES_HOURLY_EARNINGS: &str = "CES0500000003"; // Average Hourly Earnings
@@ -153,6 +154,7 @@ pub async fn fetch_bls_data(series_ids: &[&str]) -> Result<Vec<BlsDataPoint>> {
 pub async fn fetch_all_key_series() -> Result<Vec<BlsDataPoint>> {
     fetch_bls_data(&[
         SERIES_CPI_U,
+        SERIES_PPI_FINAL_DEMAND,
         SERIES_UNEMPLOYMENT,
         SERIES_NFP,
         SERIES_HOURLY_EARNINGS,

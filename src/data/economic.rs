@@ -242,6 +242,20 @@ pub async fn fetch_bls_fallback() -> Result<Vec<EconomicReading>> {
         }
     }
 
+    // PPI: BLS WPSFD4 is the Final Demand index level. Compute YoY % change.
+    if let Some(ppi_points) = by_series.get(bls::SERIES_PPI_FINAL_DEMAND) {
+        if let Some(yoy) = compute_yoy_pct_change(ppi_points) {
+            let mut r = reading("ppi", yoy);
+            if ppi_points.len() >= 14 {
+                if let Some(prev_yoy) = compute_yoy_pct_change_offset(ppi_points, 1) {
+                    r.previous = Some(prev_yoy);
+                    r.change = Some(yoy - prev_yoy);
+                }
+            }
+            out.push(r);
+        }
+    }
+
     // Unemployment: already a rate (%), use latest value directly.
     if let Some(unemp_points) = by_series.get(bls::SERIES_UNEMPLOYMENT) {
         if let Some(latest) = unemp_points.first() {
@@ -694,6 +708,29 @@ mod tests {
     }
 
     // ─── BLS derived value tests ───
+
+    #[test]
+    fn compute_yoy_from_ppi_index() {
+        let mut points: Vec<bls::BlsDataPoint> = Vec::new();
+        for i in 0..13 {
+            let value = if i == 0 {
+                dec!(146)
+            } else if i == 12 {
+                dec!(140)
+            } else {
+                dec!(143)
+            };
+            points.push(bls::BlsDataPoint {
+                series_id: bls::SERIES_PPI_FINAL_DEMAND.to_string(),
+                year: 2025,
+                period: format!("M{:02}", 13 - i),
+                value,
+                date: chrono::NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            });
+        }
+        let yoy = compute_yoy_pct_change(&points).unwrap();
+        assert!(yoy > Decimal::ZERO);
+    }
 
     #[test]
     fn compute_yoy_from_cpi_index() {

@@ -38,6 +38,10 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
             .iter()
             .map(|r| {
                 let (unit, display_name) = indicator_metadata(&r.indicator);
+                let stale_derived_fred_date = stale_derived_fred_date_for_indicator(&r.indicator, backend);
+                let use_bls_fallback =
+                    stale_derived_fred_date.is_some() && matches!(r.source.as_str(), "bls");
+                let stale_without_fallback = stale_derived_fred_date.is_some() && !use_bls_fallback;
                 // Check if FRED has a more authoritative value for this indicator.
                 // Try direct FRED value first, then derived (for PAYEMS/CPIAUCSL).
                 let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations, backend)
@@ -47,7 +51,25 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                         })
                     });
                 let (final_value, source, confidence, confidence_reason) =
-                    if let Some((fval, fred_date, effective_series_id)) = &fred_override {
+                    if stale_without_fallback {
+                        (
+                            "STALE".to_string(),
+                            "stale_fred".to_string(),
+                            "low".to_string(),
+                            stale_data_reason(&r.indicator, stale_derived_fred_date.as_deref().unwrap_or("unknown")),
+                        )
+                    } else if use_bls_fallback {
+                        let reason = format!(
+                            "Using BLS fallback because FRED {} is stale",
+                            indicator_to_fred_series(&r.indicator).unwrap_or("source")
+                        );
+                        (
+                            r.value.to_string(),
+                            r.source.clone(),
+                            r.confidence.clone(),
+                            reason,
+                        )
+                    } else if let Some((fval, fred_date, effective_series_id)) = &fred_override {
                         let conf = confidence_for_series_date(effective_series_id, fred_date);
                         let reason =
                             confidence_reason_for_series_date(effective_series_id, fred_date, &r.indicator);
@@ -89,6 +111,8 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                     "sources_checked": sources_available,
                     "previous": prev.map(|v| v.to_string()),
                     "change": chg.map(|v| v.to_string()),
+                    "last_updated": last_updated_for_indicator(r, &fred_override),
+                    "stale": false,
                     "source_url": fred_override
                         .as_ref()
                         .and_then(|(_, _, effective_series_id)| source_url_for_series(effective_series_id))
@@ -96,6 +120,17 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                         .unwrap_or_else(|| r.source_url.clone()),
                     "fetched_at": r.fetched_at,
                 });
+                if use_bls_fallback {
+                    obj["fallback"] = serde_json::json!({
+                        "reason": "fred_series_stale",
+                        "series_id": indicator_to_fred_series(&r.indicator),
+                        "source": "bls",
+                    });
+                } else if stale_without_fallback {
+                    obj["stale"] = serde_json::json!(true);
+                    obj["last_updated"] = serde_json::json!(stale_derived_fred_date.clone());
+                    obj["error"] = serde_json::json!("stale_fred_data_no_bls_fallback");
+                }
                 if let Some((_, _, effective_series_id)) = &fred_override {
                     if *effective_series_id == "DGS10_YAHOO" {
                         obj["fallback"] = serde_json::json!({
@@ -188,13 +223,21 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
     println!("{}", "─".repeat(96));
 
     for r in &rows {
+        let stale_derived_fred_date = stale_derived_fred_date_for_indicator(&r.indicator, backend);
+        let use_bls_fallback =
+            stale_derived_fred_date.is_some() && matches!(r.source.as_str(), "bls");
+        let stale_without_fallback = stale_derived_fred_date.is_some() && !use_bls_fallback;
         let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations, backend)
             .or_else(|| {
                 fred_derived_value_for_indicator(&r.indicator, backend).and_then(|(value, date)| {
                     indicator_to_fred_series(&r.indicator).map(|series_id| (value, date, series_id))
                 })
             });
-        let (display_val, source_label, conf) = if let Some((fval, fred_date, effective_series_id)) = fred_override {
+        let (display_val, source_label, conf) = if stale_without_fallback {
+            ("STALE".to_string(), "STALE_FRED".to_string(), "low".to_string())
+        } else if use_bls_fallback {
+            (format!("{:.2}", r.value), "BLS".to_string(), r.confidence.clone())
+        } else if let Some((fval, fred_date, effective_series_id)) = fred_override {
             (
                 format!("{:.2}", fval),
                 source_label_for_series(effective_series_id).to_uppercase(),
@@ -539,6 +582,40 @@ fn fred_previous_for_indicator(
         }
         _ => None,
     }
+}
+
+fn stale_derived_fred_date_for_indicator(
+    indicator: &str,
+    backend: &BackendConnection,
+) -> Option<String> {
+    let series_id = match indicator {
+        "cpi" | "ppi" => indicator_to_fred_series(indicator)?,
+        _ => return None,
+    };
+    let (_, date) = fred_derived_value_for_indicator(indicator, backend)?;
+    if fred::is_series_stale(series_id, &date) {
+        Some(date)
+    } else {
+        None
+    }
+}
+
+fn last_updated_for_indicator(
+    row: &economic_data::EconomicDataEntry,
+    fred_override: &Option<(Decimal, String, &'static str)>,
+) -> String {
+    if let Some((_, date, _)) = fred_override {
+        return date.clone();
+    }
+    row.fetched_at.clone()
+}
+
+fn stale_data_reason(indicator: &str, last_updated: &str) -> String {
+    format!(
+        "{} data is stale as of {} and no BLS fallback is available; refresh or web search before using it",
+        display_name(indicator),
+        last_updated
+    )
 }
 
 /// Map economy indicator names to FRED series IDs for cross-referencing.
@@ -1255,6 +1332,58 @@ mod tests {
         let quality = compute_fred_data_quality(&obs);
         assert_eq!(quality["stale_series_count"], 1);
         assert_eq!(quality["stale_series"][0]["series_id"], "DGS10");
+    }
+
+    #[test]
+    fn stale_derived_fred_date_detects_old_cpi() {
+        let conn = crate::db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        let latest_month = chrono::Utc::now().date_naive() - chrono::Duration::days(65);
+        let stale_date = latest_month.format("%Y-%m-%d").to_string();
+        for offset in 0..13 {
+            let point_date = latest_month - chrono::Duration::days((offset * 31) as i64);
+            economic_cache::upsert_observation(
+                backend.sqlite(),
+                &economic_cache::EconomicObservation {
+                    series_id: "CPIAUCSL".to_string(),
+                    date: point_date.format("%Y-%m-%d").to_string(),
+                    value: dec!(320) - Decimal::from(offset),
+                    fetched_at: "2026-04-07T00:00:00Z".to_string(),
+                },
+            )
+            .unwrap();
+        }
+
+        assert_eq!(
+            stale_derived_fred_date_for_indicator("cpi", &backend),
+            Some(stale_date)
+        );
+    }
+
+    #[test]
+    fn last_updated_prefers_fred_override_date() {
+        let row = economic_data::EconomicDataEntry {
+            indicator: "cpi".to_string(),
+            value: dec!(3.2),
+            previous: None,
+            change: None,
+            source_url: "https://example.com".to_string(),
+            source: "bls".to_string(),
+            confidence: "high".to_string(),
+            fetched_at: "2026-04-07T00:00:00Z".to_string(),
+        };
+        let override_row = Some((dec!(3.1), "2026-02-01".to_string(), "CPIAUCSL"));
+        assert_eq!(
+            last_updated_for_indicator(&row, &override_row),
+            "2026-02-01".to_string()
+        );
+    }
+
+    #[test]
+    fn stale_data_reason_guides_agent_to_refresh_or_search() {
+        let reason = stale_data_reason("cpi", "2026-02-01");
+        assert!(reason.contains("CPI"));
+        assert!(reason.contains("refresh or web search"));
     }
 
     #[test]
