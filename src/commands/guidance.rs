@@ -3,6 +3,7 @@ use chrono::{NaiveDate, Utc};
 use serde::Serialize;
 
 use crate::alerts::AlertStatus;
+use crate::commands::status::{source_statuses_backend, DataSourceStatus, SourceStatus};
 use crate::db::alerts::list_alerts_backend;
 use crate::db::analyst_views;
 use crate::db::backend::BackendConnection;
@@ -37,6 +38,9 @@ struct GuidancePayload {
     /// Portfolio-matrix view coverage stats
     #[serde(skip_serializing_if = "Option::is_none")]
     view_coverage: Option<ViewCoverage>,
+    /// Status-based stale/empty feed summary from `data status`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data_health: Option<DataHealthSummary>,
 }
 
 #[derive(Serialize)]
@@ -52,6 +56,7 @@ struct GuidanceSummary {
     scenario_shifts_count: usize,
     stale_views_count: usize,
     view_coverage_pct: u64,
+    degraded_data_sources_count: usize,
 }
 
 #[derive(Serialize, Clone)]
@@ -127,6 +132,25 @@ struct ViewCoverage {
     stale_count: usize,
 }
 
+#[derive(Serialize, Clone)]
+struct DataHealthSource {
+    name: String,
+    status: String,
+    records: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_fetch: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+struct DataHealthSummary {
+    total_sources: usize,
+    fresh_count: usize,
+    stale_count: usize,
+    empty_count: usize,
+    degraded_count: usize,
+    degraded_sources: Vec<DataHealthSource>,
+}
+
 // ==================== Entry Point ====================
 
 pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
@@ -135,6 +159,36 @@ pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
     let timestamp = now.to_rfc3339();
 
     let mut action_items: Vec<ActionItem> = Vec::new();
+    let data_health = build_data_health(backend);
+
+    if let Some(health) = &data_health {
+        if health.degraded_count > 0 {
+            let priority = if health.empty_count > 0 {
+                "critical"
+            } else if health.stale_count >= 3 {
+                "high"
+            } else {
+                "medium"
+            };
+            let detail = health
+                .degraded_sources
+                .iter()
+                .take(3)
+                .map(|source| format!("{} ({})", source.name, source.status))
+                .collect::<Vec<_>>()
+                .join(", ");
+            action_items.push(ActionItem {
+                priority: priority.into(),
+                category: "data_health".into(),
+                description: format!(
+                    "{} degraded data source{} detected — review with `data status` or refresh with `data refresh --stale`",
+                    health.degraded_count,
+                    if health.degraded_count != 1 { "s" } else { "" },
+                ),
+                detail: if detail.is_empty() { None } else { Some(detail) },
+            });
+        }
+    }
 
     // 1. Pending predictions (outcome = "pending", optionally past target_date)
     let pending_predictions = build_pending_predictions(backend, today);
@@ -255,6 +309,10 @@ pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
         scenario_shifts_count: scenario_shifts.len(),
         stale_views_count: stale_views.len(),
         view_coverage_pct: view_coverage.as_ref().map(|c| c.coverage_pct).unwrap_or(0),
+        degraded_data_sources_count: data_health
+            .as_ref()
+            .map(|health| health.degraded_count)
+            .unwrap_or(0),
     };
 
     let payload = GuidancePayload {
@@ -267,6 +325,7 @@ pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
         scenario_shifts,
         stale_views,
         view_coverage,
+        data_health,
     };
 
     if json_output {
@@ -506,6 +565,52 @@ fn build_stale_views(
     (stale_views, Some(coverage))
 }
 
+fn build_data_health(backend: &BackendConnection) -> Option<DataHealthSummary> {
+    let sources = source_statuses_backend(backend).ok()?;
+    Some(data_health_summary_from_sources(&sources))
+}
+
+fn data_health_summary_from_sources(sources: &[DataSourceStatus]) -> DataHealthSummary {
+    let fresh_count = sources
+        .iter()
+        .filter(|source| source.status == SourceStatus::Fresh)
+        .count();
+    let stale_count = sources
+        .iter()
+        .filter(|source| source.status == SourceStatus::Stale)
+        .count();
+    let empty_count = sources
+        .iter()
+        .filter(|source| source.status == SourceStatus::Empty)
+        .count();
+
+    let mut degraded_sources: Vec<DataHealthSource> = sources
+        .iter()
+        .filter(|source| source.status != SourceStatus::Fresh)
+        .map(|source| DataHealthSource {
+            name: source.name.to_string(),
+            status: source.status.as_lowercase_str().to_string(),
+            records: source.records,
+            last_fetch: source.last_fetch.clone(),
+        })
+        .collect();
+
+    degraded_sources.sort_by(|a, b| {
+        data_health_status_rank(&a.status)
+            .cmp(&data_health_status_rank(&b.status))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    DataHealthSummary {
+        total_sources: sources.len(),
+        fresh_count,
+        stale_count,
+        empty_count,
+        degraded_count: stale_count + empty_count,
+        degraded_sources,
+    }
+}
+
 // ==================== Helpers ====================
 
 fn priority_rank(priority: &str) -> u8 {
@@ -515,6 +620,14 @@ fn priority_rank(priority: &str) -> u8 {
         "medium" => 2,
         "low" => 3,
         _ => 4,
+    }
+}
+
+fn data_health_status_rank(status: &str) -> u8 {
+    match status {
+        "empty" => 0,
+        "stale" => 1,
+        _ => 2,
     }
 }
 
@@ -555,6 +668,29 @@ fn print_terminal(payload: &GuidancePayload) {
     if s.medium_count > 0 { parts.push(format!("🟡 {} medium", s.medium_count)); }
     if s.low_count > 0 { parts.push(format!("🟢 {} low", s.low_count)); }
     println!(" {}", parts.join(" · "));
+
+    if let Some(health) = &payload.data_health {
+        if health.degraded_count > 0 {
+            println!();
+            println!(
+                "DATA HEALTH: {} degraded of {} tracked sources ({} stale, {} empty)",
+                health.degraded_count,
+                health.total_sources,
+                health.stale_count,
+                health.empty_count
+            );
+            println!(
+                "  {}",
+                health
+                    .degraded_sources
+                    .iter()
+                    .take(8)
+                    .map(|source| format!("{} [{}]", source.name, source.status))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
 
     // Action items
     println!();
@@ -756,6 +892,7 @@ mod tests {
             scenario_shifts_count: 0,
             stale_views_count: 0,
             view_coverage_pct: 0,
+            degraded_data_sources_count: 0,
         };
         assert_eq!(s.total_action_items, 0);
         assert_eq!(s.stale_views_count, 0);
@@ -928,6 +1065,7 @@ mod tests {
                 scenario_shifts_count: 0,
                 stale_views_count: 0,
                 view_coverage_pct: 100,
+                degraded_data_sources_count: 0,
             },
             pending_predictions: vec![],
             triggered_alerts: vec![],
@@ -935,12 +1073,14 @@ mod tests {
             scenario_shifts: vec![],
             stale_views: vec![],
             view_coverage: None,
+            data_health: None,
         };
         let json = serde_json::to_value(&payload).unwrap();
         // stale_views should be absent when empty (skip_serializing_if)
         assert!(json.get("stale_views").is_none());
         // view_coverage should be absent when None
         assert!(json.get("view_coverage").is_none());
+        assert!(json.get("data_health").is_none());
     }
 
     #[test]
@@ -957,9 +1097,51 @@ mod tests {
             scenario_shifts_count: 0,
             stale_views_count: 199,
             view_coverage_pct: 4,
+            degraded_data_sources_count: 3,
         };
         let json = serde_json::to_value(&s).unwrap();
         assert_eq!(json["stale_views_count"], 199);
         assert_eq!(json["view_coverage_pct"], 4);
+        assert_eq!(json["degraded_data_sources_count"], 3);
+    }
+
+    #[test]
+    fn test_data_health_summary_orders_empty_before_stale() {
+        let summary = data_health_summary_from_sources(&[
+            DataSourceStatus {
+                name: "Prices",
+                last_fetch: Some("2026-04-06T10:00:00Z".into()),
+                records: 10,
+                status: SourceStatus::Stale,
+            },
+            DataSourceStatus {
+                name: "News",
+                last_fetch: None,
+                records: 0,
+                status: SourceStatus::Empty,
+            },
+            DataSourceStatus {
+                name: "Calendar",
+                last_fetch: Some("2026-04-06T10:05:00Z".into()),
+                records: 3,
+                status: SourceStatus::Fresh,
+            },
+        ]);
+
+        assert_eq!(summary.total_sources, 3);
+        assert_eq!(summary.fresh_count, 1);
+        assert_eq!(summary.stale_count, 1);
+        assert_eq!(summary.empty_count, 1);
+        assert_eq!(summary.degraded_count, 2);
+        assert_eq!(summary.degraded_sources[0].name, "News");
+        assert_eq!(summary.degraded_sources[0].status, "empty");
+        assert_eq!(summary.degraded_sources[1].name, "Prices");
+        assert_eq!(summary.degraded_sources[1].status, "stale");
+    }
+
+    #[test]
+    fn test_data_health_status_rank_prefers_empty_then_stale() {
+        assert!(data_health_status_rank("empty") < data_health_status_rank("stale"));
+        assert!(data_health_status_rank("stale") < data_health_status_rank("fresh"));
     }
 }
