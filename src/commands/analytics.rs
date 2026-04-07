@@ -654,7 +654,7 @@ pub fn run(
         "alignment" => run_alignment(backend, symbol, json_output),
         "alignment-summary" => run_alignment_summary(backend, symbol, json_output),
         "divergence" => run_divergence(backend, symbol, json_output),
-        "digest" => run_digest(backend, from, limit, json_output),
+        "digest" => run_digest(backend, from, value, limit, json_output),
         "recap" => run_recap(backend, date, limit, json_output),
         "weekly-review" => run_weekly_review(backend, limit.unwrap_or(7), json_output),
         "gaps" => run_gaps(backend, symbol, json_output),
@@ -689,17 +689,23 @@ fn parse_day_filter(value: Option<&str>) -> Result<Option<NaiveDate>> {
 fn run_digest(
     backend: &BackendConnection,
     from: Option<&str>,
+    agent_filter: Option<&str>,
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    let role = from.unwrap_or("evening-analyst");
+    let role = agent_filter.unwrap_or("evening-analyst");
     let lim = limit.unwrap_or(10);
+    let from_day = parse_day_filter(from)?;
+    let from_string = from_day.map(|day| day.to_string());
 
     let regime = regime_snapshots::get_current_backend(backend)
         .ok()
         .flatten();
-    let top_signals =
-        timeframe_signals::list_signals_backend(backend, None, None, Some(lim)).unwrap_or_default();
+    let top_signals = filter_digest_signals(
+        timeframe_signals::list_signals_backend(backend, None, None, None).unwrap_or_default(),
+        from_day,
+        lim,
+    );
     let divergences = build_alignment_rows(backend, None)
         .unwrap_or_default()
         .into_iter()
@@ -709,9 +715,13 @@ fn run_digest(
     let scenarios_list =
         scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let conviction_rows = convictions::list_current_backend(backend).unwrap_or_default();
-    let pending_predictions =
-        user_predictions::list_predictions_backend(backend, Some("pending"), None, None, Some(lim))
-            .unwrap_or_default();
+    let pending_predictions = filter_digest_predictions(
+        user_predictions::list_predictions_backend(backend, Some("pending"), None, None, None)
+            .unwrap_or_default(),
+        from_day,
+        agent_filter,
+        lim,
+    );
     let scorecard = user_predictions::get_stats_backend(backend).ok();
     let recent_messages = agent_messages::list_messages_backend(
         backend,
@@ -719,7 +729,7 @@ fn run_digest(
         Some(role),
         None,
         true,
-        None,
+        from_string.as_deref(),
         None,
         Some(lim),
     )
@@ -728,6 +738,8 @@ fn run_digest(
     let payload = match role {
         "low-agent" | "low-timeframe-analyst" => json!({
             "from": role,
+            "agent_filter": role,
+            "from_date": from_day.map(|day| day.to_string()),
             "regime": regime,
             "signals": top_signals,
             "divergences": divergences,
@@ -736,6 +748,8 @@ fn run_digest(
         }),
         "medium-agent" | "medium-timeframe-analyst" => json!({
             "from": role,
+            "agent_filter": role,
+            "from_date": from_day.map(|day| day.to_string()),
             "scenarios": scenarios_list,
             "convictions": conviction_rows,
             "pending_predictions": pending_predictions,
@@ -744,6 +758,8 @@ fn run_digest(
         }),
         _ => json!({
             "from": role,
+            "agent_filter": role,
+            "from_date": from_day.map(|day| day.to_string()),
             "regime": regime,
             "scenarios": scenarios_list,
             "signals": top_signals,
@@ -758,6 +774,9 @@ fn run_digest(
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
         println!("Analytics Digest ({})", role);
+        if let Some(day) = from_day {
+            println!("  From date: {}", day);
+        }
         println!("  Signals: {}", top_signals.len());
         println!("  Divergences: {}", divergences.len());
         println!("  Pending predictions: {}", pending_predictions.len());
@@ -765,6 +784,62 @@ fn run_digest(
     }
 
     Ok(())
+}
+
+fn filter_digest_signals(
+    mut rows: Vec<timeframe_signals::TimeframeSignal>,
+    from_day: Option<NaiveDate>,
+    limit: usize,
+) -> Vec<timeframe_signals::TimeframeSignal> {
+    if let Some(day) = from_day {
+        rows.retain(|row| record_on_or_after(&row.detected_at, day));
+    }
+    rows.truncate(limit);
+    rows
+}
+
+fn filter_digest_predictions(
+    mut rows: Vec<user_predictions::UserPrediction>,
+    from_day: Option<NaiveDate>,
+    agent_filter: Option<&str>,
+    limit: usize,
+) -> Vec<user_predictions::UserPrediction> {
+    if let Some(agent) = agent_filter {
+        rows.retain(|row| {
+            row.source_agent
+                .as_deref()
+                .map(|source| source.eq_ignore_ascii_case(agent))
+                .unwrap_or(false)
+        });
+    }
+    if let Some(day) = from_day {
+        rows.retain(|row| record_on_or_after(&row.created_at, day));
+    }
+    rows.truncate(limit);
+    rows
+}
+
+fn record_on_or_after(raw: &str, from_day: NaiveDate) -> bool {
+    parse_record_day(raw)
+        .map(|day| day >= from_day)
+        .unwrap_or(false)
+}
+
+fn parse_record_day(raw: &str) -> Option<NaiveDate> {
+    DateTime::parse_from_rfc3339(raw)
+        .map(|dt| dt.date_naive())
+        .ok()
+        .or_else(|| {
+            NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f")
+                .map(|dt| dt.date())
+                .ok()
+        })
+        .or_else(|| {
+            NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
+                .map(|dt| dt.date())
+                .ok()
+        })
+        .or_else(|| NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok())
 }
 
 fn run_recap(
@@ -5514,5 +5589,85 @@ mod tests {
             "disagreement should mention MEDIUM:bull, got: {}",
             entry.disagreement
         );
+    }
+
+    #[test]
+    fn parse_record_day_accepts_rfc3339_and_sqlite_timestamps() {
+        assert_eq!(
+            parse_record_day("2026-04-07T12:30:00Z"),
+            Some(NaiveDate::from_ymd_opt(2026, 4, 7).unwrap())
+        );
+        assert_eq!(
+            parse_record_day("2026-04-07 12:30:00"),
+            Some(NaiveDate::from_ymd_opt(2026, 4, 7).unwrap())
+        );
+        assert_eq!(
+            parse_record_day("2026-04-07 12:30:00.123"),
+            Some(NaiveDate::from_ymd_opt(2026, 4, 7).unwrap())
+        );
+    }
+
+    #[test]
+    fn filter_digest_predictions_applies_agent_and_date_filters() {
+        let rows = vec![
+            user_predictions::UserPrediction {
+                id: 1,
+                claim: "Older low prediction".to_string(),
+                symbol: Some("BTC".to_string()),
+                conviction: "high".to_string(),
+                timeframe: Some("low".to_string()),
+                confidence: Some(0.7),
+                source_agent: Some("low-agent".to_string()),
+                target_date: None,
+                resolution_criteria: None,
+                outcome: "pending".to_string(),
+                score_notes: None,
+                lesson: None,
+                created_at: "2026-04-05T10:00:00Z".to_string(),
+                scored_at: None,
+            },
+            user_predictions::UserPrediction {
+                id: 2,
+                claim: "Recent medium prediction".to_string(),
+                symbol: Some("ETH".to_string()),
+                conviction: "medium".to_string(),
+                timeframe: Some("medium".to_string()),
+                confidence: Some(0.6),
+                source_agent: Some("medium-agent".to_string()),
+                target_date: None,
+                resolution_criteria: None,
+                outcome: "pending".to_string(),
+                score_notes: None,
+                lesson: None,
+                created_at: "2026-04-07T09:00:00Z".to_string(),
+                scored_at: None,
+            },
+            user_predictions::UserPrediction {
+                id: 3,
+                claim: "Recent low prediction".to_string(),
+                symbol: Some("GC=F".to_string()),
+                conviction: "high".to_string(),
+                timeframe: Some("low".to_string()),
+                confidence: Some(0.8),
+                source_agent: Some("low-agent".to_string()),
+                target_date: None,
+                resolution_criteria: None,
+                outcome: "pending".to_string(),
+                score_notes: None,
+                lesson: None,
+                created_at: "2026-04-07 14:00:00".to_string(),
+                scored_at: None,
+            },
+        ];
+
+        let filtered = filter_digest_predictions(
+            rows,
+            Some(NaiveDate::from_ymd_opt(2026, 4, 6).unwrap()),
+            Some("low-agent"),
+            10,
+        );
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, 3);
     }
 }

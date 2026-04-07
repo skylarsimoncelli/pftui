@@ -160,7 +160,7 @@
 **Scope:** (1) Identify valid severity values accepted by `analytics situation update log`. (2) Add them to CLI help text via `value_parser` or `possible_values` so they appear in `--help`. (3) Improve the error message to list valid options. Files: `src/cli.rs`, `src/analytics/situation.rs`.
 **Effort:** < 1 hour.
 
-### [Feedback] Add --from date filter and --agent-filter to analytics digest
+### [x] [Feedback] Add --from date filter and --agent-filter to analytics digest
 **Source:** low-timeframe-analyst (Apr 6, 55/72). low-timeframe-analyst (Apr 6, 75/78).
 **Why:** `analytics digest --from <date>` flag is missing entirely. `analytics digest --agent-filter <agent>` was requested to allow per-agent digest output without post-processing the full JSON. Both flags improve agent workflow speed significantly.
 **Scope:** Add `--from <date>` and `--agent-filter <agent-name>` flags to `analytics digest`. Apply as WHERE clauses in the backend query. Files: `src/commands/digest.rs` (or equivalent), `src/cli.rs`.

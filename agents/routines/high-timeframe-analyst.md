@@ -240,7 +240,7 @@ pftui journal prediction add "[structural cause] will [structural effect] by [da
 ## Output to Evening Analyst
 
 ```bash
-DIGEST=$(pftui analytics digest --from high-agent --json)
+DIGEST=$(pftui analytics digest --agent-filter high-agent --json)
 pftui agent message send "HIGH LAYER DIGEST [date]: ${DIGEST}" \
   --from high-agent --to evening-analyst --priority normal --category signal --layer high
 ```

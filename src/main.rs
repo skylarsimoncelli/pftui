@@ -3140,10 +3140,15 @@ fn run_cli(cli: Cli) -> Result<()> {
                 resolve,
                 json,
             ),
-            cli::AnalyticsCommand::Digest { from, limit, json } => commands::analytics::run(
+            cli::AnalyticsCommand::Digest {
+                from,
+                agent_filter,
+                limit,
+                json,
+            } => commands::analytics::run(
                 &backend,
                 "digest",
-                None,
+                agent_filter.as_deref(),
                 None,
                 None,
                 None,
