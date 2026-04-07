@@ -279,20 +279,6 @@ pub fn run_stats(backend: &BackendConnection, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::normalize_tags;
-
-    #[test]
-    fn normalize_tags_merges_repeat_and_csv_inputs() {
-        let normalized = normalize_tags(
-            &["macro".to_string(), "oil,geopolitical".to_string()],
-            Some("oil, rates "),
-        );
-        assert_eq!(normalized.as_deref(), Some("macro,oil,geopolitical,rates"));
-    }
-}
-
 fn parse_since(since: &str) -> Result<String> {
     // Handle relative dates like "7d", "30d", "1w"
     if let Some(stripped) = since.strip_suffix('d') {
@@ -316,5 +302,19 @@ fn parse_since(since: &str) -> Result<String> {
             let naive_dt = naive_date.and_hms_opt(0, 0, 0).unwrap();
             Ok(DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc).to_rfc3339())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_tags;
+
+    #[test]
+    fn normalize_tags_merges_repeat_and_csv_inputs() {
+        let normalized = normalize_tags(
+            &["macro".to_string(), "oil,geopolitical".to_string()],
+            Some("oil, rates "),
+        );
+        assert_eq!(normalized.as_deref(), Some("macro,oil,geopolitical,rates"));
     }
 }
