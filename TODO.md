@@ -126,7 +126,7 @@
 **Scope:** (1) Fix GDPNow fetch in economy module — Atlanta Fed endpoint may have changed. (2) Add staleness context to output: "GDP last print: Q3 2025. Next print: Apr 30. GDPNow nowcast: X%" — so agents understand the data rhythm rather than flagging it as broken. (3) If GDPNow unreachable, note that in output explicitly.
 **Effort:** 3–4 hours.
 
-### [Feedback] COT data — add explicit next-report-date field and auto-retry on Friday
+### [x] [Feedback] COT data — add explicit next-report-date field and auto-retry on Friday
 **Source:** Evening analysis data integrity audit (Apr 7). COT last report Mar 31, weekly cadence, Apr 4 report may exist.
 **Why:** COT is published every Friday at 3:30 PM ET by CFTC for the prior Tuesday's positions. Agents can't tell if the latest report has been fetched or if a newer one is available. Stale COT during active markets (oil at 1.9th pct) is a significant intelligence gap.
 **Scope:** (1) Add `next_report_date` and `report_date` fields to `pftui data economy --json` COT section. (2) Add Friday auto-retry logic — if current time is Friday after 3:30 PM ET and last COT report is > 5 days old, trigger re-fetch. (3) Add CFTC API endpoint validation — confirm current URL is still valid.

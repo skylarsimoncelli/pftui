@@ -4,6 +4,7 @@ use sqlx::PgPool;
 
 use crate::commands::daemon;
 use crate::config::load_config;
+use crate::data::cot;
 use crate::db::backend::BackendConnection;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, news_cache};
 use crate::db::{onchain_cache, predictions_cache, price_cache, sentiment_cache, worldbank_cache};
@@ -357,8 +358,14 @@ where
         .into_iter()
         .filter_map(|raw| chrono::NaiveDate::parse_from_str(&raw, "%Y-%m-%d").ok())
         .max();
+    let expected = cot::expected_latest_report_date(
+        today
+            .and_hms_opt(0, 0, 0)
+            .map(|dt| dt.and_utc())
+            .unwrap_or_else(chrono::Utc::now),
+    );
     let is_stale = most_recent
-        .map(|date| (today - date).num_days() * 24 * 60 * 60 > COT_FRESHNESS_SECS)
+        .map(|date| date < expected || (today - date).num_days() * 24 * 60 * 60 > COT_FRESHNESS_SECS)
         .unwrap_or(true);
     (most_recent, is_stale)
 }
@@ -988,6 +995,13 @@ mod tests {
 
         let (_, stale) = most_recent_cot_report_date(vec!["2026-03-20".to_string()], today);
         assert!(stale);
+    }
+
+    #[test]
+    fn cot_staleness_marks_missed_friday_release_as_stale() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 4, 11).unwrap();
+        let (_, is_stale) = most_recent_cot_report_date(vec!["2026-03-31".to_string()], today);
+        assert!(is_stale);
     }
 
     #[test]
