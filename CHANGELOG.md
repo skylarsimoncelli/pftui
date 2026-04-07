@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-06 — fix: add BLS CPI/PPI fallback and explicit stale economy status
+
+- What: `pftui data economy --json` now emits `last_updated` and `stale` fields for indicator rows, keeps stale CPI/PPI FRED-derived values from overriding fresher BLS fallback data, and returns an explicit stale/error state when stale CPI/PPI data has no BLS fallback. The BLS fallback path now also computes headline PPI YoY from the official Final Demand BLS series.
+- Why: stale CPI/PPI readings were still presented as if they were authoritative, which made agents trust degraded macro data instead of switching to a fresher fallback or web search.
+- Files: `src/data/bls.rs`, `src/data/economic.rs`, `src/commands/economy.rs`
+- Tests: added focused coverage for BLS PPI YoY derivation, stale CPI derived-series detection, and stale-error guidance, alongside a full `cargo test` pass.
+
 ### 2026-04-06 — fix: add DGS10 fallback when FRED 10Y yield is stale
 
 - What: `pftui data refresh` now stores a Yahoo Finance `^TNX` fallback as `DGS10_YAHOO` whenever the FRED `DGS10` fetch fails, returns empty, or arrives older than the stricter 2-day 10Y-yield threshold. `pftui data economy` now prefers that fallback for `treasury_10y`, exposes the fallback source in JSON, and applies the tighter DGS10 freshness rule in top-level FRED data-quality reporting.
