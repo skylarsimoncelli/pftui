@@ -190,7 +190,7 @@
 **Scope:** Update CLAUDE.md and any agent routine docs that reference `trends evidence-add` to use the correct `analytics trends evidence add --id <N>` syntax. Files: `CLAUDE.md`, relevant agent routine markdown files.
 **Effort:** < 30 minutes.
 
-### [Feedback] Clarify agent message ack --to flag help text
+### [x] [Feedback] Clarify agent message ack --to flag help text
 **Source:** low-timeframe-analyst (Apr 6, 55/72).
 **Why:** `pftui agent message ack --to` help text is ambiguous — unclear whether `--to` expects an agent name, message ID, or conversation thread. Agents waste time on trial and error.
 **Scope:** Improve `--to` help text with a concrete example (e.g. `--to morning-brief`). Add `after_help` with usage examples. Files: `src/cli.rs`.

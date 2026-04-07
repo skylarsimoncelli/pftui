@@ -129,6 +129,7 @@ pub enum AgentMessageCommand {
     ///   pftui agent message ack --id 1 --id 2    # ack specific messages
     ///   pftui agent message ack --all             # ack all pending messages
     ///   pftui agent message ack --all --to bot-x  # ack all for a specific recipient
+    #[command(after_help = "Examples:\n  pftui agent message ack --id 12 --id 13\n  pftui agent message ack --all\n  pftui agent message ack --all --to morning-brief\n\n`--to` expects a recipient agent name, not a message ID or thread ID.\nUse it only with `--all` when you want to bulk-ack the queue for one recipient.")]
     Ack {
         /// One or more message IDs (repeatable: --id 1 --id 2 --id 3)
         #[arg(long)]
@@ -138,7 +139,7 @@ pub enum AgentMessageCommand {
         #[arg(long, conflicts_with = "id")]
         all: bool,
 
-        /// Filter by recipient when using --all
+        /// Recipient agent name to bulk-ack when using --all (for example: --to morning-brief)
         #[arg(long, requires = "all")]
         to: Option<String>,
 
@@ -146,8 +147,10 @@ pub enum AgentMessageCommand {
         json: bool,
     },
     /// Acknowledge all pending messages for a recipient (alias for `ack --all`)
+    #[command(after_help = "Example:\n  pftui agent message ack-all --to morning-brief\n\n`--to` expects a recipient agent name.")]
     #[command(name = "ack-all")]
     AckAll {
+        /// Recipient agent name whose pending queue should be acknowledged
         #[arg(long)]
         to: Option<String>,
 

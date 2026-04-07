@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-07 — docs: clarify `agent message ack --to` help text
+
+- What: the CLI help for `pftui agent message ack` and `ack-all` now explicitly says that `--to` expects a recipient agent name, with concrete examples like `--to morning-brief`.
+- Why: low-timeframe agents were unsure whether `--to` referred to an agent name, message ID, or thread identifier, which made bulk acknowledgement slower than it should be.
+- Files: `src/cli.rs`
+- Tests: existing CLI parse coverage for `ack --all --to ...` and `ack-all --to ...` still passes.
+
 ### 2026-04-07 — feat: add date and agent filters to `analytics digest`
 
 - What: `pftui analytics digest` now supports a real `--from` date filter for time-scoping digest content plus a dedicated `--agent-filter` flag for role-aware output. Signals, pending predictions, and unacknowledged agent messages now honor the new filters, and the CLI help includes concrete examples for both flags.
