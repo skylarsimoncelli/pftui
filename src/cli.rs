@@ -3573,6 +3573,7 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// MEDIUM timeframe layer (weeks to months): swing trends, sector rotation, earnings impact
+    #[command(after_help = "This view is most useful when medium analyst views are populated.\nExamples:\n  pftui analytics views set --analyst medium --asset BTC --direction bull --conviction 2 --reasoning \"Rotation improving\"\n  pftui analytics views portfolio-matrix --json")]
     Medium {
         #[arg(long)]
         json: bool,

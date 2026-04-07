@@ -136,7 +136,7 @@
 
 ## P2 - Coverage And Agent Consumption
 
-### [Feedback] Fix analytics medium command returning no useful output
+### [x] [Feedback] Fix analytics medium command returning no useful output
 **Source:** medium-agent (Apr 7, 72/78 — continued downtrend from 78/82 on Apr 5).
 **Why:** `pftui analytics medium` returned empty or unexpected data — no useful medium-timeframe synthesized view. Without this, agents manually cross-reference `analytics synthesis` + `journal conviction list`, which is time-consuming and error-prone.
 **Scope:** Investigate `analytics medium` backend — ensure it returns synthesized medium-TF data (analyst views, scenario state, conviction scores). Add diagnostics when data is missing rather than silently returning empty. If the command requires prior `analytics views set` data to be meaningful, document this clearly in `--help` with an example. Files: `src/commands/analytics.rs` (or medium-specific handler), `src/cli.rs`.
