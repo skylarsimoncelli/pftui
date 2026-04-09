@@ -4,34 +4,12 @@
 
 ---
 
-## P0 - Critical Deploy Bug
-
-### [Feedback] Fix deploy.sh: /usr/local/bin/pftui not updated on deploy
-**Source:** Discovered during Apr 9 daily review. Corroborates all agent feedback since v0.27.0 (PRs #663+).
-**Why:** `cargo install --path .` (and `deploy.sh`) installs to `/root/.cargo/bin/pftui`, but `/usr/local/bin/pftui` is earlier in PATH. Systemd services and all agent invocations resolve `/usr/local/bin/pftui` — which was still v0.26.0 after v0.27.0 was supposedly deployed. Every feature shipped since v0.26.0 (digest --agent-filter, portfolio status, scenario mappings, situation log fixes, etc.) was inaccessible to agents. Manually patched Apr 9 03:xx UTC by copying v0.27.0 binary to `/usr/local/bin/pftui`.
-**Scope:** Update `scripts/deploy.sh` to also atomically install to `/usr/local/bin/pftui` (or add a symlink from `/usr/local/bin/pftui` → `/root/.cargo/bin/pftui`). Update release process docs and Step 0 smoke test to confirm `which pftui` resolves to the correct version. Files: `scripts/deploy.sh`, `docs/RELEASING.md`, agent routine docs.
-**Effort:** < 1 hour.
-
----
-
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Fix data news feed NEWS_UNAVAIL
-**Source:** evening-analyst (Apr 9, 80/78).
-**Why:** `pftui data news` returned `NEWS_UNAVAIL` — primary signal source was unavailable for 24h. News is a core analytical input; unavailability forces all agents to fall back to web_search and degrades every routine that depends on news feeds.
-**Scope:** (1) Investigate news fetcher for broken source, expired API key, or rate-limit condition. (2) Add structured `{status: "unavailable", reason: "..."}` JSON error output instead of bare NEWS_UNAVAIL string. (3) Consider secondary news source fallback (RSS feeds). Files: `src/data/news.rs`, `src/commands/news.rs`.
-**Effort:** 2–3 hours.
-
-### [Feedback] Fix calendar garbled event names (recurring)
-**Source:** low-agent (Apr 8, 70/72) + evening-analysis (Apr 9, 82/79). 2nd occurrence.
-**Why:** `pftui data calendar` returns corrupted numeric strings (percentages/numbers) instead of event names. Recurring across two distinct agents on different days — not a one-off.
-**Scope:** Trace calendar event name parsing/rendering in `src/commands/calendar.rs` and `src/data/calendar.rs`. Likely a parsing/serialization bug where event names are being replaced with associated numeric values (forecast/actual). Add regression test for event name integrity. Files: `src/commands/calendar.rs`, `src/data/calendar.rs`.
-**Effort:** 1–2 hours.
-
 ### [Feedback] Fix analytics situation update log --driver DB error (triggered_at)
-**Source:** medium-timeframe-analyst (Apr 8, 72/78). Corroborates medium-agent (Apr 5, 78/82).
-**Why:** `analytics situation update log --driver <text>` throws a `triggered_at` timestamp type mismatch DB error. The `journal scenario update` timestamp bug was fixed (PR prev), but the same bind inconsistency persists on the `analytics situation update log` path — different code path, same root cause.
-**Scope:** Trace the `analytics situation update log` write path. Normalize `triggered_at` binds to UTC RFC3339 string on both SQLite and Postgres. Files: `src/analytics/situation.rs`, `src/db/situation.rs`.
+**Source:** medium-timeframe-analyst (Apr 8, 72/78; Apr 9, 68/76 — recurring). Corroborates medium-agent (Apr 5, 78/82).
+**Why:** `analytics situation update log --driver <text>` throws a `triggered_at` timestamp type mismatch DB error. Confirmed recurring across two sessions (Apr 8 and Apr 9 reports). The `journal scenario update` timestamp bug was fixed (PR prev), but the same bind inconsistency persists on the `analytics situation update log` path — different code path, same root cause. Additionally, the Apr 9 medium-timeframe-analyst flagged `analytics situation update log --situation` returning exit 1 on first attempt with longer detail strings — possible arg parsing or shell escaping issue on the same command path; workaround required short-form strings.
+**Scope:** Trace the `analytics situation update log` write path. Normalize `triggered_at` binds to UTC RFC3339 string on both SQLite and Postgres. Also audit arg parsing for `--situation` and `--detail` flags for length/escaping robustness (no silent truncation or exit 1 on strings with spaces/commas). Files: `src/analytics/situation.rs`, `src/db/situation.rs`.
 **Effort:** < 1 hour.
 
 ### [Feedback] Fix daily_change null for commodity positions in portfolio brief
@@ -40,69 +18,45 @@
 **Scope:** Trace `change_1d` population for commodity positions in `portfolio brief`. Likely the daily change fetch doesn't cover futures symbols. Files: `src/commands/brief.rs`, `src/data/prices.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Fix data news --hours returning empty descriptions
-**Source:** low-timeframe-analyst (Apr 8, 72/74).
-**Why:** `pftui data news --hours 4` returns headline titles but empty `description` fields. Agents must follow up with `web_fetch` per article to get context, which defeats the purpose of the integrated news command.
-**Scope:** Ensure RSS snippet/summary is captured and stored in the news DB table. Include description/snippet field in `data news --json` output. Files: `src/data/news.rs`, `src/commands/news.rs`.
+### [Feedback] Fix pftui data news returning NEWS_UNAVAIL — primary feed completely down
+**Source:** evening-analyst (Apr 9, 80/78 — explicit P1 flag: "pftui data news feed returning NEWS_UNAVAIL - primary signal source unavailable for 24h news"). Corroborates Apr 9 evening analysis system health assessment: "pftui data news: Unavailable (returned NEWS_UNAVAIL). Filled by web_search and web_fetch this session."
+**Why:** `pftui data news` returned `NEWS_UNAVAIL` for the entire Apr 9 evening session, forcing complete fallback to `web_search` for all breaking news (ceasefire details, Fed minutes, gold/silver prices). This is distinct from the missing `--breaking` flag feature (P2) — the core news command itself is non-functional. The evening analysis rated this the top system health action item.
+**Scope:** Diagnose root cause of `NEWS_UNAVAIL` return code in the news fetch pipeline. Check: (1) upstream news source connectivity/auth, (2) DB table state (empty rows vs unreachable table), (3) daemon/scheduled refresh process for the news feed. Ensure the error distinguishes "no results" from "fetch failed" and surfaces a useful diagnostic. Files: `src/commands/news.rs`, `src/data/news.rs`.
+**Effort:** 1–3 hours.
+
+### [Feedback] Fix FRED fallback activation logic — stale series persist despite shipped PRs
+**Source:** medium-timeframe-analyst (Apr 9, 68/76 — "FRED economy data was 67+ days stale on critical series: CPI 67d, PPI 67d, GDP 190d, PCE 98d"). evening-analyst (Apr 9). medium-agent (Apr 7, 72/78). evening-analyst (Apr 7, 72/75). Persistent across 5+ sessions.
+**Why:** PRs #649 (DGS10 Yahoo Finance fallback), #650 (CPI/PPI BLS fallback), and #651 (GDPNow fallback) all shipped, but agents continue reporting the same FRED series as stale: CPI 67 days, PPI 67 days, GDP 190 days, PCE 98 days, GDPNow 98 days, DGS10 4 days. The fallback logic is clearly not activating. This is the single highest-impact persistent data quality issue — stale macro series degrade every report across all agent layers.
+**Scope:** Re-audit fallback activation conditions in each of PRs #649–#651. Verify: (1) the fallback triggers on FRED 403/timeout *and* on DB row age exceeding threshold — not only on DB absence; (2) the BLS/Yahoo fetched value is being written back to the correct DB table and column; (3) `pftui data economy` reads from the fallback-populated value and not from the stale FRED cache. Add a structured test that simulates FRED returning 403 and confirms the fallback path populates the DB. Files: `src/data/economy.rs`, `src/data/fred.rs`, `src/commands/economy.rs`, fallback modules from #649–#651.
+**Effort:** 2–4 hours.
+
+### [Feedback] Fix COT Friday retry — still 9 days stale after PR #652
+**Source:** evening-2026-04-09 data integrity audit ("pftui COT data: Stale (report_date: 2026-03-31, nine days old)"). evening-analyst (Apr 9, 80/78 — "COT data is 9 days stale (report_date 2026-03-31), pre-war positioning. Need fresher COT or staleness warning").
+**Why:** PR #652 added COT schedule metadata and Friday auto-refetch. However, the Apr 9 report confirms COT is still reporting 2026-03-31 data — nine days stale and three Fridays after the last ingested report. The April 4 COT release (the first Friday post-March 31) was not auto-ingested. This means the Friday retry logic is not firing, the CFTC URL changed, or the Apr 4 report failed to parse. Pre-war COT positioning is actively misleading — hedge fund positioning changed significantly during the 6-week Iran conflict, making the 1.9th-percentile oil short read unreliable as a current signal.
+**Scope:** Debug Friday retry logic from PR #652. Verify: (1) CFTC COT URL still returns the Apr 4 and Apr 11 reports, (2) the retry schedule/cron fires on Fridays and is not blocked by the stale-data circuit breaker, (3) the new report is being parsed and written to DB. Add a `pftui data cot --force-refresh` flag as a manual escape hatch. Files: `src/data/cot.rs`, `src/commands/cot.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Fix analytics situation indicators not re-evaluating on refresh
-**Source:** low-timeframe-analyst (Apr 8, 72/74).
-**Why:** `analytics situation indicator list` shows `last_checked` timestamps from March 22 — indicators are not being re-evaluated when `pftui data refresh` runs. Stale indicator status makes situation tracking unreliable.
-**Scope:** Wire situation indicator evaluation into the `data refresh` pipeline so indicators are checked on each refresh cycle. Files: `src/commands/refresh.rs`, `src/analytics/situation.rs`.
-**Effort:** 2–3 hours.
+### [Feedback] Fix calendar command garbled event names (2nd occurrence — escalated)
+**Source:** low-agent (Apr 8, 70/72 — first occurrence: "pftui data calendar returns garbled event names (numbers/percentages instead of event names) — low severity but reduces utility"). evening-analysis (Apr 9, 82/79 — "Calendar command returning corrupted numeric strings as event names (2nd occurrence)").
+**Why:** `pftui data calendar` returns numeric strings (numbers/percentages) in place of event names in two separate sessions across two different agents. This confirms it is not a one-time data anomaly. Calendar data is used for catalyst tracking and timing; garbled event names reduce utility to zero and force agents to fall back to web_search for economic calendar data.
+**Scope:** Inspect the calendar parsing and rendering path. The most likely cause is a column mapping issue — the event name column is being mapped to a numeric column (e.g., `actual`, `forecast`, or `prior` value). Check the DB schema column order vs query result binding. Files: `src/commands/calendar.rs`, `src/data/calendar.rs`.
+**Effort:** < 1 hour.
+
+### [Feedback] Fix analytics digest --agent-filter regression after PR #659
+**Source:** low-agent (Apr 8, 70/72 — "analytics digest --agent-filter flag missing (got unexpected argument error)").
+**Why:** PR #659 shipped "analytics digest --from/--agent-filter flags (date + agent filtering)" and is listed in the shipped changelog. However, the Apr 8 low-agent feedback — which postdates the merge — reports `--agent-filter` throwing `unexpected argument` error. This is a regression: the flag was announced as shipped but is not functional in the built binary. Agent digest workflows that depend on per-agent filtering are broken.
+**Scope:** Verify `--agent-filter` flag is correctly wired in the CLI arg parser after PR #659. Check for naming mismatch (`--agent-filter` vs `--agent` vs `--filter-agent`), missing `clap` derive attribute, or a re-export issue that prevented the flag from making it to the release binary. Files: `src/commands/digest.rs`, `src/cli.rs`.
+**Effort:** < 30 minutes.
+
+### [Feedback] Add prediction lesson bulk command — lesson coverage at 8% is critical
+**Source:** evening-analyst (Apr 9, 80/78 — explicit P1 flag: "Lesson coverage at 8% (8 of 62 wrong predictions) - system cannot learn at this rate. Recommend auto-lesson-extraction for wrong predictions >7 days old"). evening-analysis (Apr 9: "8% CRITICAL — target 80%. Only 5 of ~62 wrong predictions have structured lessons"). Corroborates Apr 5 evening-analysis feedback ("prediction lessons backlog (63 unresolved) needs a bulk-lesson workflow. Suggest: pftui prediction lesson bulk command").
+**Why:** Lesson coverage is 8% (8 of 62 wrong predictions with structured lessons). The system's self-improvement loop is functionally non-functional — agents cannot identify systematic biases because 92% of wrong predictions have no post-mortem. The `prediction scorecard --lesson-coverage` flag (PR #656) surfaces unlessoned predictions, but there is no efficient command for processing them in bulk. At 3 lessons per evening session, reaching the 80% target would take 15+ days of manual processing.
+**Scope:** (1) Add `pftui prediction lesson bulk` subcommand that lists all wrong predictions without lessons, sorted by age (oldest first). (2) Add `--auto-stub` flag that generates a template lesson from the prediction claim + outcome, requiring only the agent to fill `root_cause` and `going_forward` fields. (3) Surface lesson coverage % prominently in `prediction scorecard` output alongside the `--lesson-coverage` list. Files: `src/commands/prediction.rs`, `src/db/prediction.rs`.
+**Effort:** 3–5 hours.
 
 ---
 
 ## P2 - Coverage And Agent Consumption
-
-### [Feedback] Document/validate analytics macro regime set valid labels
-**Source:** medium-timeframe-analyst (Apr 9, 68/76).
-**Why:** `pftui analytics macro regime set` help text only lists `risk-on`, `risk-off`, `crisis` as valid values, but `transitioning` was accepted without error. Agents must discover undocumented labels by trial and either get silent success or silent failure. Should enumerate all valid regime labels or validate with an enum and surface accepted values in help/error messages.
-**Scope:** Audit all regime label handling in `src/analytics/macro_regime.rs`. If labels are freeform strings, document the canonical set. If they should be typed, add an enum with clap validation. Files: `src/cli.rs`, `src/analytics/macro_regime.rs`.
-**Effort:** 1–2 hours.
-
-### [Feedback] Support null/empty --symbol in prediction add for non-asset predictions
-**Source:** medium-timeframe-analyst (Apr 9, 68/76).
-**Why:** `pftui journal prediction add --symbol ...` requires a ticker symbol, making macro predictions (CPI print, NFP, ISM) awkward to file — agents must use a proxy ticker or leave the field blank via workarounds.
-**Scope:** Make `--symbol` optional in `journal prediction add`. When absent, store as NULL. Update display and scoring to handle symbol-less predictions gracefully. Files: `src/cli.rs`, `src/commands/predict.rs`, `src/db/predictions.rs`.
-**Effort:** 1–2 hours.
-
-### [Feedback] Fix analytics situation update log argument parsing for long strings
-**Source:** medium-timeframe-analyst (Apr 9, 68/76).
-**Why:** `analytics situation update log --situation <long-text>` exits 1 on longer detail strings. Appears to be an argument parsing or shell-escaping issue rather than a DB error. Short strings work; longer ones fail.
-**Scope:** Investigate clap argument parsing for `--situation` and `--detail` flags in the situation log path. Check for length limits, quote handling, or special character issues. Files: `src/cli.rs`, `src/commands/situation.rs`.
-**Effort:** 1–2 hours.
-
-### [Feedback] Fix calibration returning empty / auto-suggest Polymarket scenario mappings
-**Source:** evening-analysis (Apr 9, 82/79). 5+ sessions flagging this.
-**Why:** `analytics calibration` returns empty because no scenario-to-contract mappings have been configured, despite 1699 Polymarket contracts flowing through the system. The feature is effectively dead without mappings. A CLI command to auto-suggest mappings (keyword matching scenarios to contracts) would unblock this entirely.
-**Scope:** Add `data predictions map suggest` (or `analytics calibration suggest`) command that keyword-matches active scenario names against Polymarket contract titles and outputs candidate mappings for confirmation. Files: `src/commands/predictions.rs`, `src/data/predictions.rs`.
-**Effort:** 2–4 hours.
-
-### [Feedback] Fix debate tool returning empty debate_id
-**Source:** evening-analysis (Apr 9, 82/79).
-**Why:** `journal agent debate start` returns an empty `debate_id` field, making it impossible to programmatically add rounds or resolve debates. Debates cannot be persisted across agent steps.
-**Scope:** Investigate `debate start` return path in `src/commands/debates.rs`. Ensure the inserted debate ID is returned in both JSON and terminal output. Add CLI test for non-empty debate_id on start. Files: `src/commands/debates.rs`.
-**Effort:** < 1 hour.
-
-### [Feedback] Add auto-lesson-extraction for wrong predictions > 7 days old
-**Source:** evening-analyst (Apr 9, 80/78). Lesson coverage at 8% (8/62 wrong predictions).
-**Why:** Lesson coverage has been below 10% for multiple sessions. Manual lesson extraction doesn't scale. A command to bulk-generate skeleton lessons for wrong predictions older than N days (with auto-filled miss-type from prediction data) would dramatically improve coverage.
-**Scope:** New `journal prediction lessons auto-extract [--days 7] [--dry-run]` command that scans wrong predictions without lessons and creates skeleton lesson entries (pre-filling symbol, prediction text, miss-type=unknown, root-cause=needs-review). Files: `src/commands/lessons.rs` (or `predict.rs`), `src/cli.rs`.
-**Effort:** 2–3 hours.
-
-### [Feedback] Fix GDPNow still stale despite PR #651 fallback
-**Source:** evening-analyst (Apr 9, 80/78). 98 days stale for a weekly series.
-**Why:** PR #651 added Atlanta Fed web fallback for GDPNow, but agents are still reporting 98-day staleness on Apr 9. Either the fallback isn't being triggered, the stored value isn't being surfaced, or the data refresh hasn't run with the new code since the v0.26.0→v0.27.0 deploy bug masked the fix.
-**Scope:** (1) Verify fallback triggers correctly by running `pftui data refresh --only gdp` after the deploy fix. (2) If still stale, debug `src/data/fred.rs` GDPNOW_WEB fallback logic. (3) Add stale-GDPNow warning to `pftui system doctor`. Files: `src/data/fred.rs`, `src/commands/economy.rs`.
-**Effort:** 1–2 hours.
-
-### [Feedback] Add intraday regime refresh / event-triggered override
-**Source:** evening-analysis (Apr 9, 82/79).
-**Why:** During fast-reversing events (ceasefire day), regime showed `risk-off` despite risk-on price action in real time. The macro regime classifier runs on the standard refresh cycle and lags intraday events.
-**Scope:** Add a lightweight `analytics macro regime evaluate` command that re-scores regime from current cached prices/VIX without a full refresh cycle. Agents can call this after major news to update regime context mid-session. Files: `src/analytics/macro_regime.rs`, `src/cli.rs`.
-**Effort:** 2–4 hours.
 
 ### [Feedback] Add data fear-greed subcommand
 **Source:** high-agent (Apr 6, 72/78).
@@ -128,10 +82,10 @@
 **Scope:** Update CLAUDE.md and agent routine docs that reference `trends evidence-add` to use correct `analytics trends evidence add --id <N>` syntax.
 **Effort:** < 30 minutes.
 
-### [Feedback] Add pftui data news --breaking/--today flag with full descriptions
-**Source:** medium-timeframe-analyst (Apr 8, 72/78) + medium-timeframe-analyst (Apr 9, 68/76).
-**Why:** Agents fall back to web_search for breaking news because `pftui data news` returns cached results that may be hours old. A `--breaking` or `--today` flag that triggers a live fetch (not daemon-cached) with full descriptions would reduce web_search dependence significantly.
-**Scope:** Add `--breaking` flag to `data news` (or `data news --today`) that bypasses cache and fetches fresh headlines with full RSS snippets. Files: `src/commands/news.rs`, `src/data/news.rs`, `src/cli.rs`.
+### [Feedback] Add pftui data news --breaking/--today flag for higher-cadence news
+**Source:** medium-timeframe-analyst (Apr 8, 72/78; Apr 9, 68/76 — repeated across two sessions).
+**Why:** Agents fall back to `web_search` for breaking news because `pftui data news` returns daemon-cached results that may be hours old. A `--breaking` or `--today` flag that triggers a live fetch (bypassing cache) would reduce `web_search` dependence and keep news within the pftui ecosystem. Note: the `NEWS_UNAVAIL` root cause is a separate P1 bug — this feature request applies once the core feed is stable.
+**Scope:** Add `--breaking` flag to `data news` (or `data news --today`) that bypasses cache and fetches fresh headlines. Apply higher-priority fetch cadence. Files: `src/commands/news.rs`, `src/data/news.rs`, `src/cli.rs`.
 **Effort:** 2–4 hours.
 
 ### [Feedback] Fix data refresh hard timeout with no error output
@@ -145,6 +99,48 @@
 **Why:** `data predictions markets --category geopolitics` returned only 1 result (an OpenAI hardware question misclassified). Iran/Fed contracts that should match returned 0. Category classification or keyword matching for prediction market contracts is unreliable.
 **Scope:** Investigate category classification in `data/predictions.rs` market fetch. Likely the tag-to-category mapping is too narrow. Add Iran/geopolitical keywords. Files: `src/data/predictions.rs`.
 **Effort:** 1–2 hours.
+
+### [Feedback] Fix analytics debate tool returning empty debate_id
+**Source:** evening-analysis (Apr 9, 82/79 — "Debate tool returned empty debate_id despite topic being valid — could not persist debate programmatically").
+**Why:** The `analytics debate` command returns an empty `debate_id` in its JSON output even when the topic is valid and the debate runs successfully. Without a valid ID, agents cannot reference, retrieve, or persist the debate for later scoring or cross-session review. The Apr 9 evening analysis ran 3 adversarial debate rounds but could not store them programmatically.
+**Scope:** Check the debate ID generation and return path. The ID is likely generated internally but not serialised into the JSON response, or the DB insert is failing silently and returning a zero/empty ID. Files: `src/commands/debate.rs` (or equivalent), `src/db/debate.rs`.
+**Effort:** < 1 hour.
+
+### [Feedback] Fix analytics macro regime set — valid labels not documented
+**Source:** medium-timeframe-analyst (Apr 9, 68/76 — "analytics macro regime set accepted 'transitioning' regime label successfully but help docs only list risk-on/risk-off/crisis — document valid labels or validate with enum").
+**Why:** `analytics macro regime set` accepts `transitioning` as a valid input but `--help` output only lists `risk-on`, `risk-off`, and `crisis`. Agents waste time guessing undocumented labels by trial and error. Should enumerate all valid labels in help text or validate input against an explicit enum with a clear error message listing valid options.
+**Scope:** Update `analytics macro regime set` help text to enumerate all valid regime labels (including `transitioning`, `stagflation`, and any others accepted by the DB). Add enum validation: if an invalid label is passed, print a helpful error listing valid options. Files: `src/commands/regime.rs` (or equivalent), `src/cli.rs`.
+**Effort:** < 30 minutes.
+
+### [Feedback] Add prediction add --symbol null/empty support for non-asset predictions
+**Source:** medium-timeframe-analyst (Apr 9, 68/76 — "prediction add --symbol field should support null/empty without requiring a ticker — non-asset predictions (CPI, NFP) are awkward to file").
+**Why:** Economic data predictions (CPI, NFP, PMI, GDP, Core PCE) do not map to a single asset symbol. Requiring `--symbol` forces agents to invent placeholder tickers (e.g., `CPI`, `MACRO`, `NFP`) which pollute the symbol namespace and make filtered queries unreliable. Making `--symbol` optional (defaulting to NULL) would make macro data predictions first-class citizens.
+**Scope:** Allow `--symbol` to be optional in `prediction add`. If omitted, store as NULL in DB. Update `prediction list`, `prediction scorecard`, and `prediction score` to handle null symbol gracefully (display as `—` or `[macro]`). Files: `src/commands/prediction.rs`, `src/db/prediction.rs`, `src/cli.rs`.
+**Effort:** 1–2 hours.
+
+### [Feedback] Fix VIX/regime signal lag during fast-reversing events
+**Source:** evening-analysis (Apr 9, 82/79 — "VIX/regime signal lag during fast-reversing events (ceasefire day) caused regime to show risk-off despite risk-on price action — needs intraday refresh or event-triggered override").
+**Why:** During the Apr 8 ceasefire, `analytics macro regime` showed `risk-off` for hours after markets had clearly shifted to risk-on (VIX -12.9%, S&P futures +2.5-3%, BTC +6.89%). Agents applying the stale regime classification applied wrong correlation assumptions. The system needs either faster intraday regime re-evaluation or a manual override command for fast-moving event days.
+**Scope:** (1) Add `analytics macro regime override --regime <label> --reason <text> --expires <duration>` for manual intraday override that auto-expires (e.g., after 4 hours). (2) Consider triggering a regime re-evaluation automatically when VIX moves >15% intraday (the alert threshold already exists and could hook into regime re-check). Files: `src/commands/regime.rs`, `src/analytics/regime.rs`.
+**Effort:** 2–3 hours.
+
+### [Feedback] Fix analytics situation indicator list — stale last_checked timestamps
+**Source:** low-timeframe-analyst (Apr 8, 72/74 — "analytics situation indicator list shows stale last_checked timestamps (March 22) — indicator pipeline not re-evaluating on each refresh cycle; should auto-update on pftui data refresh").
+**Why:** Situation indicators show `last_checked: 2026-03-22` — over two weeks stale — even after `pftui data refresh` has run. The indicator evaluation pipeline is not wired into the `data refresh` cycle, so situation monitoring is running on signal evaluations that predate the Iran war. Agents relying on indicator status for situational awareness are reading outdated signals.
+**Scope:** Wire situation indicator re-evaluation into the `data refresh` pipeline so `last_checked` is updated on each refresh cycle. Files: `src/data/refresh.rs`, `src/analytics/situation.rs`.
+**Effort:** 1–2 hours.
+
+### [Feedback] Fix data news --hours JSON output missing description field
+**Source:** low-timeframe-analyst (Apr 8, 72/74 — "pftui data news --hours 4 titles lack descriptions (empty description field). Would benefit from including RSS snippet/summary in JSON output so news can be assessed without a follow-up web_fetch").
+**Why:** `pftui data news --hours 4` returns headlines with an empty `description` field in JSON. Agents cannot assess news relevance from the title alone and must issue a `web_fetch` for each item to determine relevance — defeating the purpose of the aggregated news feed. Including the RSS snippet/summary in the JSON output would eliminate this round-trip.
+**Scope:** Populate the `description` field from the RSS/source snippet at ingest time and ensure it is stored in the news DB table. Surface it in the JSON output from `data news`. Files: `src/commands/news.rs`, `src/data/news.rs`, `src/db/news.rs`.
+**Effort:** 1–2 hours.
+
+### [Feedback] Add auto-suggest CLI command for scenario-to-prediction-market mappings
+**Source:** evening-analysis (Apr 9, 82/79 — "Calibration command still returning empty (no scenario-to-contract mappings after 5+ sessions flagging this). Suggestion: add automated Polymarket mapping for top 4 scenarios on first run, or CLI command to auto-suggest mappings"). Corroborates Apr 6 evening-analysis and multiple prior sessions flagging the same gap.
+**Why:** `pftui data predictions calibration` has returned empty for 5+ consecutive sessions because no scenario-to-contract mappings have been created. The calibration system is entirely non-functional without mappings, and agents repeatedly flag this as a gap. Adding auto-suggest would unblock the calibration workflow in a single command.
+**Scope:** (1) Add `pftui data predictions map --auto-suggest` that searches tracked Polymarket contracts for keywords matching each active scenario name and outputs the top 3 mapping candidates per scenario. (2) Add `pftui data predictions map --scenario <name> --contract-id <id>` for explicit manual mapping. (3) If calibration is empty and scenarios exist, surface a one-time prompt suggesting the user run `--auto-suggest`. Files: `src/commands/predictions.rs`, `src/data/predictions.rs`.
+**Effort:** 2–4 hours.
 
 ---
 
@@ -164,28 +160,36 @@
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Medium-Timeframe Analyst | 68% | 76% | Apr 9 | ↓ (LOWEST. FRED 67+ days stale on CPI/PPI/GDP/PCE; situation log arg parsing; regime label docs.) |
-| Low-Agent | 70% | 72% | Apr 8 | ↓ (calendar garbled names; daily_change null still; digest --agent-filter was deploy-bug, now fixed.) |
-| Low-Timeframe Analyst | 72% | 74% | Apr 8 | → (news descriptions empty; situation indicators stale.) |
-| Evening Analyst | 80% | 78% | Apr 9 | ↑ (from 72/75 Apr 7 — news unavailable Apr 9 blocked run.) |
-| Evening Analysis | 82% | 79% | Apr 9 | ↑ (from 78/75 Apr 6 — debate empty ID; calibration still empty; calendar garbled.) |
+| Evening Analysis | 82% | 79% | Apr 9 | ↑ (debate tool returns empty debate_id; calendar garbled 2nd occurrence; calibration empty 5+ sessions; regime lag on ceasefire day.) |
+| Evening Analyst | 80% | 78% | Apr 9 | ↑ (news NEWS_UNAVAIL P1; lesson coverage 8% critical; COT 9d stale pre-war.) |
+| Medium-Timeframe Analyst | 68% | 76% | Apr 9 | ↓ (FRED 67d+ stale on CPI/PPI/GDP/PCE despite fallback PRs; situation update log --driver recurring + --situation arg exit 1.) |
+| Medium-Agent | 72% | 78% | Apr 7 | → (analytics medium improved; FRED staleness persistent.) |
+| Low-Timeframe Analyst | 72% | 74% | Apr 8 | → (news descriptions empty; indicator list last_checked stale March 22.) |
+| Low-Agent | 70% | 72% | Apr 8 | ↓ (was 72/74 Apr 7 — digest --agent-filter regression post-PR #659; calendar garbled.) |
+| High-Agent | 72% | 78% | Apr 6 | new reviewer. fear-greed, COMEX 403, views --layer, docs syntax gaps remain. |
 | Morning Brief | 82% | 78% | Apr 5 | → (stable.) |
-| High-Agent | 72% | 78% | Apr 6 | → (fear-greed, COMEX 403, views --layer, docs syntax gaps remain.) |
-| Medium-Agent | 72% | 78% | Apr 7 | → (FRED staleness persistent.) |
-| Macro-Timeframe Analyst | 55% | 62% | Apr 5 | ↑ (many items shipped Apr 6–7; expect score recovery.) |
-
-**Score balance:** Medium-Timeframe Analyst at 68/76 is the lowest — their pain points (FRED staleness, situation log, regime docs) should get P1/P0 priority.
+| Macro-Timeframe Analyst | 55% | 62% | Apr 5 | ↑ (many items shipped Apr 6–7; expect score recovery on next run.) |
 
 **Top 3 priorities based on feedback:**
-1. **P0: Fix deploy.sh /usr/local/bin/pftui gap** — all v0.27.0 features were inaccessible to agents; manually patched Apr 9. Make permanent.
-2. **P1: Fix data news NEWS_UNAVAIL** — primary signal source down for evening-analyst; needs immediate investigation + fallback.
-3. **P1: Fix calendar garbled event names (recurring)** — 2nd occurrence across two agents; corrupted numeric strings instead of event names.
+1. **pftui data news NEWS_UNAVAIL root cause (P1)** — primary signal source completely down for the Apr 9 session; entire news workflow fell back to `web_search`. Fix before next cron run.
+2. **FRED fallback activation re-audit (P1)** — CPI/PPI/GDP/GDPNow/DGS10 all stale despite PRs #649–651 being shipped. Fallback logic not activating; macro data degraded across all agents for 5+ sessions.
+3. **Prediction lesson bulk command — lesson coverage 8% (P1)** — 92% of wrong predictions have no structured lesson. System self-improvement loop non-functional. Evening-analyst rated this P1; target is 80% coverage.
 
-**Shipped since last review (Apr 8 — previous run):**
-- v0.27.0 deployed (PR #663) — 84-commit release: situation severity docs, digest filters, agent ack help, lesson-coverage scorecard, guidance data health, analytics medium snapshot, COT schedule, GDPNow fallback, CPI/PPI BLS fallback, DGS10 Yahoo fallback, silver price status, clippy fixes
-- Deploy bug discovered and patched Apr 9: `/usr/local/bin/pftui` was v0.26.0; copied v0.27.0 binary manually
-- analytics digest --agent-filter confirmed working after deploy fix (was not a code regression)
+**Shipped since last review (Apr 7 — previous run):**
+- Fix clippy unnecessary_cast in cot.rs test data — `week as i64` → `week` (this PR)
+- analytics situation severity validation docs (PR #658) — `--severity` now shows valid values
+- analytics digest --from/--agent-filter flags (PR #659) — date + agent filtering *(regression: --agent-filter still throwing unexpected argument error post-merge — see P1)*
+- agent message ack --to clarified help text (PR #660) — concrete usage examples
+- prediction scorecard --lesson-coverage (PR #656) — annotates unlessoned wrong predictions
+- stale data health in analytics guidance (PR #654) — surfaces degraded sources at session start
+- analytics medium snapshot improved (PR #653) — now returns useful medium-TF data
+- COT schedule metadata + Friday retry (PR #652) — `next_report_date` field, auto-refetch *(COT still 9d stale Apr 9 — Friday retry not firing — see P1)*
+- GDPNow fallback + GDP cadence context (PR #651) — fixes 188-day staleness *(GDPNow still 98d stale Apr 9 — fallback not activating — see P1 FRED re-audit)*
+- CPI/PPI FRED fallbacks (PR #650) — BLS fallback when FRED fails *(CPI/PPI still 67d stale Apr 9 — fallback not activating — see P1 FRED re-audit)*
+- DGS10 Yahoo Finance fallback (PR #649) — ^TNX fallback for 4-day staleness *(DGS10 still stale Apr 7 — fallback not activating — see P1 FRED re-audit)*
+- silver stale price status (PR #646) — `stale: true` flag on data prices
+- clippy errors in power_signals.rs + supply.rs (PR #648) — unblocked release eligibility
 
-**Release status:** v0.27.0 (Apr 9, 84 commits). **Tests:** 2606 passed / 0 failed / 2 ignored. **Clippy:** ✅ Clean. **Release eligibility:** ❌ No new feature commits since v0.27.0 — only feedback/report PRs (#664–#668). No release needed until P0/P1 fixes land.
+**Release status:** v0.26.0 (Apr 4). **Tests:** 2606 passed / 0 failed / 2 ignored. **Clippy:** ✅ Clean (cot.rs fix this PR). **Release eligibility:** ✅ All conditions met — cut v0.27.0 immediately after this PR merges (84 commits of features/fixes since v0.26.0).
 
 **GitHub stars:** 9 — Homebrew Core requires 50+.
