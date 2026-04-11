@@ -439,51 +439,14 @@ found errors, list them. This keeps the public-facing product honest.]
 
 ## Data Integrity Audit
 
-🔴 **This section is MANDATORY. It tracks accuracy trends and holds the system accountable.**
+This section is for your own quality tracking. Keep it brief in the report — 3-5 sentences max. Any system issues, data bugs, or pipeline recommendations go to FEEDBACK.csv only (see After Analysis), NOT in this section.
 
-This section reports on the accuracy of data sources across the public report pipeline.
-The goal is to identify systematic issues, track improvement over time, and flag recurring
-data source failures before they reach the public report.
+Report only:
+- Overall data accuracy for today's report (e.g. "14/15 data points verified, 1 stale price corrected")
+- Any data corrections made before publication
+- One-line system health: 🟢 Healthy | 🟡 Degraded | 🔴 Broken
 
-**Include ALL of the following:**
-
-### Accuracy Scorecard
-- Total data points fact-checked in today's public report: [X]
-- Accurate from the start (no correction needed): [Y] ([Z]%)
-- Corrected during fact-check (caught before publication): [A]
-- Errors that made it to publication (caught by evening review): [B]
-- **This week: [X]/[Y] data points accurate ([Z]%). Last week: [A]/[B] ([C]%). Trend: [improving/declining/flat].**
-
-### Data Source Error Tracking
-For each error found, report:
-- Which data source produced the error (pftui economy, pftui prices, agent-generated, etc.)
-- How many consecutive reports this error has appeared in
-- Whether the public report's own fact-check step (Step 4) caught it or missed it
-
-Example: "pftui data economy returned PPI at 3.2% YoY for the 5th consecutive report.
-Actual is 3.4% (BLS). The public report's fact-check step caught this on Apr 1 but
-missed it on Mar 28-31. Root cause: pftui economy data appears stale with no timestamp
-for agents to detect staleness."
-
-### Cumulative Accuracy Trend
-Pull historical accuracy data from FEEDBACK.csv:
-```bash
-grep "Public Daily Report" /root/pftui/FEEDBACK.csv
-```
-Report:
-- Rolling 7-day accuracy trend (from usefulness_pct and overall_pct scores)
-- Which error categories are recurring (PFTUI_STALE, AGENT_HALLUCINATION, etc.)
-- Whether the fact-check guardrails are catching errors that previously slipped through
-- Any NEW error types that appeared this week
-
-### System Health Assessment
-Rate the data pipeline health: 🟢 Healthy | 🟡 Degraded | 🔴 Broken
-- 🟢 if >90% of data points accurate from source and no recurring errors
-- 🟡 if 75-90% accurate or any error persists for 2+ consecutive reports
-- 🔴 if <75% accurate or any critical error (hallucinated events, >20% price errors)
-
-Flag specific action items: e.g., "pftui PPI data has been stale for 5+ days. This
-needs investigation at the data pipeline level, not just agent-level workarounds."
+Do NOT list individual bugs, stale sources, error counts, action items, or recommendations here. Those go to FEEDBACK.csv.
 
 ## What the Analysts Are Thinking
 
@@ -564,40 +527,11 @@ flag it clearly. Do NOT push changes for the sake of appearing active.]
 
 ## Prediction System Health
 
-[How is our prediction system performing? This is about the SYSTEM, not individual
-predictions.
-
-**Accuracy Trend:** Is our hit rate trending up, down, or flat over the past 2
-weeks? Over the past month? Break it down by timeframe agent. Which agent is
-getting sharper and which is getting worse?
-
-**Active Prediction Conviction:** What is our overall conviction level in the
-predictions we're currently tracking? Are we making lots of low-conviction calls
-(noise) or fewer high-conviction calls (signal)? What's the split?
-
-**Calibration:** Are our high-conviction predictions actually more accurate than
-our low-conviction ones? If not, our confidence scoring is broken and needs
-recalibrating.]
+Brief summary only — 3-5 sentences. Overall hit rate, which timeframe agent is performing best/worst, and one concrete prediction that resolved this session. No system recommendations or action items here — those go to FEEDBACK.csv.
 
 ## Learning and Self-Improvement
 
-[This is the reinforcement learning section. Is the system actually getting smarter?
-
-**Recent Lessons Learned:** What wrong predictions did we extract lessons from
-recently? What specific assumption failed and what did we change? Give concrete
-examples.
-
-**Are We Incorporating Lessons?** Look at recent predictions and analysis. Can
-you see evidence that past lessons are being applied? Or are we repeating the
-same mistakes? Be brutally honest.
-
-**Lesson Coverage:** What percentage of our wrong predictions have structured
-lessons? If it's below 80%, flag it. Unlessoned wrong predictions are wasted
-intelligence.
-
-**Blind Spots:** Based on our accuracy patterns, where do we consistently get
-things wrong? What type of predictions should we make with lower conviction
-or avoid entirely until we improve?]
+One paragraph. What wrong prediction was extracted and what lesson was learned from it today. Keep it analytical ("we underweighted X because Y") not operational ("we should fix Z"). Operational issues go to FEEDBACK.csv.
 
 ## Scenario Assessment
 
@@ -690,6 +624,35 @@ pftui agent message send "WATCH TOMORROW: Keywords: [scenario-relevant terms]. E
 Acknowledge all consumed messages:
 ```bash
 pftui agent message ack --id <id>
+```
+
+### FEEDBACK.csv — Log system issues here, NOT in the report
+
+Any bugs, stale data sources, system recommendations, cron issues, or pipeline problems go HERE — not in the report Skylar receives. Use python3 with the csv module:
+
+```python
+import csv, datetime
+with open('/root/pftui/FEEDBACK.csv', 'a', newline='') as f:
+    csv.writer(f).writerow([
+        datetime.date.today().isoformat(),
+        'evening-analysis',
+        75,   # usefulness_pct: how useful was pftui for this run (0-100)
+        80,   # overall_pct: overall tool quality (0-100)
+        'bug',         # category: bug | enhancement | ux
+        'P1',          # severity: P0 | P1 | P2
+        'Description of the issue. SUGGESTED SOURCE: X via Y if applicable.'
+    ])
+```
+
+Log one row per issue found. Multiple rows are fine. Then push via PR:
+```bash
+git checkout -b feedback/$(date +%Y%m%d-%H%M) origin/master
+git add /root/pftui/FEEDBACK.csv
+git -c user.name="pftui-bot" -c user.email="pftui-bot@users.noreply.github.com" commit -m "feedback: evening-analysis"
+git push origin HEAD
+gh pr create --base master --fill
+gh pr merge --squash --delete-branch
+git checkout master && git pull
 ```
 
 ## Tone Calibration
