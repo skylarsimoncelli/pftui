@@ -2,14 +2,10 @@
 
 🔴 **YOU MUST READ THIS ENTIRE DOCUMENT BEFORE STARTING WORK.**
 This routine is ~700 lines. Every section is mandatory. Do not skim. Do not skip to the end.
-The report template (Step 1) defines 13 mandatory sections. The checklist (Step 1b) verifies them.
+The report template (Step 1) defines 12 mandatory sections. The checklist (Step 1b) verifies them.
 If you miss sections because you did not read the full routine, the run is a failure.
 
-**Before anything else**, read the first principles that govern all analysis:
-```bash
-web_fetch https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/agents/FIRST-PRINCIPLES.md
-```
-Internalise these principles. Apply them to every piece of data you encounter this run.
+**Core principles:** Follow the money, not the narrative. Capital flows trump public statements. Track narrative/money divergences — they are the signal. Wide outcome distributions require cash optionality. Be bidirectional: maintain both bull and bear cases. Plain language: explain every technical term in context.
 
 ---
 
@@ -190,69 +186,6 @@ pftui journal prediction lessons add \
 **Quality bar:** Lessons must be specific and actionable, not generic. Bad: "Market was unpredictable." Good: "Ignored the COT positioning shift from net-long to net-short over the prior 2 weeks, which historically precedes 5-10% corrections in this asset." The lesson should change how the system evaluates similar situations in the future.
 
 **Coverage target:** Aim for 100% lesson coverage over time. Track the coverage percentage from the JSON output and flag it in your analysis if it drops below 80%.
-
-### 1c. Adversarial Debate (mandatory, after prediction lessons)
-
-Before writing your cross-timeframe synthesis, force-test the 1-2 most contentious topics of the day through structured adversarial debate. This catches contradictions, strengthens conviction signals, and produces sharper analysis.
-
-**Identify debate topics** from today's data:
-
-1. Check `pftui analytics divergence --json` for assets where timeframe layers strongly disagree (e.g. LOW bullish but HIGH bearish)
-2. Check `pftui analytics calibration --json` for large divergences between your scenario probabilities and prediction market consensus
-3. Check timeframe agent messages for conflicting conclusions on the same asset or scenario
-4. Review any active debates from prior sessions: `pftui agent debate history --status active --json`
-
-Pick the 1-2 topics with the sharpest disagreement. These are the topics where getting it wrong costs the most.
-
-**If active debates exist from prior sessions**, continue them by adding new rounds with today's evidence rather than starting new debates on the same topic. Only start a new debate if the topic is genuinely new.
-
-**Run each debate (1-2 per session):**
-
-```bash
-# Start the debate (or continue an active one)
-pftui agent debate start --topic "<asset or scenario question>" --rounds 3
-
-# Round 1: Opening arguments
-pftui agent debate add-round --debate-id <ID> --round 1 --position bull \
-  --argument "<strongest bull case with specific data>" \
-  --evidence "<data sources: timeframe agent findings, prices, COT, sentiment>" \
-  --agent-source "evening-analyst"
-
-pftui agent debate add-round --debate-id <ID> --round 1 --position bear \
-  --argument "<strongest bear case with specific data>" \
-  --evidence "<data sources: timeframe agent findings, prices, COT, sentiment>" \
-  --agent-source "evening-analyst"
-
-# Round 2: Rebuttals — each side addresses the other's strongest point
-pftui agent debate add-round --debate-id <ID> --round 2 --position bull \
-  --argument "<rebuttal to bear's strongest point + new supporting evidence>" \
-  --evidence "<sources>" --agent-source "evening-analyst"
-
-pftui agent debate add-round --debate-id <ID> --round 2 --position bear \
-  --argument "<rebuttal to bull's strongest point + new supporting evidence>" \
-  --evidence "<sources>" --agent-source "evening-analyst"
-
-# Round 3: Final assessment — which side has stronger evidence TODAY?
-pftui agent debate add-round --debate-id <ID> --round 3 --position bull \
-  --argument "<final synthesis: what would confirm this thesis and by when>" \
-  --evidence "<sources>" --agent-source "evening-analyst"
-
-pftui agent debate add-round --debate-id <ID> --round 3 --position bear \
-  --argument "<final synthesis: what would confirm this thesis and by when>" \
-  --evidence "<sources>" --agent-source "evening-analyst"
-
-# Resolve with your honest assessment
-pftui agent debate resolve --debate-id <ID> \
-  --summary "<which side has stronger evidence today, what would flip it, and how this affects conviction>"
-```
-
-**Quality bar for debate arguments:**
-- Every argument must cite specific data, not vibes. Bad: "BTC looks bullish." Good: "BTC ETF inflows averaged $340M/day this week while exchange reserves hit a 3-year low — demand is absorbing supply at an accelerating rate."
-- Rebuttals must directly address the opposing argument, not just restate the same case.
-- The resolution must be honest about which side is winning and what evidence would change that.
-- If both sides are genuinely balanced, say so — that IS the intelligence (wide outcome distribution = stay in cash/optionality).
-
-**How debates feed the synthesis:** The debate output directly informs your cross-timeframe synthesis (section 2), scenario updates (section 7), and conviction changes (section 7). If a debate resolved with strong evidence on one side, that should show up as a conviction shift. If the debate was balanced, that reinforces the optionality thesis.
 
 ### 2. Cross-Timeframe Synthesis
 
@@ -471,13 +404,6 @@ real intelligence lives. Where MEDIUM and MACRO align is where conviction forms.
 [Where layers converge/diverge on held assets. The strategic picture. What the
 disagreements between timeframes tell you about where markets are headed.]
 
-## Adversarial Debate
-
-[For each debate run this session: the topic, the strongest bull and bear arguments
-with cited evidence, how the rebuttals played out, and the resolution. Which side
-has stronger evidence today? What would flip it? How does this affect conviction
-and positioning?]
-
 ## Power Structure Analysis
 
 [Managed theater scorecard. Which complex gained today. Follow the money deep dive.
@@ -559,7 +485,6 @@ Check your markdown file contains ALL of these headings. Each one is mandatory:
 - [ ] `## Data Integrity Audit` — Accuracy scorecard, error tracking, cumulative trend, system health rating
 - [ ] `## What the Analysts Are Thinking` — Summary of all 4 timeframe agents' recent journalling and evolving views
 - [ ] `## Cross-Timeframe Intelligence` — Where layers converge/diverge on held assets
-- [ ] `## Adversarial Debate` — Structured bull/bear on today's most contentious topic
 - [ ] `## Power Structure Analysis` — Managed theater scorecard, follow the money
 - [ ] `## Key Intelligence` — 2-3 deep analytical findings
 - [ ] `## Prediction Market Calibration` — Divergences between pftui and market consensus
@@ -656,16 +581,12 @@ git checkout master && git pull
 ```
 
 ## Tone Calibration
-
-- **No fearmongering.** The user is a high-timeframe swing trader who holds structural positions through drawdowns. Gold down 3%, silver down 5%, BTC down 4% are NOT crises. Do not present routine volatility as if the sky is falling.
-- **Be forward-looking.** "What's coming" matters more than "what happened." The user wants to understand what the data means for the NEXT big move, not relive today's price action.
-- **Focus on regime changes, not noise.** A 3% gold dip before FOMC is noise. A correlation break between gold and DXY lasting 2+ weeks is a regime signal. Know the difference.
-- **Constructive, not defensive.** Instead of "gold is down, watch support" say "gold pulling back into the zone where central bank structural buying has historically re-engaged. The question is whether [X] changes that dynamic."
-- **Plain language, no unexplained jargon.** The user is financially literate but not a full-time trader. Every technical term must be explained in context. Bad: "COT positioning at 100th percentile." Good: "Hedge funds are more long BTC futures than at any point in the past year. When everyone is already long, there's nobody left to buy, so the next move is usually down." Bad: "Surrender terms." Good: "The US demands include stopping all uranium enrichment and defunding proxies. Iran would never accept these voluntarily, so this looks like a PR move rather than genuine negotiation." If a data point implies a conclusion, spell out the reasoning. Never assume the reader will connect the dots between a statistic and its implication.
+- No fearmongering about routine volatility on structural holds. Forward-looking over reactive.
+- Focus on regime changes and entry zones, not noise. Explain every technical term in plain language.
 
 ## Rules
 
-- **🔴 ALL 13 SECTIONS IN THE TEMPLATE ARE MANDATORY.** Do not skip any. Do not merge them. Do not replace them with your own format. The template exists because the user explicitly requested each section. Check the Step 1b checklist before generating the PDF.
+- **🔴 ALL 12 SECTIONS IN THE TEMPLATE ARE MANDATORY.** Do not skip any. Do not merge them. Do not replace them with your own format. The template exists because the user explicitly requested each section. Check the Step 1b checklist before generating the PDF.
 - **🔴 THIS IS NOT THE PUBLIC REPORT.** If your report does not contain Portfolio Reflections, What the Analysts Are Thinking, Prediction System Health, and Learning and Self-Improvement, you have written the wrong report. Start over.
 - ONE message. The deep evening analysis.
 - This is where intelligence happens. Go deep, not wide.
