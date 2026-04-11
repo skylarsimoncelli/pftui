@@ -5,13 +5,7 @@ Every step is mandatory (especially Steps 4 and 7). Do not skim. The report
 template defines the required structure. The fact-check step is non-negotiable.
 If you skip steps because you did not read the full routine, the run is a failure.
 
-**Before anything else**, read the documents that define what pftui is and how it thinks:
-```bash
-web_fetch https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/agents/FIRST-PRINCIPLES.md
-web_fetch https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/PRODUCT-VISION.md
-web_fetch https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/PRODUCT-PHILOSOPHY.md
-```
-Internalise all three. The first principles govern your analysis. The vision and philosophy define what pftui is, what it values, and how it's different. You need all three because this report subtly demonstrates the product while delivering intelligence.
+**Core principles:** Follow the money, not the narrative. Capital flows trump public statements. Track narrative/money divergences — they are the signal. Wide outcome distributions require cash optionality. Be bidirectional: maintain both bull and bear cases. Plain language: explain every technical term in context.
 
 ---
 
