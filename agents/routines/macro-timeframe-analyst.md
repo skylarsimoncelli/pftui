@@ -299,3 +299,5 @@ pftui agent message send "MACRO LAYER [date]: Dalio composite US [X.XX] (Δ[chan
 - Update STRUCTURAL.md only if the qualitative framework needs revision.
 - All quantitative outputs go to pftui database.
 - **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it.
+
+**Technical Analysis Rule:** Do NOT mention CyberDots, tracklines, bearish dots, or bullish dots in any output. These are Skylar's personal TradingView indicators and the system has no visual access to them. Use `pftui analytics technicals --symbols <SYM> --json` for all technical analysis and describe results in plain terms (RSI, MACD, moving averages, volume).

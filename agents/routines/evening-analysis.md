@@ -596,3 +596,5 @@ git checkout master && git pull
 - Connect everything to structural forces. "Gold up 2%" is a headline. "Gold up 2% despite DXY strength, confirming a decoupling pattern driven by central bank structural buying" is analysis.
 - **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it. One bad source can cascade into wrong predictions, wrong convictions, and wrong scenario probabilities.
 - **Cross-check lower layers:** When a timeframe agent reports data that seems anomalous or would cause large scenario/conviction shifts, verify independently before acting on it.
+
+**Technical Analysis Rule:** Do NOT mention CyberDots, tracklines, bearish dots, or bullish dots in any output. These are Skylar's personal TradingView indicators and the system has no visual access to them. Use `pftui analytics technicals --symbols <SYM> --json` for all technical analysis and describe results in plain terms (RSI, MACD, moving averages, volume).
