@@ -6,12 +6,6 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Fix pftui data news returning NEWS_UNAVAIL — primary feed completely down
-**Source:** evening-analyst (Apr 9, 80/78 — explicit P1 flag: "pftui data news feed returning NEWS_UNAVAIL - primary signal source unavailable for 24h news"). Corroborates Apr 9 evening analysis system health assessment: "pftui data news: Unavailable (returned NEWS_UNAVAIL). Filled by web_search and web_fetch this session."
-**Why:** `pftui data news` returned `NEWS_UNAVAIL` for the entire Apr 9 evening session, forcing complete fallback to `web_search` for all breaking news (ceasefire details, Fed minutes, gold/silver prices). This is distinct from the missing `--breaking` flag feature (P2) — the core news command itself is non-functional. The evening analysis rated this the top system health action item.
-**Scope:** Diagnose root cause of `NEWS_UNAVAIL` return code in the news fetch pipeline. Check: (1) upstream news source connectivity/auth, (2) DB table state (empty rows vs unreachable table), (3) daemon/scheduled refresh process for the news feed. Ensure the error distinguishes "no results" from "fetch failed" and surfaces a useful diagnostic. Files: `src/commands/news.rs`, `src/data/news.rs`.
-**Effort:** 1–3 hours.
-
 ### [Feedback] Fix FRED fallback activation logic — stale series persist despite shipped PRs
 **Source:** medium-timeframe-analyst (Apr 9, 68/76 — "FRED economy data was 67+ days stale on critical series: CPI 67d, PPI 67d, GDP 190d, PCE 98d"). evening-analyst (Apr 9). medium-agent (Apr 7, 72/78). evening-analyst (Apr 7, 72/75). Persistent across 5+ sessions.
 **Why:** PRs #649 (DGS10 Yahoo Finance fallback), #650 (CPI/PPI BLS fallback), and #651 (GDPNow fallback) all shipped, but agents continue reporting the same FRED series as stale: CPI 67 days, PPI 67 days, GDP 190 days, PCE 98 days, GDPNow 98 days, DGS10 4 days. The fallback logic is clearly not activating. This is the single highest-impact persistent data quality issue — stale macro series degrade every report across all agent layers.

@@ -5,6 +5,34 @@ use crate::commands::news_sentiment;
 use crate::db::backend::BackendConnection;
 use crate::db::news_cache::{get_latest_news_backend, NewsEntry};
 
+fn news_empty_diagnostics(backend: &BackendConnection) -> serde_json::Value {
+    let rss_last_fetch =
+        crate::db::news_cache::latest_fetched_at_by_source_type_backend(backend, "rss")
+            .ok()
+            .flatten();
+    let brave_last_fetch =
+        crate::db::news_cache::latest_fetched_at_by_source_type_backend(backend, "brave")
+            .ok()
+            .flatten();
+
+    let likely_reason = match (rss_last_fetch.as_ref(), brave_last_fetch.as_ref()) {
+        (None, None) => "news cache empty; refresh has not successfully stored RSS or Brave articles yet",
+        (None, Some(_)) => "news cache has Brave articles only; RSS ingest may be failing or disabled",
+        (Some(_), None) => "news cache has RSS articles only; Brave news is unavailable or unconfigured",
+        (Some(_), Some(_)) => "news cache is filtered empty for the requested query or all cached articles expired",
+    };
+
+    json!({
+        "articles": [],
+        "status": "empty",
+        "error": likely_reason,
+        "diagnostics": {
+            "rss_last_fetch": rss_last_fetch,
+            "brave_last_fetch": brave_last_fetch,
+        }
+    })
+}
+
 /// Run the `pftui news` command.
 ///
 /// In JSON mode, this always returns valid JSON and exit 0, even when the
@@ -45,9 +73,24 @@ pub fn run(
 
     if entries.is_empty() {
         if json {
-            println!("[]");
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&news_empty_diagnostics(backend)).unwrap_or_else(|_| {
+                    r#"{"articles":[],"status":"empty","error":"news cache empty"}"#.to_string()
+                })
+            );
         } else {
             println!("No cached news entries. Run `pftui refresh` first.");
+            let diagnostics = news_empty_diagnostics(backend);
+            if let Some(reason) = diagnostics.get("error").and_then(|v| v.as_str()) {
+                println!("Reason: {reason}");
+            }
+            if let Some(rss_last_fetch) = diagnostics["diagnostics"]["rss_last_fetch"].as_str() {
+                println!("Last RSS fetch: {rss_last_fetch}");
+            }
+            if let Some(brave_last_fetch) = diagnostics["diagnostics"]["brave_last_fetch"].as_str() {
+                println!("Last Brave fetch: {brave_last_fetch}");
+            }
         }
         return Ok(());
     }
@@ -276,6 +319,21 @@ mod tests {
         // JSON mode with empty cache should return Ok (exit 0), not error
         let result = run(&backend, None, None, None, 20, false, true);
         assert!(result.is_ok(), "JSON mode should not fail on empty cache");
+    }
+
+    #[test]
+    fn test_news_empty_diagnostics_reports_empty_status() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        let diagnostics = news_empty_diagnostics(&backend);
+        assert_eq!(diagnostics["status"], "empty");
+        assert!(diagnostics["articles"]
+            .as_array()
+            .is_some_and(|articles| articles.is_empty()));
+        assert!(diagnostics["error"]
+            .as_str()
+            .is_some_and(|msg| msg.contains("news cache empty")));
     }
 
     #[test]
