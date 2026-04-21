@@ -6,12 +6,6 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Fix daily_change null for commodity positions in portfolio brief
-**Source:** low-agent (Apr 7, 72/74).
-**Why:** `portfolio brief --json` returns `null` for `change_1d` on commodity positions (SI=F, GC=F) while `analytics movers` returns correct daily % for the same symbols. Agents building on portfolio brief miss the commodity move signal.
-**Scope:** Trace `change_1d` population for commodity positions in `portfolio brief`. Likely the daily change fetch doesn't cover futures symbols. Files: `src/commands/brief.rs`, `src/data/prices.rs`.
-**Effort:** 1–2 hours.
-
 ### [Feedback] Fix pftui data news returning NEWS_UNAVAIL — primary feed completely down
 **Source:** evening-analyst (Apr 9, 80/78 — explicit P1 flag: "pftui data news feed returning NEWS_UNAVAIL - primary signal source unavailable for 24h news"). Corroborates Apr 9 evening analysis system health assessment: "pftui data news: Unavailable (returned NEWS_UNAVAIL). Filled by web_search and web_fetch this session."
 **Why:** `pftui data news` returned `NEWS_UNAVAIL` for the entire Apr 9 evening session, forcing complete fallback to `web_search` for all breaking news (ceasefire details, Fed minutes, gold/silver prices). This is distinct from the missing `--breaking` flag feature (P2) — the core news command itself is non-functional. The evening analysis rated this the top system health action item.
