@@ -294,17 +294,48 @@ fn build_overnight_changes(
     changes
 }
 
+fn split_cached_quotes(
+    cached: Vec<crate::models::price::PriceQuote>,
+) -> (HashMap<String, Decimal>, HashMap<String, Decimal>) {
+    let mut prices = HashMap::new();
+    let mut previous_close = HashMap::new();
+
+    for quote in cached {
+        if let Some(prev) = quote.previous_close {
+            previous_close.insert(quote.symbol.clone(), prev);
+        }
+        prices.insert(quote.symbol, quote.price);
+    }
+
+    (prices, previous_close)
+}
+
+fn enrich_hist_1d_with_cached_previous_close(
+    hist_1d: &HashMap<String, Decimal>,
+    previous_close: &HashMap<String, Decimal>,
+) -> HashMap<String, Decimal> {
+    let mut merged = hist_1d.clone();
+    for (symbol, prev_close) in previous_close {
+        if *prev_close > dec!(0) {
+            merged.entry(symbol.clone()).or_insert(*prev_close);
+        }
+    }
+    merged
+}
+
 /// Agent mode: single comprehensive JSON blob
 fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     let cached = get_all_cached_prices(conn)?;
-    let prices: HashMap<String, Decimal> =
-        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+    let (prices, previous_close) = split_cached_quotes(cached);
 
     let today = Utc::now().date_naive();
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     let symbols: Vec<String> = prices.keys().cloned().collect();
-    let hist_1d = get_prices_at_date(conn, &symbols, &yesterday_str).unwrap_or_default();
+    let hist_1d = enrich_hist_1d_with_cached_previous_close(
+        &get_prices_at_date(conn, &symbols, &yesterday_str).unwrap_or_default(),
+        &previous_close,
+    );
 
     // Load technicals for all symbols
     let technicals_data = compute_technicals_for_symbols(conn, &symbols);
@@ -522,16 +553,17 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
 
 fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Result<()> {
     let cached = crate::db::price_cache::get_all_cached_prices_backend(backend)?;
-    let prices: HashMap<String, Decimal> =
-        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+    let (prices, previous_close) = split_cached_quotes(cached);
 
     let today = Utc::now().date_naive();
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     let symbols: Vec<String> = prices.keys().cloned().collect();
-    let hist_1d =
-        crate::db::price_history::get_prices_at_date_backend(backend, &symbols, &yesterday_str)
-            .unwrap_or_default();
+    let hist_1d = enrich_hist_1d_with_cached_previous_close(
+        &crate::db::price_history::get_prices_at_date_backend(backend, &symbols, &yesterday_str)
+            .unwrap_or_default(),
+        &previous_close,
+    );
     let technicals_data = compute_technicals_for_symbols_backend(backend, &symbols);
 
     let base = &config.base_currency;
@@ -1560,15 +1592,17 @@ fn run_internal(
         eprintln!("Note: cached-only mode enabled; brief is rendered from local cache.");
     }
     let cached = get_all_cached_prices(conn)?;
-    let prices: HashMap<String, Decimal> =
-        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+    let (prices, previous_close) = split_cached_quotes(cached);
 
     // Get 1-day historical prices for top movers
     let today = Utc::now().date_naive();
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     let symbols: Vec<String> = prices.keys().cloned().collect();
-    let hist_1d = get_prices_at_date(conn, &symbols, &yesterday_str).unwrap_or_default();
+    let hist_1d = enrich_hist_1d_with_cached_previous_close(
+        &get_prices_at_date(conn, &symbols, &yesterday_str).unwrap_or_default(),
+        &previous_close,
+    );
 
     // Load price history for technicals if requested
     let technicals_data = if technicals {
@@ -1617,15 +1651,16 @@ fn run_backend_native(
     }
 
     let cached = crate::db::price_cache::get_all_cached_prices_backend(backend)?;
-    let prices: HashMap<String, Decimal> =
-        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+    let (prices, previous_close) = split_cached_quotes(cached);
     let today = Utc::now().date_naive();
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     let symbols: Vec<String> = prices.keys().cloned().collect();
-    let hist_1d =
-        crate::db::price_history::get_prices_at_date_backend(backend, &symbols, &yesterday_str)
-            .unwrap_or_default();
+    let hist_1d = enrich_hist_1d_with_cached_previous_close(
+        &crate::db::price_history::get_prices_at_date_backend(backend, &symbols, &yesterday_str)
+            .unwrap_or_default(),
+        &previous_close,
+    );
 
     let technicals_data = if technicals {
         compute_technicals_for_symbols_backend(backend, &symbols)
@@ -4000,6 +4035,30 @@ mod tests {
 
         let changes = build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
         assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn enrich_hist_1d_uses_cached_previous_close_when_history_missing() {
+        let hist_1d = HashMap::new();
+        let previous_close = HashMap::from([
+            ("GC=F".to_string(), dec!(3225.40)),
+            ("SI=F".to_string(), dec!(0)),
+        ]);
+
+        let merged = enrich_hist_1d_with_cached_previous_close(&hist_1d, &previous_close);
+
+        assert_eq!(merged.get("GC=F"), Some(&dec!(3225.40)));
+        assert!(!merged.contains_key("SI=F"));
+    }
+
+    #[test]
+    fn enrich_hist_1d_preserves_existing_history_over_cached_previous_close() {
+        let hist_1d = HashMap::from([("GC=F".to_string(), dec!(3200.10))]);
+        let previous_close = HashMap::from([("GC=F".to_string(), dec!(3225.40))]);
+
+        let merged = enrich_hist_1d_with_cached_previous_close(&hist_1d, &previous_close);
+
+        assert_eq!(merged.get("GC=F"), Some(&dec!(3200.10)));
     }
 
     // -- Alert deduplication tests --

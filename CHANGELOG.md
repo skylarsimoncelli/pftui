@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-20 — fix: backfill brief 1D commodity changes from cached previous close
+
+- What: `pftui portfolio brief` now enriches its 1-day reference-price map with cached `previous_close` values from `price_cache` whenever the date-based history lookup has no row. That applies to both terminal and `--json` agent brief paths, so commodity futures like `GC=F` and `SI=F` keep a non-null 1D move even when history backfill lags.
+- Why: movers already had a `previous_close` fallback, but portfolio brief only looked at `price_history`, so commodity positions could show `null` for daily change in the brief while the same symbols showed valid moves in `analytics movers`.
+- Files: `src/commands/brief.rs`, `TODO.md`
+- Tests: added focused brief coverage for cached-previous-close enrichment and preservation of real history rows; full `cargo test` passes (`2610 passed, 0 failed, 2 ignored`). `cargo clippy` remains unavailable in this environment because `cargo-clippy` is not installed.
+
 ### 2026-04-20 — fix: normalize `analytics situation update log` timestamps before DB writes
 
 - What: the `scenario_updates` write path now normalizes `next_decision_at` to UTC RFC3339 before either SQLite or Postgres inserts it. Date-only values like `2026-04-20` now serialize consistently, and invalid timestamps fail early with a clear `next_decision_at` error instead of backend-specific database type errors.
