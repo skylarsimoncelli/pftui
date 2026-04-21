@@ -465,6 +465,23 @@ fn fred_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     Ok(false)
 }
 
+fn fred_keyless_fallbacks_need_refresh(backend: &BackendConnection) -> Result<bool> {
+    let observations = economic_cache::get_all_latest_backend(backend)?;
+    if observations.is_empty() {
+        return Ok(true);
+    }
+
+    for series_id in ["DGS10_YAHOO", "GDPNOW_WEB"] {
+        let latest = observations.iter().find(|obs| obs.series_id == series_id);
+        match latest {
+            Some(obs) if !fred::is_series_stale(series_id, &obs.date) => {}
+            _ => return Ok(true),
+        }
+    }
+
+    Ok(false)
+}
+
 /// Check if prediction market contracts need refreshing
 fn contracts_need_refresh(backend: &BackendConnection) -> Result<bool> {
     match prediction_contracts::get_last_update_backend(backend)? {
@@ -1014,8 +1031,13 @@ fn run_pipeline(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(String::from);
-    let fred_due =
-        plan.fred && fred_api_key_str.is_some() && fred_needs_refresh(backend).unwrap_or(true);
+    let fred_due = if !plan.fred {
+        false
+    } else if fred_api_key_str.is_some() {
+        fred_needs_refresh(backend).unwrap_or(true)
+    } else {
+        fred_keyless_fallbacks_need_refresh(backend).unwrap_or(true)
+    };
     let worldbank_due = plan.worldbank && worldbank_needs_refresh(backend).unwrap_or(true);
     let comex_due = plan.comex && comex_needs_refresh(backend).unwrap_or(true);
 
@@ -1131,6 +1153,19 @@ fn run_pipeline(
             let api_key = fred_api_key_str.as_deref().unwrap_or("");
             let start = Instant::now();
             let mut results = Vec::new();
+
+            if api_key.is_empty() {
+                match fred::fetch_dgs10_yahoo_fallback().await {
+                    Ok(fallback) => results.push(("DGS10_YAHOO", Ok(vec![fallback]))),
+                    Err(e) => results.push(("DGS10_YAHOO", Err(e))),
+                }
+                match fred::fetch_gdpnow_web_fallback().await {
+                    Ok(fallback) => results.push(("GDPNOW_WEB", Ok(vec![fallback]))),
+                    Err(e) => results.push(("GDPNOW_WEB", Err(e))),
+                }
+                return Some((results, start.elapsed()));
+            }
+
             for series in fred::FRED_SERIES {
                 match fred::fetch_series(api_key, series.id, 24).await {
                     Ok(obs) if !obs.is_empty() => {
@@ -3132,24 +3167,6 @@ fn store_fred_result(
     data: FredFetchData,
     dag_result: &mut RefreshResult,
 ) {
-    if !has_key {
-        info_ln!(verbose, "⊘ FRED (no API key configured)");
-        dag_result.add(SourceResult {
-            name: "fred".to_string(),
-            label: "FRED".to_string(),
-            status: SourceStatus::Skipped,
-            items_attempted: None,
-            items_failed: None,
-            failed_symbols: None,
-            items_updated: None,
-            duration_ms: 0,
-            reason: Some("no API key".to_string()),
-            age_minutes: None,
-            error: None,
-            detail: None,
-        });
-        return;
-    }
     if due {
         if let Some((results, elapsed)) = data {
             let mut updated = 0usize;
@@ -3193,7 +3210,11 @@ fn store_fred_result(
                         warn_ln!(verbose, "FRED series {} fetch failed (using cache fallback): {}", series_id, e);
                         failed_series.push(series_id.to_string());
                         // Check if we have cached data for this series
-                        if economic_cache::get_latest_backend(backend, series_id).is_ok() {
+                        if economic_cache::get_latest_backend(backend, series_id)
+                            .ok()
+                            .flatten()
+                            .is_some()
+                        {
                             cache_fallback_count += 1;
                         }
                     }
@@ -3203,11 +3224,9 @@ fn store_fred_result(
             let status = if failed_series.is_empty() {
                 SourceStatus::Ok
             } else if updated > 0 {
-                // Partial success — some series updated, some fell back to cache
-                SourceStatus::Ok
+                SourceStatus::PartialSuccess
             } else {
-                // All series failed — degraded, relying entirely on cache
-                SourceStatus::Ok // still "ok" because cache provides data
+                SourceStatus::Failed
             };
 
             let detail_msg = if failed_series.is_empty() {
@@ -3242,18 +3261,26 @@ fn store_fred_result(
                 label: "FRED".to_string(),
                 status,
                 items_attempted: None,
-            items_failed: None,
-            failed_symbols: None,
-            items_updated: Some(updated),
+                items_failed: Some(failed_series.len()),
+                failed_symbols: Some(failed_series.clone()),
+                items_updated: Some(updated),
                 duration_ms: elapsed.as_millis() as u64,
                 reason: None,
                 age_minutes: None,
-                error: if failed_series.is_empty() { None } else { Some(format!("{} series failed", failed_series.len())) },
+                error: if failed_series.is_empty() {
+                    None
+                } else {
+                    Some(format!("{} series failed", failed_series.len()))
+                },
                 detail: detail_msg,
             });
         }
     } else if in_plan {
-        info_ln!(verbose, "⊘ FRED (fresh, skipping)");
+        if has_key {
+            info_ln!(verbose, "⊘ FRED (fresh, skipping)");
+        } else {
+            info_ln!(verbose, "⊘ FRED (keyless fallbacks fresh, skipping)");
+        }
         dag_result.add(SourceResult {
             name: "fred".to_string(),
             label: "FRED".to_string(),
@@ -3263,10 +3290,18 @@ fn store_fred_result(
             failed_symbols: None,
             items_updated: None,
             duration_ms: 0,
-            reason: Some("fresh".to_string()),
+            reason: Some(if has_key {
+                "fresh".to_string()
+            } else {
+                "keyless fallbacks fresh".to_string()
+            }),
             age_minutes: None,
             error: None,
-            detail: None,
+            detail: if has_key {
+                None
+            } else {
+                Some("primary FRED series require an API key".to_string())
+            },
         });
     } else {
         info_ln!(verbose, "⊘ FRED (cadence deferred)");
@@ -4799,6 +4834,30 @@ mod tests {
         const _: () = assert!(YAHOO_MAX_CONCURRENT >= 1 && YAHOO_MAX_CONCURRENT <= 10);
     }
 
+    #[test]
+    fn fred_keyless_fallbacks_need_refresh_only_tracks_supported_series() {
+        let conn = crate::db::open_in_memory();
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+
+        assert!(fred_keyless_fallbacks_need_refresh(&backend).unwrap());
+
+        let today = chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        for (series_id, value) in [("DGS10_YAHOO", dec!(4.21)), ("GDPNOW_WEB", dec!(2.1))] {
+            economic_cache::upsert_observation_backend(
+                &backend,
+                &economic_cache::EconomicObservation {
+                    series_id: series_id.to_string(),
+                    date: today.clone(),
+                    value,
+                    fetched_at: "2026-04-21T00:00:00Z".to_string(),
+                },
+            )
+            .unwrap();
+        }
+
+        assert!(!fred_keyless_fallbacks_need_refresh(&backend).unwrap());
+    }
+
     #[tokio::test]
     async fn semaphore_limits_concurrency() {
         use std::sync::Arc;
@@ -4882,5 +4941,87 @@ mod tests {
             .error
             .as_deref()
             .is_some_and(|msg| msg.contains("news ingest degraded")));
+    }
+
+    #[test]
+    fn store_fred_result_persists_keyless_fallback_rows() {
+        let backend = crate::db::backend::BackendConnection::Sqlite {
+            conn: crate::db::open_in_memory(),
+        };
+        let mut dag_result = RefreshResult::new();
+
+        store_fred_result(
+            &backend,
+            false,
+            true,
+            true,
+            false,
+            Some((
+                vec![(
+                    "DGS10_YAHOO",
+                    Ok(vec![crate::data::fred::FredObservation {
+                        series_id: "DGS10_YAHOO".to_string(),
+                        date: chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string(),
+                        value: dec!(4.27),
+                    }]),
+                )],
+                Duration::from_secs(1),
+            )),
+            &mut dag_result,
+        );
+
+        let cached = economic_cache::get_latest_backend(&backend, "DGS10_YAHOO")
+            .unwrap()
+            .expect("fallback row should be cached");
+        assert_eq!(cached.value, dec!(4.27));
+        assert_eq!(dag_result.sources.len(), 1);
+        assert_eq!(dag_result.sources[0].status, SourceStatus::Ok);
+        assert_eq!(dag_result.sources[0].items_updated, Some(1));
+        assert_eq!(dag_result.sources[0].items_failed, Some(0));
+    }
+
+    #[test]
+    fn store_fred_result_marks_failed_when_all_series_fall_back_to_cache() {
+        let backend = crate::db::backend::BackendConnection::Sqlite {
+            conn: crate::db::open_in_memory(),
+        };
+        let mut dag_result = RefreshResult::new();
+
+        economic_cache::upsert_observation_backend(
+            &backend,
+            &economic_cache::EconomicObservation {
+                series_id: "DGS10".to_string(),
+                date: "2026-04-18".to_string(),
+                value: dec!(4.18),
+                fetched_at: "2026-04-18T00:00:00Z".to_string(),
+            },
+        )
+        .unwrap();
+
+        store_fred_result(
+            &backend,
+            false,
+            true,
+            true,
+            true,
+            Some((
+                vec![("DGS10", Err(anyhow::anyhow!("FRED API returned client error 403")))],
+                Duration::from_secs(1),
+            )),
+            &mut dag_result,
+        );
+
+        assert_eq!(dag_result.sources.len(), 1);
+        assert_eq!(dag_result.sources[0].status, SourceStatus::Failed);
+        assert_eq!(dag_result.sources[0].items_updated, Some(0));
+        assert_eq!(dag_result.sources[0].items_failed, Some(1));
+        assert_eq!(
+            dag_result.sources[0].failed_symbols.as_deref(),
+            Some(&["DGS10".to_string()][..])
+        );
+        assert!(dag_result.sources[0]
+            .detail
+            .as_deref()
+            .is_some_and(|msg| msg.contains("cache fallback for 1")));
     }
 }

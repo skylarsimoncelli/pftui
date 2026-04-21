@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-21 — fix: activate keyless FRED fallbacks and report degraded refresh status
+
+- What: `pftui data refresh` now treats `DGS10_YAHOO` and `GDPNOW_WEB` as keyless fallback series with their own freshness checks, so those fallback fetches run even when no `fred_api_key` is configured. The refresh pipeline now persists those fallback rows directly into `economic_cache`, and the FRED source result reports `partial` or `failed` instead of always `ok` when primary series fall back to cache after fetch errors.
+- Why: the shipped fallback code for DGS10 and GDPNow was still gated behind the primary FRED API-key path, so zero-config installs never refreshed those fallback series and stale macro readings persisted across agent sessions. The refresh status was also masking full FRED failure as healthy, which hid the degraded state from operators.
+- Files: `src/commands/refresh.rs`, `TODO.md`
+- Tests: added focused coverage for keyless fallback freshness detection, fallback-cache population after a simulated FRED 403 path, and degraded FRED status reporting. Verified adjacent economy fallback readers still pass targeted tests. Full `cargo test` passes in this environment. `cargo fmt` and `cargo clippy -- -D warnings` could not run here because `rustfmt`/`cargo-clippy` are not installed via `rustup`.
+
 ### 2026-04-21 — fix: surface degraded news feeds instead of silently returning an empty cache
 
 - What: the RSS layer now preserves per-feed failures instead of collapsing them into empty results, `data refresh` marks News as `partial` or `failed` when feeds error or zero articles land, and `pftui data news --json` now returns an explicit diagnostic object when the cache is empty, including last RSS/Brave fetch timestamps.

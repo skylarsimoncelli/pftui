@@ -6,12 +6,6 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Fix FRED fallback activation logic — stale series persist despite shipped PRs
-**Source:** medium-timeframe-analyst (Apr 9, 68/76 — "FRED economy data was 67+ days stale on critical series: CPI 67d, PPI 67d, GDP 190d, PCE 98d"). evening-analyst (Apr 9). medium-agent (Apr 7, 72/78). evening-analyst (Apr 7, 72/75). Persistent across 5+ sessions.
-**Why:** PRs #649 (DGS10 Yahoo Finance fallback), #650 (CPI/PPI BLS fallback), and #651 (GDPNow fallback) all shipped, but agents continue reporting the same FRED series as stale: CPI 67 days, PPI 67 days, GDP 190 days, PCE 98 days, GDPNow 98 days, DGS10 4 days. The fallback logic is clearly not activating. This is the single highest-impact persistent data quality issue — stale macro series degrade every report across all agent layers.
-**Scope:** Re-audit fallback activation conditions in each of PRs #649–#651. Verify: (1) the fallback triggers on FRED 403/timeout *and* on DB row age exceeding threshold — not only on DB absence; (2) the BLS/Yahoo fetched value is being written back to the correct DB table and column; (3) `pftui data economy` reads from the fallback-populated value and not from the stale FRED cache. Add a structured test that simulates FRED returning 403 and confirms the fallback path populates the DB. Files: `src/data/economy.rs`, `src/data/fred.rs`, `src/commands/economy.rs`, fallback modules from #649–#651.
-**Effort:** 2–4 hours.
-
 ### [Feedback] Fix COT Friday retry — still 9 days stale after PR #652
 **Source:** evening-2026-04-09 data integrity audit ("pftui COT data: Stale (report_date: 2026-03-31, nine days old)"). evening-analyst (Apr 9, 80/78 — "COT data is 9 days stale (report_date 2026-03-31), pre-war positioning. Need fresher COT or staleness warning").
 **Why:** PR #652 added COT schedule metadata and Friday auto-refetch. However, the Apr 9 report confirms COT is still reporting 2026-03-31 data — nine days stale and three Fridays after the last ingested report. The April 4 COT release (the first Friday post-March 31) was not auto-ingested. This means the Friday retry logic is not firing, the CFTC URL changed, or the Apr 4 report failed to parse. Pre-war COT positioning is actively misleading — hedge fund positioning changed significantly during the 6-week Iran conflict, making the 1.9th-percentile oil short read unreliable as a current signal.
