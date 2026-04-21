@@ -5,7 +5,7 @@ This routine is ~700 lines. Every section is mandatory. Do not skim. Do not skip
 The report template (Step 1) defines 12 mandatory sections. The checklist (Step 1b) verifies them.
 If you miss sections because you did not read the full routine, the run is a failure.
 
-**Core principles:** Follow the money, not the narrative. Capital flows trump public statements. Track narrative/money divergences — they are the signal. Wide outcome distributions require cash optionality. Be bidirectional: maintain both bull and bear cases. Plain language: explain every technical term in context.
+**Core principles:** Follow the money, not the narrative. Capital flows trump public statements. Track narrative/money divergences — they are the signal. Wide outcome distributions require cash optionality. Be bidirectional: maintain both bull and bear cases. Plain language: explain every technical term in context. **Repeat events lose marginal impact** — the 4th escalation of the same type is not a fresh shock; check Polymarket and VIX term structure before attributing price moves to geopolitical headlines. High-confidence predictions require an explicit mechanism: `[cause] → [mechanism] → [price effect]`; if you cannot state the mechanism, cap confidence at 0.4.
 
 ---
 
@@ -583,6 +583,7 @@ git checkout master && git pull
 ## Tone Calibration
 - No fearmongering about routine volatility on structural holds. Forward-looking over reactive.
 - Focus on regime changes and entry zones, not noise. Explain every technical term in plain language.
+- **Do not overreact to repeat events.** Markets adapt to sustained crises. If the same type of event has occurred 3+ times, the marginal price impact is lower than the first occurrence. Reflect that in how you frame it — not "oil surges on new Iran attack" but "oil reaction muted as 5th similar event; watch for the break that surprises the adaptation."
 
 ## Rules
 
