@@ -6,12 +6,6 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Fix analytics situation update log --driver DB error (triggered_at)
-**Source:** medium-timeframe-analyst (Apr 8, 72/78; Apr 9, 68/76 — recurring). Corroborates medium-agent (Apr 5, 78/82).
-**Why:** `analytics situation update log --driver <text>` throws a `triggered_at` timestamp type mismatch DB error. Confirmed recurring across two sessions (Apr 8 and Apr 9 reports). The `journal scenario update` timestamp bug was fixed (PR prev), but the same bind inconsistency persists on the `analytics situation update log` path — different code path, same root cause. Additionally, the Apr 9 medium-timeframe-analyst flagged `analytics situation update log --situation` returning exit 1 on first attempt with longer detail strings — possible arg parsing or shell escaping issue on the same command path; workaround required short-form strings.
-**Scope:** Trace the `analytics situation update log` write path. Normalize `triggered_at` binds to UTC RFC3339 string on both SQLite and Postgres. Also audit arg parsing for `--situation` and `--detail` flags for length/escaping robustness (no silent truncation or exit 1 on strings with spaces/commas). Files: `src/analytics/situation.rs`, `src/db/situation.rs`.
-**Effort:** < 1 hour.
-
 ### [Feedback] Fix daily_change null for commodity positions in portfolio brief
 **Source:** low-agent (Apr 7, 72/74).
 **Why:** `portfolio brief --json` returns `null` for `change_1d` on commodity positions (SI=F, GC=F) while `analytics movers` returns correct daily % for the same symbols. Agents building on portfolio brief miss the commodity move signal.

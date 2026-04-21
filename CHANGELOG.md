@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-20 — fix: normalize `analytics situation update log` timestamps before DB writes
+
+- What: the `scenario_updates` write path now normalizes `next_decision_at` to UTC RFC3339 before either SQLite or Postgres inserts it. Date-only values like `2026-04-20` now serialize consistently, and invalid timestamps fail early with a clear `next_decision_at` error instead of backend-specific database type errors.
+- Why: the situation update log path had drifted into backend-inconsistent timestamp handling, which made Postgres stricter than SQLite and exposed agents to opaque insert failures on otherwise valid-looking update payloads.
+- Files: `src/db/scenarios.rs`, `TODO.md`
+- Tests: added focused `scenario_updates` coverage for date normalization and invalid timestamp rejection; full `cargo test` passes (`2608 passed, 0 failed, 2 ignored`). `cargo clippy` could not run in this environment because `cargo-clippy` is not installed.
+
 ### 2026-04-07 — docs: clarify `agent message ack --to` help text
 
 - What: the CLI help for `pftui agent message ack` and `ack-all` now explicitly says that `--to` expects a recipient agent name, with concrete examples like `--to morning-brief`.

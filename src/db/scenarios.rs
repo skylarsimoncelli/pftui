@@ -1,5 +1,5 @@
-use anyhow::Result;
-use chrono::Utc;
+use anyhow::{bail, Result};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -570,12 +570,62 @@ pub fn add_update(
     next_decision: Option<&str>,
     next_decision_at: Option<&str>,
 ) -> Result<i64> {
+    let next_decision_at = normalize_optional_timestamp(next_decision_at)?;
     conn.execute(
         "INSERT INTO scenario_updates (scenario_id, branch_id, headline, detail, severity, source, source_agent, next_decision, next_decision_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        params![scenario_id, branch_id, headline, detail, severity, source, source_agent, next_decision, next_decision_at],
+        params![
+            scenario_id,
+            branch_id,
+            headline,
+            detail,
+            severity,
+            source,
+            source_agent,
+            next_decision,
+            next_decision_at
+        ],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+fn normalize_optional_timestamp(raw: Option<&str>) -> Result<Option<String>> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    normalize_timestamp(raw).map(Some)
+}
+
+fn normalize_timestamp(raw: &str) -> Result<String> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
+        return Ok(dt.with_timezone(&Utc).to_rfc3339());
+    }
+    if let Ok(dt) = DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f%#z") {
+        return Ok(dt.with_timezone(&Utc).to_rfc3339());
+    }
+    if let Ok(dt) = DateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.f%#z") {
+        return Ok(dt.with_timezone(&Utc).to_rfc3339());
+    }
+    if let Ok(dt) = DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%#z") {
+        return Ok(dt.with_timezone(&Utc).to_rfc3339());
+    }
+    if let Ok(dt) = DateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%#z") {
+        return Ok(dt.with_timezone(&Utc).to_rfc3339());
+    }
+    if let Ok(dt) = NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S") {
+        return Ok(DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc).to_rfc3339());
+    }
+    if let Ok(date) = NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
+        let dt = date
+            .and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("invalid date '{}'", raw))?;
+        return Ok(DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc).to_rfc3339());
+    }
+
+    bail!(
+        "invalid next_decision_at '{}'; expected RFC3339, YYYY-MM-DD, or a timestamp with timezone",
+        raw
+    )
 }
 
 pub fn list_updates(
@@ -2212,6 +2262,7 @@ fn add_update_postgres(
     next_decision_at: Option<&str>,
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
+    let next_decision_at = normalize_optional_timestamp(next_decision_at)?;
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO scenario_updates (scenario_id, branch_id, headline, detail, severity, source, source_agent, next_decision, next_decision_at)
@@ -3091,6 +3142,58 @@ mod tests {
         let counts = count_updates_batch(&conn, &[s1, s2])?;
         assert_eq!(*counts.get(&s1).unwrap_or(&0), 3);
         assert_eq!(*counts.get(&s2).unwrap_or(&0), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn add_update_normalizes_next_decision_at_date() -> Result<()> {
+        let conn = test_db()?;
+        let scenario_id = add_scenario(&conn, "Scenario A", 50.0, None, None, None, None)?;
+
+        add_update(
+            &conn,
+            scenario_id,
+            None,
+            "Update 1",
+            Some("Detail with spaces, commas, and symbols."),
+            "normal",
+            None,
+            None,
+            Some("Re-check after CPI"),
+            Some("2026-04-20"),
+        )?;
+
+        let updates = list_updates(&conn, scenario_id, Some(1))?;
+        assert_eq!(
+            updates[0].next_decision_at.as_deref(),
+            Some("2026-04-20T00:00:00+00:00")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn add_update_rejects_invalid_next_decision_at() -> Result<()> {
+        let conn = test_db()?;
+        let scenario_id = add_scenario(&conn, "Scenario A", 50.0, None, None, None, None)?;
+
+        let err = add_update(
+            &conn,
+            scenario_id,
+            None,
+            "Update 1",
+            None,
+            "normal",
+            None,
+            None,
+            None,
+            Some("tomorrow morning maybe"),
+        )
+        .expect_err("invalid timestamp should fail");
+
+        assert!(
+            err.to_string().contains("invalid next_decision_at"),
+            "unexpected error: {err}"
+        );
         Ok(())
     }
 }
