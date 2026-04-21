@@ -22,6 +22,19 @@ pub struct NewsItem {
     pub published_at: i64, // Unix timestamp
 }
 
+#[derive(Debug, Clone)]
+pub struct FeedError {
+    pub feed_name: String,
+    pub feed_url: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FeedFetchReport {
+    pub items: Vec<NewsItem>,
+    pub errors: Vec<FeedError>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewsCategory {
     Macro,
@@ -137,30 +150,48 @@ pub async fn fetch_feed(feed: &RssFeed) -> Result<Vec<NewsItem>> {
 
 /// Fetch all configured feeds concurrently.
 pub async fn fetch_all_feeds(feeds: &[RssFeed]) -> Vec<NewsItem> {
+    fetch_all_feeds_detailed(feeds).await.items
+}
+
+/// Fetch all configured feeds concurrently with per-feed diagnostics.
+pub async fn fetch_all_feeds_detailed(feeds: &[RssFeed]) -> FeedFetchReport {
     let mut handles = Vec::new();
 
     for feed in feeds {
         let feed = feed.clone();
         handles.push(tokio::spawn(async move {
-            fetch_feed(&feed).await.unwrap_or_default()
+            match fetch_feed(&feed).await {
+                Ok(items) => Ok(items),
+                Err(err) => Err(FeedError {
+                    feed_name: feed.name,
+                    feed_url: feed.url,
+                    error: format!("{err:#}"),
+                }),
+            }
         }));
     }
 
-    let mut all_items = Vec::new();
+    let mut report = FeedFetchReport::default();
     for handle in handles {
-        if let Ok(items) = handle.await {
-            all_items.extend(items);
+        match handle.await {
+            Ok(Ok(items)) => report.items.extend(items),
+            Ok(Err(err)) => report.errors.push(err),
+            Err(join_err) => report.errors.push(FeedError {
+                feed_name: "unknown".to_string(),
+                feed_url: "".to_string(),
+                error: format!("RSS task join failure: {join_err}"),
+            }),
         }
     }
 
     // Sort by timestamp descending (newest first)
-    all_items.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+    report.items.sort_by(|a, b| b.published_at.cmp(&a.published_at));
 
     // Deduplicate by URL (keep first occurrence = newest)
     let mut seen_urls = std::collections::HashSet::new();
-    all_items.retain(|item| seen_urls.insert(item.url.clone()));
+    report.items.retain(|item| seen_urls.insert(item.url.clone()));
 
-    all_items
+    report
 }
 
 /// Parse RFC 2822 date string to Unix timestamp.
@@ -196,5 +227,12 @@ mod tests {
     fn test_category_as_str() {
         assert_eq!(NewsCategory::Macro.as_str(), "macro");
         assert_eq!(NewsCategory::Crypto.as_str(), "crypto");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_all_feeds_detailed_empty_input() {
+        let report = fetch_all_feeds_detailed(&[]).await;
+        assert!(report.items.is_empty());
+        assert!(report.errors.is_empty());
     }
 }

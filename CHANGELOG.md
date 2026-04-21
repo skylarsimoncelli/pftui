@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-21 — fix: surface degraded news feeds instead of silently returning an empty cache
+
+- What: the RSS layer now preserves per-feed failures instead of collapsing them into empty results, `data refresh` marks News as `partial` or `failed` when feeds error or zero articles land, and `pftui data news --json` now returns an explicit diagnostic object when the cache is empty, including last RSS/Brave fetch timestamps.
+- Why: the news pipeline could report success while swallowing RSS feed failures and leaving the cache empty, which made agents see an effectively unavailable news source without any machine-readable explanation. As of April 21, 2026, live checks also confirmed at least one degraded upstream feed (`Bloomberg Commodities` returned HTTP 404), so surfacing source-level diagnostics is necessary.
+- Files: `src/data/rss.rs`, `src/commands/refresh.rs`, `src/commands/news.rs`, `TODO.md`
+- Tests: added focused coverage for empty-news diagnostics, detailed RSS fetch reporting, and failed-news refresh status; full `cargo test` passes (`2613 passed, 0 failed, 2 ignored`). `cargo clippy` could not run in this environment because `cargo-clippy` is not installed.
+
 ### 2026-04-20 — fix: backfill brief 1D commodity changes from cached previous close
 
 - What: `pftui portfolio brief` now enriches its 1-day reference-price map with cached `previous_close` values from `price_cache` whenever the date-based history lookup has no row. That applies to both terminal and `--json` agent brief paths, so commodity futures like `GC=F` and `SI=F` keep a non-null 1D move even when history backfill lags.

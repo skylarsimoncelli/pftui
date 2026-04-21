@@ -1202,7 +1202,7 @@ fn run_pipeline(
             }
             let start = Instant::now();
             let feeds = rss::default_feeds();
-            Some((rss::fetch_all_feeds(&feeds).await, start.elapsed()))
+            Some((rss::fetch_all_feeds_detailed(&feeds).await, start.elapsed()))
         };
 
         let brave_news_fut = async {
@@ -2513,7 +2513,7 @@ fn store_news_result(
     rss_refresh: bool,
     brave_refresh: bool,
     in_plan: bool,
-    rss_data: Option<(Vec<crate::data::rss::NewsItem>, Duration)>,
+    rss_data: Option<(crate::data::rss::FeedFetchReport, Duration)>,
     brave_news_data: BraveNewsData,
     dag_result: &mut RefreshResult,
 ) {
@@ -2521,6 +2521,8 @@ fn store_news_result(
     let mut brave_inserted = 0usize;
     let mut brave_query_count = 0usize;
     let mut news_elapsed = Duration::ZERO;
+    let mut rss_feed_errors: Vec<String> = Vec::new();
+    let mut brave_query_errors = 0usize;
 
     if let Some((brave_results, elapsed)) = brave_news_data {
         brave_query_count = brave_results.len();
@@ -2550,17 +2552,27 @@ fn store_news_result(
                     }
                 }
                 Err(e) => {
+                    brave_query_errors += 1;
                     warn_ln!(verbose, "Brave news query failed ({}): {}", query, e);
                 }
             }
         }
     }
 
-    if let Some((items, elapsed)) = rss_data {
+    if let Some((report, elapsed)) = rss_data {
         if elapsed > news_elapsed {
             news_elapsed = elapsed;
         }
-        for item in &items {
+        for err in &report.errors {
+            warn_ln!(
+                verbose,
+                "RSS feed failed ({}): {}",
+                err.feed_name,
+                err.error
+            );
+            rss_feed_errors.push(format!("{} ({})", err.feed_name, err.feed_url));
+        }
+        for item in &report.items {
             let category_str = match item.category {
                 rss::NewsCategory::Macro => "macro",
                 rss::NewsCategory::Crypto => "crypto",
@@ -2588,36 +2600,99 @@ fn store_news_result(
     }
 
     if brave_refresh || rss_refresh {
+        let total_attempted = brave_query_count + rss_feed_errors.len();
+        let total_failed = brave_query_errors + rss_feed_errors.len();
+        let status = if inserted == 0 && total_failed > 0 {
+            SourceStatus::Failed
+        } else if total_failed > 0 || inserted == 0 {
+            SourceStatus::PartialSuccess
+        } else {
+            SourceStatus::Ok
+        };
+        let error = if total_failed > 0 {
+            Some(format!(
+                "news ingest degraded: {} feed/query failures, {} article(s) inserted",
+                total_failed, inserted
+            ))
+        } else if inserted == 0 {
+            Some("news ingest returned zero articles".to_string())
+        } else {
+            None
+        };
+        let detail = if !rss_feed_errors.is_empty() {
+            Some(format!(
+                "rss feed failures: {}",
+                rss_feed_errors.join(" | ")
+            ))
+        } else {
+            None
+        };
         if brave_refresh && rss_refresh {
             info_ln!(
                 verbose,
-                "✓ News ({} articles from {} Brave queries + RSS)",
+                "{} News ({} articles from {} Brave queries + RSS, {} failures)",
+                match status {
+                    SourceStatus::Ok => "✓",
+                    SourceStatus::PartialSuccess => "⚠",
+                    SourceStatus::Failed => "✗",
+                    SourceStatus::Skipped => "⊘",
+                    SourceStatus::Deferred => "↷",
+                },
                 inserted,
-                brave_query_count
+                brave_query_count,
+                total_failed
             );
         } else if brave_refresh {
             info_ln!(
                 verbose,
-                "✓ News ({} articles from {} Brave queries)",
+                "{} News ({} articles from {} Brave queries, {} failures)",
+                match status {
+                    SourceStatus::Ok => "✓",
+                    SourceStatus::PartialSuccess => "⚠",
+                    SourceStatus::Failed => "✗",
+                    SourceStatus::Skipped => "⊘",
+                    SourceStatus::Deferred => "↷",
+                },
                 brave_inserted,
-                brave_query_count
+                brave_query_count,
+                total_failed
             );
         } else {
-            info_ln!(verbose, "✓ News ({} articles via RSS)", inserted);
+            info_ln!(
+                verbose,
+                "{} News ({} articles via RSS, {} feed failures)",
+                match status {
+                    SourceStatus::Ok => "✓",
+                    SourceStatus::PartialSuccess => "⚠",
+                    SourceStatus::Failed => "✗",
+                    SourceStatus::Skipped => "⊘",
+                    SourceStatus::Deferred => "↷",
+                },
+                inserted,
+                rss_feed_errors.len()
+            );
         }
         dag_result.add(SourceResult {
             name: "news".to_string(),
             label: "News".to_string(),
-            status: SourceStatus::Ok,
-            items_attempted: None,
-            items_failed: None,
+            status,
+            items_attempted: if total_attempted > 0 {
+                Some(total_attempted)
+            } else {
+                None
+            },
+            items_failed: if total_failed > 0 {
+                Some(total_failed)
+            } else {
+                None
+            },
             failed_symbols: None,
             items_updated: Some(inserted),
             duration_ms: news_elapsed.as_millis() as u64,
             reason: None,
             age_minutes: None,
-            error: None,
-            detail: None,
+            error,
+            detail,
         });
     } else if in_plan {
         info_ln!(verbose, "⊘ News (fresh, skipping)");
@@ -4769,5 +4844,43 @@ mod tests {
         // An invalid symbol should return an Err, not panic
         let result = fetch_yahoo_price_with_timeout("ZZZZ_NONEXISTENT_SYMBOL_999").await;
         assert!(result.is_err(), "expected error for invalid symbol");
+    }
+
+    #[test]
+    fn store_news_result_marks_failed_when_all_rss_feeds_fail() {
+        let backend = crate::db::backend::BackendConnection::Sqlite {
+            conn: crate::db::open_in_memory(),
+        };
+        let mut dag_result = RefreshResult::new();
+
+        store_news_result(
+            &backend,
+            false,
+            true,
+            false,
+            true,
+            Some((
+                rss::FeedFetchReport {
+                    items: vec![],
+                    errors: vec![rss::FeedError {
+                        feed_name: "Bloomberg Commodities".to_string(),
+                        feed_url: "https://feeds.bloomberg.com/commodities/news.rss".to_string(),
+                        error: "404 Not Found".to_string(),
+                    }],
+                },
+                Duration::from_secs(1),
+            )),
+            None,
+            &mut dag_result,
+        );
+
+        assert_eq!(dag_result.sources.len(), 1);
+        assert_eq!(dag_result.sources[0].status, SourceStatus::Failed);
+        assert_eq!(dag_result.sources[0].items_updated, Some(0));
+        assert_eq!(dag_result.sources[0].items_failed, Some(1));
+        assert!(dag_result.sources[0]
+            .error
+            .as_deref()
+            .is_some_and(|msg| msg.contains("news ingest degraded")));
     }
 }
