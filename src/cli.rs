@@ -445,6 +445,16 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show Fear & Greed indices with cached history
+    FearGreed {
+        /// Include up to N daily history points per index
+        #[arg(long)]
+        history: Option<u32>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// Manage economic/geopolitical calendar events
     ///
     /// Without a subcommand, lists upcoming events (same as `calendar list`).
@@ -8860,6 +8870,27 @@ mod tests {
         assert!(auto_stub);
         assert!(!unresolved);
         assert!(!dry_run);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_fear_greed_history_json() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "fear-greed",
+            "--history",
+            "14",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::FearGreed { history, json } = command else {
+            panic!("expected fear-greed command");
+        };
+        assert_eq!(history, Some(14));
         assert!(json);
     }
 

@@ -14,6 +14,7 @@ use serde::Serialize;
 
 use crate::commands::prices::{is_cache_stale, is_market_closed};
 use crate::commands::refresh::{self, RefreshPlan};
+use crate::commands::fear_greed::{self, FearGreedReadingView};
 use crate::config::Config;
 use crate::db::backend::BackendConnection;
 use crate::db::news_cache::get_latest_news_backend;
@@ -102,6 +103,8 @@ pub struct SentimentSection {
     pub overall_score: i32,
     pub overall_label: String,
     pub by_category: Vec<CategorySentiment>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fear_greed: Vec<FearGreedReadingView>,
 }
 
 #[derive(Debug, Serialize)]
@@ -448,6 +451,7 @@ pub fn build_snapshot(backend: &BackendConnection) -> Result<MarketSnapshot> {
             overall_score: 0,
             overall_label: "neutral".to_string(),
             by_category: Vec::new(),
+            fear_greed: fear_greed::load_latest_with_fallback(backend)?,
         }
     } else {
         let scored = score_all(&news_entries);
@@ -476,6 +480,7 @@ pub fn build_snapshot(backend: &BackendConnection) -> Result<MarketSnapshot> {
             overall_score: total_score,
             overall_label: overall_label.as_str().to_string(),
             by_category,
+            fear_greed: fear_greed::load_latest_with_fallback(backend)?,
         }
     };
 
@@ -598,6 +603,15 @@ fn print_terminal(snap: &MarketSnapshot) {
             .map(|c| format!("{}:{}", c.category, c.label))
             .collect();
         println!("  {}", cats.join(" | "));
+    }
+    if !snap.sentiment.fear_greed.is_empty() {
+        let indices: Vec<String> = snap
+            .sentiment
+            .fear_greed
+            .iter()
+            .map(|row| format!("{} {} ({})", row.key, row.value, row.classification))
+            .collect();
+        println!("  Fear & Greed: {}", indices.join(" | "));
     }
     println!();
 
@@ -742,6 +756,28 @@ mod tests {
         let snap = build_snapshot(&backend).unwrap();
         assert_eq!(snap.sentiment.overall_label, "neutral");
         assert_eq!(snap.sentiment.overall_score, 0);
+    }
+
+    #[test]
+    fn snapshot_surfaces_fear_greed_readings() {
+        let conn = open_in_memory();
+        let backend = to_backend(conn);
+        crate::db::sentiment_cache::upsert_reading_backend(
+            &backend,
+            &crate::db::sentiment_cache::SentimentReading {
+                index_type: "crypto_fng".to_string(),
+                value: 68,
+                classification: "Greed".to_string(),
+                timestamp: 1_700_000_000,
+                fetched_at: chrono::Utc::now().to_rfc3339(),
+            },
+        )
+        .unwrap();
+
+        let snap = build_snapshot(&backend).unwrap();
+        assert_eq!(snap.sentiment.fear_greed.len(), 1);
+        assert_eq!(snap.sentiment.fear_greed[0].key, "crypto");
+        assert_eq!(snap.sentiment.fear_greed[0].value, 68);
     }
 
     #[test]

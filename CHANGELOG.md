@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-04-22 — feat: add dedicated fear-greed data command
+
+- What: added `pftui data fear-greed` as a dedicated command for the crypto and traditional Fear & Greed readings already maintained in the sentiment cache, with optional `--history` output and normalized JSON/terminal views. `analytics market-snapshot` now also exposes the latest Fear & Greed readings alongside its existing news-tone sentiment summary.
+- Why: agents had the underlying sentiment feed in refresh/storage, but no dedicated CLI path for consuming it directly, and `market-snapshot` did not surface those readings even though they are a key structural sentiment input.
+
 ### 2026-04-22 — feat: add prediction lesson backlog stubs
 
 - What: `pftui journal prediction lessons bulk` now works as a backlog review command when no `--input` file is provided, listing wrong predictions that still lack lessons oldest-first. The same command also supports `--auto-stub` to emit template lesson payloads built from the original claim plus current scoring metadata, so agents only need to fill in the root-cause and going-forward analysis before writing the final JSON. `prediction scorecard --lesson-coverage` now surfaces lesson coverage more prominently in both terminal and JSON output.

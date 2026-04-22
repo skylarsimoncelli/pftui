@@ -87,6 +87,7 @@ pftui
 │   │   └── global
 │   ├── news
 │   ├── sentiment
+│   ├── fear-greed
 │   ├── calendar
 │   ├── fedwatch
 │   ├── economy

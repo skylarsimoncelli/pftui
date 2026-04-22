@@ -33,6 +33,7 @@ pub mod eod;
 pub mod etf_flows;
 pub mod evening_brief;
 pub mod export;
+pub mod fear_greed;
 pub mod fedwatch;
 pub mod futures;
 pub mod global;
