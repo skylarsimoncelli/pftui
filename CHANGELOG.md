@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-04-22 — feat: add partial timeout mode to data refresh
+
+- What: added `pftui data refresh --timeout <secs>`. When the deadline is reached, refresh now returns a structured partial result instead of continuing silently until an external watchdog kills the process. The JSON payload includes top-level `status`, `completed_sources`, `failed_sources`, and `message` fields, and verbose terminal output now reports which sources completed before timeout.
+- Why: agents were seeing `data refresh` die around 90 seconds with no actionable output. A caller-controlled timeout now turns that hard stop into an explicit partial refresh contract that downstream automation can reason about.
+
 ### 2026-04-22 — feat: add live breaking mode to data news
 
 - What: added `pftui data news --breaking` with a `--today` alias. When requested, the command now fetches fresh RSS headlines immediately, supplements them with live Brave news results when a Brave key is configured, stores the fetched items in the news cache, and renders only the freshly fetched set after applying the existing source/search/hours filters.
