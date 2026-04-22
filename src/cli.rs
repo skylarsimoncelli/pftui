@@ -3356,6 +3356,7 @@ pub enum AnalyticsViewsCommand {
     ///   pftui analytics views divergence --json
     ///   pftui analytics views divergence --min-spread 3 --json
     ///   pftui analytics views divergence --asset BTC --json
+    ///   pftui analytics views divergence --layer high --json
     ///   pftui analytics views divergence --limit 5 --json
     Divergence {
         /// Minimum conviction spread to include (default: 2)
@@ -3364,6 +3365,9 @@ pub enum AnalyticsViewsCommand {
         /// Filter to a specific asset
         #[arg(long)]
         asset: Option<String>,
+        /// Filter to divergences where one extreme is this analyst layer: low, medium, high, macro
+        #[arg(long = "layer")]
+        layer: Option<String>,
         /// Maximum results to show
         #[arg(long)]
         limit: Option<usize>,
@@ -5249,6 +5253,8 @@ mod tests {
             "3",
             "--asset",
             "BTC",
+            "--layer",
+            "high",
             "--limit",
             "5",
             "--json",
@@ -5262,6 +5268,7 @@ mod tests {
                         AnalyticsViewsCommand::Divergence {
                             min_spread,
                             asset,
+                            layer,
                             limit,
                             json,
                         },
@@ -5272,6 +5279,7 @@ mod tests {
         };
         assert_eq!(min_spread, 3);
         assert_eq!(asset.as_deref(), Some("BTC"));
+        assert_eq!(layer.as_deref(), Some("high"));
         assert_eq!(limit, Some(5));
         assert!(json);
     }
@@ -5294,6 +5302,7 @@ mod tests {
                         AnalyticsViewsCommand::Divergence {
                             min_spread,
                             asset,
+                            layer,
                             limit,
                             json,
                         },
@@ -5304,6 +5313,7 @@ mod tests {
         };
         assert_eq!(min_spread, 2); // default
         assert!(asset.is_none());
+        assert!(layer.is_none());
         assert!(limit.is_none());
         assert!(json);
     }

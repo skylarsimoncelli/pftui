@@ -2385,12 +2385,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                 cli::AnalyticsViewsCommand::Divergence {
                     min_spread,
                     asset,
+                    layer,
                     limit,
                     json,
                 } => commands::analyst_views::divergence(
                     &backend,
                     min_spread,
                     asset.as_deref(),
+                    layer.as_deref(),
                     limit,
                     json,
                 ),

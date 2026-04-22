@@ -388,10 +388,16 @@ pub fn divergence(
     backend: &BackendConnection,
     min_spread: i64,
     asset: Option<&str>,
+    layer: Option<&str>,
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    let divs = analyst_views::compute_divergence_backend(backend, min_spread, asset, limit)?;
+    if let Some(layer) = layer {
+        analyst_views::validate_analyst(layer)?;
+    }
+
+    let divs =
+        analyst_views::compute_divergence_backend(backend, min_spread, asset, layer, limit)?;
 
     if json_output {
         let summary = json!({
@@ -424,17 +430,30 @@ pub fn divergence(
             "count": divs.len(),
             "min_spread": min_spread,
             "asset_filter": asset,
+            "layer_filter": layer,
         });
         println!("{}", serde_json::to_string_pretty(&summary)?);
     } else if divs.is_empty() {
         if let Some(sym) = asset {
             println!("No divergence found for {} (min spread: {}).", sym.to_uppercase(), min_spread);
+        } else if let Some(layer) = layer {
+            println!(
+                "No analyst view divergences found where one extreme is {} (min spread: {}).",
+                layer,
+                min_spread
+            );
         } else {
             println!("No analyst view divergences found (min spread: {}).", min_spread);
         }
         println!("Divergence requires at least 2 analysts with different conviction scores on the same asset.");
     } else {
-        println!("Analyst View Divergences (min spread: {})\n", min_spread);
+        println!(
+            "Analyst View Divergences (min spread: {}{})\n",
+            min_spread,
+            layer
+                .map(|value| format!(", layer: {}", value))
+                .unwrap_or_default()
+        );
         for d in &divs {
             let bull_sign = if d.most_bullish.conviction > 0 { "+" } else { "" };
             let bear_sign = if d.most_bearish.conviction > 0 { "+" } else { "" };
