@@ -374,7 +374,7 @@ pub fn run(
             println!("  ⟳ Cache stale — auto-refreshing prices...");
         }
         let plan = RefreshPlan::prices_only();
-        let _ = refresh::run_quiet_with_plan(backend, config, false, &plan);
+        let _ = refresh::run_quiet_with_plan(backend, config, false, &plan, None);
         if !json {
             println!("  ✓ Prices refreshed.\n");
         }

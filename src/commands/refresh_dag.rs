@@ -134,6 +134,8 @@ pub enum SourceStatus {
 /// Aggregate result of the entire refresh pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshResult {
+    /// Overall refresh completion state
+    pub status: RefreshRunStatus,
     /// Total wall-clock duration in milliseconds
     pub duration_ms: u64,
     /// Per-source results
@@ -142,23 +144,43 @@ pub struct RefreshResult {
     pub failures: Vec<SourceResult>,
     /// Total items updated across all sources
     pub total_items_updated: usize,
+    /// Source names that reached a terminal result before completion/timeout
+    pub completed_sources: Vec<String>,
+    /// Source names that failed before completion/timeout
+    pub failed_sources: Vec<String>,
+    /// Optional summary message for partial runs
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RefreshRunStatus {
+    Ok,
+    Partial,
 }
 
 impl RefreshResult {
     pub fn new() -> Self {
         Self {
+            status: RefreshRunStatus::Ok,
             duration_ms: 0,
             sources: Vec::new(),
             failures: Vec::new(),
             total_items_updated: 0,
+            completed_sources: Vec::new(),
+            failed_sources: Vec::new(),
+            message: None,
         }
     }
 
     pub fn add(&mut self, result: SourceResult) {
+        self.completed_sources.push(result.name.clone());
         if result.status == SourceStatus::Failed
             || result.status == SourceStatus::PartialSuccess
         {
             self.failures.push(result.clone());
+            self.failed_sources.push(result.name.clone());
         }
         if let Some(n) = result.items_updated {
             self.total_items_updated += n;
@@ -168,6 +190,12 @@ impl RefreshResult {
 
     pub fn finalize(&mut self, total_elapsed: Duration) {
         self.duration_ms = total_elapsed.as_millis() as u64;
+    }
+
+    pub fn finalize_partial(&mut self, total_elapsed: Duration, message: impl Into<String>) {
+        self.status = RefreshRunStatus::Partial;
+        self.duration_ms = total_elapsed.as_millis() as u64;
+        self.message = Some(message.into());
     }
 }
 
@@ -583,10 +611,12 @@ mod tests {
         result.finalize(std::time::Duration::from_millis(3200));
 
         let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["status"], "ok");
         assert_eq!(json["duration_ms"], 3200);
         assert_eq!(json["total_items_updated"], 80);
         assert!(json["sources"].is_array());
         assert!(json["failures"].is_array());
+        assert_eq!(json["completed_sources"][0], "yahoo_prices");
         assert_eq!(json["failures"].as_array().unwrap().len(), 0);
     }
 
@@ -622,9 +652,36 @@ mod tests {
         assert_eq!(result.sources.len(), 1);
         // PartialSuccess should appear in failures for visibility
         assert_eq!(result.failures.len(), 1);
+        assert_eq!(result.completed_sources, vec!["prices".to_string()]);
+        assert_eq!(result.failed_sources, vec!["prices".to_string()]);
         assert_eq!(result.failures[0].status, SourceStatus::PartialSuccess);
         // But items_updated still counted
         assert_eq!(result.total_items_updated, 45);
+    }
+
+    #[test]
+    fn refresh_result_partial_finalization_sets_summary_fields() {
+        let mut result = RefreshResult::new();
+        result.add(SourceResult {
+            name: "news_rss".to_string(),
+            label: "News RSS".to_string(),
+            status: SourceStatus::Ok,
+            items_updated: Some(5),
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
+            duration_ms: 200,
+            reason: None,
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
+        result.finalize_partial(Duration::from_secs(90), "refresh timeout reached after layer 0");
+
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["status"], "partial");
+        assert_eq!(json["message"], "refresh timeout reached after layer 0");
+        assert_eq!(json["completed_sources"][0], "news_rss");
     }
 
     #[test]

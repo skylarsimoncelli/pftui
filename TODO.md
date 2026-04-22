@@ -46,7 +46,7 @@
 **Scope:** Add `--breaking` flag to `data news` (or `data news --today`) that bypasses cache and fetches fresh headlines. Apply higher-priority fetch cadence. Files: `src/commands/news.rs`, `src/data/news.rs`, `src/cli.rs`.
 **Effort:** 2–4 hours.
 
-### [Feedback] Fix data refresh hard timeout with no error output
+### [Done] Fix data refresh hard timeout with no error output
 **Source:** low-timeframe-analyst (Apr 7, 72/78).
 **Why:** `pftui data refresh` was SIGTERMed at ~90s with no error message — agent had no way to know refresh failed, or which sources succeeded vs failed. Fallback to cached data worked, but silent failure is brittle.
 **Scope:** (1) Add signal handler for SIGTERM in `data refresh` to print partial results before exit. (2) Consider `--quick` flag or `--timeout <secs>` to allow agent-controlled timeout. (3) On timeout, emit structured JSON with `{status: "partial", completed_sources: [...], failed_sources: [...]}` instead of hard kill. Files: `src/commands/refresh.rs`, `src/cli.rs`.

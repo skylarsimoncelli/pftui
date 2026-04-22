@@ -283,7 +283,7 @@ pub fn run(
             }
         };
 
-        match refresh::run_quiet_with_plan(&backend, config, false, &plan) {
+        match refresh::run_quiet_with_plan(&backend, config, false, &plan, None) {
             Ok(()) => {
                 let elapsed = start.elapsed().as_secs_f64();
                 tracker.mark_executed(&plan);

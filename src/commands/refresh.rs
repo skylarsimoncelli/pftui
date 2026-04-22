@@ -929,7 +929,7 @@ macro_rules! warn_ln {
 }
 
 pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result<()> {
-    run_with_output(backend, config, notify, true, &RefreshPlan::full())
+    run_with_output(backend, config, notify, true, &RefreshPlan::full(), None)
 }
 
 /// Run refresh with a custom plan (verbose human output).
@@ -938,8 +938,9 @@ pub fn run_with_plan(
     config: &Config,
     notify: bool,
     plan: &RefreshPlan,
+    timeout_secs: Option<u64>,
 ) -> Result<()> {
-    run_with_output(backend, config, notify, true, plan)
+    run_with_output(backend, config, notify, true, plan, timeout_secs)
 }
 
 /// Run refresh with a custom plan and output structured JSON metrics.
@@ -948,14 +949,15 @@ pub fn run_json_with_plan(
     config: &Config,
     notify: bool,
     plan: &RefreshPlan,
+    timeout_secs: Option<u64>,
 ) -> Result<()> {
-    let result = run_pipeline(backend, config, notify, false, plan)?;
+    let result = run_pipeline(backend, config, notify, false, plan, timeout_secs)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
 }
 
 pub fn run_quiet(backend: &BackendConnection, config: &Config, notify: bool) -> Result<()> {
-    run_with_output(backend, config, notify, false, &RefreshPlan::full())
+    run_with_output(backend, config, notify, false, &RefreshPlan::full(), None)
 }
 
 pub fn run_quiet_with_plan(
@@ -963,8 +965,9 @@ pub fn run_quiet_with_plan(
     config: &Config,
     notify: bool,
     plan: &RefreshPlan,
+    timeout_secs: Option<u64>,
 ) -> Result<()> {
-    run_with_output(backend, config, notify, false, plan)
+    run_with_output(backend, config, notify, false, plan, timeout_secs)
 }
 
 fn run_with_output(
@@ -973,8 +976,26 @@ fn run_with_output(
     notify: bool,
     verbose: bool,
     plan: &RefreshPlan,
+    timeout_secs: Option<u64>,
 ) -> Result<()> {
-    let _result = run_pipeline(backend, config, notify, verbose, plan)?;
+    let result = run_pipeline(backend, config, notify, verbose, plan, timeout_secs)?;
+    if result.status == crate::commands::refresh_dag::RefreshRunStatus::Partial && verbose {
+        if let Some(message) = &result.message {
+            info_ln!(verbose, "\n⚠ {}", message);
+        }
+        info_ln!(
+            verbose,
+            "Completed sources before timeout: {}",
+            result.completed_sources.join(", ")
+        );
+        if !result.failed_sources.is_empty() {
+            info_ln!(
+                verbose,
+                "Failed sources before timeout: {}",
+                result.failed_sources.join(", ")
+            );
+        }
+    }
     Ok(())
 }
 
@@ -987,9 +1008,11 @@ fn run_pipeline(
     notify: bool,
     verbose: bool,
     plan: &RefreshPlan,
+    timeout_secs: Option<u64>,
 ) -> Result<RefreshResult> {
     let _lock = RefreshLock::acquire()?;
     let pipeline_start = Instant::now();
+    let deadline = timeout_secs.map(|secs| pipeline_start + Duration::from_secs(secs));
     let mut dag_result = RefreshResult::new();
 
     info_ln!(verbose, "Refreshing selected data sources...\n");
@@ -1369,6 +1392,12 @@ fn run_pipeline(
         });
     }
 
+    if let Some(result) =
+        maybe_stop_for_timeout(deadline, pipeline_start, verbose, &dag_result, "layer 0 FX rates")
+    {
+        return Ok(result);
+    }
+
     // ── Layer 0: Store async-fetched results ───────────────────────────
 
     // Predictions (legacy predictions_cache)
@@ -1487,6 +1516,16 @@ fn run_pipeline(
 
     // On-chain (synchronous)
     store_onchain_result(backend, verbose, plan.onchain, &mut dag_result);
+
+    if let Some(result) = maybe_stop_for_timeout(
+        deadline,
+        pipeline_start,
+        verbose,
+        &dag_result,
+        "layer 0 independent sources",
+    ) {
+        return Ok(result);
+    }
 
     // ── DAG Layer 1: Prices ────────────────────────────────────────────
     let symbols = if plan.prices {
@@ -1890,6 +1929,12 @@ fn run_pipeline(
         });
     }
 
+    if let Some(result) =
+        maybe_stop_for_timeout(deadline, pipeline_start, verbose, &dag_result, "layer 1 prices")
+    {
+        return Ok(result);
+    }
+
     // ── DAG Layer 2: Analytics snapshots (correlation + regime) ─────
     if plan.analytics {
         let corr_start = Instant::now();
@@ -1935,6 +1980,16 @@ fn run_pipeline(
             error: None,
             detail: None,
         });
+    }
+
+    if let Some(result) = maybe_stop_for_timeout(
+        deadline,
+        pipeline_start,
+        verbose,
+        &dag_result,
+        "layer 2 analytics snapshots",
+    ) {
+        return Ok(result);
     }
 
     // ── DAG Layer 3: Portfolio + alerts ─────────────────────────────
@@ -2057,6 +2112,16 @@ fn run_pipeline(
         });
     }
 
+    if let Some(result) = maybe_stop_for_timeout(
+        deadline,
+        pipeline_start,
+        verbose,
+        &dag_result,
+        "layer 3 portfolio and alerts",
+    ) {
+        return Ok(result);
+    }
+
     // ── DAG Layer 4: Cleanup ───────────────────────────────────────
     if plan.cleanup {
         let cleanup_start = Instant::now();
@@ -2096,6 +2161,28 @@ fn run_pipeline(
     info_ln!(verbose, "\nRefresh complete.");
     dag_result.finalize(pipeline_start.elapsed());
     Ok(dag_result)
+}
+
+fn maybe_stop_for_timeout(
+    deadline: Option<Instant>,
+    pipeline_start: Instant,
+    verbose: bool,
+    dag_result: &RefreshResult,
+    stage_label: &str,
+) -> Option<RefreshResult> {
+    let deadline = deadline?;
+    if Instant::now() < deadline {
+        return None;
+    }
+
+    let message = format!(
+        "refresh timeout reached after {}. Returning partial results.",
+        stage_label
+    );
+    info_ln!(verbose, "\n⚠ {}", message);
+    let mut partial = dag_result.clone();
+    partial.finalize_partial(pipeline_start.elapsed(), message);
+    Some(partial)
 }
 
 // ── Helper functions for storing layer-0 async results ─────────────────
@@ -4944,6 +5031,43 @@ mod tests {
             .error
             .as_deref()
             .is_some_and(|msg| msg.contains("news ingest degraded")));
+    }
+
+    #[test]
+    fn maybe_stop_for_timeout_returns_partial_result_after_deadline() {
+        let mut dag_result = RefreshResult::new();
+        dag_result.add(SourceResult {
+            name: "prices".to_string(),
+            label: "Prices".to_string(),
+            status: SourceStatus::Ok,
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
+            items_updated: Some(12),
+            duration_ms: 100,
+            reason: None,
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
+
+        let start = Instant::now() - Duration::from_secs(2);
+        let deadline = Some(Instant::now() - Duration::from_secs(1));
+        let partial =
+            maybe_stop_for_timeout(deadline, start, false, &dag_result, "layer 0 independent")
+                .expect("expected partial result");
+
+        assert_eq!(
+            partial.status,
+            crate::commands::refresh_dag::RefreshRunStatus::Partial
+        );
+        assert_eq!(partial.completed_sources, vec!["prices".to_string()]);
+        assert!(
+            partial
+                .message
+                .as_deref()
+                .is_some_and(|msg| msg.contains("layer 0 independent"))
+        );
     }
 
     #[test]

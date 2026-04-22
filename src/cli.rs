@@ -374,7 +374,7 @@ pub enum DashboardCommand {
 #[derive(Subcommand)]
 pub enum DataCommand {
     /// Fetch and cache current prices for tracked symbols
-    #[command(after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n  pftui data refresh --stale                    # only stale/empty status-tracked feeds\n\n--only, --skip, and --stale are mutually exclusive.")]
+    #[command(after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n  pftui data refresh --stale                    # only stale/empty status-tracked feeds\n  pftui data refresh --timeout 90 --json        # return partial JSON if the run exceeds 90s\n\n--only, --skip, and --stale are mutually exclusive.")]
     Refresh {
         /// Send OS notification for newly triggered alerts
         #[arg(long)]
@@ -382,6 +382,9 @@ pub enum DataCommand {
         /// Output structured JSON metrics instead of human-readable text
         #[arg(long)]
         json: bool,
+        /// Stop after N seconds and return partial refresh results
+        #[arg(long)]
+        timeout: Option<u64>,
         /// Run only these sources (comma-separated). Mutually exclusive with --skip.
         #[arg(long, conflicts_with_all = ["skip", "stale"], value_delimiter = ',')]
         only: Vec<String>,
@@ -9555,11 +9558,15 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Refresh { only, skip, .. } = command else {
+        let DataCommand::Refresh {
+            only, skip, timeout, ..
+        } = command
+        else {
             panic!("expected refresh");
         };
         assert_eq!(only, vec!["prices"]);
         assert!(skip.is_empty());
+        assert!(timeout.is_none());
         Ok(())
     }
 
@@ -9571,11 +9578,15 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Refresh { only, skip, .. } = command else {
+        let DataCommand::Refresh {
+            only, skip, timeout, ..
+        } = command
+        else {
             panic!("expected refresh");
         };
         assert_eq!(only, vec!["prices", "news_rss", "sentiment"]);
         assert!(skip.is_empty());
+        assert!(timeout.is_none());
         Ok(())
     }
 
@@ -9587,11 +9598,15 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Refresh { only, skip, .. } = command else {
+        let DataCommand::Refresh {
+            only, skip, timeout, ..
+        } = command
+        else {
             panic!("expected refresh");
         };
         assert!(only.is_empty());
         assert_eq!(skip, vec!["worldbank", "bls"]);
+        assert!(timeout.is_none());
         Ok(())
     }
 
@@ -9601,12 +9616,20 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Refresh { stale, only, skip, .. } = command else {
+        let DataCommand::Refresh {
+            stale,
+            only,
+            skip,
+            timeout,
+            ..
+        } = command
+        else {
             panic!("expected refresh");
         };
         assert!(stale);
         assert!(only.is_empty());
         assert!(skip.is_empty());
+        assert!(timeout.is_none());
         Ok(())
     }
 
@@ -9634,10 +9657,38 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Refresh { only, json, .. } = command else {
+        let DataCommand::Refresh {
+            only,
+            json,
+            timeout,
+            ..
+        } = command
+        else {
             panic!("expected refresh");
         };
         assert_eq!(only, vec!["prices"]);
+        assert!(json);
+        assert!(timeout.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn parse_refresh_timeout_flag() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "data",
+            "refresh",
+            "--timeout",
+            "90",
+            "--json",
+        ]);
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::Refresh { timeout, json, .. } = command else {
+            panic!("expected refresh");
+        };
+        assert_eq!(timeout, Some(90));
         assert!(json);
         Ok(())
     }

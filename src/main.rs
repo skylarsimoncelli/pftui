@@ -958,6 +958,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::DataCommand::Refresh {
                 notify,
                 json,
+                timeout,
                 only,
                 skip,
                 stale,
@@ -992,9 +993,21 @@ fn run_cli(cli: Cli) -> Result<()> {
                         commands::refresh::RefreshPlan::full()
                     };
                     if json {
-                        commands::refresh::run_json_with_plan(&backend, &config, notify, &plan)
+                        commands::refresh::run_json_with_plan(
+                            &backend,
+                            &config,
+                            notify,
+                            &plan,
+                            timeout,
+                        )
                     } else {
-                        commands::refresh::run_with_plan(&backend, &config, notify, &plan)
+                        commands::refresh::run_with_plan(
+                            &backend,
+                            &config,
+                            notify,
+                            &plan,
+                            timeout,
+                        )
                     }
                 }
             }
