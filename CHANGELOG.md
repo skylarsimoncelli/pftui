@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-04-22 — fix: expose debate_id in debate JSON responses
+
+- What: `pftui agent debate start --json` and `pftui agent debate resolve --json` now include a top-level `debate_id` field alongside the nested debate payload. This makes the JSON contract consistent with other debate-related commands that already expose IDs directly.
+- Why: downstream agents were successfully creating debates but could not persist or reference them programmatically because they expected a top-level `debate_id` and the command only returned the nested debate object. The missing explicit field made the effective response contract brittle for automation.
+
 ### 2026-04-22 — fix: retarget legacy prediction market fetches to macro event tags
 
 - What: the fallback `predictions_cache` fetch path no longer relies only on Polymarket's generic top-markets feed. It now pulls macro-focused event tags first, deduplicates contracts across tags, filters out entertainment/sports crossovers, and maps those markets into the legacy cache categories. The text classifier also recognizes more geopolitical and macro terms such as Hormuz, sanctions, tariffs, CPI, NFP, and interest-rate phrasing.
