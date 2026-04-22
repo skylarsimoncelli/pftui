@@ -12,6 +12,7 @@
 
 use anyhow::{anyhow, Result};
 use calamine::{open_workbook_from_rs, Reader, Xls};
+use regex::Regex;
 use std::io::Cursor;
 
 /// Metals tracked by COMEX inventory scraper.
@@ -20,12 +21,14 @@ pub const COMEX_METALS: &[ComexMetal] = &[
         metal: "Gold",
         symbol: "GC=F",
         url: "https://www.cmegroup.com/delivery_reports/Gold_Stocks.xls",
+        fallback_url: "https://goldsilver.ai/metal-prices/comex-gold",
         unit: "troy ounces",
     },
     ComexMetal {
         metal: "Silver",
         symbol: "SI=F",
         url: "https://www.cmegroup.com/delivery_reports/Silver_stocks.xls",
+        fallback_url: "https://goldsilver.ai/metal-prices/comex-silver",
         unit: "troy ounces",
     },
 ];
@@ -36,6 +39,7 @@ pub struct ComexMetal {
     pub metal: &'static str,
     pub symbol: &'static str,
     pub url: &'static str,
+    pub fallback_url: &'static str,
     pub unit: &'static str,
 }
 
@@ -84,9 +88,28 @@ pub fn fetch_inventory(symbol: &str) -> Result<ComexInventory> {
         .find(|m| m.symbol == symbol)
         .ok_or_else(|| anyhow!("Unknown COMEX symbol: {}", symbol))?;
 
+    match fetch_inventory_from_cme(metal) {
+        Ok(inventory) => Ok(inventory),
+        Err(primary_err) => fetch_inventory_from_goldsilver_ai(metal).map_err(|fallback_err| {
+            anyhow!(
+                "COMEX primary fetch failed ({}); fallback fetch failed ({})",
+                primary_err,
+                fallback_err
+            )
+        }),
+    }
+}
+
+fn fetch_inventory_from_cme(metal: &ComexMetal) -> Result<ComexInventory> {
+    fetch_inventory_from_xls(metal)
+}
+
+fn fetch_inventory_from_xls(metal: &ComexMetal) -> Result<ComexInventory> {
+    let symbol = metal.symbol;
+
     let client = reqwest::blocking::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(12))
         // CME blocks HTTP/2 with INTERNAL_ERROR; force HTTP/1.1
         .http1_only()
         .build()?;
@@ -271,6 +294,128 @@ pub fn fetch_inventory(symbol: &str) -> Result<ComexInventory> {
     })
 }
 
+fn fetch_inventory_from_goldsilver_ai(metal: &ComexMetal) -> Result<ComexInventory> {
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(12))
+        .build()?;
+
+    let body = client
+        .get(metal.fallback_url)
+        .send()?
+        .error_for_status()?
+        .text()?;
+
+    parse_goldsilver_ai_inventory(&body, metal)
+}
+
+fn parse_goldsilver_ai_inventory(body: &str, metal: &ComexMetal) -> Result<ComexInventory> {
+    let normalized = body.replace("\\\"", "\"");
+    let (registered, registered_timestamp) = latest_series_point(&normalized, "registeredData")?;
+    let (eligible, latest_timestamp) = latest_series_point(&normalized, "eligibleData")?;
+    let date = timestamp_ms_to_date(registered_timestamp.max(latest_timestamp))?;
+
+    let total = registered + eligible;
+    let reg_ratio = if total > 0.0 {
+        (registered / total) * 100.0
+    } else {
+        0.0
+    };
+
+    Ok(ComexInventory {
+        symbol: metal.symbol.to_string(),
+        date,
+        registered,
+        eligible,
+        total,
+        reg_ratio,
+    })
+}
+
+fn latest_series_point(body: &str, series_name: &str) -> Result<(f64, i64)> {
+    let series = extract_series_payload(body, series_name)?;
+
+    let point_re =
+        Regex::new(r#"\{\s*"x"\s*:\s*(\d+)\s*,\s*"y"\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*\}"#)?;
+    let mut latest: Option<(f64, i64)> = None;
+    for caps in point_re.captures_iter(series) {
+        let timestamp = caps[1]
+            .parse::<i64>()
+            .map_err(|e| anyhow!("failed to parse {} timestamp '{}': {}", series_name, &caps[1], e))?;
+        let value = caps[2]
+            .parse::<f64>()
+            .map_err(|e| anyhow!("failed to parse {} value '{}': {}", series_name, &caps[2], e))?;
+        latest = Some((value, timestamp));
+    }
+
+    latest.ok_or_else(|| anyhow!("missing data points in {} fallback payload", series_name))
+}
+
+fn extract_series_payload<'a>(body: &'a str, series_name: &str) -> Result<&'a str> {
+    let marker = format!(r#""{}":"#, series_name);
+    let marker_with_space = format!(r#""{}" :"#, series_name);
+    let series_start = body
+        .find(&marker)
+        .or_else(|| body.find(&marker_with_space))
+        .ok_or_else(|| anyhow!("missing {} series in fallback payload", series_name))?;
+
+    let array_start = body[series_start..]
+        .find('[')
+        .map(|offset| series_start + offset + 1)
+        .ok_or_else(|| anyhow!("missing opening bracket for {} series", series_name))?;
+
+    let mut depth = 1_i32;
+    for (offset, ch) in body[array_start..].char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(&body[array_start..array_start + offset]);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Err(anyhow!(
+        "missing closing bracket for {} series in fallback payload",
+        series_name
+    ))
+}
+
+fn timestamp_ms_to_date(timestamp_ms: i64) -> Result<String> {
+    let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(timestamp_ms)
+        .ok_or_else(|| anyhow!("invalid fallback timestamp: {}", timestamp_ms))?;
+    Ok(datetime.format("%Y-%m-%d").to_string())
+}
+
+fn parse_ounces(raw: &str) -> Result<f64> {
+    let cleaned = raw.replace(',', "").trim().to_string();
+    let number = cleaned
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| anyhow!("missing numeric value in '{}'", raw))?;
+    let multiplier = if number.ends_with('M') {
+        1_000_000.0
+    } else if number.ends_with('K') {
+        1_000.0
+    } else {
+        1.0
+    };
+    let value = number
+        .trim_end_matches(['M', 'K'])
+        .parse::<f64>()
+        .map_err(|e| anyhow!("failed to parse '{}' as ounces: {}", raw, e))?;
+    Ok(value * multiplier)
+}
+
+fn parse_month_day_year(raw: &str) -> Result<String> {
+    let parsed = chrono::NaiveDate::parse_from_str(raw, "%b %e, %Y")
+        .or_else(|_| chrono::NaiveDate::parse_from_str(raw, "%b %d, %Y"))?;
+    Ok(parsed.format("%Y-%m-%d").to_string())
+}
+
 /// Parse a calamine Data as f64.
 fn parse_cell_as_float(cell: &calamine::Data) -> Result<f64> {
     match cell {
@@ -370,5 +515,35 @@ mod tests {
         let cell = calamine::Data::String("1,234,567".to_string());
         let parsed = parse_cell_as_float(&cell).unwrap();
         assert_eq!(parsed, 1_234_567.0);
+    }
+
+    #[test]
+    fn parse_ounces_supports_suffixes() {
+        assert_eq!(parse_ounces("15.7M oz").unwrap(), 15_700_000.0);
+        assert_eq!(parse_ounces("178.5K oz").unwrap(), 178_500.0);
+        assert_eq!(parse_ounces("42 oz").unwrap(), 42.0);
+    }
+
+    #[test]
+    fn parse_goldsilver_ai_inventory_extracts_registered_and_eligible() {
+        let html = r#"
+            ["$","$L18",null,{
+                "registeredData":[
+                    {"x":1745020800000,"y":15700000.0},
+                    {"x":1745193600000,"y":15800000.5}
+                ],
+                "eligibleData":[
+                    {"x":1745020800000,"y":14100000.0},
+                    {"x":1745193600000,"y":14250000.25}
+                ]
+            }]
+        "#;
+        let inventory = parse_goldsilver_ai_inventory(html, &COMEX_METALS[0]).unwrap();
+
+        assert_eq!(inventory.symbol, "GC=F");
+        assert_eq!(inventory.date, "2025-04-21");
+        assert_eq!(inventory.registered, 15_800_000.5);
+        assert_eq!(inventory.eligible, 14_250_000.25);
+        assert_eq!(inventory.total, 30_050_000.75);
     }
 }
