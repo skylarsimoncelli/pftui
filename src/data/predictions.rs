@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// Prediction market from Polymarket Gamma API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,12 +62,27 @@ struct GammaMarket {
 /// Free, no auth required.
 #[allow(dead_code)] // Infrastructure for F17.3+ (predictions CLI, refresh integration)
 pub async fn fetch_polymarket_predictions() -> Result<Vec<PredictionMarket>> {
-    // Fetch open markets (active=true, closed=false), sorted by volume
-    let url = "https://gamma-api.polymarket.com/markets?limit=100&active=true&closed=false";
-
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
+
+    let now = chrono::Utc::now().timestamp();
+    let tagged_markets = fetch_macro_prediction_markets(&client, now).await;
+
+    if !tagged_markets.is_empty() {
+        return Ok(tagged_markets);
+    }
+
+    fetch_top_prediction_markets(&client, now).await
+}
+
+async fn fetch_top_prediction_markets(
+    client: &reqwest::Client,
+    now: i64,
+) -> Result<Vec<PredictionMarket>> {
+    // Fallback: fetch open markets (active=true, closed=false), sorted by volume.
+    // This keeps older environments working if the tagged events endpoint changes.
+    let url = "https://gamma-api.polymarket.com/markets?limit=100&active=true&closed=false";
 
     let resp = client
         .get(url)
@@ -88,8 +104,6 @@ pub async fn fetch_polymarket_predictions() -> Result<Vec<PredictionMarket>> {
         "Failed to parse Polymarket response. First 500 chars: {}",
         &text.chars().take(500).collect::<String>()
     ))?;
-
-    let now = chrono::Utc::now().timestamp();
 
     let markets: Vec<PredictionMarket> = gamma_resp
         .into_iter()
@@ -118,6 +132,85 @@ pub async fn fetch_polymarket_predictions() -> Result<Vec<PredictionMarket>> {
         .collect();
 
     Ok(markets)
+}
+
+async fn fetch_macro_prediction_markets(
+    client: &reqwest::Client,
+    now: i64,
+) -> Vec<PredictionMarket> {
+    let mut seen = HashSet::new();
+    let mut markets = Vec::new();
+
+    for &(tag_slug, category) in LEGACY_PREDICTION_TAG_SLUGS {
+        let url = format!(
+            "https://gamma-api.polymarket.com/events?limit=25&active=true&closed=false&tag_slug={}&order=volume24hr&ascending=false",
+            tag_slug
+        );
+
+        let resp = match client.get(&url).send().await {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+
+        if !resp.status().is_success() {
+            continue;
+        }
+
+        let text = match resp.text().await {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        let events: Vec<GammaEvent> = match serde_json::from_str(&text) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        append_tagged_prediction_markets(events, category, now, &mut seen, &mut markets);
+    }
+
+    markets.sort_by(|a, b| {
+        b.volume_24h
+            .partial_cmp(&a.volume_24h)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    markets.truncate(50);
+    markets
+}
+
+fn append_tagged_prediction_markets(
+    events: Vec<GammaEvent>,
+    category: MarketCategory,
+    now: i64,
+    seen: &mut HashSet<String>,
+    markets: &mut Vec<PredictionMarket>,
+) {
+    for event in events {
+        for market in event.markets {
+            if market.closed || !market.active {
+                continue;
+            }
+
+            if is_entertainment_market(&market.question) || is_entertainment_market(&event.title) {
+                continue;
+            }
+
+            if !seen.insert(market.condition_id.clone()) {
+                continue;
+            }
+
+            let prob = parse_yes_probability(&market.outcome_prices).unwrap_or(0.0);
+
+            markets.push(PredictionMarket {
+                id: market.condition_id,
+                question: market.question,
+                probability: prob,
+                volume_24h: market.volume_24hr,
+                category,
+                updated_at: now,
+            });
+        }
+    }
 }
 
 /// Save daily probability snapshots for tracked prediction markets.
@@ -156,9 +249,13 @@ fn infer_category_from_question(question: &str) -> MarketCategory {
         || q_lower.contains("fed")
         || q_lower.contains("fomc")
         || q_lower.contains("federal reserve")
+        || q_lower.contains("interest rate")
         || q_lower.contains("rate cut")
         || q_lower.contains("rate hike")
         || q_lower.contains("inflation")
+        || q_lower.contains("cpi")
+        || q_lower.contains("pmi")
+        || q_lower.contains("nfp")
         || q_lower.contains("gdp")
         || q_lower.contains("unemployment")
         || q_lower.contains("economy")
@@ -176,7 +273,13 @@ fn infer_category_from_question(question: &str) -> MarketCategory {
         || q_lower.contains("gaza")
         || q_lower.contains("israel")
         || q_lower.contains("middle east")
+        || q_lower.contains("hormuz")
         || q_lower.contains("invasion")
+        || q_lower.contains("sanctions")
+        || q_lower.contains("tariff")
+        || q_lower.contains("missile")
+        || q_lower.contains("strike")
+        || q_lower.contains("diplomatic")
         || q_lower.contains("taiwan")
     {
         MarketCategory::Geopolitics
@@ -192,6 +295,22 @@ fn infer_category_from_question(question: &str) -> MarketCategory {
         MarketCategory::Other
     }
 }
+
+/// Macro-relevant Polymarket event tags mapped to the legacy market categories.
+const LEGACY_PREDICTION_TAG_SLUGS: &[(&str, MarketCategory)] = &[
+    ("fed", MarketCategory::Economics),
+    ("economics", MarketCategory::Economics),
+    ("interest-rates", MarketCategory::Economics),
+    ("recession", MarketCategory::Economics),
+    ("inflation", MarketCategory::Economics),
+    ("geopolitics", MarketCategory::Geopolitics),
+    ("politics", MarketCategory::Geopolitics),
+    ("iran", MarketCategory::Geopolitics),
+    ("war", MarketCategory::Geopolitics),
+    ("bitcoin", MarketCategory::Crypto),
+    ("crypto", MarketCategory::Crypto),
+    ("ai", MarketCategory::AI),
+];
 
 // ── Tag-based event fetching (F55.2) ────────────────────────────────
 
@@ -407,6 +526,14 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_category_geopolitics_hormuz_keywords() {
+        assert_eq!(
+            infer_category_from_question("Will Strait of Hormuz shipping normalize after sanctions?"),
+            MarketCategory::Geopolitics
+        );
+    }
+
+    #[test]
     fn test_infer_category_default() {
         assert_eq!(
             infer_category_from_question("Will it rain tomorrow?"),
@@ -446,5 +573,78 @@ mod tests {
             assert!(!slug.is_empty());
             assert!(!cat.is_empty());
         }
+    }
+
+    #[test]
+    fn test_legacy_prediction_tag_slugs_non_empty() {
+        assert!(!LEGACY_PREDICTION_TAG_SLUGS.is_empty());
+        for &(slug, category) in LEGACY_PREDICTION_TAG_SLUGS {
+            assert!(!slug.is_empty());
+            assert_ne!(category, MarketCategory::Other);
+        }
+    }
+
+    #[test]
+    fn test_append_tagged_prediction_markets_filters_entertainment_and_dedupes() {
+        let events = vec![
+            GammaEvent {
+                id: "evt-iran".into(),
+                title: "Iran x Israel/US conflict ends by...?".into(),
+                markets: vec![GammaEventMarket {
+                    condition_id: "c-iran".into(),
+                    question: "US x Iran ceasefire extended by April 21, 2026?".into(),
+                    outcome_prices: r#"["0.61","0.39"]"#.into(),
+                    volume_24hr: 120_000.0,
+                    liquidity_num: 50_000.0,
+                    end_date: Some("2026-04-21T23:59:59Z".into()),
+                    active: true,
+                    closed: false,
+                }],
+            },
+            GammaEvent {
+                id: "evt-sports".into(),
+                title: "Will Iran win the 2026 FIFA World Cup?".into(),
+                markets: vec![GammaEventMarket {
+                    condition_id: "c-sports".into(),
+                    question: "Will Iran win the 2026 FIFA World Cup?".into(),
+                    outcome_prices: r#"["0.05","0.95"]"#.into(),
+                    volume_24hr: 80_000.0,
+                    liquidity_num: 10_000.0,
+                    end_date: None,
+                    active: true,
+                    closed: false,
+                }],
+            },
+            GammaEvent {
+                id: "evt-dup".into(),
+                title: "Duplicate Iran tag event".into(),
+                markets: vec![GammaEventMarket {
+                    condition_id: "c-iran".into(),
+                    question: "Duplicate Iran contract".into(),
+                    outcome_prices: r#"["0.55","0.45"]"#.into(),
+                    volume_24hr: 10_000.0,
+                    liquidity_num: 5_000.0,
+                    end_date: None,
+                    active: true,
+                    closed: false,
+                }],
+            },
+        ];
+
+        let mut seen = HashSet::new();
+        let mut markets = Vec::new();
+
+        append_tagged_prediction_markets(
+            events,
+            MarketCategory::Geopolitics,
+            1_711_670_000,
+            &mut seen,
+            &mut markets,
+        );
+
+        assert_eq!(markets.len(), 1);
+        assert_eq!(markets[0].id, "c-iran");
+        assert_eq!(markets[0].category, MarketCategory::Geopolitics);
+        assert!((markets[0].probability - 0.61).abs() < 0.001);
     }
 }

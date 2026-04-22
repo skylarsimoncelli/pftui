@@ -52,7 +52,7 @@
 **Scope:** (1) Add signal handler for SIGTERM in `data refresh` to print partial results before exit. (2) Consider `--quick` flag or `--timeout <secs>` to allow agent-controlled timeout. (3) On timeout, emit structured JSON with `{status: "partial", completed_sources: [...], failed_sources: [...]}` instead of hard kill. Files: `src/commands/refresh.rs`, `src/cli.rs`.
 **Effort:** 2–4 hours.
 
-### [Feedback] Fix prediction market --category filter for geopolitical/Iran contracts
+### [Done] Fix prediction market --category filter for geopolitical/Iran contracts
 **Source:** low-timeframe-analyst (Apr 7, 72/78).
 **Why:** `data predictions markets --category geopolitics` returned only 1 result (an OpenAI hardware question misclassified). Iran/Fed contracts that should match returned 0. Category classification or keyword matching for prediction market contracts is unreliable.
 **Scope:** Investigate category classification in `data/predictions.rs` market fetch. Likely the tag-to-category mapping is too narrow. Add Iran/geopolitical keywords. Files: `src/data/predictions.rs`.

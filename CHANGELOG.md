@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-04-22 — fix: retarget legacy prediction market fetches to macro event tags
+
+- What: the fallback `predictions_cache` fetch path no longer relies only on Polymarket's generic top-markets feed. It now pulls macro-focused event tags first, deduplicates contracts across tags, filters out entertainment/sports crossovers, and maps those markets into the legacy cache categories. The text classifier also recognizes more geopolitical and macro terms such as Hormuz, sanctions, tariffs, CPI, NFP, and interest-rate phrasing.
+- Why: `pftui data predictions markets --category geopolitics` could return almost nothing on environments that had not populated the richer contracts table, because the generic top-100 markets feed often omitted Iran/Fed markets entirely and occasionally surfaced irrelevant sports markets that happened to mention Iran. The legacy fallback now preserves the same macro focus as the contracts path.
+
 ### 2026-04-22 — feat: add partial timeout mode to data refresh
 
 - What: added `pftui data refresh --timeout <secs>`. When the deadline is reached, refresh now returns a structured partial result instead of continuing silently until an external watchdog kills the process. The JSON payload includes top-level `status`, `completed_sources`, `failed_sources`, and `message` fields, and verbose terminal output now reports which sources completed before timeout.
