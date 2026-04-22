@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-22 — fix: realign calendar scraping with TradingEconomics event columns
+
+- What: the TradingEconomics calendar scraper now reads the event name from the current third table column (`a.calendar-event`) instead of the shifted numeric cells, and it derives row dates from the first cell's class metadata when the visible text only shows the release time. That keeps `pftui data calendar --json` aligned with the current page structure instead of emitting percentages or counts where event names should be.
+- Why: the upstream calendar table layout moved, so the scraper's hard-coded nth-child selectors drifted by one column. Agents were receiving numeric strings in the `name` field, which made the calendar effectively unusable for catalyst tracking.
+- Files: `src/data/calendar.rs`, `TODO.md`
+- Tests: added a focused regression test against a current-style TradingEconomics row plus a live `data calendar --json` smoke check showing real event names again. Full `cargo test -- --skip test_fetch_markets_basic` will be rerun before merge. `cargo fmt` and `cargo clippy -- -D warnings` remain unavailable here because `rustfmt` and `cargo-clippy` are not installed via `rustup`.
+
 ### 2026-04-22 — fix: restore COT refreshes against the live CFTC disaggregated dataset
 
 - What: the COT client now fetches from the live CFTC disaggregated futures-only dataset (`72hh-3qpy`) that matches the parser schema, instead of the mismatched legacy dataset path that exposes different field names. `pftui data cot` also now supports `--force-refresh`, which fetches and stores fresh CFTC reports on demand before rendering the cached analysis.

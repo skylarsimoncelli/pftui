@@ -5,7 +5,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{Datelike, Duration, NaiveDate, Utc};
-use scraper::{Html, Selector};
+use scraper::{ElementRef, Html, Selector};
 use std::sync::OnceLock;
 
 use crate::data::brave;
@@ -128,24 +128,16 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
 
     let row_selector = cached_selector(&ROW_SELECTOR, "table#calendar tbody tr")?;
     let date_selector = cached_selector(&DATE_SELECTOR, "td:nth-child(1)")?;
-    let name_selector = cached_selector(&NAME_SELECTOR, "td:nth-child(4) a")?;
-    let actual_selector = cached_selector(&ACTUAL_SELECTOR, "td:nth-child(5)")?;
-    let previous_selector = cached_selector(&PREVIOUS_SELECTOR, "td:nth-child(6)")?;
+    let name_selector = cached_selector(&NAME_SELECTOR, "td:nth-child(3) a.calendar-event")?;
+    let actual_selector = cached_selector(&ACTUAL_SELECTOR, "td:nth-child(4)")?;
+    let previous_selector = cached_selector(&PREVIOUS_SELECTOR, "td:nth-child(5)")?;
     let forecast_selector = cached_selector(&FORECAST_SELECTOR, "td:nth-child(7)")?;
 
     let mut events = Vec::new();
     let mut current_date = today;
 
     for row in document.select(row_selector) {
-        // Extract date (may be empty if same as previous row)
-        if let Some(date_cell) = row.select(date_selector).next() {
-            let date_text = date_cell.text().collect::<String>().trim().to_string();
-            if !date_text.is_empty() && date_text != "Time" {
-                if let Ok(parsed) = parse_te_date(&date_text, today.year()) {
-                    current_date = parsed;
-                }
-            }
-        }
+        current_date = extract_row_date(&row, date_selector, current_date, today.year());
 
         // Skip if beyond our date range
         if current_date > cutoff {
@@ -155,57 +147,16 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
             continue;
         }
 
-        // Extract event name
-        let name = row
-            .select(name_selector)
-            .next()
-            .map(|e| e.text().collect::<String>().trim().to_string())
-            .unwrap_or_default();
-
-        if name.is_empty() {
-            continue;
+        if let Some(event) = extract_calendar_event(
+            &row,
+            current_date,
+            name_selector,
+            actual_selector,
+            previous_selector,
+            forecast_selector,
+        ) {
+            events.push(event);
         }
-
-        // Extract actual, previous, forecast
-        let _actual = row.select(actual_selector).next().and_then(|e| {
-            let text = e.text().collect::<String>().trim().to_string();
-            if text.is_empty() {
-                None
-            } else {
-                Some(text)
-            }
-        });
-
-        let previous = row.select(previous_selector).next().and_then(|e| {
-            let text = e.text().collect::<String>().trim().to_string();
-            if text.is_empty() {
-                None
-            } else {
-                Some(text)
-            }
-        });
-
-        let forecast = row.select(forecast_selector).next().and_then(|e| {
-            let text = e.text().collect::<String>().trim().to_string();
-            if text.is_empty() {
-                None
-            } else {
-                Some(text)
-            }
-        });
-
-        // Determine impact based on event type
-        let impact = classify_impact(&name);
-
-        events.push(Event {
-            date: current_date.format("%Y-%m-%d").to_string(),
-            name,
-            impact,
-            previous,
-            forecast,
-            event_type: "economic".into(),
-            symbol: None,
-        });
     }
 
     Ok(events)
@@ -219,6 +170,74 @@ fn cached_selector<'a>(slot: &'a OnceLock<Selector>, css: &str) -> Result<&'a Se
     }
     slot.get()
         .ok_or_else(|| anyhow!("failed to initialize CSS selector '{}'", css))
+}
+
+fn extract_row_date(
+    row: &ElementRef<'_>,
+    date_selector: &Selector,
+    current_date: NaiveDate,
+    year: i32,
+) -> NaiveDate {
+    let Some(date_cell) = row.select(date_selector).next() else {
+        return current_date;
+    };
+
+    let date_text = date_cell.text().collect::<String>().trim().to_string();
+    if !date_text.is_empty() && date_text != "Time" {
+        if let Ok(parsed) = parse_te_date(&date_text, year) {
+            return parsed;
+        }
+    }
+
+    if let Some(class_attr) = date_cell.value().attr("class") {
+        for token in class_attr.split_whitespace() {
+            if let Ok(parsed) = NaiveDate::parse_from_str(token, "%Y-%m-%d") {
+                return parsed;
+            }
+        }
+    }
+
+    current_date
+}
+
+fn extract_calendar_event(
+    row: &ElementRef<'_>,
+    current_date: NaiveDate,
+    name_selector: &Selector,
+    actual_selector: &Selector,
+    previous_selector: &Selector,
+    forecast_selector: &Selector,
+) -> Option<Event> {
+    let name = extract_cell_text(row, name_selector)?;
+    if name.is_empty() {
+        return None;
+    }
+
+    let _actual = extract_cell_text(row, actual_selector);
+    let previous = extract_cell_text(row, previous_selector);
+    let forecast = extract_cell_text(row, forecast_selector);
+    let impact = classify_impact(&name);
+
+    Some(Event {
+        date: current_date.format("%Y-%m-%d").to_string(),
+        name,
+        impact,
+        previous,
+        forecast,
+        event_type: "economic".into(),
+        symbol: None,
+    })
+}
+
+fn extract_cell_text(row: &ElementRef<'_>, selector: &Selector) -> Option<String> {
+    row.select(selector).next().and_then(|e| {
+        let text = e.text().collect::<String>().trim().to_string();
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
+    })
 }
 
 /// Parse TradingEconomics date format (e.g., "2026-03-05", "Mar 5", etc.)
@@ -421,5 +440,54 @@ mod tests {
             extract_date_from_text("Release date: 2026-04-10"),
             NaiveDate::from_ymd_opt(2026, 4, 10)
         );
+    }
+
+    #[test]
+    fn scrape_row_uses_event_column_not_numeric_cells() {
+        let html = r#"
+            <table id="calendar"><tbody>
+            <tr data-url="/united-states/jobless-claims">
+                <td class="2026-04-23"><span>12:30 PM</span></td>
+                <td class="calendar-item">US</td>
+                <td style="max-width: 250px; overflow-x: hidden;">
+                    <a class="calendar-event" href="/united-states/jobless-claims">Initial Jobless Claims</a>
+                    <span class="calendar-reference">APR/18</span>
+                </td>
+                <td class="calendar-item calendar-item-positive"><span id="actual"></span></td>
+                <td class="calendar-item calendar-item-positive"><span id="previous">207K</span></td>
+                <td class="calendar-item calendar-item-positive"><a id="consensus">212K</a></td>
+                <td class="calendar-item calendar-item-positive"><a id="forecast">218.0K</a></td>
+            </tr>
+            </tbody></table>
+        "#;
+        let document = Html::parse_document(html);
+        let row_selector = Selector::parse("tr").unwrap();
+        let date_selector = Selector::parse("td:nth-child(1)").unwrap();
+        let name_selector = Selector::parse("td:nth-child(3) a.calendar-event").unwrap();
+        let actual_selector = Selector::parse("td:nth-child(4)").unwrap();
+        let previous_selector = Selector::parse("td:nth-child(5)").unwrap();
+        let forecast_selector = Selector::parse("td:nth-child(7)").unwrap();
+        let row = document.select(&row_selector).next().unwrap();
+
+        let date = extract_row_date(
+            &row,
+            &date_selector,
+            NaiveDate::from_ymd_opt(2026, 4, 22).unwrap(),
+            2026,
+        );
+        let event = extract_calendar_event(
+            &row,
+            date,
+            &name_selector,
+            &actual_selector,
+            &previous_selector,
+            &forecast_selector,
+        )
+        .unwrap();
+
+        assert_eq!(event.date, "2026-04-23");
+        assert_eq!(event.name, "Initial Jobless Claims");
+        assert_eq!(event.previous.as_deref(), Some("207K"));
+        assert_eq!(event.forecast.as_deref(), Some("218.0K"));
     }
 }
