@@ -28,7 +28,7 @@
 **Scope:** (1) Confirm stale-cache fallback in `src/commands/supply.rs` is working for COMEX 403 cases. (2) If not, trace the fallback path and fix. (3) Add alternative source (Kitco public API or WGC) if COMEX 403 is persistent. Files: `src/commands/supply.rs`.
 **Effort:** 2–4 hours.
 
-### [Feedback] Add --layer filter to analytics views divergence
+### [Done] Add --layer filter to analytics views divergence
 **Source:** high-agent (Apr 6, 72/78).
 **Why:** `analytics views divergence` returns all cross-timeframe divergences. HIGH vs LOW conflicts are the most actionable, but agents must post-process JSON to extract them.
 **Scope:** Add `--layer <timeframe>` flag to `analytics views divergence`. Filter divergences where at least one side is the specified timeframe. Files: `src/commands/views.rs`, `src/cli.rs`.

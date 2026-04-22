@@ -805,6 +805,7 @@ fn compute_divergence(
     conn: &Connection,
     min_spread: i64,
     asset_filter: Option<&str>,
+    analyst_filter: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<ViewDivergence>> {
     // Get the full matrix (or filtered to one asset)
@@ -821,7 +822,7 @@ fn compute_divergence(
         get_view_matrix(conn)?
     };
 
-    let mut divergences = divergences_from_matrix(matrix, min_spread);
+    let mut divergences = divergences_from_matrix(matrix, min_spread, analyst_filter);
     if let Some(n) = limit {
         divergences.truncate(n);
     }
@@ -836,6 +837,7 @@ fn compute_divergence_postgres(
     pool: &PgPool,
     min_spread: i64,
     asset_filter: Option<&str>,
+    analyst_filter: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<ViewDivergence>> {
     let matrix = if let Some(asset) = asset_filter {
@@ -851,7 +853,7 @@ fn compute_divergence_postgres(
         get_view_matrix_postgres(pool)?
     };
 
-    let mut divergences = divergences_from_matrix(matrix, min_spread);
+    let mut divergences = divergences_from_matrix(matrix, min_spread, analyst_filter);
     if let Some(n) = limit {
         divergences.truncate(n);
     }
@@ -862,6 +864,7 @@ fn compute_divergence_postgres(
 fn divergences_from_matrix(
     matrix: Vec<AssetViewMatrix>,
     min_spread: i64,
+    analyst_filter: Option<&str>,
 ) -> Vec<ViewDivergence> {
     let mut divergences: Vec<ViewDivergence> = Vec::new();
 
@@ -885,8 +888,11 @@ fn divergences_from_matrix(
             .clone();
 
         let spread = most_bullish.conviction - most_bearish.conviction;
+        let matches_analyst = analyst_filter.is_none_or(|analyst| {
+            most_bullish.analyst == analyst || most_bearish.analyst == analyst
+        });
 
-        if spread >= min_spread {
+        if spread >= min_spread && matches_analyst {
             divergences.push(ViewDivergence {
                 asset: row.asset,
                 spread,
@@ -910,17 +916,18 @@ pub fn compute_divergence_backend(
     backend: &BackendConnection,
     min_spread: i64,
     asset: Option<&str>,
+    analyst: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<ViewDivergence>> {
     query::dispatch(
         backend,
         |conn| {
             ensure_tables(conn)?;
-            compute_divergence(conn, min_spread, asset, limit)
+            compute_divergence(conn, min_spread, asset, analyst, limit)
         },
         |pool| {
             ensure_tables_postgres(pool)?;
-            compute_divergence_postgres(pool, min_spread, asset, limit)
+            compute_divergence_postgres(pool, min_spread, asset, analyst, limit)
         },
     )
 }
@@ -1844,7 +1851,7 @@ mod tests {
         upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None).unwrap();
         upsert_view(&conn, "high", "BTC", "bear", -2, "Overvalued", None, None).unwrap();
 
-        let divs = compute_divergence(&conn, 2, None, None).unwrap();
+        let divs = compute_divergence(&conn, 2, None, None, None).unwrap();
         assert_eq!(divs.len(), 1);
         assert_eq!(divs[0].asset, "BTC");
         assert_eq!(divs[0].spread, 5);
@@ -1866,12 +1873,12 @@ mod tests {
         upsert_view(&conn, "macro", "GLD", "bull", 2, "Moderate", None, None).unwrap();
 
         // min_spread 3: only BTC qualifies
-        let divs = compute_divergence(&conn, 3, None, None).unwrap();
+        let divs = compute_divergence(&conn, 3, None, None, None).unwrap();
         assert_eq!(divs.len(), 1);
         assert_eq!(divs[0].asset, "BTC");
 
         // min_spread 2: both qualify
-        let divs = compute_divergence(&conn, 2, None, None).unwrap();
+        let divs = compute_divergence(&conn, 2, None, None, None).unwrap();
         assert_eq!(divs.len(), 2);
     }
 
@@ -1885,7 +1892,7 @@ mod tests {
         upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
         upsert_view(&conn, "high", "BTC", "bear", -2, "Down", None, None).unwrap();
 
-        let divs = compute_divergence(&conn, 2, None, None).unwrap();
+        let divs = compute_divergence(&conn, 2, None, None, None).unwrap();
         assert_eq!(divs.len(), 2);
         assert_eq!(divs[0].asset, "GLD"); // spread 9 first
         assert_eq!(divs[0].spread, 9);
@@ -1901,7 +1908,7 @@ mod tests {
         upsert_view(&conn, "low", "GLD", "bull", 4, "Up", None, None).unwrap();
         upsert_view(&conn, "high", "GLD", "bear", -3, "Down", None, None).unwrap();
 
-        let divs = compute_divergence(&conn, 2, Some("BTC"), None).unwrap();
+        let divs = compute_divergence(&conn, 2, Some("BTC"), None, None).unwrap();
         assert_eq!(divs.len(), 1);
         assert_eq!(divs[0].asset, "BTC");
     }
@@ -1915,11 +1922,29 @@ mod tests {
             upsert_view(&conn, "high", asset, "bear", conv_lo, "Down", None, None).unwrap();
         }
 
-        let divs = compute_divergence(&conn, 2, None, Some(2)).unwrap();
+        let divs = compute_divergence(&conn, 2, None, None, Some(2)).unwrap();
         assert_eq!(divs.len(), 2);
         // Should be top 2 by spread: GLD (9), BTC (5)
         assert_eq!(divs[0].asset, "GLD");
         assert_eq!(divs[1].asset, "BTC");
+    }
+
+    #[test]
+    fn test_divergence_layer_filter_matches_extremes_only() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "BTC", "bull", 4, "Momentum", None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -3, "Resistance", None, None).unwrap();
+        upsert_view(&conn, "medium", "GLD", "bull", 1, "Rotation", None, None).unwrap();
+        upsert_view(&conn, "macro", "GLD", "bear", -4, "Deflation", None, None).unwrap();
+        upsert_view(&conn, "high", "GLD", "neutral", 0, "Waiting", None, None).unwrap();
+
+        let high_divs = compute_divergence(&conn, 2, None, Some("high"), None).unwrap();
+        assert_eq!(high_divs.len(), 1);
+        assert_eq!(high_divs[0].asset, "BTC");
+
+        let macro_divs = compute_divergence(&conn, 2, None, Some("macro"), None).unwrap();
+        assert_eq!(macro_divs.len(), 1);
+        assert_eq!(macro_divs[0].asset, "GLD");
     }
 
     #[test]
@@ -1928,7 +1953,7 @@ mod tests {
         // Only one analyst on this asset → no divergence
         upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
 
-        let divs = compute_divergence(&conn, 0, None, None).unwrap();
+        let divs = compute_divergence(&conn, 0, None, None, None).unwrap();
         assert!(divs.is_empty());
     }
 
@@ -1940,21 +1965,21 @@ mod tests {
         upsert_view(&conn, "high", "BTC", "bull", 3, "Up", None, None).unwrap();
         upsert_view(&conn, "macro", "BTC", "bull", 3, "Up", None, None).unwrap();
 
-        let divs = compute_divergence(&conn, 1, None, None).unwrap();
+        let divs = compute_divergence(&conn, 1, None, None, None).unwrap();
         assert!(divs.is_empty());
     }
 
     #[test]
     fn test_divergence_empty_db() {
         let conn = setup_db();
-        let divs = compute_divergence(&conn, 2, None, None).unwrap();
+        let divs = compute_divergence(&conn, 2, None, None, None).unwrap();
         assert!(divs.is_empty());
     }
 
     #[test]
     fn test_divergence_nonexistent_asset() {
         let conn = setup_db();
-        let divs = compute_divergence(&conn, 0, Some("NOPE"), None).unwrap();
+        let divs = compute_divergence(&conn, 0, Some("NOPE"), None, None).unwrap();
         assert!(divs.is_empty());
     }
 

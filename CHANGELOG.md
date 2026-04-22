@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-04-22 — feat: add layer filtering to analyst view divergences
+
+- What: added `--layer <low|medium|high|macro>` to `pftui analytics views divergence`, filtering results to divergences where the selected analyst layer is one of the conviction extremes. The JSON payload now echoes `layer_filter`, and terminal output includes the active layer filter in its header and empty-state messaging.
+- Why: high-timeframe reviewers were manually post-processing divergence output to isolate the most actionable conflicts, especially HIGH-vs-LOW disagreements. The command now exposes that slice directly.
+
 ### 2026-04-22 — fix: add COMEX inventory fallback source
 
 - What: the COMEX inventory fetch path now keeps CME's static XLS reports as the primary source but falls back to the public GoldSilverAI COMEX inventory pages for gold and silver when those XLS downloads fail. `data supply` still prefers live data and still falls back to stale cache when needed, but cold-cache runs no longer return empty solely because the CME report URLs time out.
