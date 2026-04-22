@@ -6,7 +6,7 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Add prediction lesson bulk command — lesson coverage at 8% is critical
+### [Done] Add prediction lesson bulk command — lesson coverage at 8% is critical
 **Source:** evening-analyst (Apr 9, 80/78 — explicit P1 flag: "Lesson coverage at 8% (8 of 62 wrong predictions) - system cannot learn at this rate. Recommend auto-lesson-extraction for wrong predictions >7 days old"). evening-analysis (Apr 9: "8% CRITICAL — target 80%. Only 5 of ~62 wrong predictions have structured lessons"). Corroborates Apr 5 evening-analysis feedback ("prediction lessons backlog (63 unresolved) needs a bulk-lesson workflow. Suggest: pftui prediction lesson bulk command").
 **Why:** Lesson coverage is 8% (8 of 62 wrong predictions with structured lessons). The system's self-improvement loop is functionally non-functional — agents cannot identify systematic biases because 92% of wrong predictions have no post-mortem. The `prediction scorecard --lesson-coverage` flag (PR #656) surfaces unlessoned predictions, but there is no efficient command for processing them in bulk. At 3 lessons per evening session, reaching the 80% target would take 15+ days of manual processing.
 **Scope:** (1) Add `pftui prediction lesson bulk` subcommand that lists all wrong predictions without lessons, sorted by age (oldest first). (2) Add `--auto-stub` flag that generates a template lesson from the prediction claim + outcome, requiring only the agent to fill `root_cause` and `going_forward` fields. (3) Surface lesson coverage % prominently in `prediction scorecard` output alongside the `--lesson-coverage` list. Files: `src/commands/prediction.rs`, `src/db/prediction.rs`.

@@ -1965,7 +1965,10 @@ pub enum JournalPredictionLessonsCommand {
     Bulk {
         /// Path to a JSON file containing lesson entries
         #[arg(long)]
-        input: String,
+        input: Option<String>,
+        /// Generate stub lesson templates from unresolved wrong predictions
+        #[arg(long = "auto-stub")]
+        auto_stub: bool,
         /// Skip predictions that already have structured lessons
         #[arg(long)]
         unresolved: bool,
@@ -8807,6 +8810,7 @@ mod tests {
         };
         let Some(JournalPredictionLessonsCommand::Bulk {
             input,
+            auto_stub,
             unresolved,
             dry_run,
             json,
@@ -8814,9 +8818,48 @@ mod tests {
         else {
             panic!("expected bulk subcommand");
         };
-        assert_eq!(input, "/tmp/lessons.json");
+        assert_eq!(input.as_deref(), Some("/tmp/lessons.json"));
+        assert!(!auto_stub);
         assert!(unresolved);
         assert!(dry_run);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_prediction_lessons_bulk_auto_stub_without_input() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "lessons",
+            "bulk",
+            "--auto-stub",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Journal { command }) = cli.command else {
+            panic!("expected journal command");
+        };
+        let Some(JournalCommand::Prediction { command }) = command else {
+            panic!("expected prediction command");
+        };
+        let JournalPredictionCommand::Lessons { command, .. } = command else {
+            panic!("expected lessons command");
+        };
+        let Some(JournalPredictionLessonsCommand::Bulk {
+            input,
+            auto_stub,
+            unresolved,
+            dry_run,
+            json,
+        }) = command
+        else {
+            panic!("expected bulk subcommand");
+        };
+        assert!(input.is_none());
+        assert!(auto_stub);
+        assert!(!unresolved);
+        assert!(!dry_run);
         assert!(json);
     }
 

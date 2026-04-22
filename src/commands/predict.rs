@@ -472,7 +472,13 @@ pub fn run(
                 "wrong": wrong,
                 "hit_rate_pct": hit_rate_pct,
                 "current_correct_streak": current_correct_streak,
+                "wrong_with_lesson": wrong.saturating_sub(wrong_without_lesson),
                 "wrong_without_lesson": wrong_without_lesson,
+                "lesson_coverage_pct": if wrong > 0 {
+                    ((wrong.saturating_sub(wrong_without_lesson)) as f64 / wrong as f64) * 100.0
+                } else {
+                    0.0
+                },
                 "lesson_coverage": lesson_coverage,
                 "wrong_predictions": lesson_coverage_rows,
             });
@@ -495,6 +501,16 @@ pub fn run(
                 println!("  Wrong: {}", wrong);
                 println!("  Hit rate: {:.1}%", hit_rate_pct);
                 println!("  Current correct streak: {}", current_correct_streak);
+                let wrong_with_lesson = wrong.saturating_sub(wrong_without_lesson);
+                let lesson_coverage_pct = if wrong > 0 {
+                    wrong_with_lesson as f64 / wrong as f64 * 100.0
+                } else {
+                    0.0
+                };
+                println!(
+                    "  Lesson coverage: {}/{} wrong calls ({:.1}%)",
+                    wrong_with_lesson, wrong, lesson_coverage_pct
+                );
                 println!("  Wrong calls missing lesson: {}", wrong_without_lesson);
                 if let Some(rows) = lesson_coverage_rows.as_ref() {
                     let missing = rows.iter().filter(|row| !row.has_lesson).count();
@@ -1237,6 +1253,19 @@ struct BulkLessonInput {
 }
 
 #[derive(Debug, Serialize)]
+struct BulkLessonStub {
+    prediction_id: i64,
+    claim: String,
+    symbol: Option<String>,
+    source_agent: Option<String>,
+    scored_at: Option<String>,
+    age_days: i64,
+    stub: BulkLessonInput,
+    root_cause: String,
+    going_forward: String,
+}
+
+#[derive(Debug, Serialize)]
 struct BulkLessonResult {
     prediction_id: i64,
     status: String,
@@ -1252,7 +1281,17 @@ fn filter_lesson_views(
 ) {
     if unresolved_only {
         views.retain(|view| view.lesson.is_none());
+        views.sort_by(|a, b| lesson_backlog_sort_key(a).cmp(&lesson_backlog_sort_key(b)));
     }
+}
+
+fn lesson_backlog_sort_key(
+    view: &crate::db::prediction_lessons::PredictionLessonView,
+) -> (&str, i64) {
+    (
+        view.scored_at.as_deref().unwrap_or(&view.created_at),
+        view.prediction_id,
+    )
 }
 
 fn parse_bulk_lessons_input(raw: &str) -> Result<Vec<BulkLessonInput>> {
@@ -1268,9 +1307,91 @@ fn parse_bulk_lessons_input(raw: &str) -> Result<Vec<BulkLessonInput>> {
     Ok(parsed)
 }
 
+fn score_timestamp(prediction: &user_predictions::UserPrediction) -> &str {
+    prediction.scored_at.as_deref().unwrap_or(&prediction.created_at)
+}
+
+fn stub_miss_type(prediction: &user_predictions::UserPrediction) -> &'static str {
+    if prediction.target_date.is_some() {
+        "timing"
+    } else {
+        "directional"
+    }
+}
+
+fn stub_what_happened(prediction: &user_predictions::UserPrediction) -> String {
+    let mut parts = vec![format!(
+        "Prediction was scored wrong on {}.",
+        score_timestamp(prediction)
+    )];
+    if let Some(symbol) = prediction.symbol.as_deref() {
+        parts.push(format!("Symbol: {}.", symbol));
+    }
+    if let Some(notes) = prediction.score_notes.as_deref().filter(|value| !value.trim().is_empty()) {
+        parts.push(format!("Outcome notes: {}.", notes.trim()));
+    } else {
+        parts.push("Replace with the actual market outcome that invalidated the call.".to_string());
+    }
+    parts.join(" ")
+}
+
+fn stub_why_wrong() -> String {
+    "Root cause: <fill in why the call failed>. Going forward: <fill in what changes next time>."
+        .to_string()
+}
+
+fn stub_signal_misread(prediction: &user_predictions::UserPrediction) -> Option<String> {
+    prediction
+        .resolution_criteria
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| format!("Re-check resolution criteria: {}", value.trim()))
+}
+
+fn prediction_age_days(prediction: &user_predictions::UserPrediction) -> i64 {
+    let timestamp = score_timestamp(prediction);
+    timestamp_date_in_timezone(timestamp, local_fixed_offset())
+        .map(|date| Local::now().date_naive().signed_duration_since(date).num_days())
+        .unwrap_or(0)
+}
+
+fn build_bulk_lesson_stubs(
+    predictions: Vec<user_predictions::UserPrediction>,
+) -> Vec<BulkLessonStub> {
+    let mut items: Vec<_> = predictions
+        .into_iter()
+        .map(|prediction| BulkLessonStub {
+            prediction_id: prediction.id,
+            claim: prediction.claim.clone(),
+            symbol: prediction.symbol.clone(),
+            source_agent: prediction.source_agent.clone(),
+            scored_at: prediction.scored_at.clone(),
+            age_days: prediction_age_days(&prediction),
+            stub: BulkLessonInput {
+                prediction_id: prediction.id,
+                miss_type: stub_miss_type(&prediction).to_string(),
+                what_happened: stub_what_happened(&prediction),
+                why_wrong: stub_why_wrong(),
+                signal_misread: stub_signal_misread(&prediction),
+            },
+            root_cause: "<fill in why the call failed>".to_string(),
+            going_forward: "<fill in what changes next time>".to_string(),
+        })
+        .collect();
+    items.sort_by(|a, b| {
+        a.scored_at
+            .as_deref()
+            .unwrap_or("")
+            .cmp(b.scored_at.as_deref().unwrap_or(""))
+            .then_with(|| a.prediction_id.cmp(&b.prediction_id))
+    });
+    items
+}
+
 pub fn run_bulk_lessons(
     backend: &BackendConnection,
-    input_path: &str,
+    input_path: Option<&str>,
+    auto_stub: bool,
     unresolved_only: bool,
     dry_run: bool,
     json_output: bool,
@@ -1278,9 +1399,6 @@ pub fn run_bulk_lessons(
     use crate::db::prediction_lessons;
     use crate::db::user_predictions;
 
-    let raw = std::fs::read_to_string(input_path)
-        .map_err(|err| anyhow::anyhow!("failed to read '{}': {}", input_path, err))?;
-    let entries = parse_bulk_lessons_input(&raw)?;
     let predictions = user_predictions::list_predictions_backend(backend, None, None, None, None)?;
     let lesson_views = prediction_lessons::list_lesson_views_backend(backend, None, None)?;
 
@@ -1292,6 +1410,96 @@ pub fn run_bulk_lessons(
         .map(|view| view.prediction_id)
         .collect();
 
+    if input_path.is_none() {
+        let mut backlog: Vec<_> = prediction_map
+            .values()
+            .filter(|prediction| prediction.outcome == "wrong")
+            .filter(|prediction| !existing_lessons.contains(&prediction.id))
+            .cloned()
+            .collect();
+        backlog.sort_by(|a, b| {
+            score_timestamp(a)
+                .cmp(score_timestamp(b))
+                .then_with(|| a.id.cmp(&b.id))
+        });
+
+        let stubs = auto_stub.then(|| build_bulk_lesson_stubs(backlog.clone()));
+
+        if json_output {
+            let payload = if let Some(stubs) = stubs {
+                json!({
+                    "mode": "auto_stub",
+                    "total": backlog.len(),
+                    "predictions": stubs,
+                })
+            } else {
+                json!({
+                    "mode": "backlog",
+                    "total": backlog.len(),
+                    "predictions": backlog.iter().map(|prediction| json!({
+                        "prediction_id": prediction.id,
+                        "claim": prediction.claim,
+                        "symbol": prediction.symbol,
+                        "source_agent": prediction.source_agent,
+                        "scored_at": prediction.scored_at,
+                        "created_at": prediction.created_at,
+                        "age_days": prediction_age_days(prediction),
+                    })).collect::<Vec<_>>(),
+                })
+            };
+            println!("{}", serde_json::to_string_pretty(&payload)?);
+        } else if let Some(stubs) = stubs {
+            println!(
+                "Prediction lesson backlog: {} wrong predictions without lessons (oldest first)\n",
+                stubs.len()
+            );
+            for stub in &stubs {
+                let symbol = stub.symbol.as_deref().unwrap_or("—");
+                let agent = stub.source_agent.as_deref().unwrap_or("unknown");
+                let scored_at = stub.scored_at.as_deref().unwrap_or("unknown");
+                println!(
+                    "#{} [{}] {} | agent={} | scored={} | age={}d",
+                    stub.prediction_id, symbol, stub.claim, agent, scored_at, stub.age_days
+                );
+                println!("  stub:");
+                println!("    prediction_id: {}", stub.stub.prediction_id);
+                println!("    miss_type: {}", stub.stub.miss_type);
+                println!("    what_happened: {}", stub.stub.what_happened);
+                println!("    why_wrong: {}", stub.stub.why_wrong);
+                if let Some(signal_misread) = stub.stub.signal_misread.as_deref() {
+                    println!("    signal_misread: {}", signal_misread);
+                }
+                println!("  fill root_cause: {}", stub.root_cause);
+                println!("  fill going_forward: {}", stub.going_forward);
+                println!();
+            }
+        } else {
+            println!(
+                "Prediction lesson backlog: {} wrong predictions without lessons (oldest first)\n",
+                backlog.len()
+            );
+            for prediction in &backlog {
+                let symbol = prediction.symbol.as_deref().unwrap_or("—");
+                let agent = prediction.source_agent.as_deref().unwrap_or("unknown");
+                let scored_at = prediction.scored_at.as_deref().unwrap_or(&prediction.created_at);
+                println!(
+                    "#{} [{}] {} | agent={} | scored={} | age={}d",
+                    prediction.id,
+                    symbol,
+                    prediction.claim,
+                    agent,
+                    scored_at,
+                    prediction_age_days(prediction)
+                );
+            }
+        }
+        return Ok(());
+    }
+
+    let input_path = input_path.expect("checked above");
+    let raw = std::fs::read_to_string(input_path)
+        .map_err(|err| anyhow::anyhow!("failed to read '{}': {}", input_path, err))?;
+    let entries = parse_bulk_lessons_input(&raw)?;
     let mut results = Vec::new();
 
     for entry in entries {
@@ -1362,6 +1570,7 @@ pub fn run_bulk_lessons(
             "{}",
             serde_json::to_string_pretty(&json!({
                 "input_path": input_path,
+                "auto_stub": auto_stub,
                 "dry_run": dry_run,
                 "unresolved_only": unresolved_only,
                 "added": added,
@@ -1866,6 +2075,106 @@ mod tests {
     }
 
     #[test]
+    fn unresolved_filter_sorts_oldest_scored_predictions_first() {
+        let mut views = vec![
+            crate::db::prediction_lessons::PredictionLessonView {
+                prediction_id: 2,
+                claim: "newer".to_string(),
+                symbol: None,
+                conviction: "medium".to_string(),
+                timeframe: None,
+                confidence: None,
+                source_agent: None,
+                target_date: None,
+                outcome: "wrong".to_string(),
+                score_notes: None,
+                created_at: "2026-04-10T00:00:00Z".to_string(),
+                scored_at: Some("2026-04-12T00:00:00Z".to_string()),
+                lesson: None,
+            },
+            crate::db::prediction_lessons::PredictionLessonView {
+                prediction_id: 1,
+                claim: "older".to_string(),
+                symbol: None,
+                conviction: "medium".to_string(),
+                timeframe: None,
+                confidence: None,
+                source_agent: None,
+                target_date: None,
+                outcome: "wrong".to_string(),
+                score_notes: None,
+                created_at: "2026-04-01T00:00:00Z".to_string(),
+                scored_at: Some("2026-04-02T00:00:00Z".to_string()),
+                lesson: None,
+            },
+        ];
+
+        filter_lesson_views(&mut views, true);
+
+        assert_eq!(views.iter().map(|view| view.prediction_id).collect::<Vec<_>>(), vec![1, 2]);
+    }
+
+    #[test]
+    fn build_bulk_lesson_stubs_prefills_root_cause_prompt() {
+        let predictions = vec![crate::db::user_predictions::UserPrediction {
+            id: 7,
+            claim: "BTC breaks 100k by summer".to_string(),
+            symbol: Some("BTC-USD".to_string()),
+            conviction: "high".to_string(),
+            timeframe: Some("high".to_string()),
+            confidence: Some(0.8),
+            source_agent: Some("high-agent".to_string()),
+            target_date: Some("2026-08-01".to_string()),
+            resolution_criteria: Some("Close above 100k".to_string()),
+            outcome: "wrong".to_string(),
+            score_notes: Some("BTC stayed rangebound".to_string()),
+            lesson: None,
+            created_at: "2026-04-01T00:00:00Z".to_string(),
+            scored_at: Some("2026-04-03T00:00:00Z".to_string()),
+        }];
+
+        let stubs = build_bulk_lesson_stubs(predictions);
+
+        assert_eq!(stubs.len(), 1);
+        assert_eq!(stubs[0].prediction_id, 7);
+        assert_eq!(stubs[0].stub.miss_type, "timing");
+        assert!(stubs[0].stub.what_happened.contains("BTC stayed rangebound"));
+        assert!(stubs[0].stub.why_wrong.contains("Root cause"));
+        assert_eq!(
+            stubs[0].stub.signal_misread.as_deref(),
+            Some("Re-check resolution criteria: Close above 100k")
+        );
+        assert!(stubs[0].age_days >= 0);
+        assert_eq!(stubs[0].root_cause, "<fill in why the call failed>");
+        assert_eq!(stubs[0].going_forward, "<fill in what changes next time>");
+    }
+
+    #[test]
+    fn prediction_age_days_accepts_sqlite_timestamp_format() {
+        let scored_at = (Local::now() - Duration::days(3))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        let prediction = crate::db::user_predictions::UserPrediction {
+            id: 9,
+            claim: "age test".to_string(),
+            symbol: None,
+            conviction: "medium".to_string(),
+            timeframe: None,
+            confidence: None,
+            source_agent: None,
+            target_date: None,
+            resolution_criteria: None,
+            outcome: "wrong".to_string(),
+            score_notes: None,
+            lesson: None,
+            created_at: scored_at.clone(),
+            scored_at: Some(scored_at),
+        };
+
+        assert!(prediction_age_days(&prediction) >= 2);
+    }
+
+    #[test]
     fn run_bulk_lessons_dry_run_skips_non_wrong_and_existing() {
         let conn = db::open_in_memory();
         let backend = BackendConnection::Sqlite { conn };
@@ -1917,8 +2226,46 @@ mod tests {
         )
         .unwrap();
 
-        let result = run_bulk_lessons(&backend, path.to_str().unwrap(), true, true, true);
+        let result = run_bulk_lessons(&backend, Some(path.to_str().unwrap()), false, true, true, true);
         std::fs::remove_file(&path).ok();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_bulk_lessons_allows_backlog_preview_without_input() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+
+        crate::db::user_predictions::add_prediction_backend(
+            &backend,
+            "Older wrong call",
+            Some("BTC-USD"),
+            Some("medium"),
+            Some("low"),
+            None,
+            Some("low-agent"),
+            None,
+            None,
+        )
+        .unwrap();
+        crate::db::user_predictions::score_prediction_backend(&backend, 1, "wrong", None, None)
+            .unwrap();
+        crate::db::user_predictions::add_prediction_backend(
+            &backend,
+            "Newer wrong call",
+            Some("GC=F"),
+            Some("medium"),
+            Some("high"),
+            None,
+            Some("high-agent"),
+            None,
+            None,
+        )
+        .unwrap();
+        crate::db::user_predictions::score_prediction_backend(&backend, 2, "wrong", None, None)
+            .unwrap();
+
+        let result = run_bulk_lessons(&backend, None, true, true, true, true);
         assert!(result.is_ok());
     }
 }
