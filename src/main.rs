@@ -1049,8 +1049,12 @@ fn run_cli(cli: Cli) -> Result<()> {
             } => commands::calendar::dispatch(
                 &backend, command, days, impact, event_type, json,
             ),
-            cli::DataCommand::Cot { symbol, json } => {
-                commands::cot::run(&backend, symbol.as_deref(), json)
+            cli::DataCommand::Cot {
+                symbol,
+                force_refresh,
+                json,
+            } => {
+                commands::cot::run(&backend, symbol.as_deref(), force_refresh, json)
             }
             cli::DataCommand::Fedwatch { json } => commands::fedwatch::run(&backend, &config, json),
             cli::DataCommand::Onchain { json } => commands::onchain::run(&backend, json),

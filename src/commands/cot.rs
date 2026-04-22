@@ -20,7 +20,16 @@ struct CotAnalysisRow {
     extreme: bool,
 }
 
-pub fn run(backend: &BackendConnection, symbol: Option<&str>, json: bool) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    force_refresh: bool,
+    json: bool,
+) -> Result<()> {
+    if force_refresh {
+        refresh_cache(backend, symbol)?;
+    }
+
     if let Some(symbol) = symbol {
         let row = analyze_symbol(backend, symbol)?;
         if json {
@@ -66,6 +75,50 @@ pub fn run(backend: &BackendConnection, symbol: Option<&str>, json: bool) -> Res
     }
 
     Ok(())
+}
+
+fn refresh_cache(backend: &BackendConnection, symbol: Option<&str>) -> Result<()> {
+    let fetched_at = chrono::Utc::now().to_rfc3339();
+
+    for contract in selected_contracts(symbol)? {
+        let reports = crate::data::cot::fetch_historical_reports(contract.cftc_code, 156)?;
+        let entries: Vec<_> = reports
+            .into_iter()
+            .map(|report| cot_cache::CotCacheEntry {
+                cftc_code: report.cftc_code,
+                report_date: report.report_date,
+                open_interest: report.open_interest,
+                managed_money_long: report.managed_money_long,
+                managed_money_short: report.managed_money_short,
+                managed_money_net: report.managed_money_net,
+                commercial_long: report.commercial_long,
+                commercial_short: report.commercial_short,
+                commercial_net: report.commercial_net,
+                fetched_at: fetched_at.clone(),
+            })
+            .collect();
+        cot_cache::upsert_reports_backend(backend, &entries)?;
+    }
+
+    Ok(())
+}
+
+fn selected_contracts(symbol: Option<&str>) -> Result<Vec<&'static crate::data::cot::CotContract>> {
+    if let Some(symbol) = symbol {
+        let cftc_code = symbol_to_cftc_code(symbol).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Symbol '{}' is not tracked for COT data. Supported: GC=F, SI=F, CL=F, BTC",
+                symbol
+            )
+        })?;
+        let contract = COT_CONTRACTS
+            .iter()
+            .find(|contract| contract.cftc_code == cftc_code)
+            .ok_or_else(|| anyhow::anyhow!("missing COT contract metadata for {}", symbol))?;
+        Ok(vec![contract])
+    } else {
+        Ok(COT_CONTRACTS.iter().collect())
+    }
 }
 
 fn analyze_symbol(backend: &BackendConnection, symbol: &str) -> Result<CotAnalysisRow> {
@@ -232,5 +285,18 @@ mod tests {
         assert_eq!(row.report_date, "2026-02-24");
         assert_eq!(row.next_report_date, "2026-03-03");
         assert_eq!(row.next_release_date, "2026-03-06");
+    }
+
+    #[test]
+    fn selected_contracts_returns_single_symbol_when_filtered() {
+        let contracts = selected_contracts(Some("GC=F")).unwrap();
+        assert_eq!(contracts.len(), 1);
+        assert_eq!(contracts[0].cftc_code, "088691");
+    }
+
+    #[test]
+    fn selected_contracts_returns_all_when_unfiltered() {
+        let contracts = selected_contracts(None).unwrap();
+        assert_eq!(contracts.len(), COT_CONTRACTS.len());
     }
 }
