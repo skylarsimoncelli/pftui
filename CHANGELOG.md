@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-04-22 — docs: fix analytics trends evidence command examples
+
+- What: corrected trend evidence examples in the analytics engine docs and agent routines to use the real multi-level CLI path: `pftui analytics trends evidence add --id <N> ...`. The examples now also use the command's actual flag names such as `--direction-impact` and `--evidence`.
+- Why: reviewers were still hitting `command not found` because the docs referenced the retired hyphenated `evidence-add` form and outdated argument names.
+
 ### 2026-04-22 — feat: add layer filtering to analyst view divergences
 
 - What: added `--layer <low|medium|high|macro>` to `pftui analytics views divergence`, filtering results to divergences where the selected analyst layer is one of the conviction extremes. The JSON payload now echoes `layer_filter`, and terminal output includes the active layer filter in its header and empty-state messaging.

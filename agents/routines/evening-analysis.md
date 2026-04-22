@@ -327,8 +327,9 @@ pftui journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] 
 
 Where today provided data on structural trends:
 ```bash
-pftui analytics trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
-  --impact <strengthens|weakens|neutral> --source "<source>" "<specific evidence>"
+pftui analytics trends evidence add --id <trend-id> --date $(date +%Y-%m-%d) \
+  --direction-impact <supports|contradicts|neutral> --source "<source>" \
+  --evidence "<specific evidence>"
 ```
 
 ### 10. Daily Journal Entry (mandatory)
