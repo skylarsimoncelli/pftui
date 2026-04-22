@@ -40,7 +40,7 @@
 **Scope:** Update CLAUDE.md and agent routine docs that reference `trends evidence-add` to use correct `analytics trends evidence add --id <N>` syntax.
 **Effort:** < 30 minutes.
 
-### [Feedback] Add pftui data news --breaking/--today flag for higher-cadence news
+### [Done] Add pftui data news --breaking/--today flag for higher-cadence news
 **Source:** medium-timeframe-analyst (Apr 8, 72/78; Apr 9, 68/76 — repeated across two sessions).
 **Why:** Agents fall back to `web_search` for breaking news because `pftui data news` returns daemon-cached results that may be hours old. A `--breaking` or `--today` flag that triggers a live fetch (bypassing cache) would reduce `web_search` dependence and keep news within the pftui ecosystem. Note: the `NEWS_UNAVAIL` root cause is a separate P1 bug — this feature request applies once the core feed is stable.
 **Scope:** Add `--breaking` flag to `data news` (or `data news --today`) that bypasses cache and fetches fresh headlines. Apply higher-priority fetch cadence. Files: `src/commands/news.rs`, `src/data/news.rs`, `src/cli.rs`.

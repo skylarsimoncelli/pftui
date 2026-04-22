@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-04-22 — feat: add live breaking mode to data news
+
+- What: added `pftui data news --breaking` with a `--today` alias. When requested, the command now fetches fresh RSS headlines immediately, supplements them with live Brave news results when a Brave key is configured, stores the fetched items in the news cache, and renders only the freshly fetched set after applying the existing source/search/hours filters.
+- Why: agents were falling back to external web search for higher-cadence headlines because the default `data news` path only read the daemon cache. The new live mode keeps that workflow inside pftui without changing the default cache-backed behavior.
+
 ### 2026-04-22 — docs: fix analytics trends evidence command examples
 
 - What: corrected trend evidence examples in the analytics engine docs and agent routines to use the real multi-level CLI path: `pftui analytics trends evidence add --id <N> ...`. The examples now also use the command's actual flag names such as `--direction-impact` and `--evidence`.
