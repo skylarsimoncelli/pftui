@@ -1,7 +1,7 @@
 //! CFTC Commitments of Traders (COT) API client.
 //!
 //! Fetches positioning data from the CFTC's Socrata Open Data API.
-//! Uses the Disaggregated Futures-Only report (Traders in Financial Futures).
+//! Uses the Disaggregated Futures-Only report dataset.
 //! Data updates every Friday around 3:30 PM ET for the prior Tuesday.
 //!
 //! API: https://publicreporting.cftc.gov/resource/<dataset>.json
@@ -16,6 +16,9 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
 use serde::Deserialize;
+
+const COT_DATASET_ID: &str = "72hh-3qpy";
+const COT_API_BASE_URL: &str = "https://publicreporting.cftc.gov/resource";
 
 /// CFTC contract codes we track and their pftui symbol mappings.
 pub const COT_CONTRACTS: &[CotContract] = &[
@@ -109,16 +112,13 @@ struct SocrataRecord {
 
 /// Fetch latest COT report for a specific contract.
 ///
-/// Uses the Disaggregated Futures-Only report (TFF = Traders in Financial Futures).
-/// Endpoint: https://publicreporting.cftc.gov/resource/jun7-fc8e.json
+/// Uses the Disaggregated Futures-Only report.
+/// Endpoint: https://publicreporting.cftc.gov/resource/72hh-3qpy.json
 /// Query: ?cftc_contract_market_code=<code>&$order=report_date DESC&$limit=1
 ///
 /// This is a blocking call — run in a background thread if called from TUI.
 pub fn fetch_latest_report(cftc_code: &str) -> Result<CotReport> {
-    let url = format!(
-        "https://publicreporting.cftc.gov/resource/jun7-fc8e.json?cftc_contract_market_code={}&$order=report_date_as_yyyy_mm_dd%20DESC&$limit=1",
-        cftc_code
-    );
+    let url = reports_url(cftc_code, 1);
 
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -142,10 +142,7 @@ pub fn fetch_latest_report(cftc_code: &str) -> Result<CotReport> {
 ///
 /// This is a blocking call — run in a background thread if called from TUI.
 pub fn fetch_historical_reports(cftc_code: &str, weeks: usize) -> Result<Vec<CotReport>> {
-    let url = format!(
-        "https://publicreporting.cftc.gov/resource/jun7-fc8e.json?cftc_contract_market_code={}&$order=report_date_as_yyyy_mm_dd%20DESC&$limit={}",
-        cftc_code, weeks
-    );
+    let url = reports_url(cftc_code, weeks);
 
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -159,6 +156,16 @@ pub fn fetch_historical_reports(cftc_code: &str, weeks: usize) -> Result<Vec<Cot
         .map_err(|e| anyhow!("Failed to parse CFTC response: {}", e))?;
 
     resp.iter().map(parse_record).collect::<Result<Vec<_>>>()
+}
+
+fn reports_url(cftc_code: &str, limit: usize) -> String {
+    format!(
+        "{}/{dataset}.json?cftc_contract_market_code={code}&$order=report_date_as_yyyy_mm_dd%20DESC&$limit={limit}",
+        COT_API_BASE_URL,
+        dataset = COT_DATASET_ID,
+        code = cftc_code,
+        limit = limit
+    )
 }
 
 /// Parse a Socrata API record into CotReport.
@@ -370,6 +377,26 @@ mod tests {
     }
 
     #[test]
+    fn parse_record_accepts_disaggregated_schema_fields() {
+        let record = SocrataRecord {
+            cftc_code: "088691".to_string(),
+            report_date: "2026-04-14".to_string(),
+            open_interest: "362274".to_string(),
+            managed_money_long: "210009".to_string(),
+            managed_money_short: "47483".to_string(),
+            commercial_long: "55757".to_string(),
+            commercial_short: "256839".to_string(),
+        };
+
+        let parsed = parse_record(&record).unwrap();
+        assert_eq!(parsed.cftc_code, "088691");
+        assert_eq!(parsed.report_date, "2026-04-14");
+        assert_eq!(parsed.open_interest, 362274);
+        assert_eq!(parsed.managed_money_net, 162526);
+        assert_eq!(parsed.commercial_net, -201082);
+    }
+
+    #[test]
     fn expected_latest_report_date_switches_after_friday_release_window() {
         let before_release = chrono::DateTime::parse_from_rfc3339("2026-04-10T19:00:00Z")
             .unwrap()
@@ -386,5 +413,13 @@ mod tests {
             expected_latest_report_date(after_release).format("%Y-%m-%d").to_string(),
             "2026-04-07"
         );
+    }
+
+    #[test]
+    fn reports_url_uses_disaggregated_futures_dataset() {
+        let url = reports_url("088691", 3);
+        assert!(url.contains("/72hh-3qpy.json"));
+        assert!(url.contains("cftc_contract_market_code=088691"));
+        assert!(url.contains("$limit=3"));
     }
 }

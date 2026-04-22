@@ -481,6 +481,10 @@ pub enum DataCommand {
         /// Optional tracked symbol (GC=F, SI=F, CL=F, BTC)
         symbol: Option<String>,
 
+        /// Fetch fresh CFTC data now instead of relying on cached reports
+        #[arg(long = "force-refresh")]
+        force_refresh: bool,
+
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -4371,9 +4375,35 @@ mod tests {
         let cli = Cli::try_parse_from(["pftui", "data", "cot", "GC=F", "--json"]).unwrap();
         match cli.command {
             Some(Command::Data {
-                command: DataCommand::Cot { symbol, json },
+                command:
+                    DataCommand::Cot {
+                        symbol,
+                        force_refresh,
+                        json,
+                    },
             }) => {
                 assert_eq!(symbol.as_deref(), Some("GC=F"));
+                assert!(!force_refresh);
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_cot_force_refresh_command() {
+        let cli = Cli::try_parse_from(["pftui", "data", "cot", "--force-refresh", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command:
+                    DataCommand::Cot {
+                        symbol,
+                        force_refresh,
+                        json,
+                    },
+            }) => {
+                assert!(symbol.is_none());
+                assert!(force_refresh);
                 assert!(json);
             }
             _ => panic!("unexpected parse result"),

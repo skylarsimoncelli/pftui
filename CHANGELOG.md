@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-04-22 — fix: restore COT refreshes against the live CFTC disaggregated dataset
+
+- What: the COT client now fetches from the live CFTC disaggregated futures-only dataset (`72hh-3qpy`) that matches the parser schema, instead of the mismatched legacy dataset path that exposes different field names. `pftui data cot` also now supports `--force-refresh`, which fetches and stores fresh CFTC reports on demand before rendering the cached analysis.
+- Why: the Friday retry/staleness logic was still marking COT as due, but refreshes could fail to ingest new reports because the client was pointed at a different Socrata schema than the one the parser expected. That left COT stuck stale even after Friday releases. The new manual refresh flag gives operators an explicit recovery path when they want to bypass cadence gating.
+- Files: `src/data/cot.rs`, `src/commands/cot.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: added focused coverage for the disaggregated dataset URL, parser compatibility with the current schema, `data cot --force-refresh` CLI parsing, and contract selection helpers. Verified adjacent COT status/refresh tests still pass, and `cargo test -- --skip test_fetch_markets_basic` passes in this environment. `cargo fmt` and `cargo clippy -- -D warnings` could not run here because `rustfmt` and `cargo-clippy` are not installed via `rustup`.
+
 ### 2026-04-21 — fix: activate keyless FRED fallbacks and report degraded refresh status
 
 - What: `pftui data refresh` now treats `DGS10_YAHOO` and `GDPNOW_WEB` as keyless fallback series with their own freshness checks, so those fallback fetches run even when no `fred_api_key` is configured. The refresh pipeline now persists those fallback rows directly into `economic_cache`, and the FRED source result reports `partial` or `failed` instead of always `ok` when primary series fall back to cache after fetch errors.

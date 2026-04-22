@@ -6,12 +6,6 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Fix COT Friday retry — still 9 days stale after PR #652
-**Source:** evening-2026-04-09 data integrity audit ("pftui COT data: Stale (report_date: 2026-03-31, nine days old)"). evening-analyst (Apr 9, 80/78 — "COT data is 9 days stale (report_date 2026-03-31), pre-war positioning. Need fresher COT or staleness warning").
-**Why:** PR #652 added COT schedule metadata and Friday auto-refetch. However, the Apr 9 report confirms COT is still reporting 2026-03-31 data — nine days stale and three Fridays after the last ingested report. The April 4 COT release (the first Friday post-March 31) was not auto-ingested. This means the Friday retry logic is not firing, the CFTC URL changed, or the Apr 4 report failed to parse. Pre-war COT positioning is actively misleading — hedge fund positioning changed significantly during the 6-week Iran conflict, making the 1.9th-percentile oil short read unreliable as a current signal.
-**Scope:** Debug Friday retry logic from PR #652. Verify: (1) CFTC COT URL still returns the Apr 4 and Apr 11 reports, (2) the retry schedule/cron fires on Fridays and is not blocked by the stale-data circuit breaker, (3) the new report is being parsed and written to DB. Add a `pftui data cot --force-refresh` flag as a manual escape hatch. Files: `src/data/cot.rs`, `src/commands/cot.rs`.
-**Effort:** 1–2 hours.
-
 ### [Feedback] Fix calendar command garbled event names (2nd occurrence — escalated)
 **Source:** low-agent (Apr 8, 70/72 — first occurrence: "pftui data calendar returns garbled event names (numbers/percentages instead of event names) — low severity but reduces utility"). evening-analysis (Apr 9, 82/79 — "Calendar command returning corrupted numeric strings as event names (2nd occurrence)").
 **Why:** `pftui data calendar` returns numeric strings (numbers/percentages) in place of event names in two separate sessions across two different agents. This confirms it is not a one-time data anomaly. Calendar data is used for catalyst tracking and timing; garbled event names reduce utility to zero and force agents to fall back to web_search for economic calendar data.
