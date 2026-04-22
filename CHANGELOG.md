@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-04-22 — feat: add prediction lesson backlog stubs
+
+- What: `pftui journal prediction lessons bulk` now works as a backlog review command when no `--input` file is provided, listing wrong predictions that still lack lessons oldest-first. The same command also supports `--auto-stub` to emit template lesson payloads built from the original claim plus current scoring metadata, so agents only need to fill in the root-cause and going-forward analysis before writing the final JSON. `prediction scorecard --lesson-coverage` now surfaces lesson coverage more prominently in both terminal and JSON output.
+- Why: lesson coverage had become a P1 operational gap. Agents could see missing lessons, but they could not efficiently work through the unresolved backlog or generate structured starting points for post-mortems.
+
 ### 2026-04-22 — fix: realign calendar scraping with TradingEconomics event columns
 
 - What: the TradingEconomics calendar scraper now reads the event name from the current third table column (`a.calendar-event`) instead of the shifted numeric cells, and it derives row dates from the first cell's class metadata when the visible text only shows the release time. That keeps `pftui data calendar --json` aligned with the current page structure instead of emitting percentages or counts where event names should be.

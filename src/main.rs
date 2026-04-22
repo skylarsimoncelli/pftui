@@ -291,12 +291,14 @@ fn run_agent_journal(
                 ),
                 Some(cli::JournalPredictionLessonsCommand::Bulk {
                     input,
+                    auto_stub,
                     unresolved: unresolved_only,
                     dry_run,
                     json: json_flag,
                 }) => commands::predict::run_bulk_lessons(
                     backend,
-                    &input,
+                    input.as_deref(),
+                    auto_stub,
                     unresolved_only,
                     dry_run,
                     json_flag,
