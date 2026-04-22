@@ -6,12 +6,6 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Fix calendar command garbled event names (2nd occurrence — escalated)
-**Source:** low-agent (Apr 8, 70/72 — first occurrence: "pftui data calendar returns garbled event names (numbers/percentages instead of event names) — low severity but reduces utility"). evening-analysis (Apr 9, 82/79 — "Calendar command returning corrupted numeric strings as event names (2nd occurrence)").
-**Why:** `pftui data calendar` returns numeric strings (numbers/percentages) in place of event names in two separate sessions across two different agents. This confirms it is not a one-time data anomaly. Calendar data is used for catalyst tracking and timing; garbled event names reduce utility to zero and force agents to fall back to web_search for economic calendar data.
-**Scope:** Inspect the calendar parsing and rendering path. The most likely cause is a column mapping issue — the event name column is being mapped to a numeric column (e.g., `actual`, `forecast`, or `prior` value). Check the DB schema column order vs query result binding. Files: `src/commands/calendar.rs`, `src/data/calendar.rs`.
-**Effort:** < 1 hour.
-
 ### [Feedback] Fix analytics digest --agent-filter regression after PR #659
 **Source:** low-agent (Apr 8, 70/72 — "analytics digest --agent-filter flag missing (got unexpected argument error)").
 **Why:** PR #659 shipped "analytics digest --from/--agent-filter flags (date + agent filtering)" and is listed in the shipped changelog. However, the Apr 8 low-agent feedback — which postdates the merge — reports `--agent-filter` throwing `unexpected argument` error. This is a regression: the flag was announced as shipped but is not functional in the built binary. Agent digest workflows that depend on per-agent filtering are broken.
