@@ -58,7 +58,7 @@
 **Scope:** Investigate category classification in `data/predictions.rs` market fetch. Likely the tag-to-category mapping is too narrow. Add Iran/geopolitical keywords. Files: `src/data/predictions.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Fix analytics debate tool returning empty debate_id
+### [Done] Fix analytics debate tool returning empty debate_id
 **Source:** evening-analysis (Apr 9, 82/79 — "Debate tool returned empty debate_id despite topic being valid — could not persist debate programmatically").
 **Why:** The `analytics debate` command returns an empty `debate_id` in its JSON output even when the topic is valid and the debate runs successfully. Without a valid ID, agents cannot reference, retrieve, or persist the debate for later scoring or cross-session review. The Apr 9 evening analysis ran 3 adversarial debate rounds but could not store them programmatically.
 **Scope:** Check the debate ID generation and return path. The ID is likely generated internally but not serialised into the JSON response, or the DB insert is failing silently and returning a zero/empty ID. Files: `src/commands/debate.rs` (or equivalent), `src/db/debate.rs`.

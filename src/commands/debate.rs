@@ -24,10 +24,7 @@ pub fn start(
         let debate = debates::get_debate_view_backend(backend, id)?;
         println!(
             "{}",
-            serde_json::to_string_pretty(&json!({
-                "action": "debate_started",
-                "debate": debate,
-            }))?
+            serde_json::to_string_pretty(&debate_started_payload(id, debate))?
         );
     } else {
         println!("Started debate #{} — \"{}\" ({} rounds)", id, topic, rounds);
@@ -115,10 +112,7 @@ pub fn resolve(
         let updated = debates::get_debate_view_backend(backend, debate_id)?;
         println!(
             "{}",
-            serde_json::to_string_pretty(&json!({
-                "action": "debate_resolved",
-                "debate": updated,
-            }))?
+            serde_json::to_string_pretty(&debate_resolved_payload(debate_id, updated))?
         );
     } else {
         println!("Resolved debate #{}", debate_id);
@@ -244,6 +238,25 @@ pub fn summary(
 // Helpers
 // ---------------------------------------------------------------------------
 
+fn debate_started_payload(debate_id: i64, debate: Option<debates::DebateView>) -> serde_json::Value {
+    json!({
+        "action": "debate_started",
+        "debate_id": debate_id,
+        "debate": debate,
+    })
+}
+
+fn debate_resolved_payload(
+    debate_id: i64,
+    debate: Option<debates::DebateView>,
+) -> serde_json::Value {
+    json!({
+        "action": "debate_resolved",
+        "debate_id": debate_id,
+        "debate": debate,
+    })
+}
+
 fn truncate_str(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
@@ -277,4 +290,45 @@ fn textwrap(text: &str, width: usize) -> Vec<String> {
         }
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::backend::BackendConnection;
+    use rusqlite::Connection;
+
+    fn setup_backend() -> BackendConnection {
+        BackendConnection::Sqlite {
+            conn: Connection::open_in_memory().unwrap(),
+        }
+    }
+
+    #[test]
+    fn debate_started_payload_includes_top_level_debate_id() {
+        let backend = setup_backend();
+        let debate_id = debates::start_debate_backend(&backend, "BTC to 200k?", 3).unwrap();
+        let debate = debates::get_debate_view_backend(&backend, debate_id).unwrap();
+
+        let payload = debate_started_payload(debate_id, debate);
+
+        assert_eq!(payload["action"], "debate_started");
+        assert_eq!(payload["debate_id"], debate_id);
+        assert_eq!(payload["debate"]["id"], debate_id);
+    }
+
+    #[test]
+    fn debate_resolved_payload_includes_top_level_debate_id() {
+        let backend = setup_backend();
+        let debate_id = debates::start_debate_backend(&backend, "US recession in 2026?", 2).unwrap();
+        debates::resolve_debate_backend(&backend, debate_id, Some("Bull case failed")).unwrap();
+        let debate = debates::get_debate_view_backend(&backend, debate_id).unwrap();
+
+        let payload = debate_resolved_payload(debate_id, debate);
+
+        assert_eq!(payload["action"], "debate_resolved");
+        assert_eq!(payload["debate_id"], debate_id);
+        assert_eq!(payload["debate"]["id"], debate_id);
+        assert_eq!(payload["debate"]["status"], "resolved");
+    }
 }
