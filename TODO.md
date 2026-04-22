@@ -22,7 +22,7 @@
 **Scope:** New `data fear-greed` command pulling from Alternative.me Crypto Fear & Greed API (or CNN F&G for traditional markets). Store in DB table with history. JSON + terminal output. Integrate into `data refresh` and surface in `analytics market-snapshot`. Files: `src/commands/fear_greed.rs` (new), `src/cli.rs`, `src/main.rs`, `src/data/refresh.rs`.
 **Effort:** 3–5 hours.
 
-### [Feedback] Fix sovereign data returning empty (COMEX 403 on gold/silver)
+### [Done] Fix sovereign data returning empty (COMEX 403 on gold/silver)
 **Source:** high-agent (Apr 6, 72/78).
 **Why:** `pftui data supply` returns empty data due to COMEX returning 403 Forbidden. The stale-cache fallback added in PR #636 should handle this, but may not be reaching cached rows or the COMEX URL needs updating.
 **Scope:** (1) Confirm stale-cache fallback in `src/commands/supply.rs` is working for COMEX 403 cases. (2) If not, trace the fallback path and fix. (3) Add alternative source (Kitco public API or WGC) if COMEX 403 is persistent. Files: `src/commands/supply.rs`.

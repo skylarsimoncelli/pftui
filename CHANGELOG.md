@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-04-22 — fix: add COMEX inventory fallback source
+
+- What: the COMEX inventory fetch path now keeps CME's static XLS reports as the primary source but falls back to the public GoldSilverAI COMEX inventory pages for gold and silver when those XLS downloads fail. `data supply` still prefers live data and still falls back to stale cache when needed, but cold-cache runs no longer return empty solely because the CME report URLs time out.
+- Why: the existing stale-cache path only helped after a successful prior fetch. In practice the CME stock report URLs were hanging from this environment, so the command still returned no data on fresh installs or after cache loss.
+
 ### 2026-04-22 — feat: add dedicated fear-greed data command
 
 - What: added `pftui data fear-greed` as a dedicated command for the crypto and traditional Fear & Greed readings already maintained in the sentiment cache, with optional `--history` output and normalized JSON/terminal views. `analytics market-snapshot` now also exposes the latest Fear & Greed readings alongside its existing news-tone sentiment summary.
