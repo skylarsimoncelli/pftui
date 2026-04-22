@@ -16,7 +16,7 @@
 
 ## P2 - Coverage And Agent Consumption
 
-### [Feedback] Add data fear-greed subcommand
+### [Done] Add data fear-greed subcommand
 **Source:** high-agent (Apr 6, 72/78).
 **Why:** `pftui data fear-greed` subcommand is missing. Fear & Greed Index is a key sentiment indicator for high-timeframe structural analysis and is commonly referenced alongside VIX. Alternative.me API is free and reliable.
 **Scope:** New `data fear-greed` command pulling from Alternative.me Crypto Fear & Greed API (or CNN F&G for traditional markets). Store in DB table with history. JSON + terminal output. Integrate into `data refresh` and surface in `analytics market-snapshot`. Files: `src/commands/fear_greed.rs` (new), `src/cli.rs`, `src/main.rs`, `src/data/refresh.rs`.

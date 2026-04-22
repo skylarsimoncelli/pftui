@@ -1042,6 +1042,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 history,
                 json,
             } => commands::sentiment::run(&backend, symbol.as_deref(), history, json),
+            cli::DataCommand::FearGreed { history, json } => {
+                commands::fear_greed::run(&backend, history, json)
+            }
             cli::DataCommand::Calendar {
                 command,
                 days,

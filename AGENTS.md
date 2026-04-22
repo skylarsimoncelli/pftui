@@ -70,6 +70,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 |---|---|
 | `pftui data refresh` | Fetches ALL data sources (10+ sources, ~50 symbols) |
 | `pftui data dashboard macro --json` | DXY, VIX, yields, currencies, commodities, derived ratios |
+| `pftui data fear-greed --json` | Latest crypto + traditional Fear & Greed readings with optional history |
 | `pftui portfolio watchlist --json` | All watched symbols with prices, day change, 52W range |
 | `pftui analytics movers --json [--threshold N] [--overnight]` | Significant daily/overnight moves (default >3%) |
 | `pftui data predictions --json [--limit N]` | Polymarket prediction market odds |
