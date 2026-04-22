@@ -6,12 +6,6 @@
 
 ## P1 - Data Quality & Agent Reliability
 
-### [Feedback] Fix analytics digest --agent-filter regression after PR #659
-**Source:** low-agent (Apr 8, 70/72 — "analytics digest --agent-filter flag missing (got unexpected argument error)").
-**Why:** PR #659 shipped "analytics digest --from/--agent-filter flags (date + agent filtering)" and is listed in the shipped changelog. However, the Apr 8 low-agent feedback — which postdates the merge — reports `--agent-filter` throwing `unexpected argument` error. This is a regression: the flag was announced as shipped but is not functional in the built binary. Agent digest workflows that depend on per-agent filtering are broken.
-**Scope:** Verify `--agent-filter` flag is correctly wired in the CLI arg parser after PR #659. Check for naming mismatch (`--agent-filter` vs `--agent` vs `--filter-agent`), missing `clap` derive attribute, or a re-export issue that prevented the flag from making it to the release binary. Files: `src/commands/digest.rs`, `src/cli.rs`.
-**Effort:** < 30 minutes.
-
 ### [Feedback] Add prediction lesson bulk command — lesson coverage at 8% is critical
 **Source:** evening-analyst (Apr 9, 80/78 — explicit P1 flag: "Lesson coverage at 8% (8 of 62 wrong predictions) - system cannot learn at this rate. Recommend auto-lesson-extraction for wrong predictions >7 days old"). evening-analysis (Apr 9: "8% CRITICAL — target 80%. Only 5 of ~62 wrong predictions have structured lessons"). Corroborates Apr 5 evening-analysis feedback ("prediction lessons backlog (63 unresolved) needs a bulk-lesson workflow. Suggest: pftui prediction lesson bulk command").
 **Why:** Lesson coverage is 8% (8 of 62 wrong predictions with structured lessons). The system's self-improvement loop is functionally non-functional — agents cannot identify systematic biases because 92% of wrong predictions have no post-mortem. The `prediction scorecard --lesson-coverage` flag (PR #656) surfaces unlessoned predictions, but there is no efficient command for processing them in bulk. At 3 lessons per evening session, reaching the 80% target would take 15+ days of manual processing.
