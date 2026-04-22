@@ -420,6 +420,10 @@ pub enum DataCommand {
         #[arg(long)]
         hours: Option<i64>,
 
+        /// Fetch fresh headlines now instead of reading only from the cached news table
+        #[arg(long, alias = "today")]
+        breaking: bool,
+
         /// Maximum number of articles to show (default: 20)
         #[arg(long, default_value = "20")]
         limit: usize,
@@ -8123,6 +8127,7 @@ mod tests {
             "pftui",
             "data",
             "news",
+            "--breaking",
             "--with-sentiment",
             "--json",
         ])
@@ -8131,6 +8136,7 @@ mod tests {
             panic!("expected data");
         };
         let DataCommand::News {
+            breaking,
             with_sentiment,
             json,
             ..
@@ -8138,6 +8144,7 @@ mod tests {
         else {
             panic!("expected News");
         };
+        assert!(breaking);
         assert!(with_sentiment);
         assert!(json);
     }

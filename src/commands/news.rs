@@ -1,7 +1,12 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
 use serde_json::json;
 
+use crate::config::Config;
 use crate::commands::news_sentiment;
+use crate::commands::refresh::build_brave_news_queries;
+use crate::data::{brave, rss};
 use crate::db::backend::BackendConnection;
 use crate::db::news_cache::{get_latest_news_backend, NewsEntry};
 
@@ -41,55 +46,99 @@ fn news_empty_diagnostics(backend: &BackendConnection) -> serde_json::Value {
 /// the output reliably.
 pub fn run(
     backend: &BackendConnection,
+    config: &Config,
     source: Option<&str>,
     search: Option<&str>,
     hours: Option<i64>,
+    breaking: bool,
     limit: usize,
     with_sentiment: bool,
     json: bool,
 ) -> Result<()> {
-    let entries = match get_latest_news_backend(backend, limit, source, None, search, hours) {
-        Ok(entries) => entries,
-        Err(err) => {
-            if json {
-                // JSON mode: return valid JSON with error info, exit 0
-                let error_json = json!({
-                    "articles": [],
-                    "error": format!("Failed to fetch news: {err:#}")
-                });
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&error_json).unwrap_or_else(|_| {
-                        r#"{"articles":[],"error":"serialization failed"}"#.to_string()
-                    })
-                );
-                eprintln!("warning: news query failed: {err:#}");
-                return Ok(());
+    let entries = if breaking {
+        match fetch_live_entries(backend, config, source, search, hours, limit) {
+            Ok(entries) => entries,
+            Err(err) => {
+                if json {
+                    let error_json = json!({
+                        "articles": [],
+                        "error": format!("Failed to fetch live news: {err:#}"),
+                        "live_fetch": true,
+                    });
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&error_json).unwrap_or_else(|_| {
+                            r#"{"articles":[],"error":"serialization failed","live_fetch":true}"#
+                                .to_string()
+                        })
+                    );
+                    eprintln!("warning: live news query failed: {err:#}");
+                    return Ok(());
+                }
+                return Err(err.context("Failed to fetch live news"));
             }
-            // Text mode: propagate the error normally
-            return Err(err.context("Failed to fetch news from cache"));
+        }
+    } else {
+        match get_latest_news_backend(backend, limit, source, None, search, hours) {
+            Ok(entries) => entries,
+            Err(err) => {
+                if json {
+                    // JSON mode: return valid JSON with error info, exit 0
+                    let error_json = json!({
+                        "articles": [],
+                        "error": format!("Failed to fetch news: {err:#}")
+                    });
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&error_json).unwrap_or_else(|_| {
+                            r#"{"articles":[],"error":"serialization failed"}"#.to_string()
+                        })
+                    );
+                    eprintln!("warning: news query failed: {err:#}");
+                    return Ok(());
+                }
+                // Text mode: propagate the error normally
+                return Err(err.context("Failed to fetch news from cache"));
+            }
         }
     };
 
     if entries.is_empty() {
         if json {
+            let payload = if breaking {
+                json!({
+                    "articles": [],
+                    "status": "empty",
+                    "error": "live news fetch returned no matching articles",
+                    "live_fetch": true,
+                })
+            } else {
+                news_empty_diagnostics(backend)
+            };
             println!(
                 "{}",
-                serde_json::to_string_pretty(&news_empty_diagnostics(backend)).unwrap_or_else(|_| {
-                    r#"{"articles":[],"status":"empty","error":"news cache empty"}"#.to_string()
+                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| {
+                    r#"{"articles":[],"status":"empty","error":"news empty"}"#.to_string()
                 })
             );
         } else {
-            println!("No cached news entries. Run `pftui refresh` first.");
-            let diagnostics = news_empty_diagnostics(backend);
-            if let Some(reason) = diagnostics.get("error").and_then(|v| v.as_str()) {
-                println!("Reason: {reason}");
-            }
-            if let Some(rss_last_fetch) = diagnostics["diagnostics"]["rss_last_fetch"].as_str() {
-                println!("Last RSS fetch: {rss_last_fetch}");
-            }
-            if let Some(brave_last_fetch) = diagnostics["diagnostics"]["brave_last_fetch"].as_str() {
-                println!("Last Brave fetch: {brave_last_fetch}");
+            if breaking {
+                println!("No live news entries matched the requested filters.");
+            } else {
+                println!("No cached news entries. Run `pftui refresh` first.");
+                let diagnostics = news_empty_diagnostics(backend);
+                if let Some(reason) = diagnostics.get("error").and_then(|v| v.as_str()) {
+                    println!("Reason: {reason}");
+                }
+                if let Some(rss_last_fetch) = diagnostics["diagnostics"]["rss_last_fetch"].as_str()
+                {
+                    println!("Last RSS fetch: {rss_last_fetch}");
+                }
+                if let Some(brave_last_fetch) =
+                    diagnostics["diagnostics"]["brave_last_fetch"].as_str()
+                {
+                    println!("Last Brave fetch: {brave_last_fetch}");
+                }
             }
         }
         return Ok(());
@@ -106,6 +155,132 @@ pub fn run(
     }
 
     Ok(())
+}
+
+fn fetch_live_entries(
+    backend: &BackendConnection,
+    config: &Config,
+    source: Option<&str>,
+    search: Option<&str>,
+    hours: Option<i64>,
+    limit: usize,
+) -> Result<Vec<NewsEntry>> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+
+    let rss_feeds = rss::default_feeds();
+    let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim().to_string();
+    let brave_queries = if brave_key.is_empty() {
+        Vec::new()
+    } else {
+        build_brave_news_queries(backend, config).unwrap_or_default()
+    };
+
+    let (rss_report, brave_results) = rt.block_on(async {
+        let rss_fut = rss::fetch_all_feeds_detailed(&rss_feeds);
+        let brave_fut = async {
+            let mut items = Vec::new();
+            for query in &brave_queries {
+                if let Ok(results) = brave::brave_news_search(&brave_key, query, Some("pd"), 10).await
+                {
+                    items.extend(results);
+                }
+            }
+            items
+        };
+        tokio::join!(rss_fut, brave_fut)
+    });
+
+    let mut entries = Vec::new();
+    let fetched_at = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    for item in rss_report.items {
+        let entry = NewsEntry {
+            id: 0,
+            title: item.title,
+            url: item.url,
+            source: item.source,
+            source_type: "rss".to_string(),
+            symbol_tag: None,
+            description: String::new(),
+            extra_snippets: Vec::new(),
+            category: item.category.as_str().to_string(),
+            published_at: item.published_at,
+            fetched_at: fetched_at.clone(),
+        };
+        cache_live_entry(backend, &entry)?;
+        entries.push(entry);
+    }
+
+    for item in brave_results {
+        let entry = NewsEntry {
+            id: 0,
+            title: item.title,
+            url: item.url,
+            source: item.source.unwrap_or_else(|| "Brave".to_string()),
+            source_type: "brave".to_string(),
+            symbol_tag: None,
+            description: item.description,
+            extra_snippets: item.extra_snippets,
+            category: "markets".to_string(),
+            published_at: chrono::Utc::now().timestamp(),
+            fetched_at: fetched_at.clone(),
+        };
+        cache_live_entry(backend, &entry)?;
+        entries.push(entry);
+    }
+
+    Ok(filter_entries(entries, source, search, hours, limit))
+}
+
+fn cache_live_entry(backend: &BackendConnection, entry: &NewsEntry) -> Result<()> {
+    crate::db::news_cache::insert_news_with_source_type_backend(
+        backend,
+        &entry.title,
+        &entry.url,
+        &entry.source,
+        &entry.source_type,
+        entry.symbol_tag.as_deref(),
+        &entry.category,
+        entry.published_at,
+        Some(&entry.description),
+        &entry.extra_snippets,
+    )
+}
+
+fn filter_entries(
+    entries: Vec<NewsEntry>,
+    source: Option<&str>,
+    search: Option<&str>,
+    hours: Option<i64>,
+    limit: usize,
+) -> Vec<NewsEntry> {
+    let source = source.map(str::to_lowercase);
+    let search = search.map(str::to_lowercase);
+    let cutoff = hours.map(|value| chrono::Utc::now().timestamp() - (value * 3600));
+    let mut seen_urls = HashSet::new();
+
+    let mut filtered: Vec<_> = entries
+        .into_iter()
+        .filter(|entry| {
+            source
+                .as_ref()
+                .is_none_or(|wanted| entry.source.to_lowercase() == *wanted)
+        })
+        .filter(|entry| {
+            search.as_ref().is_none_or(|wanted| {
+                entry.title.to_lowercase().contains(wanted)
+                    || entry.description.to_lowercase().contains(wanted)
+            })
+        })
+        .filter(|entry| cutoff.is_none_or(|min_ts| entry.published_at >= min_ts))
+        .filter(|entry| seen_urls.insert(entry.url.clone()))
+        .collect();
+
+    filtered.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+    filtered.truncate(limit);
+    filtered
 }
 
 /// Print news entries as a formatted table.
@@ -317,7 +492,7 @@ mod tests {
         let backend = to_backend(conn);
 
         // JSON mode with empty cache should return Ok (exit 0), not error
-        let result = run(&backend, None, None, None, 20, false, true);
+        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, 20, false, true);
         assert!(result.is_ok(), "JSON mode should not fail on empty cache");
     }
 
@@ -341,7 +516,7 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let backend = to_backend(conn);
 
-        let result = run(&backend, None, None, None, 20, false, false);
+        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, 20, false, false);
         assert!(result.is_ok(), "Text mode should not fail on empty cache");
     }
 
@@ -360,7 +535,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, None, None, None, 20, false, true);
+        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, 20, false, true);
         assert!(result.is_ok(), "JSON mode should succeed with entries");
     }
 
@@ -379,7 +554,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, None, None, None, 20, false, false);
+        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, 20, false, false);
         assert!(result.is_ok(), "Text mode should succeed with entries");
     }
 
@@ -398,10 +573,61 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, None, None, None, 20, true, true);
+        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, 20, true, true);
         assert!(
             result.is_ok(),
             "JSON mode with sentiment should succeed with entries"
         );
+    }
+
+    #[test]
+    fn filter_entries_applies_filters_and_dedupes() {
+        let now = chrono::Utc::now().timestamp();
+        let entries = vec![
+            NewsEntry {
+                id: 0,
+                title: "Fed holds rates steady".to_string(),
+                url: "https://example.com/fed".to_string(),
+                source: "Reuters".to_string(),
+                source_type: "rss".to_string(),
+                symbol_tag: None,
+                description: "Fresh macro update".to_string(),
+                extra_snippets: Vec::new(),
+                category: "macro".to_string(),
+                published_at: now,
+                fetched_at: "2026-04-22 12:00:00".to_string(),
+            },
+            NewsEntry {
+                id: 0,
+                title: "Fed holds rates steady".to_string(),
+                url: "https://example.com/fed".to_string(),
+                source: "Reuters".to_string(),
+                source_type: "brave".to_string(),
+                symbol_tag: None,
+                description: "Duplicate URL".to_string(),
+                extra_snippets: Vec::new(),
+                category: "macro".to_string(),
+                published_at: now - 60,
+                fetched_at: "2026-04-22 12:00:00".to_string(),
+            },
+            NewsEntry {
+                id: 0,
+                title: "Bitcoin rallies".to_string(),
+                url: "https://example.com/btc".to_string(),
+                source: "CoinDesk".to_string(),
+                source_type: "rss".to_string(),
+                symbol_tag: None,
+                description: "Crypto move".to_string(),
+                extra_snippets: Vec::new(),
+                category: "crypto".to_string(),
+                published_at: now - 7200,
+                fetched_at: "2026-04-22 12:00:00".to_string(),
+            },
+        ];
+
+        let filtered = filter_entries(entries, Some("Reuters"), Some("fed"), Some(1), 10);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].source, "Reuters");
+        assert!(filtered[0].title.contains("Fed"));
     }
 }

@@ -398,7 +398,10 @@ fn compute_daily_change_pct(
     Some(((current - prev) / prev * dec!(100)).abs())
 }
 
-fn build_brave_news_queries(backend: &BackendConnection, config: &Config) -> Result<Vec<String>> {
+pub(crate) fn build_brave_news_queries(
+    backend: &BackendConnection,
+    config: &Config,
+) -> Result<Vec<String>> {
     let mut queries = if config.brave_news_queries.is_empty() {
         vec![
             "stock market today".to_string(),
