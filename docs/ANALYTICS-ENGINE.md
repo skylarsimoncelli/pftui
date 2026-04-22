@@ -419,12 +419,12 @@ pftui question          # Research questions with evidence logs
 
 **Commands:**
 ```bash
-pftui trends add        # Add a new structural trend to track
-pftui trends list       # View all tracked trends with status
-pftui trends update     # Update trend direction and conviction  
-pftui trends evidence-add  # Log new evidence for a trend
-pftui trends impact-add    # Map trend impact to specific assets
-pftui trends dashboard     # Overview of all HIGH layer trends
+pftui analytics trends add                 # Add a new structural trend to track
+pftui analytics trends list                # View all tracked trends with status
+pftui analytics trends update              # Update trend direction and conviction
+pftui analytics trends evidence add --id <N>  # Log new evidence for a trend
+pftui analytics trends impact add --id <N>    # Map trend impact to specific assets
+pftui analytics trends dashboard           # Overview of all HIGH layer trends
 ```
 
 ### **MACRO — Years to Decades** ("Where are we in the big cycle?")

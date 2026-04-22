@@ -34,7 +34,7 @@
 **Scope:** Add `--layer <timeframe>` flag to `analytics views divergence`. Filter divergences where at least one side is the specified timeframe. Files: `src/commands/views.rs`, `src/cli.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Fix CLAUDE.md syntax for analytics trends evidence add command
+### [Done] Fix CLAUDE.md syntax for analytics trends evidence add command
 **Source:** high-agent (Apr 6, 72/78).
 **Why:** Routine docs reference `trends evidence-add` (hyphenated) but correct CLI path is `analytics trends evidence add` (multi-level). Agents hit command-not-found errors.
 **Scope:** Update CLAUDE.md and agent routine docs that reference `trends evidence-add` to use correct `analytics trends evidence add --id <N>` syntax.

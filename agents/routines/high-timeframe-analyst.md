@@ -133,8 +133,9 @@ pftui analytics trends list --json
 2. Is the trend accelerating, stable, or decelerating?
 3. Update trend direction if warranted:
 ```bash
-pftui analytics trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
-  --impact <strengthens|weakens|neutral> --source "<source>" "<specific finding>"
+pftui analytics trends evidence add --id <trend-id> --date $(date +%Y-%m-%d) \
+  --direction-impact <supports|contradicts|neutral> --source "<source>" \
+  --evidence "<specific finding>"
 ```
 
 4. When trend evidence affects an active situation, log the structural development:
