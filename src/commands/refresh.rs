@@ -2714,7 +2714,7 @@ fn store_news_result(
                 None,
                 category_str,
                 item.published_at,
-                None,
+                item.description.as_deref(),
                 &[],
             )
             .is_ok()
