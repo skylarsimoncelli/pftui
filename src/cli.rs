@@ -2680,8 +2680,10 @@ pub enum AnalyticsMacroRegimeCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Set the market regime (risk-on, risk-off, crisis, etc.) with confidence and drivers
+    #[command(after_help = "Valid regime labels:\n  risk-on\n  lean risk-on\n  neutral\n  transition\n  lean risk-off\n  risk-off\n  crisis\n  stagflation\n\nAccepted aliases:\n  transitioning -> transition\n  risk_on / risk off / lean-risk-off / lean_risk_on\n\nExamples:\n  pftui analytics macro regime set transition --confidence 0.45\n  pftui analytics macro regime set stagflation --drivers \"manual override\"\n  pftui analytics macro regime set transitioning  # stored as `transition`")]
+    /// Set the market regime with confidence and drivers
     Set {
+        /// Regime label. Valid: risk-on, lean risk-on, neutral, transition, lean risk-off, risk-off, crisis, stagflation.
         regime: String,
         #[arg(long)]
         confidence: Option<f64>,

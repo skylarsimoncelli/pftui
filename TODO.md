@@ -64,7 +64,7 @@
 **Scope:** Check the debate ID generation and return path. The ID is likely generated internally but not serialised into the JSON response, or the DB insert is failing silently and returning a zero/empty ID. Files: `src/commands/debate.rs` (or equivalent), `src/db/debate.rs`.
 **Effort:** < 1 hour.
 
-### [Feedback] Fix analytics macro regime set — valid labels not documented
+### [Done] Fix analytics macro regime set — valid labels not documented
 **Source:** medium-timeframe-analyst (Apr 9, 68/76 — "analytics macro regime set accepted 'transitioning' regime label successfully but help docs only list risk-on/risk-off/crisis — document valid labels or validate with enum").
 **Why:** `analytics macro regime set` accepts `transitioning` as a valid input but `--help` output only lists `risk-on`, `risk-off`, and `crisis`. Agents waste time guessing undocumented labels by trial and error. Should enumerate all valid labels in help text or validate input against an explicit enum with a clear error message listing valid options.
 **Scope:** Update `analytics macro regime set` help text to enumerate all valid regime labels (including `transitioning`, `stagflation`, and any others accepted by the DB). Add enum validation: if an invalid label is passed, print a helpful error listing valid options. Files: `src/commands/regime.rs` (or equivalent), `src/cli.rs`.

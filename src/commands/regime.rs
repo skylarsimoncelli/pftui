@@ -8,6 +8,17 @@ use crate::db::price_cache::get_cached_price_backend;
 use crate::db::price_history::get_history_backend;
 use crate::db::regime_snapshots;
 
+const VALID_MANUAL_REGIME_LABELS: &[&str] = &[
+    "risk-on",
+    "lean risk-on",
+    "neutral",
+    "transition",
+    "lean risk-off",
+    "risk-off",
+    "crisis",
+    "stagflation",
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegimeAssessment {
     pub regime: String,
@@ -538,10 +549,7 @@ pub fn run_set(
     drivers: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let regime = regime.trim().to_lowercase();
-    if regime.is_empty() {
-        anyhow::bail!("regime name required");
-    }
+    let regime = normalize_manual_regime_label(regime)?;
 
     let assessment = classify_regime(backend);
     let confidence = confidence.or_else(|| {
@@ -589,6 +597,40 @@ pub fn run_set(
     }
 
     Ok(())
+}
+
+fn normalize_manual_regime_label(input: &str) -> Result<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("regime name required");
+    }
+
+    let normalized = trimmed
+        .to_lowercase()
+        .replace('_', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let canonical = match normalized.as_str() {
+        "risk on" | "risk-on" => "risk-on",
+        "lean risk on" | "lean risk-on" => "lean risk-on",
+        "neutral" => "neutral",
+        "transition" | "transitioning" => "transition",
+        "lean risk off" | "lean risk-off" => "lean risk-off",
+        "risk off" | "risk-off" => "risk-off",
+        "crisis" => "crisis",
+        "stagflation" => "stagflation",
+        _ => {
+            anyhow::bail!(
+                "invalid regime '{}'. Valid: {}. Aliases: transitioning -> transition; risk_on/risk_off and spaced variants are accepted.",
+                trimmed,
+                VALID_MANUAL_REGIME_LABELS.join(", ")
+            );
+        }
+    };
+
+    Ok(canonical.to_string())
 }
 
 // --- Confidence trend ---
@@ -881,6 +923,32 @@ mod tests {
         assert_eq!(current.regime, "risk-off");
         assert_eq!(current.confidence, Some(0.8));
         assert_eq!(current.drivers.as_deref(), Some("[\"manual override\"]"));
+    }
+
+    #[test]
+    fn run_set_normalizes_transitioning_alias() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        run_set(&backend, "transitioning", Some(0.4), None, true).unwrap();
+
+        let current = regime_snapshots::get_current_backend(&backend)
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.regime, "transition");
+    }
+
+    #[test]
+    fn run_set_rejects_invalid_regime_with_valid_list() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        let err = run_set(&backend, "banana", Some(0.2), None, false).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("invalid regime 'banana'"));
+        assert!(message.contains("risk-on"));
+        assert!(message.contains("stagflation"));
+        assert!(message.contains("transition"));
     }
 
     #[test]

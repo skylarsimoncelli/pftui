@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-04-23 — fix: document and validate manual macro regime labels
+
+- What: `pftui analytics macro regime set` now documents the full supported regime label set directly in `--help`, including `lean risk-on`, `neutral`, `transition`, `lean risk-off`, `crisis`, and `stagflation`. The command now validates manual regime labels before storing them, accepts friendly aliases such as `transitioning` and underscore/spaced variants, and normalizes those aliases to canonical stored labels.
+- Why: the command previously accepted any free-form string while only documenting a partial label list. Agents had to guess what was valid and could accidentally store inconsistent regime names. The stricter validation makes the storage contract explicit without breaking common alias usage.
+
 ### 2026-04-22 — fix: expose debate_id in debate JSON responses
 
 - What: `pftui agent debate start --json` and `pftui agent debate resolve --json` now include a top-level `debate_id` field alongside the nested debate payload. This makes the JSON contract consistent with other debate-related commands that already expose IDs directly.
