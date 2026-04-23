@@ -175,3 +175,4 @@ pub fn open_in_memory() -> Connection {
     schema::run_migrations(&conn).unwrap();
     conn
 }
+pub mod regime_overrides;

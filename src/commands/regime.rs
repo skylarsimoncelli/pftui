@@ -297,6 +297,37 @@ pub fn run(
 }
 
 fn current_output(backend: &BackendConnection) -> Result<RegimeCurrentOutput> {
+    // Check for an active manual override first — it takes precedence.
+    if let Ok(Some(ov)) = crate::db::regime_overrides::get_active_override_backend(backend) {
+        use crate::db::regime_snapshots::RegimeSnapshot;
+        let expires_in_mins = (ov.expires_at - chrono::Utc::now()).num_minutes().max(0);
+        let snapshot = RegimeSnapshot {
+            id: 0,
+            regime: ov.regime.clone(),
+            confidence: Some(1.0),
+            drivers: Some(format!(
+                "MANUAL OVERRIDE: {} (expires in {}m)",
+                ov.reason, expires_in_mins
+            )),
+            vix: None,
+            dxy: None,
+            yield_10y: None,
+            oil: None,
+            gold: None,
+            btc: None,
+            recorded_at: ov.created_at.to_rfc3339(),
+        };
+        return Ok(RegimeCurrentOutput {
+            current: Some(snapshot),
+            live: None,
+            warning: Some(format!(
+                "⚠ MANUAL OVERRIDE ACTIVE: regime forced to '{}' until {} UTC",
+                ov.regime,
+                ov.expires_at.format("%H:%M")
+            )),
+        });
+    }
+
     let current = regime_snapshots::get_current_backend(backend)?;
     if current.is_some() {
         return Ok(RegimeCurrentOutput {
@@ -531,6 +562,18 @@ fn run_summary(
     Ok(())
 }
 
+/// All valid macro regime labels accepted by `analytics macro regime set`.
+pub const VALID_REGIME_LABELS: &[&str] = &[
+    "risk-on",
+    "risk-off",
+    "crisis",
+    "stagflation",
+    "transitioning",
+    "deflation",
+    "reflation",
+    "goldilocks",
+];
+
 pub fn run_set(
     backend: &BackendConnection,
     regime: &str,
@@ -541,6 +584,13 @@ pub fn run_set(
     let regime = regime.trim().to_lowercase();
     if regime.is_empty() {
         anyhow::bail!("regime name required");
+    }
+    if !VALID_REGIME_LABELS.contains(&regime.as_str()) {
+        anyhow::bail!(
+            "invalid regime label {:?}. Valid labels are: {}\n\nUse `analytics macro regime set <label>` with one of the above.",
+            regime,
+            VALID_REGIME_LABELS.join(", ")
+        );
     }
 
     let assessment = classify_regime(backend);
@@ -829,6 +879,95 @@ pub fn run_confidence_trend(
         if start > 0 {
             println!("  ... ({} earlier points omitted)", start);
         }
+    }
+
+    Ok(())
+}
+
+/// Parse a duration string (e.g. "4h", "30m", "2d") into seconds.
+fn parse_duration_secs(s: &str) -> Result<i64> {
+    let s = s.trim();
+    if let Some(h) = s.strip_suffix('h') {
+        let hours: i64 = h.parse().map_err(|_| anyhow::anyhow!("invalid hours in duration: {}", s))?;
+        return Ok(hours * 3600);
+    }
+    if let Some(m) = s.strip_suffix('m') {
+        let mins: i64 = m.parse().map_err(|_| anyhow::anyhow!("invalid minutes in duration: {}", s))?;
+        return Ok(mins * 60);
+    }
+    if let Some(d) = s.strip_suffix('d') {
+        let days: i64 = d.parse().map_err(|_| anyhow::anyhow!("invalid days in duration: {}", s))?;
+        return Ok(days * 86400);
+    }
+    anyhow::bail!("unknown duration format {:?}. Use 30m, 4h, 12h, 2d, etc.", s)
+}
+
+/// Handle `analytics macro regime override` — manual regime classification override with expiry.
+pub fn run_override(
+    backend: &BackendConnection,
+    regime: Option<&str>,
+    reason: Option<&str>,
+    expires: &str,
+    clear: bool,
+    json_output: bool,
+) -> Result<()> {
+    use crate::db::regime_overrides;
+    use chrono::Utc;
+
+    if clear {
+        regime_overrides::clear_override_backend(backend)?;
+        if json_output {
+            println!("{}", serde_json::to_string_pretty(&json!({
+                "status": "cleared",
+                "message": "Regime override cleared. Normal classification resumes."
+            }))?);
+        } else {
+            println!("✓ Regime override cleared. Normal signal-based classification resumes.");
+        }
+        return Ok(());
+    }
+
+    let regime = regime.ok_or_else(|| anyhow::anyhow!(
+        "regime label required. Valid values: {}\nUse --clear to remove an existing override.",
+        VALID_REGIME_LABELS.join(", ")
+    ))?;
+
+    let regime = regime.trim().to_lowercase();
+    if !VALID_REGIME_LABELS.contains(&regime.as_str()) {
+        anyhow::bail!(
+            "invalid regime label {:?}. Valid labels are: {}",
+            regime,
+            VALID_REGIME_LABELS.join(", ")
+        );
+    }
+
+    let duration_secs = parse_duration_secs(expires)?;
+    if duration_secs <= 0 || duration_secs > 7 * 86400 {
+        anyhow::bail!("override duration must be between 1 minute and 7 days");
+    }
+
+    let expires_at = Utc::now() + chrono::Duration::seconds(duration_secs);
+    let reason_str = reason.unwrap_or("manual override (no reason provided)");
+
+    regime_overrides::set_override_backend(backend, &regime, reason_str, &expires_at)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&json!({
+            "status": "active",
+            "override_regime": regime,
+            "reason": reason_str,
+            "expires_at": expires_at.to_rfc3339(),
+            "expires_in": format!("{}", expires),
+        }))?);
+    } else {
+        println!(
+            "✓ Regime override set: {} (expires in {}, at {})",
+            regime,
+            expires,
+            expires_at.format("%Y-%m-%d %H:%M UTC")
+        );
+        println!("  Reason: {}", reason_str);
+        println!("  To cancel: pftui analytics macro regime override --clear");
     }
 
     Ok(())
