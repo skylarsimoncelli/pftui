@@ -517,13 +517,15 @@ pub fn list_indicators(conn: &Connection, scenario_id: i64) -> Result<Vec<Scenar
     Ok(indicators)
 }
 
-/// List ALL indicators with status='watching' across all scenarios (for refresh pipeline evaluation).
+/// List ALL active indicators (status='watching' OR 'triggered') across all scenarios.
+/// Used by the refresh pipeline to keep last_value and last_checked current for all indicators,
+/// not just those still in the 'watching' state.
 pub fn list_all_watching_indicators(
     conn: &Connection,
 ) -> Result<Vec<ScenarioIndicator>> {
     let mut stmt = conn.prepare(
         "SELECT id, scenario_id, branch_id, impact_id, symbol, metric, operator, threshold, label, status, triggered_at, last_value, last_checked, created_at, updated_at
-         FROM scenario_indicators WHERE status = 'watching' ORDER BY scenario_id, id",
+         FROM scenario_indicators WHERE status IN ('watching', 'triggered') ORDER BY scenario_id, id",
     )?;
     let rows = stmt.query_map([], ScenarioIndicator::from_row)?;
     let mut indicators = Vec::new();
@@ -2160,7 +2162,7 @@ fn list_all_watching_indicators_postgres(pool: &PgPool) -> Result<Vec<ScenarioIn
     let rows: Vec<IndicatorRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, scenario_id, branch_id, impact_id, symbol, metric, operator, threshold, label, status, triggered_at::text, last_value, last_checked::text, created_at::text, updated_at::text
-             FROM scenario_indicators WHERE status = 'watching' ORDER BY scenario_id, id",
+             FROM scenario_indicators WHERE status IN ('watching', 'triggered') ORDER BY scenario_id, id",
         )
         .fetch_all(pool)
         .await
