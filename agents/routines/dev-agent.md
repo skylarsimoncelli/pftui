@@ -110,6 +110,22 @@ This is mandatory. If you skip this step, the running system stays on the old bi
 
 **Do NOT use screen.** Both services are managed by systemd. The deploy script uses `systemctl restart`.
 
+**🔴 ALWAYS use `scripts/deploy.sh` — never run manual stop/cp/start sequences.** The deploy script includes a health check that verifies both services are active after deployment. Manual sequences leave the daemon stopped if anything goes wrong mid-sequence.
+
+## Step 8b: Mandatory Final Health Check
+
+After ALL work is complete (not just after each PR — once at the very end), verify both services are running:
+```bash
+sudo systemctl is-active pftui-daemon pftui-mobile
+```
+Both must output `active`. If either outputs anything else, restart immediately:
+```bash
+sudo systemctl start pftui-daemon pftui-mobile
+sleep 3
+sudo systemctl is-active pftui-daemon pftui-mobile
+```
+Do NOT finish the session with a stopped daemon. This is a production system.
+
 ## Step 9: Update TODO.md
 
 Remove the completed item from TODO.md. Update CHANGELOG.md with what shipped. Commit directly to master:

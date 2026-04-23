@@ -20,6 +20,8 @@ pub struct NewsItem {
     pub source: String,
     pub category: NewsCategory,
     pub published_at: i64, // Unix timestamp
+    /// RSS snippet/summary from the <description> element. May be absent or empty.
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +112,49 @@ struct RssItem {
     link: String,
     #[serde(rename = "pubDate", default)]
     pub_date: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+/// Strip HTML tags and entity-decode a string for plain-text use.
+fn strip_html(raw: &str) -> String {
+    // Remove CDATA wrappers if present
+    let s = raw
+        .trim()
+        .trim_start_matches("<![CDATA[")
+        .trim_end_matches("]]>")
+        .trim();
+
+    // Strip all < ... > tags
+    let mut out = String::with_capacity(s.len());
+    let mut in_tag = false;
+    for ch in s.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(ch),
+            _ => {}
+        }
+    }
+
+    // Decode common HTML entities
+    let decoded = out
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&nbsp;", " ");
+
+    // Collapse whitespace
+    decoded
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(512) // cap at 512 chars for storage
+        .collect()
 }
 
 /// Fetch and parse a single RSS feed.
@@ -136,12 +181,19 @@ pub async fn fetch_feed(feed: &RssFeed) -> Result<Vec<NewsItem>> {
         let published_at = parse_rfc2822(&item.pub_date.unwrap_or_default())
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
+        let description = item
+            .description
+            .as_deref()
+            .map(strip_html)
+            .filter(|s| !s.is_empty());
+
         items.push(NewsItem {
             title: item.title.trim().to_string(),
             url: item.link.trim().to_string(),
             source: feed.name.clone(),
             category: feed.category,
             published_at,
+            description,
         });
     }
 

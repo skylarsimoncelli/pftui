@@ -154,6 +154,16 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Normalize a symbol string: treat empty, "null", "NULL", "none", "NONE", "MACRO"
+/// as None (NULL in DB) so macro predictions without an asset symbol are first-class.
+fn normalize_symbol(s: Option<&str>) -> Option<&str> {
+    match s {
+        None => None,
+        Some(v) if matches!(v.trim(), "" | "null" | "NULL" | "none" | "NONE" | "MACRO" | "NFP" | "CPI" | "PMI" | "GDP") => None,
+        Some(v) => Some(v.trim()),
+    }
+}
+
 pub fn add_prediction(
     conn: &Connection,
     claim: &str,
@@ -165,6 +175,7 @@ pub fn add_prediction(
     target_date: Option<&str>,
     resolution_criteria: Option<&str>,
 ) -> Result<i64> {
+    let symbol = normalize_symbol(symbol);
     conn.execute(
         "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -628,6 +639,7 @@ fn add_prediction_postgres(
     target_date: Option<&str>,
     resolution_criteria: Option<&str>,
 ) -> Result<i64> {
+    let symbol = normalize_symbol(symbol);
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria)

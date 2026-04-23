@@ -3083,6 +3083,20 @@ fn run_cli(cli: Cli) -> Result<()> {
                         to.as_deref(),
                         json,
                     ),
+                    cli::AnalyticsMacroRegimeCommand::Override {
+                        regime,
+                        reason,
+                        expires,
+                        clear,
+                        json,
+                    } => commands::regime::run_override(
+                        &backend,
+                        regime.as_deref(),
+                        reason.as_deref(),
+                        &expires,
+                        clear,
+                        json,
+                    ),
                 },
             },
             cli::AnalyticsCommand::Alignment {
