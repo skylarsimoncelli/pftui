@@ -2680,12 +2680,22 @@ pub enum AnalyticsMacroRegimeCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Set the market regime (risk-on, risk-off, crisis, etc.) with confidence and drivers
+    /// Set the market regime with confidence and drivers.
+    ///
+    /// Valid regime labels: risk-on, risk-off, crisis, stagflation,
+    /// transitioning, deflation, reflation, goldilocks
+    ///
+    /// Examples:
+    ///   pftui analytics macro regime set risk-on --confidence 0.8 --drivers "VIX compressed, S&P ATH"
+    ///   pftui analytics macro regime set stagflation --confidence 0.7
+    ///   pftui analytics macro regime set transitioning
     Set {
+        /// Regime label. Valid values: risk-on, risk-off, crisis, stagflation,
+        /// transitioning, deflation, reflation, goldilocks
         regime: String,
-        #[arg(long)]
+        #[arg(long, help = "Conviction score 0.0–1.0 (default: auto-classified)")]
         confidence: Option<f64>,
-        #[arg(long)]
+        #[arg(long, help = "Comma-separated list of key drivers (e.g. 'VIX compressed, S&P ATH')")]
         drivers: Option<String>,
         #[arg(long)]
         json: bool,
@@ -2724,6 +2734,36 @@ pub enum AnalyticsMacroRegimeCommand {
         /// Filter: only include snapshots on or before this date (YYYY-MM-DD)
         #[arg(long)]
         to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Temporarily override the macro regime classification with manual expiry.
+    ///
+    /// Use on fast-moving event days (ceasefire, rate decision, earnings surprise) when
+    /// the automated signal-based classification lags reality by hours. The override
+    /// auto-expires after the specified duration so normal classification resumes.
+    ///
+    /// Examples:
+    ///   pftui analytics macro regime override risk-on --reason "Iran ceasefire April 17" --expires 4h
+    ///   pftui analytics macro regime override stagflation --reason "hot CPI + war premium" --expires 24h
+    ///   pftui analytics macro regime override crisis --reason "naval blockade VIX spike" --expires 2h
+    ///
+    /// Duration format: 30m, 4h, 12h, 24h, 2d
+    /// To cancel an active override: pftui analytics macro regime override --clear
+    #[command(name = "override")]
+    Override {
+        /// Regime label. Valid values: risk-on, risk-off, crisis, stagflation,
+        /// transitioning, deflation, reflation, goldilocks
+        regime: Option<String>,
+        /// Human-readable reason for the override (logged for audit trail)
+        #[arg(long)]
+        reason: Option<String>,
+        /// How long the override lasts before auto-expiry (e.g. 4h, 30m, 24h, 2d)
+        #[arg(long, default_value = "4h")]
+        expires: String,
+        /// Cancel (clear) any active regime override and resume normal classification
+        #[arg(long)]
+        clear: bool,
         #[arg(long)]
         json: bool,
     },
