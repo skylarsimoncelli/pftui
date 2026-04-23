@@ -64,31 +64,31 @@
 **Scope:** Check the debate ID generation and return path. The ID is likely generated internally but not serialised into the JSON response, or the DB insert is failing silently and returning a zero/empty ID. Files: `src/commands/debate.rs` (or equivalent), `src/db/debate.rs`.
 **Effort:** < 1 hour.
 
-### [Feedback] Fix analytics macro regime set — valid labels not documented
+### [Done] Fix analytics macro regime set — valid labels not documented
 **Source:** medium-timeframe-analyst (Apr 9, 68/76 — "analytics macro regime set accepted 'transitioning' regime label successfully but help docs only list risk-on/risk-off/crisis — document valid labels or validate with enum").
 **Why:** `analytics macro regime set` accepts `transitioning` as a valid input but `--help` output only lists `risk-on`, `risk-off`, and `crisis`. Agents waste time guessing undocumented labels by trial and error. Should enumerate all valid labels in help text or validate input against an explicit enum with a clear error message listing valid options.
 **Scope:** Update `analytics macro regime set` help text to enumerate all valid regime labels (including `transitioning`, `stagflation`, and any others accepted by the DB). Add enum validation: if an invalid label is passed, print a helpful error listing valid options. Files: `src/commands/regime.rs` (or equivalent), `src/cli.rs`.
 **Effort:** < 30 minutes.
 
-### [Feedback] Add prediction add --symbol null/empty support for non-asset predictions
+### [Done] Add prediction add --symbol null/empty support for non-asset predictions
 **Source:** medium-timeframe-analyst (Apr 9, 68/76 — "prediction add --symbol field should support null/empty without requiring a ticker — non-asset predictions (CPI, NFP) are awkward to file").
 **Why:** Economic data predictions (CPI, NFP, PMI, GDP, Core PCE) do not map to a single asset symbol. Requiring `--symbol` forces agents to invent placeholder tickers (e.g., `CPI`, `MACRO`, `NFP`) which pollute the symbol namespace and make filtered queries unreliable. Making `--symbol` optional (defaulting to NULL) would make macro data predictions first-class citizens.
 **Scope:** Allow `--symbol` to be optional in `prediction add`. If omitted, store as NULL in DB. Update `prediction list`, `prediction scorecard`, and `prediction score` to handle null symbol gracefully (display as `—` or `[macro]`). Files: `src/commands/prediction.rs`, `src/db/prediction.rs`, `src/cli.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Fix VIX/regime signal lag during fast-reversing events
+### [Done] Fix VIX/regime signal lag during fast-reversing events
 **Source:** evening-analysis (Apr 9, 82/79 — "VIX/regime signal lag during fast-reversing events (ceasefire day) caused regime to show risk-off despite risk-on price action — needs intraday refresh or event-triggered override").
 **Why:** During the Apr 8 ceasefire, `analytics macro regime` showed `risk-off` for hours after markets had clearly shifted to risk-on (VIX -12.9%, S&P futures +2.5-3%, BTC +6.89%). Agents applying the stale regime classification applied wrong correlation assumptions. The system needs either faster intraday regime re-evaluation or a manual override command for fast-moving event days.
 **Scope:** (1) Add `analytics macro regime override --regime <label> --reason <text> --expires <duration>` for manual intraday override that auto-expires (e.g., after 4 hours). (2) Consider triggering a regime re-evaluation automatically when VIX moves >15% intraday (the alert threshold already exists and could hook into regime re-check). Files: `src/commands/regime.rs`, `src/analytics/regime.rs`.
 **Effort:** 2–3 hours.
 
-### [Feedback] Fix analytics situation indicator list — stale last_checked timestamps
+### [Done] Fix analytics situation indicator list — stale last_checked timestamps
 **Source:** low-timeframe-analyst (Apr 8, 72/74 — "analytics situation indicator list shows stale last_checked timestamps (March 22) — indicator pipeline not re-evaluating on each refresh cycle; should auto-update on pftui data refresh").
 **Why:** Situation indicators show `last_checked: 2026-03-22` — over two weeks stale — even after `pftui data refresh` has run. The indicator evaluation pipeline is not wired into the `data refresh` cycle, so situation monitoring is running on signal evaluations that predate the Iran war. Agents relying on indicator status for situational awareness are reading outdated signals.
 **Scope:** Wire situation indicator re-evaluation into the `data refresh` pipeline so `last_checked` is updated on each refresh cycle. Files: `src/data/refresh.rs`, `src/analytics/situation.rs`.
 **Effort:** 1–2 hours.
 
-### [Feedback] Fix data news --hours JSON output missing description field
+### [Done] Fix data news --hours JSON output missing description field
 **Source:** low-timeframe-analyst (Apr 8, 72/74 — "pftui data news --hours 4 titles lack descriptions (empty description field). Would benefit from including RSS snippet/summary in JSON output so news can be assessed without a follow-up web_fetch").
 **Why:** `pftui data news --hours 4` returns headlines with an empty `description` field in JSON. Agents cannot assess news relevance from the title alone and must issue a `web_fetch` for each item to determine relevance — defeating the purpose of the aggregated news feed. Including the RSS snippet/summary in the JSON output would eliminate this round-trip.
 **Scope:** Populate the `description` field from the RSS/source snippet at ingest time and ensure it is stored in the news DB table. Surface it in the JSON output from `data news`. Files: `src/commands/news.rs`, `src/data/news.rs`, `src/db/news.rs`.
