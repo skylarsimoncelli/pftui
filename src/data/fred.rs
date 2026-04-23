@@ -202,6 +202,11 @@ struct RawObservation {
 const FRED_BASE_URL: &str = "https://api.stlouisfed.org/fred/series/observations";
 const DGS10_STALE_THRESHOLD_DAYS: i64 = 2;
 const GDPNOW_STALE_THRESHOLD_DAYS: i64 = 7;
+/// CPI/PPI series (CPIAUCSL, PPIFIS) are released ~45 days after period start,
+/// so March data (period date 2026-03-01) is released in mid-April.
+/// We allow 65 days before marking these stale so current data isn't false-flagged.
+const MONTHLY_LAGGED_STALE_THRESHOLD_DAYS: i64 = 65;
+const MONTHLY_LAGGED_SERIES: &[&str] = &["CPIAUCSL", "PPIFIS"];
 const GDPNOW_PAGE_URL: &str = "https://www.atlantafed.org/research-and-data/data/gdpnow";
 const GDPNOW_COMMENTARY_URL: &str =
     "https://www.atlantafed.org/research-and-data/data/gdpnow/current-and-past-gdpnow-commentaries";
@@ -404,6 +409,11 @@ pub fn is_series_stale(series_id: &str, date_str: &str) -> bool {
     }
     if series_id == "GDPNOW" || series_id == "GDPNOW_WEB" {
         return age_days > GDPNOW_STALE_THRESHOLD_DAYS;
+    }
+    // CPI/PPI series have ~45-day publication lag after the period date,
+    // so use a longer threshold to avoid false "stale" flags.
+    if MONTHLY_LAGGED_SERIES.contains(&series_id) {
+        return age_days > MONTHLY_LAGGED_STALE_THRESHOLD_DAYS;
     }
 
     series_by_id(series_id)
