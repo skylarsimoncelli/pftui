@@ -2685,6 +2685,8 @@ pub enum AnalyticsMacroRegimeCommand {
     /// Valid regime labels: risk-on, risk-off, crisis, stagflation,
     /// transitioning, deflation, reflation, goldilocks
     ///
+    /// Accepted aliases: transition -> transitioning; risk_on / risk off
+    ///
     /// Examples:
     ///   pftui analytics macro regime set risk-on --confidence 0.8 --drivers "VIX compressed, S&P ATH"
     ///   pftui analytics macro regime set stagflation --confidence 0.7
