@@ -377,7 +377,12 @@ fn insert_news_with_source_type_postgres(
             "INSERT INTO news_cache
              (title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-             ON CONFLICT (url) DO NOTHING",
+             ON CONFLICT (url) DO UPDATE
+             SET description = CASE
+                 WHEN news_cache.description = '' AND EXCLUDED.description != ''
+                 THEN EXCLUDED.description
+                 ELSE news_cache.description
+             END",
         )
         .bind(title)
         .bind(url)
