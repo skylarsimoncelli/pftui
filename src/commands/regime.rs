@@ -574,6 +574,40 @@ pub const VALID_REGIME_LABELS: &[&str] = &[
     "goldilocks",
 ];
 
+fn normalize_manual_regime_label(input: &str) -> Result<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("regime name required");
+    }
+
+    let normalized = trimmed
+        .to_lowercase()
+        .replace('_', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let canonical = match normalized.as_str() {
+        "risk on" | "risk-on" => "risk-on",
+        "risk off" | "risk-off" => "risk-off",
+        "crisis" => "crisis",
+        "stagflation" => "stagflation",
+        "transition" | "transitioning" => "transitioning",
+        "deflation" => "deflation",
+        "reflation" => "reflation",
+        "goldilocks" => "goldilocks",
+        _ => {
+            anyhow::bail!(
+                "invalid regime '{}'. Valid labels are: {}. Aliases: transition -> transitioning; risk_on/risk_off and spaced variants are accepted.",
+                trimmed,
+                VALID_REGIME_LABELS.join(", ")
+            );
+        }
+    };
+
+    Ok(canonical.to_string())
+}
+
 pub fn run_set(
     backend: &BackendConnection,
     regime: &str,
@@ -581,17 +615,7 @@ pub fn run_set(
     drivers: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let regime = regime.trim().to_lowercase();
-    if regime.is_empty() {
-        anyhow::bail!("regime name required");
-    }
-    if !VALID_REGIME_LABELS.contains(&regime.as_str()) {
-        anyhow::bail!(
-            "invalid regime label {:?}. Valid labels are: {}\n\nUse `analytics macro regime set <label>` with one of the above.",
-            regime,
-            VALID_REGIME_LABELS.join(", ")
-        );
-    }
+    let regime = normalize_manual_regime_label(regime)?;
 
     let assessment = classify_regime(backend);
     let confidence = confidence.or_else(|| {
@@ -640,7 +664,6 @@ pub fn run_set(
 
     Ok(())
 }
-
 // --- Confidence trend ---
 
 /// A single data point in the confidence trend.
@@ -931,15 +954,7 @@ pub fn run_override(
         "regime label required. Valid values: {}\nUse --clear to remove an existing override.",
         VALID_REGIME_LABELS.join(", ")
     ))?;
-
-    let regime = regime.trim().to_lowercase();
-    if !VALID_REGIME_LABELS.contains(&regime.as_str()) {
-        anyhow::bail!(
-            "invalid regime label {:?}. Valid labels are: {}",
-            regime,
-            VALID_REGIME_LABELS.join(", ")
-        );
-    }
+    let regime = normalize_manual_regime_label(regime)?;
 
     let duration_secs = parse_duration_secs(expires)?;
     if duration_secs <= 0 || duration_secs > 7 * 86400 {
@@ -1020,6 +1035,32 @@ mod tests {
         assert_eq!(current.regime, "risk-off");
         assert_eq!(current.confidence, Some(0.8));
         assert_eq!(current.drivers.as_deref(), Some("[\"manual override\"]"));
+    }
+
+    #[test]
+    fn run_set_normalizes_transitioning_alias() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        run_set(&backend, "transitioning", Some(0.4), None, true).unwrap();
+
+        let current = regime_snapshots::get_current_backend(&backend)
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.regime, "transitioning");
+    }
+
+    #[test]
+    fn run_set_rejects_invalid_regime_with_valid_list() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        let err = run_set(&backend, "banana", Some(0.2), None, false).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("invalid regime 'banana'"));
+        assert!(message.contains("risk-on"));
+        assert!(message.contains("stagflation"));
+        assert!(message.contains("transition"));
     }
 
     #[test]
