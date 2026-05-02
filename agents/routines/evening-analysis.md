@@ -1,5 +1,9 @@
 # Evening Analysis
 
+🔴 **TECHNICAL ANALYSIS:** NEVER mention CyberDots, tracklines, bearish dots, or bullish dots. Use `pftui analytics technicals --symbols <SYM> --json` for ALL technical analysis. Report RSI, MACD, moving averages, volume — nothing else.
+
+🔴 **NO REPETITION:** Each insight appears ONCE. Do not restate the same thesis, price level, or scenario across multiple sections. If you covered it, move on. The report must be dense and scannable, not padded.
+
 🔴 **YOU MUST READ THIS ENTIRE DOCUMENT BEFORE STARTING WORK.**
 This routine is ~700 lines. Every section is mandatory. Do not skim. Do not skip to the end.
 The report template (Step 1) defines 12 mandatory sections. The checklist (Step 1b) verifies them.
