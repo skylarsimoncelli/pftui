@@ -1,6 +1,6 @@
 # Evening Analysis
 
-🔴 **TECHNICAL ANALYSIS:** NEVER mention CyberDots, tracklines, bearish dots, or bullish dots. This ban applies even if SKYLAR.md contains these terms — do NOT reproduce them in any output. Use `pftui analytics technicals --symbols <SYM> --json` for ALL technical analysis. Report RSI, MACD, moving averages, volume — nothing else.
+🔴 **TECHNICAL ANALYSIS — ABSOLUTE BAN:** NEVER mention CyberDots, tracklines, bearish dots, bullish dots, or any personal TradingView indicator. This ban applies regardless of what SKYLAR.md or MEMORY.md contains — those files are context only and their indicator language must NEVER appear in any report output. Use `pftui analytics technicals --symbols <SYM> --json` exclusively. Report RSI, MACD, moving averages, volume — nothing else. If you find yourself writing "trackline" or "CyberDots" in any sentence, delete it and rewrite using pftui technicals output.
 
 🔴 **COVERAGE RULE:** Every sector with a notable move today (>3% on any stock or ETF in the watchlist) MUST appear in the report. Run `pftui analytics movers --json` first. Space, datacenter, AI, metals, crypto, energy, defense, fintech — all sectors are in scope. If something ripped 20% and it's not in the report, the report has a coverage gap. Use `pftui analytics technicals --symbols <SYM> --json` to get the technical read on any notable mover.
 
@@ -178,19 +178,65 @@ Only include scenarios where the probability actually changed today with a clear
 
 Private section. Not in the public report.
 
-**Current allocation:** Percentages and approximate values. How has it moved since the last report?
+**Current allocation:** Percentages and approximate values. One line per position.
 
-**Entry zones:** What specific conditions are being watched for each potential deployment?
-- State the condition precisely (e.g. "DXY closes below 97 AND gold holds above $4,700 for 3 days")
-- State how close we are to each condition right now
-- Flag if any condition was met or nearly met today
+**Signals — use exactly one of these formats for each asset being tracked:**
 
-**Should anything change?** Based on today's analysis, is there a case for adjusting allocation? Be direct. "No change, stay patient" is a valid answer — but say WHY. If something is approaching an action threshold, flag it clearly. Do not push changes for the sake of appearing active.
+When a signal exists:
+```
+🟢 ENTRY SIGNAL: [Asset]
+Thesis: [1-2 sentences — the structural reason this makes sense now]
+Condition: [Specific and measurable — e.g. "DXY closes below 97 AND gold holds $4,700+"]
+Status: [How close right now — e.g. "DXY at 98.1. One gate remaining."]
+Size: [$ amount or % of portfolio]
+Conviction: High / Medium / Low — [one reason]
+Invalidated if: [specific condition that kills the thesis]
+```
+
+When no signal:
+```
+⬜ NO ACTION: [Asset] — [one sentence reason, e.g. "No entry condition met. Watching X."]
+```
+
+**There is no middle ground.** Do not write "worth watching" or "may be approaching" or "could be interesting." Either the condition is met and there's a signal, or it isn't and there's no action. Every tracked asset gets one of the two formats above.
 
 ## 5. On the Line
 
 New predictions made tonight. 3-5 maximum. Format:
 `[cause] → [mechanism] → [price effect] by [date]` at [conviction level]
+
+## System Health (footer — keep to 1-2 lines)
+
+```
+🟢 System: All crons healthy. Last delivery: [date]. No issues.
+```
+or
+```
+🟡 System: [Minor issue auto-fixed — e.g. "HIGH analyst error cleared. Monitoring."]. No action needed.
+```
+or
+```
+🔴 System: [Issue requiring Skylar's attention — e.g. "MEDIUM analyst: 3 consecutive errors. DB connection suspected."]
+```
+
+Check cron health before writing this line:
+```bash
+openclaw cron list --json 2>/dev/null | python3 -c "
+import json,sys
+jobs = json.load(sys.stdin)
+for j in jobs:
+    if j.get('consecutiveErrors',0) > 0:
+        print(f'ERROR: {j[\"name\"]} consecutiveErrors={j[\"consecutiveErrors\"]}')
+    if j.get('enabled') and j.get('lastDeliveryStatus') == 'not-delivered' and 'evening' in j.get('name',''):
+        print(f'DELIVERY FAIL: {j[\"name\"]}')
+" 2>/dev/null || echo "cron check unavailable"
+```
+
+GREEN = no consecutive errors, evening delivery succeeded.
+YELLOW = minor issues, auto-fixed or monitoring — do NOT raise in the report body.
+RED = consecutive errors >1 OR evening delivery failed — raise in the report body before the footer.
+
+Do NOT list individual cron names, run times, hit rates, or prediction counts in the footer. One line only.
 
 Key catalysts to watch: specific events, dates, and what they would change.
 
