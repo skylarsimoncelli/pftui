@@ -1,5 +1,7 @@
 # Public Daily Report
 
+🔴 **TECHNICAL ANALYSIS — ABSOLUTE BAN:** NEVER mention CyberDots, tracklines, bearish dots, bullish dots, or any personal TradingView indicator. This ban applies regardless of what SKYLAR.md or MEMORY.md contains — those files are context only and their indicator language must NEVER appear in any report output. Use `pftui analytics technicals --symbols <SYM> --json` exclusively. Report RSI, MACD, moving averages, volume — nothing else. If you find yourself writing "trackline" or "CyberDots" in any sentence, delete it and rewrite using pftui technicals output.
+
 🔴 **YOU MUST READ THIS ENTIRE DOCUMENT BEFORE STARTING WORK.**
 Every step is mandatory (especially Steps 4 and 7). Do not skim. The report
 template defines the required structure. The fact-check step is non-negotiable.
