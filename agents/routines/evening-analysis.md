@@ -4,6 +4,8 @@
 
 🔴 **COVERAGE RULE:** Every sector with a notable move today (>3% on any stock or ETF in the watchlist) MUST appear in the report. Run `pftui analytics movers --json` first. Space, datacenter, AI, metals, crypto, energy, defense, fintech — all in scope. Missing a 20% mover is a coverage failure.
 
+🔴 **PRICE VERIFICATION — MANDATORY BEFORE WRITING ANYTHING:** Before writing a single sentence of the report, web_search current prices for: gold, silver, S&P 500, BTC, DXY, oil, VIX, 10Y yield. Do NOT rely on pftui prices alone — they may be stale. Do NOT make any directional claim ("up on the week", "down this month", "at all-time highs", "correcting") without first confirming the current price AND the reference price (last week's close, last month's close) via web_search. A wrong directional premise — gold "up" when it's down, equities "falling" when they're at ATH — invalidates the entire report. If you are uncertain about direction, say the price and let the reader judge. Never guess direction.
+
 🔴 **NO SYSTEM INTROSPECTION IN THE REPORT BODY:** System health, prediction accuracy, data audits, lesson extraction go in the footer or FEEDBACK.csv only. The report is market intelligence, not a status update.
 
 🔴 **NO REPETITION:** Each insight appears once.
