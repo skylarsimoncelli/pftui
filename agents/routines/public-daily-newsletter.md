@@ -2,6 +2,8 @@
 
 🔴 **TECHNICAL ANALYSIS — ABSOLUTE BAN:** NEVER mention CyberDots, tracklines, bearish dots, bullish dots, or any personal TradingView indicator. This ban applies regardless of what SKYLAR.md or MEMORY.md contains — those files are context only and their indicator language must NEVER appear in any report output. Use `pftui analytics technicals --symbols <SYM> --json` exclusively. Report RSI, MACD, moving averages, volume — nothing else. If you find yourself writing "trackline" or "CyberDots" in any sentence, delete it and rewrite using pftui technicals output.
 
+🔴 **PRICE VERIFICATION — MANDATORY BEFORE WRITING ANYTHING:** Before writing a single sentence, web_search current prices for: gold, silver, S&P 500, BTC, DXY, oil, VIX, 10Y yield. Do NOT rely on pftui prices alone — they may be stale. Do NOT make any directional claim ("up on the week", "down this month", "at all-time highs", "correcting") without first verifying the current price AND the reference price (last week's close, last month's close) via web_search. A wrong directional premise — gold "up" when it's down, equities "falling" when they're at ATH — invalidates the entire report. Never guess direction.
+
 🔴 **YOU MUST READ THIS ENTIRE DOCUMENT BEFORE STARTING WORK.**
 Every step is mandatory (especially Steps 4 and 7). Do not skim. The report
 template defines the required structure. The fact-check step is non-negotiable.
@@ -306,15 +308,24 @@ Learn more and explore the codebase: [pftui.com](https://pftui.com)
 This is a PUBLIC document read by external users. Every wrong number destroys credibility.
 You MUST verify every factual claim before generating the final PDF.
 
-### 4a: Cross-check ALL prices
+### 4a: Cross-check ALL prices AND DIRECTIONS
+
+🔴 **Directional errors are as serious as price errors.** Saying gold is "up on the week" when it is down, or equities are "falling" when they are at all-time highs, destroys report credibility faster than any number being wrong. Verify BOTH the current price AND the weekly direction before making any directional claim.
+
 For every price, yield, index level, and percentage change in the report, verify against
 a SECOND independent source. Use `web_search` to confirm at minimum:
-- BTC, gold, silver, oil closing prices
-- S&P 500, Nasdaq, Dow closing levels
-- DXY, GBP/USD, 10Y yield
-- VIX close
-- Recalculate every percentage change yourself: (new - old) / old * 100. If your math
-  doesn't match the number in the report, fix it.
+- BTC, gold, silver, oil: current price + weekly change direction
+- S&P 500, Nasdaq, Dow: current level + whether at/near ATH or in a downtrend
+- DXY, GBP/USD, 10Y yield: current level + weekly direction
+- VIX: current level (rising = fear, falling = calm)
+
+For each asset where you make a directional claim (up/down on the day/week/month), you MUST:
+1. State the current price (web-verified)
+2. State the reference price (last week's close or last month's close — look it up)
+3. Calculate the % change yourself
+4. Only then write the directional claim
+
+If you cannot find a reference price, write the current price only and omit the directional claim. Never guess direction.
 
 ### 4b: Cross-check ALL economic data
 For every CPI, PPI, NFP, GDP, unemployment, or Fed funds rate figure:
