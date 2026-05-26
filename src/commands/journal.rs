@@ -32,6 +32,7 @@ pub fn normalize_tags(repeated_tags: &[String], csv_tags: Option<&str>) -> Optio
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_add(
     backend: &BackendConnection,
     content: &str,
@@ -39,6 +40,7 @@ pub fn run_add(
     tag: Option<&str>,
     symbol: Option<&str>,
     conviction: Option<&str>,
+    author: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
     let timestamp = if let Some(d) = date {
@@ -64,6 +66,7 @@ pub fn run_add(
         symbol: symbol.map(|s| s.to_string()),
         conviction: conviction.map(|s| s.to_string()),
         status: "open".to_string(),
+        author: author.unwrap_or("system").to_string(),
     };
 
     let id = journal::add_entry_backend(backend, &entry)?;
@@ -78,6 +81,7 @@ pub fn run_add(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_list(
     backend: &BackendConnection,
     limit: Option<usize>,
@@ -85,6 +89,7 @@ pub fn run_list(
     tag: Option<&str>,
     symbol: Option<&str>,
     status: Option<&str>,
+    author: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
     let since_timestamp = if let Some(s) = since {
@@ -100,6 +105,7 @@ pub fn run_list(
         tag,
         symbol,
         status,
+        author,
     )?;
 
     if json_output {
@@ -307,7 +313,11 @@ fn parse_since(since: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_tags;
+    use super::{normalize_tags, run_add};
+    use crate::db::backend::BackendConnection;
+    use crate::db::journal;
+    use crate::db::schema;
+    use rusqlite::Connection;
 
     #[test]
     fn normalize_tags_merges_repeat_and_csv_inputs() {
@@ -316,5 +326,51 @@ mod tests {
             Some("oil, rates "),
         );
         assert_eq!(normalized.as_deref(), Some("macro,oil,geopolitical,rates"));
+    }
+
+    fn setup_backend() -> BackendConnection {
+        let conn = Connection::open_in_memory().unwrap();
+        schema::run_migrations(&conn).unwrap();
+        BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn run_add_persists_author_flag() {
+        let backend = setup_backend();
+        run_add(
+            &backend,
+            "skylar's own note",
+            Some("2026-03-04"),
+            None,
+            None,
+            None,
+            Some("skylar"),
+            false,
+        )
+        .unwrap();
+        let rows =
+            journal::list_entries_backend(&backend, None, None, None, None, None, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].author, "skylar");
+        assert_eq!(rows[0].content, "skylar's own note");
+    }
+
+    #[test]
+    fn run_add_defaults_author_to_system_when_flag_absent() {
+        let backend = setup_backend();
+        run_add(
+            &backend,
+            "anonymous note",
+            Some("2026-03-04"),
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        let rows =
+            journal::list_entries_backend(&backend, None, None, None, None, None, None).unwrap();
+        assert_eq!(rows[0].author, "system");
     }
 }

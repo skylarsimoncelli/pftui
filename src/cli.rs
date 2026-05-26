@@ -1745,10 +1745,12 @@ pub enum JournalEntryCommand {
         symbol: Option<String>,
         #[arg(long, help = "Conviction level (e.g. high, medium, low).")]
         conviction: Option<String>,
+        #[arg(long, help = "Entry author (e.g. skylar, analyst-low, analyst-medium, analyst-high, analyst-macro, analyst-evening, analyst-morning). Defaults to 'system'.")]
+        author: Option<String>,
         #[arg(long)]
         json: bool,
     },
-    /// List journal entries with optional filters (date, tag, symbol, status)
+    /// List journal entries with optional filters (date, tag, symbol, status, author)
     List {
         #[arg(long)]
         limit: Option<usize>,
@@ -1760,6 +1762,8 @@ pub enum JournalEntryCommand {
         symbol: Option<String>,
         #[arg(long)]
         filter_status: Option<String>,
+        #[arg(long, help = "Filter by author (e.g. skylar, analyst-low).")]
+        author: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -2045,15 +2049,19 @@ pub enum JournalNotesCommand {
         date: Option<String>,
         #[arg(long)]
         section: Option<String>,
+        #[arg(long, help = "Note author (e.g. skylar, analyst-low, analyst-medium, analyst-high, analyst-macro, analyst-evening, analyst-morning, analyst-brief). Defaults to 'system'.")]
+        author: Option<String>,
         #[arg(long)]
         json: bool,
     },
-    /// List narrative notes with optional date range filter
+    /// List narrative notes with optional filters (since, author)
     List {
         #[arg(long)]
         since: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
+        #[arg(long, help = "Filter by author (e.g. skylar, analyst-low).")]
+        author: Option<String>,
         #[arg(long)]
         json: bool,
     },

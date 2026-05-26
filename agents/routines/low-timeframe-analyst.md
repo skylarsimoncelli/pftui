@@ -156,6 +156,8 @@ pftui analytics situation update log --situation "<relevant situation>" \
 
 ## Every Run: Write Structured Views
 
+**Author ALL journal entries and notes with `--author analyst-low`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps.**
+
 7b. After completing your analysis, write a structured view for each held and watched asset you assessed this run. This makes your reasoning transparent, trackable, and queryable by the evening analyst and other agents.
 
 For each asset you analyzed (focus on held + watched + any with significant moves):
@@ -220,7 +222,7 @@ pftui journal prediction score <id> --outcome <correct|wrong|partial> --notes "[
 Write reflection note for wrong calls:
 ```bash
 pftui journal notes add "LOW PREDICTION REVIEW: [prediction] — [outcome]. [If wrong: expected [X] because [reason], got [Y] because [actual cause]. Should have watched [specific indicator].]" \
-  --date $(date +%Y-%m-%d) --section analysis
+  --date $(date +%Y-%m-%d) --section analysis --author analyst-low
 ```
 
 ## Market Close Run
@@ -248,7 +250,7 @@ pftui agent message send "LOW EOD DIGEST [date]: ${DIGEST}" \
 
 ```bash
 pftui journal notes add "[Pre-market/Midday/Close]: [key data points] | Alerts: [X] | News flags: [X] | Predictions: [made X / scored Y / Z% correct] | Mismatches: [X]" \
-  --date $(date +%Y-%m-%d) --section market
+  --date $(date +%Y-%m-%d) --section market --author analyst-low
 ```
 
 ## Rules

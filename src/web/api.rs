@@ -320,6 +320,7 @@ pub struct JournalQuery {
     pub tag: Option<String>,
     pub symbol: Option<String>,
     pub status: Option<String>,
+    pub author: Option<String>,
     pub search: Option<String>,
 }
 
@@ -354,6 +355,7 @@ pub struct JournalCreateRequest {
     pub symbol: Option<String>,
     pub conviction: Option<String>,
     pub status: Option<String>,
+    pub author: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2115,6 +2117,7 @@ pub async fn get_journal(
             query.tag.as_deref(),
             query.symbol.as_deref(),
             query.status.as_deref(),
+            query.author.as_deref(),
         )
     }
     .map_err(|e| {
@@ -2164,6 +2167,11 @@ pub async fn post_journal(
             .map(|v| v.trim().to_lowercase())
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| "open".to_string()),
+        author: body
+            .author
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "system".to_string()),
     };
     let id = db::journal::add_entry_backend(&backend, &entry).map_err(|e| {
         (
@@ -2912,6 +2920,7 @@ mod tests {
                     symbol: Some("msft".to_string()),
                     conviction: None,
                     status: Some("open".to_string()),
+                    author: None,
                 }),
             )
             .await

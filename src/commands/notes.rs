@@ -25,6 +25,7 @@ pub fn run(
     section: Option<&str>,
     since: Option<&str>,
     limit: Option<usize>,
+    author: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
     match action {
@@ -35,10 +36,12 @@ pub fn run(
                 .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
             let sec = section.unwrap_or("general");
             validate_section(sec)?;
+            let author_value = author.unwrap_or("system");
 
-            let new_id = daily_notes::add_note_backend(backend, &note_date, sec, content)?;
+            let new_id =
+                daily_notes::add_note_backend(backend, &note_date, sec, content, author_value)?;
             if json_output {
-                let rows = daily_notes::list_notes_backend(backend, None, None, None)?;
+                let rows = daily_notes::list_notes_backend(backend, None, None, None, None)?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == new_id) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 }
@@ -51,7 +54,7 @@ pub fn run(
             if let Some(s) = section {
                 validate_section(s)?;
             }
-            let rows = daily_notes::list_notes_backend(backend, date, section, limit)?;
+            let rows = daily_notes::list_notes_backend(backend, date, section, limit, author)?;
             if json_output {
                 println!(
                     "{}",
@@ -146,5 +149,88 @@ mod tests {
                 section
             );
         }
+    }
+
+    fn setup_backend() -> BackendConnection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::schema::run_migrations(&conn).unwrap();
+        BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn notes_add_persists_author_flag() {
+        let backend = setup_backend();
+        run(
+            &backend,
+            "add",
+            Some("LOW: pre-market scan"),
+            None,
+            Some("2026-03-04"),
+            Some("analysis"),
+            None,
+            None,
+            Some("analyst-low"),
+            false,
+        )
+        .unwrap();
+        let rows = daily_notes::list_notes_backend(&backend, None, None, None, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].author, "analyst-low");
+        assert_eq!(rows[0].content, "LOW: pre-market scan");
+    }
+
+    #[test]
+    fn notes_list_filters_by_author() {
+        let backend = setup_backend();
+        run(
+            &backend,
+            "add",
+            Some("low note"),
+            None,
+            Some("2026-03-04"),
+            Some("analysis"),
+            None,
+            None,
+            Some("analyst-low"),
+            false,
+        )
+        .unwrap();
+        run(
+            &backend,
+            "add",
+            Some("medium note"),
+            None,
+            Some("2026-03-04"),
+            Some("analysis"),
+            None,
+            None,
+            Some("analyst-medium"),
+            false,
+        )
+        .unwrap();
+        let lows = daily_notes::list_notes_backend(&backend, None, None, None, Some("analyst-low"))
+            .unwrap();
+        assert_eq!(lows.len(), 1);
+        assert_eq!(lows[0].content, "low note");
+    }
+
+    #[test]
+    fn notes_add_defaults_author_to_system() {
+        let backend = setup_backend();
+        run(
+            &backend,
+            "add",
+            Some("no author"),
+            None,
+            Some("2026-03-04"),
+            Some("analysis"),
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        let rows = daily_notes::list_notes_backend(&backend, None, None, None, None).unwrap();
+        assert_eq!(rows[0].author, "system");
     }
 }

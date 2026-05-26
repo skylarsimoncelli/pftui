@@ -29,7 +29,7 @@ fn run_agent_journal(
     command: Option<cli::JournalCommand>,
 ) -> Result<()> {
     match command {
-        None => commands::journal::run_list(backend, Some(20), None, None, None, None, false),
+        None => commands::journal::run_list(backend, Some(20), None, None, None, None, None, false),
         Some(cli::JournalCommand::Entry { command }) => match command {
             cli::JournalEntryCommand::Add {
                 value,
@@ -39,6 +39,7 @@ fn run_agent_journal(
                 tags,
                 symbol,
                 conviction,
+                author,
                 json,
             } => {
                 let resolved = content.or(value).ok_or_else(|| {
@@ -58,6 +59,7 @@ fn run_agent_journal(
                     normalized_tags.as_deref(),
                     symbol.as_deref(),
                     conviction.as_deref(),
+                    author.as_deref(),
                     json,
                 )
             }
@@ -67,6 +69,7 @@ fn run_agent_journal(
                 tag,
                 symbol,
                 filter_status,
+                author,
                 json,
             } => commands::journal::run_list(
                 backend,
@@ -75,6 +78,7 @@ fn run_agent_journal(
                 tag.as_deref(),
                 symbol.as_deref(),
                 filter_status.as_deref(),
+                author.as_deref(),
                 json,
             ),
             cli::JournalEntryCommand::Search {
@@ -349,6 +353,7 @@ fn run_agent_journal(
                 value,
                 date,
                 section,
+                author,
                 json,
             } => commands::notes::run(
                 backend,
@@ -359,9 +364,10 @@ fn run_agent_journal(
                 section.as_deref(),
                 None,
                 None,
+                author.as_deref(),
                 json,
             ),
-            cli::JournalNotesCommand::List { since, limit, json } => commands::notes::run(
+            cli::JournalNotesCommand::List { since, limit, author, json } => commands::notes::run(
                 backend,
                 "list",
                 None,
@@ -370,6 +376,7 @@ fn run_agent_journal(
                 None,
                 since.as_deref(),
                 limit,
+                author.as_deref(),
                 json,
             ),
             cli::JournalNotesCommand::Search {
@@ -386,6 +393,7 @@ fn run_agent_journal(
                 None,
                 since.as_deref(),
                 limit,
+                None,
                 json,
             ),
             cli::JournalNotesCommand::Remove { id, json } => commands::notes::run(
@@ -393,6 +401,7 @@ fn run_agent_journal(
                 "remove",
                 None,
                 Some(id),
+                None,
                 None,
                 None,
                 None,

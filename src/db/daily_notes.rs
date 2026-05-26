@@ -12,6 +12,7 @@ pub struct DailyNote {
     pub date: String,
     pub section: String,
     pub content: String,
+    pub author: String,
     pub created_at: String,
 }
 
@@ -22,16 +23,23 @@ impl DailyNote {
             date: row.get(1)?,
             section: row.get(2)?,
             content: row.get(3)?,
-            created_at: row.get(4)?,
+            author: row.get(4)?,
+            created_at: row.get(5)?,
         })
     }
 }
 
-pub fn add_note(conn: &Connection, date: &str, section: &str, content: &str) -> Result<i64> {
+pub fn add_note(
+    conn: &Connection,
+    date: &str,
+    section: &str,
+    content: &str,
+    author: &str,
+) -> Result<i64> {
     conn.execute(
-        "INSERT INTO daily_notes (date, section, content)
-         VALUES (?, ?, ?)",
-        params![date, section, content],
+        "INSERT INTO daily_notes (date, section, content, author)
+         VALUES (?, ?, ?, ?)",
+        params![date, section, content, author],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -41,9 +49,10 @@ pub fn list_notes(
     date: Option<&str>,
     section: Option<&str>,
     limit: Option<usize>,
+    author: Option<&str>,
 ) -> Result<Vec<DailyNote>> {
     let mut query = String::from(
-        "SELECT id, date, section, content, created_at
+        "SELECT id, date, section, content, author, created_at
          FROM daily_notes",
     );
 
@@ -53,6 +62,9 @@ pub fn list_notes(
     }
     if let Some(s) = section {
         where_parts.push(format!("section = '{}'", s.replace('"', "''")));
+    }
+    if let Some(a) = author {
+        where_parts.push(format!("author = '{}'", a.replace('\'', "''")));
     }
     if !where_parts.is_empty() {
         query.push_str(" WHERE ");
@@ -81,7 +93,7 @@ pub fn search_notes(
     limit: Option<usize>,
 ) -> Result<Vec<DailyNote>> {
     let mut sql = String::from(
-        "SELECT id, date, section, content, created_at
+        "SELECT id, date, section, content, author, created_at
          FROM daily_notes
          WHERE content LIKE ?",
     );
@@ -116,11 +128,12 @@ pub fn add_note_backend(
     date: &str,
     section: &str,
     content: &str,
+    author: &str,
 ) -> Result<i64> {
     query::dispatch(
         backend,
-        |conn| add_note(conn, date, section, content),
-        |pool| add_note_postgres(pool, date, section, content),
+        |conn| add_note(conn, date, section, content, author),
+        |pool| add_note_postgres(pool, date, section, content, author),
     )
 }
 
@@ -129,11 +142,12 @@ pub fn list_notes_backend(
     date: Option<&str>,
     section: Option<&str>,
     limit: Option<usize>,
+    author: Option<&str>,
 ) -> Result<Vec<DailyNote>> {
     query::dispatch(
         backend,
-        |conn| list_notes(conn, date, section, limit),
-        |pool| list_notes_postgres(pool, date, section, limit),
+        |conn| list_notes(conn, date, section, limit, author),
+        |pool| list_notes_postgres(pool, date, section, limit, author),
     )
 }
 
@@ -158,7 +172,7 @@ pub fn remove_note_backend(backend: &BackendConnection, id: i64) -> Result<()> {
     )
 }
 
-type DailyNoteRow = (i64, String, String, String, String);
+type DailyNoteRow = (i64, String, String, String, String, String);
 
 fn from_pg_row(r: DailyNoteRow) -> DailyNote {
     DailyNote {
@@ -166,7 +180,8 @@ fn from_pg_row(r: DailyNoteRow) -> DailyNote {
         date: r.1,
         section: r.2,
         content: r.3,
-        created_at: r.4,
+        author: r.4,
+        created_at: r.5,
     }
 }
 
@@ -178,8 +193,14 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 date TEXT NOT NULL,
                 section TEXT NOT NULL,
                 content TEXT NOT NULL,
+                author TEXT NOT NULL DEFAULT 'system',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE daily_notes ADD COLUMN IF NOT EXISTS author TEXT NOT NULL DEFAULT 'system'",
         )
         .execute(pool)
         .await?;
@@ -189,22 +210,32 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_daily_notes_section ON daily_notes(section)")
             .execute(pool)
             .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_daily_notes_author ON daily_notes(author)")
+            .execute(pool)
+            .await?;
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())
 }
 
-fn add_note_postgres(pool: &PgPool, date: &str, section: &str, content: &str) -> Result<i64> {
+fn add_note_postgres(
+    pool: &PgPool,
+    date: &str,
+    section: &str,
+    content: &str,
+    author: &str,
+) -> Result<i64> {
     ensure_tables_postgres(pool)?;
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
-            "INSERT INTO daily_notes (date, section, content)
-             VALUES ($1, $2, $3)
+            "INSERT INTO daily_notes (date, section, content, author)
+             VALUES ($1, $2, $3, $4)
              RETURNING id",
         )
         .bind(date)
         .bind(section)
         .bind(content)
+        .bind(author)
         .fetch_one(pool)
         .await
     })?;
@@ -216,11 +247,12 @@ fn list_notes_postgres(
     date: Option<&str>,
     section: Option<&str>,
     limit: Option<usize>,
+    author: Option<&str>,
 ) -> Result<Vec<DailyNote>> {
     ensure_tables_postgres(pool)?;
     let mut rows: Vec<DailyNoteRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, date, section, content, created_at::text
+            "SELECT id, date, section, content, author, created_at::text
              FROM daily_notes
              ORDER BY date DESC, created_at DESC",
         )
@@ -232,6 +264,9 @@ fn list_notes_postgres(
     }
     if let Some(s) = section {
         rows.retain(|r| r.2 == s);
+    }
+    if let Some(a) = author {
+        rows.retain(|r| r.4 == a);
     }
     if let Some(n) = limit {
         rows.truncate(n);
@@ -248,7 +283,7 @@ fn search_notes_postgres(
     ensure_tables_postgres(pool)?;
     let mut rows: Vec<DailyNoteRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, date, section, content, created_at::text
+            "SELECT id, date, section, content, author, created_at::text
              FROM daily_notes
              WHERE content ILIKE $1
              ORDER BY date DESC, created_at DESC",

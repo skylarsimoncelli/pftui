@@ -40,6 +40,7 @@ pub struct JournalEntry {
     pub symbol: Option<String>,
     pub conviction: Option<String>,
     pub status: String,
+    pub author: String,
     pub created_at: String,
 }
 
@@ -51,6 +52,7 @@ pub struct NewJournalEntry {
     pub symbol: Option<String>,
     pub conviction: Option<String>,
     pub status: String,
+    pub author: String,
 }
 
 impl JournalEntry {
@@ -63,15 +65,16 @@ impl JournalEntry {
             symbol: row.get(4)?,
             conviction: row.get(5)?,
             status: row.get(6)?,
-            created_at: row.get(7)?,
+            author: row.get(7)?,
+            created_at: row.get(8)?,
         })
     }
 }
 
 pub fn add_entry(conn: &Connection, entry: &NewJournalEntry) -> Result<i64> {
     conn.execute(
-        "INSERT INTO journal (timestamp, content, tag, symbol, conviction, status)
-         VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO journal (timestamp, content, tag, symbol, conviction, status, author)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
         params![
             &entry.timestamp,
             &entry.content,
@@ -79,6 +82,7 @@ pub fn add_entry(conn: &Connection, entry: &NewJournalEntry) -> Result<i64> {
             &entry.symbol,
             &entry.conviction,
             &entry.status,
+            &entry.author,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -94,7 +98,7 @@ pub fn add_entry_backend(backend: &BackendConnection, entry: &NewJournalEntry) -
 
 pub fn get_entry(conn: &Connection, id: i64) -> Result<Option<JournalEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at
+        "SELECT id, timestamp, content, tag, symbol, conviction, status, author, created_at
          FROM journal WHERE id = ?",
     )?;
     let mut rows = stmt.query(params![id])?;
@@ -120,9 +124,10 @@ pub fn list_entries(
     tag: Option<&str>,
     symbol: Option<&str>,
     status: Option<&str>,
+    author: Option<&str>,
 ) -> Result<Vec<JournalEntry>> {
     let mut query = String::from(
-        "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at
+        "SELECT id, timestamp, content, tag, symbol, conviction, status, author, created_at
          FROM journal WHERE 1=1",
     );
 
@@ -149,6 +154,9 @@ pub fn list_entries(
     }
     if let Some(st) = status {
         query.push_str(&format!(" AND status = '{}'", st));
+    }
+    if let Some(a) = author {
+        query.push_str(&format!(" AND author = '{}'", a.replace('\'', "''")));
     }
 
     query.push_str(" ORDER BY timestamp DESC");
@@ -181,6 +189,7 @@ pub fn list_entries(
     Ok(entries)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn list_entries_backend(
     backend: &BackendConnection,
     limit: Option<usize>,
@@ -188,11 +197,12 @@ pub fn list_entries_backend(
     tag: Option<&str>,
     symbol: Option<&str>,
     status: Option<&str>,
+    author: Option<&str>,
 ) -> Result<Vec<JournalEntry>> {
     query::dispatch(
         backend,
-        |conn| list_entries(conn, limit, since, tag, symbol, status),
-        |pool| list_entries_postgres(pool, limit, since, tag, symbol, status),
+        |conn| list_entries(conn, limit, since, tag, symbol, status, author),
+        |pool| list_entries_postgres(pool, limit, since, tag, symbol, status, author),
     )
 }
 
@@ -203,7 +213,7 @@ pub fn search_entries(
     limit: Option<usize>,
 ) -> Result<Vec<JournalEntry>> {
     let mut sql = String::from(
-        "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at
+        "SELECT id, timestamp, content, tag, symbol, conviction, status, author, created_at
          FROM journal WHERE content LIKE ?",
     );
 
@@ -344,8 +354,15 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 symbol TEXT,
                 conviction TEXT,
                 status TEXT NOT NULL DEFAULT 'open',
+                author TEXT NOT NULL DEFAULT 'system',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
+        )
+        .execute(pool)
+        .await?;
+        // Idempotent migration for upgraded databases.
+        sqlx::query(
+            "ALTER TABLE journal ADD COLUMN IF NOT EXISTS author TEXT NOT NULL DEFAULT 'system'",
         )
         .execute(pool)
         .await?;
@@ -363,6 +380,7 @@ type JournalRow = (
     Option<String>,
     String,
     String,
+    String,
 );
 
 fn to_journal_entry(r: JournalRow) -> JournalEntry {
@@ -374,7 +392,8 @@ fn to_journal_entry(r: JournalRow) -> JournalEntry {
         symbol: r.4,
         conviction: r.5,
         status: r.6,
-        created_at: r.7,
+        author: r.7,
+        created_at: r.8,
     }
 }
 
@@ -382,8 +401,8 @@ fn add_entry_postgres(pool: &PgPool, entry: &NewJournalEntry) -> Result<i64> {
     ensure_tables_postgres(pool)?;
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
-            "INSERT INTO journal (timestamp, content, tag, symbol, conviction, status)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            "INSERT INTO journal (timestamp, content, tag, symbol, conviction, status, author)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING id",
         )
         .bind(&entry.timestamp)
@@ -392,6 +411,7 @@ fn add_entry_postgres(pool: &PgPool, entry: &NewJournalEntry) -> Result<i64> {
         .bind(&entry.symbol)
         .bind(&entry.conviction)
         .bind(&entry.status)
+        .bind(&entry.author)
         .fetch_one(pool)
         .await
     })?;
@@ -402,7 +422,7 @@ fn get_entry_postgres(pool: &PgPool, id: i64) -> Result<Option<JournalEntry>> {
     ensure_tables_postgres(pool)?;
     let row: Option<JournalRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at::text
+            "SELECT id, timestamp, content, tag, symbol, conviction, status, author, created_at::text
              FROM journal
              WHERE id = $1",
         )
@@ -413,6 +433,7 @@ fn get_entry_postgres(pool: &PgPool, id: i64) -> Result<Option<JournalEntry>> {
     Ok(row.map(to_journal_entry))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn list_entries_postgres(
     pool: &PgPool,
     limit: Option<usize>,
@@ -420,11 +441,12 @@ fn list_entries_postgres(
     tag: Option<&str>,
     symbol: Option<&str>,
     status: Option<&str>,
+    author: Option<&str>,
 ) -> Result<Vec<JournalEntry>> {
     ensure_tables_postgres(pool)?;
     let rows = crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
-            "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at::text
+            "SELECT id, timestamp, content, tag, symbol, conviction, status, author, created_at::text
              FROM journal
              WHERE TRUE",
         );
@@ -437,6 +459,9 @@ fn list_entries_postgres(
         }
         if let Some(st) = status {
             qb.push(" AND status = ").push_bind(st);
+        }
+        if let Some(a) = author {
+            qb.push(" AND author = ").push_bind(a);
         }
         if let Some(tag_filter) = tag {
             let tags: Vec<&str> = tag_filter
@@ -474,6 +499,7 @@ fn list_entries_postgres(
                 row.try_get(5)?,
                 row.try_get(6)?,
                 row.try_get(7)?,
+                row.try_get(8)?,
             )))
         })
         .collect()
@@ -488,7 +514,7 @@ fn search_entries_postgres(
     ensure_tables_postgres(pool)?;
     let rows = crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
-            "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at::text
+            "SELECT id, timestamp, content, tag, symbol, conviction, status, author, created_at::text
              FROM journal
              WHERE content ILIKE ",
         );
@@ -514,6 +540,7 @@ fn search_entries_postgres(
                 row.try_get(5)?,
                 row.try_get(6)?,
                 row.try_get(7)?,
+                row.try_get(8)?,
             )))
         })
         .collect()
@@ -619,6 +646,7 @@ mod tests {
             symbol: Some("GC=F".to_string()),
             conviction: Some("high".to_string()),
             status: "open".to_string(),
+            author: "system".to_string(),
         };
 
         let id = add_entry(&conn, &entry).unwrap();
@@ -643,6 +671,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -655,11 +684,12 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
 
-        let entries = list_entries(&conn, None, None, None, None, None).unwrap();
+        let entries = list_entries(&conn, None, None, None, None, None, None).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].content, "Entry 1"); // Most recent first
     }
@@ -676,6 +706,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -688,11 +719,12 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
 
-        let entries = list_entries(&conn, None, None, Some("trade"), None, None).unwrap();
+        let entries = list_entries(&conn, None, None, Some("trade"), None, None, None).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content, "Trade entry");
     }
@@ -709,11 +741,12 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
 
-        let entries = list_entries(&conn, None, None, Some("oil"), None, None).unwrap();
+        let entries = list_entries(&conn, None, None, Some("oil"), None, None, None).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content, "Macro oil entry");
     }
@@ -730,6 +763,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -742,6 +776,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -763,6 +798,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -785,6 +821,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -806,6 +843,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -818,6 +856,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -830,6 +869,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -852,6 +892,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -864,6 +905,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -886,6 +928,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -898,6 +941,7 @@ mod tests {
                 symbol: None,
                 conviction: None,
                 status: "open".to_string(),
+                author: "system".to_string(),
             },
         )
         .unwrap();
@@ -906,5 +950,162 @@ mod tests {
         assert_eq!(stats.total_entries, 2);
         assert_eq!(stats.entries_by_tag.len(), 2);
         assert_eq!(stats.entries_by_month.len(), 2);
+    }
+
+    fn entry(content: &str, author: &str) -> NewJournalEntry {
+        NewJournalEntry {
+            timestamp: "2026-03-04T20:00:00Z".to_string(),
+            content: content.to_string(),
+            tag: None,
+            symbol: None,
+            conviction: None,
+            status: "open".to_string(),
+            author: author.to_string(),
+        }
+    }
+
+    #[test]
+    fn schema_creates_author_column_with_default_system() {
+        let conn = setup_test_db();
+        // INSERT bypassing the helper (omits author) — DEFAULT must apply.
+        conn.execute(
+            "INSERT INTO journal (timestamp, content, status) VALUES (?, ?, ?)",
+            params!["2026-03-04T20:00:00Z", "no author specified", "open"],
+        )
+        .unwrap();
+        let entries = list_entries(&conn, None, None, None, None, None, None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].author, "system");
+    }
+
+    #[test]
+    fn author_flag_persists_on_add_and_get() {
+        let conn = setup_test_db();
+        let id = add_entry(&conn, &entry("hello world", "skylar")).unwrap();
+        let fetched = get_entry(&conn, id).unwrap().unwrap();
+        assert_eq!(fetched.author, "skylar");
+    }
+
+    #[test]
+    fn list_entries_author_filter_returns_only_matching_rows() {
+        let conn = setup_test_db();
+        add_entry(&conn, &entry("low note", "analyst-low")).unwrap();
+        add_entry(&conn, &entry("medium note", "analyst-medium")).unwrap();
+        add_entry(&conn, &entry("skylar note", "skylar")).unwrap();
+
+        let low_only =
+            list_entries(&conn, None, None, None, None, None, Some("analyst-low")).unwrap();
+        assert_eq!(low_only.len(), 1);
+        assert_eq!(low_only[0].content, "low note");
+
+        let skylar_only =
+            list_entries(&conn, None, None, None, None, None, Some("skylar")).unwrap();
+        assert_eq!(skylar_only.len(), 1);
+        assert_eq!(skylar_only[0].content, "skylar note");
+
+        let no_filter = list_entries(&conn, None, None, None, None, None, None).unwrap();
+        assert_eq!(no_filter.len(), 3);
+    }
+
+    /// Reproduces the upgrade-path migration: build a pre-author schema with
+    /// historical content-prefix conventions, run `run_migrations`, and verify
+    /// that the backfill correctly attributes each row.
+    #[test]
+    fn backfill_attributes_prefix_tagged_historical_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Old schema (no author column).
+        conn.execute_batch(
+            "CREATE TABLE journal (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tag TEXT,
+                symbol TEXT,
+                conviction TEXT,
+                status TEXT DEFAULT 'open',
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE daily_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                section TEXT NOT NULL DEFAULT 'general',
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+
+        let samples: &[(&str, &str)] = &[
+            ("LOW PREDICTION REVIEW: gold spiked", "analyst-low"),
+            ("LOW: rates basis", "analyst-low"),
+            ("MEDIUM WRONG CALL: thesis missed", "analyst-medium"),
+            ("HIGH structural drift evidence", "analyst-high"),
+            ("MACRO regime cooled", "analyst-macro"),
+            ("EVENING wrap-up: pinned the day", "analyst-evening"),
+            ("MORNING brief: overnight tape", "analyst-morning"),
+            ("NIGHT SHIFT log: APAC bid", "analyst-night-shift"),
+            ("NIGHT-SHIFT recap", "analyst-night-shift"),
+            ("Random skylar musings no prefix", "system"),
+            ("low-key reminder: lowercase should not match", "system"),
+        ];
+
+        for (i, (content, _)) in samples.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO journal (timestamp, content, status) VALUES (?, ?, 'open')",
+                params![format!("2026-01-{:02}T12:00:00Z", i + 1), content],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO daily_notes (date, section, content) VALUES (?, 'analysis', ?)",
+                params![format!("2026-01-{:02}", i + 1), content],
+            )
+            .unwrap();
+        }
+
+        // Run the real migration path — adds the column and backfills.
+        crate::db::schema::run_migrations(&conn).unwrap();
+
+        let entries = list_entries(&conn, None, None, None, None, None, None).unwrap();
+        // list_entries returns DESC by timestamp; map by content for easy assertion.
+        for (content, expected_author) in samples {
+            let row = entries
+                .iter()
+                .find(|e| e.content == *content)
+                .unwrap_or_else(|| panic!("missing row for content '{}'", content));
+            assert_eq!(
+                row.author, *expected_author,
+                "journal row '{}' got author '{}', expected '{}'",
+                content, row.author, expected_author
+            );
+        }
+
+        // daily_notes parallel assertion via raw SQL since we don't import here.
+        let mut stmt = conn
+            .prepare("SELECT content, author FROM daily_notes ORDER BY id ASC")
+            .unwrap();
+        let mut rows = stmt.query([]).unwrap();
+        let mut idx = 0;
+        while let Some(row) = rows.next().unwrap() {
+            let content: String = row.get(0).unwrap();
+            let author: String = row.get(1).unwrap();
+            let (expected_content, expected_author) = samples[idx];
+            assert_eq!(content, expected_content);
+            assert_eq!(author, expected_author, "daily_note '{}'", expected_content);
+            idx += 1;
+        }
+        assert_eq!(idx, samples.len());
+    }
+
+    /// Verifies that running migrations on a fresh DB (column already exists
+    /// from CREATE TABLE) is idempotent and does not double-write authors.
+    #[test]
+    fn migration_is_idempotent_on_fresh_db() {
+        let conn = setup_test_db();
+        // Insert with explicit non-system author.
+        add_entry(&conn, &entry("LOW spike", "skylar")).unwrap();
+        // Running migrations again should not overwrite an explicitly-set author.
+        crate::db::schema::run_migrations(&conn).unwrap();
+        let row = list_entries(&conn, None, None, None, None, None, None).unwrap();
+        assert_eq!(row[0].author, "skylar");
     }
 }

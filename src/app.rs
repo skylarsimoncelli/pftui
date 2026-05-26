@@ -1212,6 +1212,7 @@ impl App {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap_or_default();
         }
@@ -4805,6 +4806,7 @@ impl App {
                     },
                     conviction: None,
                     status: "active".to_string(),
+                    author: "system".to_string(),
                 });
             }
             KeyCode::Char(c) => {
