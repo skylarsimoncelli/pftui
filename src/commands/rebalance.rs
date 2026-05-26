@@ -88,7 +88,7 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     }
 
     // Sort by absolute diff_value descending (biggest trades first)
-    rebalance_actions.sort_by(|a, b| b.diff_value.cmp(&a.diff_value));
+    rebalance_actions.sort_by_key(|b| std::cmp::Reverse(b.diff_value));
 
     if json {
         println!("{}", serde_json::to_string_pretty(&rebalance_actions)?);

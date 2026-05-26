@@ -1131,7 +1131,7 @@ fn get_movers_json(
         }
     }
 
-    movers.sort_by(|a, b| b.2.abs().cmp(&a.2.abs()));
+    movers.sort_by_key(|b| std::cmp::Reverse(b.2.abs()));
     movers.truncate(5);
 
     movers
@@ -1182,7 +1182,7 @@ fn get_market_movers_json(
         }
     }
 
-    movers.sort_by(|a, b| b.2.abs().cmp(&a.2.abs()));
+    movers.sort_by_key(|b| std::cmp::Reverse(b.2.abs()));
     movers.truncate(5);
     movers
         .into_iter()

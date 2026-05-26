@@ -113,7 +113,7 @@ fn render_concentration_panel(frame: &mut Frame, area: Rect, app: &App, hhi: Opt
         .iter()
         .filter_map(|p| p.current_value.map(|v| (p.symbol.clone(), v)))
         .collect();
-    weighted.sort_by(|a, b| b.1.cmp(&a.1));
+    weighted.sort_by_key(|b| std::cmp::Reverse(b.1));
     let total: Decimal = weighted.iter().map(|(_, v)| *v).sum();
 
     let mut lines: Vec<Line<'static>> = Vec::new();

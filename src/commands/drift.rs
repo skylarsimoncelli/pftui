@@ -63,7 +63,7 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     }
 
     // Sort by absolute drift descending (biggest drifts first)
-    drift_data.sort_by(|a, b| b.drift.abs().cmp(&a.drift.abs()));
+    drift_data.sort_by_key(|b| std::cmp::Reverse(b.drift.abs()));
 
     if json {
         // Format percentages to 2 decimal places for JSON output.

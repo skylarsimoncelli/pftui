@@ -1724,11 +1724,10 @@ fn run_pipeline(
             }
             history_attempted += 1;
             match rt.block_on(fetch_history_for_symbol(sym, *cat, 180)) {
-                Ok((records, source)) if !records.is_empty() => {
-                    if upsert_history_backend(backend, sym, source, &records).is_ok() {
+                Ok((records, source)) if !records.is_empty()
+                    && upsert_history_backend(backend, sym, source, &records).is_ok() => {
                         history_updated += 1;
                     }
-                }
                 _ => {}
             }
         }

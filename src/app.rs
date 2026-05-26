@@ -1730,7 +1730,7 @@ impl App {
         match self.sort_field {
             SortField::Name => positions.sort_by(|a, b| a.symbol.cmp(&b.symbol)),
             SortField::Category => {
-                positions.sort_by(|a, b| a.category.to_string().cmp(&b.category.to_string()))
+                positions.sort_by_key(|a| a.category.to_string())
             }
             SortField::GainPct => positions.sort_by(|a, b| {
                 let ga = a.gain_pct.unwrap_or(dec!(0));
@@ -2906,14 +2906,13 @@ impl App {
             KeyCode::Char('1') => {
                 self.switch_to_home_default();
             }
-            KeyCode::Char('2') => {
+            KeyCode::Char('2')
                 // Transactions view not available in percentage mode
-                if self.portfolio_mode != PortfolioMode::Percentage {
+                if self.portfolio_mode != PortfolioMode::Percentage => {
                     self.view_mode = ViewMode::Transactions;
                     self.detail_open = false;
                     self.detail_popup_open = false;
                 }
-            }
             KeyCode::Char('3') => {
                 self.view_mode = ViewMode::Markets;
                 self.detail_open = false;
@@ -3084,11 +3083,12 @@ impl App {
             }
 
             // Open selected news URL in browser
-            KeyCode::Char('o') if matches!(self.view_mode, ViewMode::News) => {
-                if self.news_selected_index < self.news_entries.len() {
-                    let url = &self.news_entries[self.news_selected_index].url;
-                    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
-                }
+            KeyCode::Char('o')
+                if matches!(self.view_mode, ViewMode::News)
+                    && self.news_selected_index < self.news_entries.len() =>
+            {
+                let url = &self.news_entries[self.news_selected_index].url;
+                let _ = std::process::Command::new("xdg-open").arg(url).spawn();
             }
             KeyCode::Char('J') if matches!(self.view_mode, ViewMode::News) => {
                 self.journal_selected_news();
@@ -3239,14 +3239,13 @@ impl App {
                 self.last_sort_change_tick = self.tick_count;
                 self.recompute();
             }
-            KeyCode::Char('%') => {
-                if !is_privacy_view(self) {
+            KeyCode::Char('%')
+                if !is_privacy_view(self) => {
                     self.sort_field = SortField::GainPct;
                     self.sort_ascending = false;
                     self.last_sort_change_tick = self.tick_count;
                     self.recompute();
                 }
-            }
             KeyCode::Char('G') if matches!(self.view_mode, ViewMode::Positions) => {
                 self.show_sector_grouping = true;
                 self.sort_field = SortField::Category;
@@ -3267,23 +3266,22 @@ impl App {
                 self.last_sort_change_tick = self.tick_count;
                 self.recompute();
             }
-            KeyCode::Char('P') if matches!(self.view_mode, ViewMode::Positions) => {
-                if !is_privacy_view(self) {
-                    self.show_sector_grouping = false;
-                    self.sort_field = SortField::GainPct;
-                    self.sort_ascending = false;
-                    self.last_sort_change_tick = self.tick_count;
-                    self.recompute();
-                }
+            KeyCode::Char('P')
+                if matches!(self.view_mode, ViewMode::Positions) && !is_privacy_view(self) =>
+            {
+                self.show_sector_grouping = false;
+                self.sort_field = SortField::GainPct;
+                self.sort_ascending = false;
+                self.last_sort_change_tick = self.tick_count;
+                self.recompute();
             }
-            KeyCode::Char('$') => {
-                if !is_privacy_view(self) {
+            KeyCode::Char('$')
+                if !is_privacy_view(self) => {
                     self.sort_field = SortField::TotalGain;
                     self.sort_ascending = false;
                     self.last_sort_change_tick = self.tick_count;
                     self.recompute();
                 }
-            }
             KeyCode::Char('n') => {
                 self.sort_field = SortField::Name;
                 self.sort_ascending = true;
@@ -3296,14 +3294,13 @@ impl App {
                 self.last_sort_change_tick = self.tick_count;
                 self.recompute();
             }
-            KeyCode::Char('d') => {
-                if self.portfolio_mode != PortfolioMode::Percentage {
+            KeyCode::Char('d')
+                if self.portfolio_mode != PortfolioMode::Percentage => {
                     self.sort_field = SortField::Date;
                     self.sort_ascending = false;
                     self.last_sort_change_tick = self.tick_count;
                     self.recompute();
                 }
-            }
             KeyCode::Tab => {
                 self.sort_ascending = !self.sort_ascending;
                 self.last_sort_change_tick = self.tick_count;
@@ -3324,17 +3321,19 @@ impl App {
             }
 
             // Add transaction (i) — opens inline form for selected position
-            KeyCode::Char('i') if matches!(self.view_mode, ViewMode::Positions) => {
-                if self.portfolio_mode == PortfolioMode::Full {
-                    self.open_tx_form();
-                }
+            KeyCode::Char('i')
+                if matches!(self.view_mode, ViewMode::Positions)
+                    && self.portfolio_mode == PortfolioMode::Full =>
+            {
+                self.open_tx_form();
             }
 
             // Delete position transactions (Shift+X) — confirmation prompt
-            KeyCode::Char('X') if matches!(self.view_mode, ViewMode::Positions) => {
-                if self.portfolio_mode == PortfolioMode::Full {
-                    self.open_delete_confirm();
-                }
+            KeyCode::Char('X')
+                if matches!(self.view_mode, ViewMode::Positions)
+                    && self.portfolio_mode == PortfolioMode::Full =>
+            {
+                self.open_delete_confirm();
             }
 
             // Toggle benchmark overlay on chart (Shift+B)
@@ -3354,11 +3353,10 @@ impl App {
             _ if Self::key_matches(&self.keybindings.theme_cycle, key) => {
                 self.cycle_theme();
             }
-            _ if Self::key_matches(&self.keybindings.privacy_toggle, key) => {
-                if self.portfolio_mode == PortfolioMode::Full {
+            _ if Self::key_matches(&self.keybindings.privacy_toggle, key)
+                && self.portfolio_mode == PortfolioMode::Full => {
                     self.show_percentages_only = !self.show_percentages_only;
                 }
-            }
 
             _ => {}
         }
@@ -4861,11 +4859,10 @@ impl App {
                 state.query.push(c);
                 state.selected = 0;
             }
-            KeyCode::Down => {
-                if state.selected < 19 {
+            KeyCode::Down
+                if state.selected < 19 => {
                     state.selected += 1;
                 }
-            }
             KeyCode::Up => {
                 state.selected = state.selected.saturating_sub(1);
             }
@@ -4914,11 +4911,10 @@ impl App {
                 self.command_palette_input.pop();
                 self.command_palette_selected = 0;
             }
-            KeyCode::Down => {
-                if self.command_palette_selected + 1 < matches.len() {
+            KeyCode::Down
+                if self.command_palette_selected + 1 < matches.len() => {
                     self.command_palette_selected += 1;
                 }
-            }
             KeyCode::Up => {
                 self.command_palette_selected = self.command_palette_selected.saturating_sub(1);
             }
@@ -4965,11 +4961,10 @@ impl App {
             "layout split" => self.set_workspace_layout(WorkspaceLayout::Split),
             "layout analyst" => self.set_workspace_layout(WorkspaceLayout::Analyst),
             "view positions" => self.switch_to_home_default(),
-            "view transactions" => {
-                if self.portfolio_mode == PortfolioMode::Full {
+            "view transactions"
+                if self.portfolio_mode == PortfolioMode::Full => {
                     self.view_mode = ViewMode::Transactions;
                 }
-            }
             "view markets" => self.view_mode = ViewMode::Markets,
             "view economy" => self.view_mode = ViewMode::Economy,
             "view watchlist" => {
@@ -5065,8 +5060,8 @@ impl App {
                         self.scan_builder_message = Some("Clause added".to_string());
                     }
                 }
-                KeyCode::Char('r') => {
-                    if self.scan_builder_selected < self.scan_builder_clauses.len() {
+                KeyCode::Char('r')
+                    if self.scan_builder_selected < self.scan_builder_clauses.len() => {
                         self.scan_builder_clauses.remove(self.scan_builder_selected);
                         if self.scan_builder_selected >= self.scan_builder_clauses.len() {
                             self.scan_builder_selected =
@@ -5074,7 +5069,6 @@ impl App {
                         }
                         self.scan_builder_message = Some("Clause removed".to_string());
                     }
-                }
                 KeyCode::Char('c') => {
                     self.scan_builder_clauses.clear();
                     self.scan_builder_selected = 0;
@@ -5092,11 +5086,10 @@ impl App {
                     self.scan_builder_message =
                         Some("Enter name, then press Enter to load".to_string());
                 }
-                KeyCode::Down => {
-                    if self.scan_builder_selected + 1 < self.scan_builder_clauses.len() {
+                KeyCode::Down
+                    if self.scan_builder_selected + 1 < self.scan_builder_clauses.len() => {
                         self.scan_builder_selected += 1;
                     }
-                }
                 KeyCode::Up => {
                     self.scan_builder_selected = self.scan_builder_selected.saturating_sub(1);
                 }
@@ -5205,12 +5198,11 @@ impl App {
                 self.search_overlay_selected = 0;
                 self.request_search_overlay_live_data();
             }
-            KeyCode::Down => {
+            KeyCode::Down
                 // Navigate results (capped at max 19 since results are limited to 20)
-                if self.search_overlay_selected < 19 {
+                if self.search_overlay_selected < 19 => {
                     self.search_overlay_selected += 1;
                 }
-            }
             KeyCode::Up => {
                 self.search_overlay_selected = self.search_overlay_selected.saturating_sub(1);
             }

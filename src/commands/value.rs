@@ -141,7 +141,7 @@ fn run_full(
     }
     if !categories.is_empty() && total_value > dec!(0) {
         let mut sorted: Vec<_> = categories.into_iter().collect();
-        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.1));
         let parts: Vec<String> = sorted
             .iter()
             .map(|(cat, val)| {

@@ -200,10 +200,10 @@ pub fn set_override_backend(
 
 /// Clear any active regime override.
 pub fn clear_override_backend(backend: &BackendConnection) -> Result<()> {
-    query::dispatch(backend, clear_sqlite, |pool| clear_postgres(pool))
+    query::dispatch(backend, clear_sqlite, clear_postgres)
 }
 
 /// Get the active (non-expired) regime override, if any.
 pub fn get_active_override_backend(backend: &BackendConnection) -> Result<Option<RegimeOverride>> {
-    query::dispatch(backend, get_active_sqlite, |pool| get_active_postgres(pool))
+    query::dispatch(backend, get_active_sqlite, get_active_postgres)
 }

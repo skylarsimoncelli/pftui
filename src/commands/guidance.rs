@@ -295,7 +295,7 @@ pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
     }
 
     // Sort action items by priority
-    action_items.sort_by(|a, b| priority_rank(&a.priority).cmp(&priority_rank(&b.priority)));
+    action_items.sort_by_key(|a| priority_rank(&a.priority));
 
     let summary = GuidanceSummary {
         total_action_items: action_items.len(),
@@ -369,7 +369,7 @@ fn build_pending_predictions(backend: &BackendConnection, today: NaiveDate) -> V
         .collect();
 
     // Sort by days_overdue descending (most overdue first)
-    pending.sort_by(|a, b| b.days_overdue.cmp(&a.days_overdue));
+    pending.sort_by_key(|b| std::cmp::Reverse(b.days_overdue));
     pending
 }
 
@@ -418,7 +418,7 @@ fn build_stale_convictions(backend: &BackendConnection, today: NaiveDate) -> Vec
         .collect();
 
     // Sort by staleness descending
-    stale.sort_by(|a, b| b.days_stale.cmp(&a.days_stale));
+    stale.sort_by_key(|b| std::cmp::Reverse(b.days_stale));
     stale
 }
 

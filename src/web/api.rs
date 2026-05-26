@@ -742,11 +742,7 @@ fn volume_stats(history: &[crate::models::price::HistoryRecord]) -> (Option<u64>
             count += 1;
         }
     }
-    let avg = if count == 0 {
-        None
-    } else {
-        Some((sum / count) as u64)
-    };
+    let avg = sum.checked_div(count).map(|v| v as u64);
     (latest, avg)
 }
 

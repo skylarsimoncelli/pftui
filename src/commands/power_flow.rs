@@ -312,7 +312,7 @@ pub fn build_assess_output(
                     || e.target_complex.as_deref() == Some(complex)
             })
             .collect();
-        complex_events.sort_by(|a, b| b.magnitude.cmp(&a.magnitude));
+        complex_events.sort_by_key(|b| std::cmp::Reverse(b.magnitude));
         let top_events: Vec<String> = complex_events
             .iter()
             .take(3)
@@ -378,7 +378,7 @@ pub fn build_assess_output(
             latest_date: date,
         })
         .collect();
-    power_shifts.sort_by(|a, b| b.total_magnitude.cmp(&a.total_magnitude));
+    power_shifts.sort_by_key(|b| std::cmp::Reverse(b.total_magnitude));
 
     // Key events: magnitude >= 4
     let key_events: Vec<KeyEvent> = sorted_entries

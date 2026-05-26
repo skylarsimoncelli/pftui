@@ -236,7 +236,7 @@ fn print_grouped_by_category(positions: &[Position], config: &Config) -> Result<
     }
 
     let mut sorted: Vec<_> = groups.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.value.cmp(&a.1.value));
+    sorted.sort_by_key(|b| std::cmp::Reverse(b.1.value));
 
     println!(
         "{:<12} {:>12} {:>10} {:>8} {:>8}",
@@ -337,7 +337,7 @@ fn print_grouped_by_category_pct(positions: &[Position]) -> Result<()> {
     }
 
     let mut sorted: Vec<_> = category_alloc.into_iter().collect();
-    sorted.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+    sorted.sort_by_key(|b| std::cmp::Reverse(b.1 .0));
 
     println!("{:<12} {:>8}", "Category", "Alloc%");
     println!("{}", "─".repeat(22));

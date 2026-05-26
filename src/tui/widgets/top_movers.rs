@@ -125,7 +125,7 @@ fn group_by_category(movers: &[(AssetCategory, Mover)]) -> Vec<(AssetCategory, V
 
     // Sort each group by absolute change descending
     for group in map.values_mut() {
-        group.sort_by(|a, b| b.change_pct.abs().cmp(&a.change_pct.abs()));
+        group.sort_by_key(|b| std::cmp::Reverse(b.change_pct.abs()));
     }
 
     let mut result = Vec::new();

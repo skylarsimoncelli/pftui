@@ -164,6 +164,7 @@ fn normalize_symbol(s: Option<&str>) -> Option<&str> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn add_prediction(
     conn: &Connection,
     claim: &str,

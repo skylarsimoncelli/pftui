@@ -158,7 +158,7 @@ pub fn run(
         .collect();
 
     // Sort categories by absolute gain descending
-    by_category.sort_by(|a, b| b.unrealized_gain.abs().cmp(&a.unrealized_gain.abs()));
+    by_category.sort_by_key(|b| std::cmp::Reverse(b.unrealized_gain.abs()));
 
     let output = UnrealizedOutput {
         as_of: today.clone(),

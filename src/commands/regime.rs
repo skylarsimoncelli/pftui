@@ -482,7 +482,7 @@ fn run_summary(
             last_seen: last.get(0..19).unwrap_or(&last).to_string(),
         })
         .collect();
-    regimes.sort_by(|a, b| b.snapshot_count.cmp(&a.snapshot_count));
+    regimes.sort_by_key(|b| std::cmp::Reverse(b.snapshot_count));
 
     // Transition pairs
     let mut pair_map: BTreeMap<(String, String), (usize, String)> = BTreeMap::new();
@@ -513,7 +513,7 @@ fn run_summary(
             last_occurred: last.get(0..19).unwrap_or(&last).to_string(),
         })
         .collect();
-    transition_pairs.sort_by(|a, b| b.count.cmp(&a.count));
+    transition_pairs.sort_by_key(|b| std::cmp::Reverse(b.count));
 
     let summary = RegimeSummary {
         total_snapshots: total,
