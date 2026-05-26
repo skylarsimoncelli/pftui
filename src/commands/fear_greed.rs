@@ -253,29 +253,33 @@ mod tests {
         let backend = BackendConnection::Sqlite {
             conn: open_in_memory(),
         };
+        // get_latest filters rows with fetched_at older than 1 hour, so use
+        // current timestamps to keep this test independent of wall-clock time.
+        let now = chrono::Utc::now();
+        let now_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
         seed_reading(
             &backend,
             "crypto",
             31,
             "Fear",
-            1_700_000_000,
-            "2026-04-22T00:00:00Z",
+            now.timestamp(),
+            &now_str,
         );
         seed_reading(
             &backend,
             "crypto_fng",
             65,
             "Greed",
-            1_700_000_100,
-            "2026-04-22T01:00:00Z",
+            now.timestamp() + 100,
+            &now_str,
         );
         seed_reading(
             &backend,
             "traditional_fng",
             50,
             "Neutral",
-            1_700_000_200,
-            "2026-04-22T01:00:00Z",
+            now.timestamp() + 200,
+            &now_str,
         );
 
         let rows = load_latest_with_fallback(&backend).unwrap();

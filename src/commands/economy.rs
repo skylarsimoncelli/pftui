@@ -1558,7 +1558,8 @@ mod tests {
     fn stale_derived_fred_date_detects_old_cpi() {
         let conn = crate::db::open_in_memory();
         let backend = BackendConnection::Sqlite { conn };
-        let latest_month = chrono::Utc::now().date_naive() - chrono::Duration::days(65);
+        // CPIAUCSL stale threshold is > 65 days; use 70 to be unambiguously stale.
+        let latest_month = chrono::Utc::now().date_naive() - chrono::Duration::days(70);
         let stale_date = latest_month.format("%Y-%m-%d").to_string();
         for offset in 0..13 {
             let point_date = latest_month - chrono::Duration::days((offset * 31) as i64);

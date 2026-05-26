@@ -1964,9 +1964,11 @@ mod tests {
         assert_eq!(indicators[0].last_value.as_deref(), Some("3150.00"));
         assert!(indicators[0].triggered_at.is_some());
 
-        // Triggered indicators should NOT appear in watching list
+        // PR #710 intentionally keeps 'triggered' indicators in the active
+        // refresh set so last_value/last_checked stay current after trigger.
         let watching = scenarios::list_all_watching_indicators_backend(&backend).unwrap();
-        assert!(watching.is_empty());
+        assert_eq!(watching.len(), 1);
+        assert_eq!(watching[0].status, "triggered");
     }
 
     #[test]

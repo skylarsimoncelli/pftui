@@ -4703,10 +4703,13 @@ mod tests {
         assert_eq!(lt_ind.status, "watching");
         assert_eq!(lt_ind.last_value.as_deref(), Some("3100"));
 
-        // Re-evaluate — triggered indicator should be skipped (it's no longer 'watching')
+        // Re-evaluate — both indicators are still active (PR #710 keeps
+        // 'triggered' indicators in the refresh loop so last_value/last_checked
+        // stay current). The already-triggered one continues to satisfy >3000,
+        // and the <2500 one still does not trigger.
         let (checked2, triggered2) = evaluate_situation_indicators(&backend, false).unwrap();
-        assert_eq!(checked2, 1); // only the non-triggered one
-        assert_eq!(triggered2, 0);
+        assert_eq!(checked2, 2);
+        assert_eq!(triggered2, 1);
     }
 
     #[test]
