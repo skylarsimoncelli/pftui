@@ -171,12 +171,16 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             symbol TEXT,
             conviction TEXT,
             status TEXT DEFAULT 'open',
+            author TEXT NOT NULL DEFAULT 'system',
             created_at TEXT DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_journal_timestamp ON journal(timestamp);
         CREATE INDEX IF NOT EXISTS idx_journal_tag ON journal(tag);
         CREATE INDEX IF NOT EXISTS idx_journal_symbol ON journal(symbol);
         CREATE INDEX IF NOT EXISTS idx_journal_status ON journal(status);
+        -- idx_journal_author is created in the author-column migration below
+        -- (it cannot be created here because legacy databases need to ALTER
+        -- TABLE first, and CREATE INDEX on a missing column would fail).
 
         CREATE TABLE IF NOT EXISTS thesis (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -544,10 +548,12 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             date TEXT NOT NULL,
             section TEXT NOT NULL DEFAULT 'general',
             content TEXT NOT NULL,
+            author TEXT NOT NULL DEFAULT 'system',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_daily_notes_date ON daily_notes(date);
         CREATE INDEX IF NOT EXISTS idx_daily_notes_section ON daily_notes(section);
+        -- idx_daily_notes_author is created in the author-column migration below.
 
         CREATE TABLE IF NOT EXISTS opportunity_cost (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1187,6 +1193,105 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
          DELETE FROM macro_events WHERE series_id = 'PPIACO';",
     )
     .ok(); // Ignore errors (table may not exist on first run, or data already migrated)
+
+    // Migration: add `author` column to journal and daily_notes, then backfill
+    // existing rows by parsing content-prefix conventions used by the
+    // timeframe-analyst routines (LOW/MEDIUM/HIGH/MACRO/EVENING/MORNING/NIGHT SHIFT).
+    let journal_has_author: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('journal') WHERE name = 'author'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !journal_has_author {
+        conn.execute_batch("ALTER TABLE journal ADD COLUMN author TEXT NOT NULL DEFAULT 'system'")?;
+        backfill_author_column(conn, "journal")?;
+    }
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_journal_author ON journal(author)")?;
+
+    let daily_notes_has_author: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('daily_notes') WHERE name = 'author'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !daily_notes_has_author {
+        conn.execute_batch(
+            "ALTER TABLE daily_notes ADD COLUMN author TEXT NOT NULL DEFAULT 'system'",
+        )?;
+        backfill_author_column(conn, "daily_notes")?;
+    }
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_daily_notes_author ON daily_notes(author)")?;
+
+    Ok(())
+}
+
+/// Backfill the `author` column on a journal-like table by inspecting the
+/// `content` column for the historical prefix conventions used by the
+/// timeframe-analyst routines. Anything that does not match a known prefix
+/// keeps the table default ('system').
+///
+/// Prefix rules (case-insensitive, anchored at line start of `content`):
+///   ^LOW(\s|:|\s+\w)        -> analyst-low
+///   ^MEDIUM(\s|:|\s+\w)     -> analyst-medium
+///   ^HIGH(\s|:|\s+\w)       -> analyst-high
+///   ^MACRO(\s|:|\s+\w)      -> analyst-macro
+///   ^EVENING(\s|:|\s+\w)    -> analyst-evening
+///   ^MORNING(\s|:|\s+\w)    -> analyst-morning
+///   ^NIGHT[ -]SHIFT         -> analyst-night-shift
+fn backfill_author_column(conn: &Connection, table: &str) -> Result<()> {
+    // Match `LOW ...`, `LOW:`, `LOW WRONG ...` etc. — i.e. the keyword followed
+    // by whitespace, colon, or a comma. Use SQLite-native pattern matching so
+    // we don't have to load the whole table into Rust. UPPER() gives the
+    // case-insensitive match; the leading-prefix anchor is implicit via LIKE
+    // 'KEYWORD%'.
+    let backfills: &[(&str, &[&str])] = &[
+        (
+            "analyst-low",
+            &["LOW %", "LOW:%", "LOW,%", "LOW\n%", "LOW\t%"],
+        ),
+        (
+            "analyst-medium",
+            &["MEDIUM %", "MEDIUM:%", "MEDIUM,%", "MEDIUM\n%", "MEDIUM\t%"],
+        ),
+        (
+            "analyst-high",
+            &["HIGH %", "HIGH:%", "HIGH,%", "HIGH\n%", "HIGH\t%"],
+        ),
+        (
+            "analyst-macro",
+            &["MACRO %", "MACRO:%", "MACRO,%", "MACRO\n%", "MACRO\t%"],
+        ),
+        (
+            "analyst-evening",
+            &[
+                "EVENING %",
+                "EVENING:%",
+                "EVENING,%",
+                "EVENING\n%",
+                "EVENING\t%",
+            ],
+        ),
+        (
+            "analyst-morning",
+            &[
+                "MORNING %",
+                "MORNING:%",
+                "MORNING,%",
+                "MORNING\n%",
+                "MORNING\t%",
+            ],
+        ),
+        ("analyst-night-shift", &["NIGHT SHIFT%", "NIGHT-SHIFT%"]),
+    ];
+
+    for (author, patterns) in backfills {
+        for pattern in *patterns {
+            let sql = format!(
+                "UPDATE {table} SET author = ?1 \
+                 WHERE author = 'system' AND UPPER(content) LIKE ?2"
+            );
+            conn.execute(&sql, rusqlite::params![author, pattern])?;
+        }
+    }
 
     Ok(())
 }

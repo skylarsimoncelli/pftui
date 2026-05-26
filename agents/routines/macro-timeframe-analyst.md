@@ -232,6 +232,8 @@ pftui analytics macro log add --date $(date +%Y-%m-%d) \
 
 ## Write Structured Views
 
+**Author ALL journal entries and notes with `--author analyst-macro`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps.**
+
 After completing your macro analysis, write a structured view for each asset where the MACRO layer has a meaningful structural opinion. These views represent the deepest timeframe perspective — the empire cycle and generational forces that constrain all shorter-term analysis.
 
 For each asset where the macro framework produces a view (typically: BTC, GLD, SLV, DXY, and any with structural significance):

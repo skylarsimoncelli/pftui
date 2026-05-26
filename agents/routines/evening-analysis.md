@@ -217,10 +217,12 @@ Do NOT reply with NO_REPLY.
 
 ## Step 5: Admin
 
+**Author ALL journal entries and notes with `--author analyst-evening`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps.**
+
 ### Journal entry
 ```bash
 pftui journal entry add "[Your analytical state today — what changed, what you're uncertain about]" \
-  --date $(date +%Y-%m-%d)
+  --date $(date +%Y-%m-%d) --author analyst-evening
 ```
 
 ### Send WATCH TOMORROW to low-timeframe-analyst

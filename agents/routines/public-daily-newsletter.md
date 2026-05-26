@@ -475,7 +475,17 @@ git -c user.name="pftui-bot" -c user.email="pftui-bot@users.noreply.github.com" 
 git push origin master
 ```
 
-## Step 7: FEEDBACK.csv Review
+## Step 7: Journal Entry
+
+**Author ALL journal entries and notes with `--author analyst-newsletter`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps.**
+
+Capture the day's editorial state so it's queryable later:
+```bash
+pftui journal entry add "NEWSLETTER [date]: lead theme — [X]. Surprises today: [Y]. Calls made: [Z]." \
+  --date $(date +%Y-%m-%d) --author analyst-newsletter
+```
+
+## Step 8: FEEDBACK.csv Review
 
 🔴 **THIS STEP IS MANDATORY. DO NOT SKIP IT.**
 

@@ -217,6 +217,8 @@ This way, even if the PDF send fails, Skylar gets actionable morning intelligenc
 
 ## After Sending
 
+**Author ALL journal entries and notes with `--author analyst-morning`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps.**
+
 WRITE TO PFTUI BEFORE SENDING BRIEF.
 
 If you make any specific market call in the morning brief, log it first:
@@ -224,6 +226,12 @@ If you make any specific market call in the morning brief, log it first:
 pftui journal prediction add "[cause] will [effect] by [date]" --symbol [SYM] \
   --target-date [YYYY-MM-DD] --conviction [level] --timeframe low \
   --confidence [0.X] --source-agent morning-intelligence
+```
+
+Capture the morning's situational state as a journal entry so it's queryable later:
+```bash
+pftui journal entry add "MORNING: [headline takeaway]. Alignment: [status]. Key watch: [items]." \
+  --date $(date +%Y-%m-%d) --author analyst-morning
 ```
 
 Acknowledge all consumed agent messages before sending the user-facing brief:

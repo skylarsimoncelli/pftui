@@ -165,6 +165,8 @@ pftui analytics trends add "[name]" --timeframe high \
 
 ## Write Structured Views
 
+**Author ALL journal entries and notes with `--author analyst-high`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps.**
+
 After completing your trend analysis and research, write a structured view for each held and watched asset affected by your structural analysis. This makes the HIGH layer's reasoning transparent and queryable.
 
 For each asset where you have a structural view (focus on held + watched + trend-affected):
@@ -207,7 +209,7 @@ For wrong HIGH predictions, structural reflection:
 ```bash
 pftui journal prediction score <id> --outcome <correct|wrong|partial> --notes "[evidence that resolved it]"
 pftui journal notes add "HIGH WRONG CALL: [prediction]. Structural thesis: [X]. Reality: [Y]. Underweighted: [Z]. Changes view on [trend] because [reason]." \
-  --date $(date +%Y-%m-%d) --section analysis
+  --date $(date +%Y-%m-%d) --section analysis --author analyst-high
 ```
 
 ## Backtest Review

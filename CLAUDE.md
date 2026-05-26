@@ -70,6 +70,29 @@ cargo clippy                 # lint — no new warnings
 
 **Always run `cargo test` before committing.** All tests must pass. If you add or change logic, add or update tests. No commit should regress the test suite.
 
+## Journal & Notes Authorship
+
+The `journal` and `daily_notes` tables both carry an `author TEXT NOT NULL DEFAULT 'system'` column. Every `pftui journal entry add` and `pftui journal notes add` invocation **must** pass `--author <name>` so writers can be filtered with SQL instead of grep-on-content. The corresponding `list` commands accept `--author <name>` as a filter.
+
+Canonical author identifiers:
+
+| Author | Source |
+|---|---|
+| `skylar` | Skylar's own journaling |
+| `analyst-low` | Low-timeframe analyst routine (hours–days) |
+| `analyst-medium` | Medium-timeframe analyst routine (weeks–months) |
+| `analyst-high` | High-timeframe analyst routine (quarters–years) |
+| `analyst-macro` | Macro-timeframe analyst routine (Dalio/Fourth Turning) |
+| `analyst-evening` | Evening analysis routine |
+| `analyst-morning` | Morning brief routine |
+| `analyst-newsletter` | Public daily newsletter routine |
+| `analyst-night-shift` | Night-shift agent (legacy/optional) |
+| `analyst-brief` | Pre-author historical briefs imported from `pftui-operator` |
+| `agent-feedback` | AGENT_FEEDBACK.md ingest |
+| `system` | Default — anything that didn't specify |
+
+When adding a new agent or routine, mint a new `analyst-*` or `agent-*` identifier (kebab-case, no dots) and update this table.
+
 ## CLI Design Rules
 
 - **Commands navigate, arguments parameterize.** Functions are subcommands in a hierarchy. Data inputs are `--flags`. Never make a parameter a subcommand or a function a flag.

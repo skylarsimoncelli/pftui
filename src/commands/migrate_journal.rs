@@ -163,6 +163,7 @@ fn parse_markdown_entries(
             symbol,
             conviction: meta.conviction,
             status,
+            author: "system".to_string(),
         });
     }
 
