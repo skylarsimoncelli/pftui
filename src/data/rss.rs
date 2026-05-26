@@ -237,7 +237,7 @@ pub async fn fetch_all_feeds_detailed(feeds: &[RssFeed]) -> FeedFetchReport {
     }
 
     // Sort by timestamp descending (newest first)
-    report.items.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+    report.items.sort_by_key(|b| std::cmp::Reverse(b.published_at));
 
     // Deduplicate by URL (keep first occurrence = newest)
     let mut seen_urls = std::collections::HashSet::new();

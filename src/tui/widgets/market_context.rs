@@ -78,7 +78,7 @@ fn render_top_movers(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     let mut movers = compute_movers(app);
-    movers.sort_by(|a, b| b.change_pct.abs().cmp(&a.change_pct.abs()));
+    movers.sort_by_key(|b| std::cmp::Reverse(b.change_pct.abs()));
     movers.truncate(3);
 
     let mut lines = vec![Line::from(vec![Span::styled(

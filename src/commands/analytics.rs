@@ -1155,7 +1155,7 @@ fn run_weekly_review(backend: &BackendConnection, days: usize, json_output: bool
                 *by_type.entry(e.event_type.clone()).or_default() += 1;
             }
             let mut sorted: Vec<_> = by_type.into_iter().collect();
-            sorted.sort_by(|a, b| b.1.cmp(&a.1));
+            sorted.sort_by_key(|b| std::cmp::Reverse(b.1));
             for (t, count) in &sorted {
                 println!("    {}: {}", t, count);
             }

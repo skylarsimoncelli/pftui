@@ -689,23 +689,17 @@ fn infer_catalyst_direction(
                 "mixed"
             }
         }
-        "growth" => {
-            if contains_any(&lower_name, &["recession"]) {
+        "growth"
+            if contains_any(&lower_name, &["recession"]) => {
                 "confirming" // weak growth confirms recession
-            } else {
-                "mixed" // growth data can go either way
             }
-        }
-        "commodities" => {
+        "commodities"
             if contains_any(
                 &lower_text,
                 &["war", "iran", "conflict", "hormuz", "inflation"],
-            ) {
+            ) => {
                 "confirming" // commodity spikes confirm war and inflation scenarios
-            } else {
-                "mixed"
             }
-        }
         "geopolitical" => {
             // Check peace/de-escalation first (more specific than escalation substring match)
             if contains_any(

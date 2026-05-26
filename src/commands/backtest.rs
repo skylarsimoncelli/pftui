@@ -641,7 +641,7 @@ pub fn run_agent(
             b.win_rate_pct.map(|wr| (b.label.as_str(), wr))
         })
         .collect();
-    ranked.sort_by(|a, b| b.1.cmp(&a.1));
+    ranked.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     let agent_lower = agent_name.to_lowercase();
     let rank = ranked
@@ -1054,7 +1054,7 @@ where
         b.finalize();
     }
     // Sort by count descending
-    buckets.sort_by(|a, b| b.count.cmp(&a.count));
+    buckets.sort_by_key(|b| std::cmp::Reverse(b.count));
     buckets
 }
 

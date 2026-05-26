@@ -221,7 +221,7 @@ pub async fn fetch_bls_fallback() -> Result<Vec<EconomicReading>> {
         by_series.entry(p.series_id.clone()).or_default().push(p);
     }
     for points in by_series.values_mut() {
-        points.sort_by(|a, b| b.date.cmp(&a.date));
+        points.sort_by_key(|b| std::cmp::Reverse(b.date));
     }
 
     let mut out = Vec::new();

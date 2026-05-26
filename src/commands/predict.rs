@@ -336,7 +336,7 @@ pub fn run(
                 if !stats.by_source_agent.is_empty() {
                     println!("\n  By agent:");
                     let mut agent_entries: Vec<_> = stats.by_source_agent.iter().collect();
-                    agent_entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+                    agent_entries.sort_by_key(|(a, _)| *a);
                     for (agent, s) in &agent_entries {
                         println!(
                             "    {:<20} — {}/{} scored, {:.1}% hit rate ({} correct, {} partial, {} wrong)",
@@ -365,7 +365,7 @@ pub fn run(
                 if !stats.by_symbol.is_empty() {
                     println!("\n  By symbol (top 10):");
                     let mut sym_entries: Vec<_> = stats.by_symbol.iter().collect();
-                    sym_entries.sort_by(|(_, a), (_, b)| b.total.cmp(&a.total));
+                    sym_entries.sort_by_key(|(_, b)| std::cmp::Reverse(b.total));
                     for (sym, s) in sym_entries.iter().take(10) {
                         println!(
                             "    {:<10} — {}/{} scored, {:.1}% hit rate",

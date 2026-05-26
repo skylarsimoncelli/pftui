@@ -28,21 +28,18 @@ impl EventHandler {
         let handle = thread::spawn(move || loop {
             if ct_event::poll(tick_rate).unwrap_or(false) {
                 match ct_event::read() {
-                    Ok(ct_event::Event::Key(key)) => {
-                        if tx.send(Event::Key(key)).is_err() {
+                    Ok(ct_event::Event::Key(key))
+                        if tx.send(Event::Key(key)).is_err() => {
                             return;
                         }
-                    }
-                    Ok(ct_event::Event::Mouse(mouse)) => {
-                        if tx.send(Event::Mouse(mouse)).is_err() {
+                    Ok(ct_event::Event::Mouse(mouse))
+                        if tx.send(Event::Mouse(mouse)).is_err() => {
                             return;
                         }
-                    }
-                    Ok(ct_event::Event::Resize(w, h)) => {
-                        if tx.send(Event::Resize(w, h)).is_err() {
+                    Ok(ct_event::Event::Resize(w, h))
+                        if tx.send(Event::Resize(w, h)).is_err() => {
                             return;
                         }
-                    }
                     _ => {}
                 }
             } else {

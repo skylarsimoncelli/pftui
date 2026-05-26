@@ -318,11 +318,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 
     // Scroll indicator in title
     let scroll_indicator = if max_scroll > 0 {
-        let pct = if max_scroll > 0 {
-            (app.help_scroll * 100) / max_scroll
-        } else {
-            0
-        };
+        let pct = (app.help_scroll * 100)
+            .checked_div(max_scroll)
+            .unwrap_or(0);
         format!(" ◆ Help [{pct}%] ")
     } else {
         " ◆ Help ".to_string()

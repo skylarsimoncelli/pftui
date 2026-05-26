@@ -904,7 +904,7 @@ fn divergences_from_matrix(
     }
 
     // Sort by spread descending (biggest divergence first)
-    divergences.sort_by(|a, b| b.spread.cmp(&a.spread));
+    divergences.sort_by_key(|b| std::cmp::Reverse(b.spread));
     divergences
 }
 
@@ -1239,7 +1239,7 @@ where
             }
         }
 
-        by_asset.sort_by(|a, b| b.evaluated.cmp(&a.evaluated));
+        by_asset.sort_by_key(|b| std::cmp::Reverse(b.evaluated));
 
         let evaluated = sum_correct + sum_incorrect;
         let hit_rate = if evaluated > 0 {
@@ -1314,7 +1314,7 @@ where
                 }
             }
 
-            by_asset.sort_by(|a, b| b.evaluated.cmp(&a.evaluated));
+            by_asset.sort_by_key(|b| std::cmp::Reverse(b.evaluated));
 
             let evaluated = sum_correct + sum_incorrect;
             total_evaluated += evaluated;

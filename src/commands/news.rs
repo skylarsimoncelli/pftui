@@ -44,6 +44,7 @@ fn news_empty_diagnostics(backend: &BackendConnection) -> serde_json::Value {
 /// database query fails or the news cache is empty. Errors are reported via
 /// an `"error"` field in the JSON output and on stderr so agents can parse
 /// the output reliably.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     backend: &BackendConnection,
     config: &Config,
@@ -278,7 +279,7 @@ fn filter_entries(
         .filter(|entry| seen_urls.insert(entry.url.clone()))
         .collect();
 
-    filtered.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+    filtered.sort_by_key(|b| std::cmp::Reverse(b.published_at));
     filtered.truncate(limit);
     filtered
 }

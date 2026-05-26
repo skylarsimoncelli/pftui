@@ -59,7 +59,7 @@ fn run_by_position(positions: &[crate::models::position::Position], json: bool) 
         .collect();
 
     // Sort by allocation descending
-    rows.sort_by(|a, b| b.allocation_pct.cmp(&a.allocation_pct));
+    rows.sort_by_key(|b| std::cmp::Reverse(b.allocation_pct));
 
     if json {
         let json_rows: Vec<AllocRowJson> = rows.iter().map(|r| r.to_json()).collect();
@@ -97,7 +97,7 @@ fn run_by_category(positions: &[crate::models::position::Position], json: bool) 
     }
 
     let mut cats: Vec<(String, Decimal)> = category_totals.into_iter().collect();
-    cats.sort_by(|a, b| b.1.cmp(&a.1));
+    cats.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     if json {
         let json_cats: Vec<serde_json::Value> = cats
@@ -105,7 +105,7 @@ fn run_by_category(positions: &[crate::models::position::Position], json: bool) 
             .map(|(cat, total)| {
                 let members = category_positions.get(cat).cloned().unwrap_or_default();
                 let mut sorted_members = members;
-                sorted_members.sort_by(|a, b| b.1.cmp(&a.1));
+                sorted_members.sort_by_key(|b| std::cmp::Reverse(b.1));
                 serde_json::json!({
                     "category": cat,
                     "allocation_pct": round_decimal_2(*total),
@@ -123,7 +123,7 @@ fn run_by_category(positions: &[crate::models::position::Position], json: bool) 
         for (cat, total) in &cats {
             println!("{:<14} {:>9.1}%", cat, total);
             let mut members = category_positions.get(cat).cloned().unwrap_or_default();
-            members.sort_by(|a, b| b.1.cmp(&a.1));
+            members.sort_by_key(|b| std::cmp::Reverse(b.1));
             for (sym, pct) in &members {
                 println!("  {:<12} {:>9.1}%", sym, pct);
             }
