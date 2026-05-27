@@ -256,6 +256,33 @@ pftui analytics views set --analyst macro --asset GLD \
 
 Do NOT skip this step. The MACRO views provide the deepest constraint layer — when macro says bull +5 on gold but low says bear -1, the evening analyst needs to understand whether the short-term view is noise or a genuine structural counterargument.
 
+## Mandatory per-held-asset analyst view
+
+Before exiting, for EACH held asset (currently BTC, GC=F, SI=F, and any other symbol in `pftui portfolio status --json | jq '.positions[].symbol'` with allocation > 1%), write a structured analyst view to the DB:
+
+```bash
+pftui analytics views set \
+  --analyst analyst-macro \
+  --asset <symbol> \
+  --direction <bull|bear|neutral> \
+  --conviction <-5..+5> \
+  --reasoning-summary "<cause→mechanism→effect chain, 1-3 sentences>" \
+  --key-evidence "<2-4 specific data points or note IDs from THIS run>" \
+  --blind-spots "<what would flip this view>" \
+  --allocation-bias <overweight|slight-overweight|at-target|slight-underweight|underweight>
+```
+
+**This is non-optional.** The synthesis layer cannot produce auditable recommendations without these structured views. Run it even if your conviction is unchanged — the synthesis needs THIS RUN's confirmation, not a stale view.
+
+Map your conviction to allocation-bias as your judgement:
+- `overweight`: structural bull at conviction +4 or +5
+- `slight-overweight`: bull at +2 or +3
+- `at-target`: -1 to +1
+- `slight-underweight`: bear at -2 or -3
+- `underweight`: bear at -4 or -5
+
+You may override the conviction→bias mapping when your reasoning warrants it (e.g. conviction +4 but you'd recommend slight-overweight only because of positioning extremes). Note the reason in `--reasoning-summary` when you do.
+
 ## Prediction Backtesting (Weekly Self-Review)
 
 Before making new predictions, run the backtest suite to understand your track record:

@@ -3317,14 +3317,23 @@ pub enum AnalyticsViewsCommand {
         #[arg(long, allow_hyphen_values = true)]
         conviction: i64,
         /// Why this view — reasoning summary
-        #[arg(long)]
+        ///
+        /// Accepted both as `--reasoning <text>` and the longer alias
+        /// `--reasoning-summary <text>` used by routine prompts.
+        #[arg(long, alias = "reasoning-summary")]
         reasoning: String,
         /// Supporting data points
-        #[arg(long)]
+        ///
+        /// Accepted both as `--evidence <text>` and the alias `--key-evidence <text>`.
+        #[arg(long, alias = "key-evidence")]
         evidence: Option<String>,
         /// What could invalidate this view
         #[arg(long = "blind-spots")]
         blind_spots: Option<String>,
+        /// Suggested allocation bias relative to long-run target weight.
+        /// Valid: overweight, slight-overweight, at-target, slight-underweight, underweight.
+        #[arg(long = "allocation-bias")]
+        allocation_bias: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -3428,6 +3437,41 @@ pub enum AnalyticsViewsCommand {
         /// Maximum results to show
         #[arg(long)]
         limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Deterministic convergence aggregation across analyst views for a single asset
+    ///
+    /// Aggregates all analyst views for one asset within the lookback window,
+    /// computes summary statistics (n_views, avg/min/max conviction, divergence,
+    /// allocation-bias distribution), and assigns a deterministic `summary`
+    /// classification (insufficient-views / divergent / neutral-with-divergence /
+    /// strong-convergent-bull / convergent-bull / convergent-neutral /
+    /// convergent-bear / strong-convergent-bear).
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views convergence --asset GC=F --json
+    ///   pftui analytics views convergence --asset BTC --since 48h --json
+    Convergence {
+        /// Asset symbol (e.g. BTC, GC=F)
+        #[arg(long)]
+        asset: String,
+        /// Lookback window for views (24h, 7d, 2w, 1m). Default: 24h.
+        #[arg(long, default_value = "24h")]
+        since: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Convergence aggregation for every asset with views in the window
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views convergence-all --json
+    ///   pftui analytics views convergence-all --since 7d --json
+    #[command(name = "convergence-all")]
+    ConvergenceAll {
+        /// Lookback window for views (24h, 7d, 2w, 1m). Default: 24h.
+        #[arg(long, default_value = "24h")]
+        since: String,
         #[arg(long)]
         json: bool,
     },
@@ -5096,6 +5140,7 @@ mod tests {
                             reasoning,
                             evidence,
                             blind_spots,
+                            allocation_bias: _,
                             json,
                         },
                 },
