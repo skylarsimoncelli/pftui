@@ -2365,6 +2365,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     reasoning,
                     evidence,
                     blind_spots,
+                    allocation_bias,
                     json,
                 } => commands::analyst_views::set(
                     &backend,
@@ -2375,6 +2376,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     &reasoning,
                     evidence.as_deref(),
                     blind_spots.as_deref(),
+                    allocation_bias.as_deref(),
                     json,
                 ),
                 cli::AnalyticsViewsCommand::List {
@@ -2431,6 +2433,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                     asset.as_deref(),
                     json,
                 ),
+                cli::AnalyticsViewsCommand::Convergence {
+                    asset,
+                    since,
+                    json,
+                } => commands::analyst_views::convergence(&backend, &asset, &since, json),
+                cli::AnalyticsViewsCommand::ConvergenceAll { since, json } => {
+                    commands::analyst_views::convergence_all(&backend, &since, json)
+                }
                 cli::AnalyticsViewsCommand::Delete {
                     analyst,
                     asset,

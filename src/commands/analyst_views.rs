@@ -26,6 +26,7 @@ pub fn set(
     reasoning: &str,
     evidence: Option<&str>,
     blind_spots: Option<&str>,
+    allocation_bias: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
     let id = analyst_views::upsert_view_backend(
@@ -37,6 +38,7 @@ pub fn set(
         reasoning,
         evidence,
         blind_spots,
+        allocation_bias,
     )?;
 
     if json_output {
@@ -58,14 +60,18 @@ pub fn set(
             _ => "⚖️",
         };
         let sign = if conviction > 0 { "+" } else { "" };
+        let bias_suffix = allocation_bias
+            .map(|b| format!(" [bias: {}]", b))
+            .unwrap_or_default();
         println!(
-            "Set {}'s view on {}: {} {} ({}{})",
+            "Set {}'s view on {}: {} {} ({}{}){}",
             analyst.to_uppercase(),
             asset.to_uppercase(),
             icon,
             direction,
             sign,
-            conviction
+            conviction,
+            bias_suffix,
         );
     }
     Ok(())
@@ -582,6 +588,90 @@ pub fn accuracy(
         }
     }
     Ok(())
+}
+
+/// Deterministic convergence aggregation for a single asset.
+pub fn convergence(
+    backend: &BackendConnection,
+    asset: &str,
+    since: &str,
+    json_output: bool,
+) -> Result<()> {
+    let since_ts = analyst_views::parse_since(since)?;
+    let report = analyst_views::convergence_report_backend(backend, asset, Some(&since_ts))?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        render_convergence_text(&report);
+    }
+    Ok(())
+}
+
+/// Convergence aggregation for every asset with at least one view in the window.
+pub fn convergence_all(
+    backend: &BackendConnection,
+    since: &str,
+    json_output: bool,
+) -> Result<()> {
+    let since_ts = analyst_views::parse_since(since)?;
+    let reports = analyst_views::convergence_all_backend(backend, Some(&since_ts))?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&reports)?);
+    } else if reports.is_empty() {
+        println!("No analyst views in window. Try a longer --since.");
+    } else {
+        for r in &reports {
+            render_convergence_text(r);
+            println!();
+        }
+        println!("{} asset(s) with views", reports.len());
+    }
+    Ok(())
+}
+
+fn render_convergence_text(r: &analyst_views::ConvergenceReport) {
+    println!("Asset:   {}", r.asset);
+    println!("As of:   {}", r.as_of);
+    println!("Views:   {}", r.stats.n_views);
+    if r.stats.n_views > 0 {
+        println!(
+            "Conv:    avg={:.2}  range=[{}..{}]  max_div={}",
+            r.stats.avg_conviction,
+            r.stats.min_conviction,
+            r.stats.max_conviction,
+            r.stats.max_divergence,
+        );
+        let bias_keys = [
+            "overweight",
+            "slight-overweight",
+            "at-target",
+            "slight-underweight",
+            "underweight",
+            "null",
+        ];
+        let parts: Vec<String> = bias_keys
+            .iter()
+            .map(|k| {
+                let n = r.stats.alloc_bias_counts.get(*k).copied().unwrap_or(0);
+                format!("{}={}", k, n)
+            })
+            .collect();
+        println!("Bias:    {}", parts.join("  "));
+    }
+    println!("Summary: {}", r.summary);
+    if !r.views.is_empty() {
+        println!("  Analysts:");
+        for v in &r.views {
+            let sign = if v.conviction > 0 { "+" } else { "" };
+            let bias = v.allocation_bias.as_deref().unwrap_or("—");
+            println!(
+                "    {:<7} {:<7} {}{:<3}  bias={:<18} {}",
+                v.analyst, v.direction, sign, v.conviction, bias, v.recorded_at
+            );
+        }
+    }
 }
 
 /// Delete an analyst's view on an asset.

@@ -31,6 +31,7 @@ pub struct AnalystView {
     pub reasoning_summary: String,
     pub key_evidence: Option<String>,
     pub blind_spots: Option<String>,
+    pub allocation_bias: Option<String>,
     pub updated_at: String,
 }
 
@@ -52,6 +53,7 @@ pub struct AnalystViewHistoryEntry {
     pub reasoning_summary: String,
     pub key_evidence: Option<String>,
     pub blind_spots: Option<String>,
+    pub allocation_bias: Option<String>,
     pub recorded_at: String,
 }
 
@@ -66,7 +68,8 @@ impl AnalystViewHistoryEntry {
             reasoning_summary: row.get(5)?,
             key_evidence: row.get(6)?,
             blind_spots: row.get(7)?,
-            recorded_at: row.get(8)?,
+            allocation_bias: row.get(8)?,
+            recorded_at: row.get(9)?,
         })
     }
 }
@@ -82,7 +85,8 @@ impl AnalystView {
             reasoning_summary: row.get(5)?,
             key_evidence: row.get(6)?,
             blind_spots: row.get(7)?,
-            updated_at: row.get(8)?,
+            allocation_bias: row.get(8)?,
+            updated_at: row.get(9)?,
         })
     }
 }
@@ -102,6 +106,7 @@ fn ensure_tables(conn: &Connection) -> Result<()> {
             reasoning_summary TEXT NOT NULL,
             key_evidence TEXT,
             blind_spots TEXT,
+            allocation_bias TEXT,
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_analyst_views_analyst_asset
@@ -119,6 +124,7 @@ fn ensure_tables(conn: &Connection) -> Result<()> {
             reasoning_summary TEXT NOT NULL,
             key_evidence TEXT,
             blind_spots TEXT,
+            allocation_bias TEXT,
             recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_avh_analyst_asset
@@ -128,6 +134,27 @@ fn ensure_tables(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_avh_recorded
             ON analyst_view_history(recorded_at);",
     )?;
+
+    // Idempotent migration: add allocation_bias to legacy tables that pre-date the column.
+    let views_has_bias: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('analyst_views') WHERE name = 'allocation_bias'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !views_has_bias {
+        conn.execute_batch("ALTER TABLE analyst_views ADD COLUMN allocation_bias TEXT")?;
+    }
+    let history_has_bias: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('analyst_view_history') WHERE name = 'allocation_bias'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !history_has_bias {
+        conn.execute_batch(
+            "ALTER TABLE analyst_view_history ADD COLUMN allocation_bias TEXT",
+        )?;
+    }
+
     Ok(())
 }
 
@@ -143,8 +170,15 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 reasoning_summary TEXT NOT NULL,
                 key_evidence TEXT,
                 blind_spots TEXT,
+                allocation_bias TEXT,
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
+        )
+        .execute(pool)
+        .await?;
+        // Idempotent migration for upgraded databases.
+        sqlx::query(
+            "ALTER TABLE analyst_views ADD COLUMN IF NOT EXISTS allocation_bias TEXT",
         )
         .execute(pool)
         .await?;
@@ -176,8 +210,15 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 reasoning_summary TEXT NOT NULL,
                 key_evidence TEXT,
                 blind_spots TEXT,
+                allocation_bias TEXT,
                 recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
+        )
+        .execute(pool)
+        .await?;
+        // Idempotent migration for upgraded databases.
+        sqlx::query(
+            "ALTER TABLE analyst_view_history ADD COLUMN IF NOT EXISTS allocation_bias TEXT",
         )
         .execute(pool)
         .await?;
@@ -238,6 +279,24 @@ pub fn validate_conviction(value: i64) -> Result<()> {
     Ok(())
 }
 
+/// Validate an `allocation_bias` value. `None` (i.e. no bias supplied) is allowed.
+pub fn validate_allocation_bias(value: Option<&str>) -> Result<()> {
+    match value {
+        None => Ok(()),
+        Some(v) => match v {
+            "overweight"
+            | "slight-overweight"
+            | "at-target"
+            | "slight-underweight"
+            | "underweight" => Ok(()),
+            _ => anyhow::bail!(
+                "invalid allocation_bias '{}'. Valid: overweight, slight-overweight, at-target, slight-underweight, underweight",
+                v
+            ),
+        },
+    }
+}
+
 // ---------------------------------------------------------------------------
 // CRUD — SQLite
 // ---------------------------------------------------------------------------
@@ -252,24 +311,26 @@ fn upsert_view(
     reasoning_summary: &str,
     key_evidence: Option<&str>,
     blind_spots: Option<&str>,
+    allocation_bias: Option<&str>,
 ) -> Result<i64> {
     conn.execute(
-        "INSERT INTO analyst_views (analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO analyst_views (analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(analyst, asset) DO UPDATE SET
             direction = excluded.direction,
             conviction = excluded.conviction,
             reasoning_summary = excluded.reasoning_summary,
             key_evidence = excluded.key_evidence,
             blind_spots = excluded.blind_spots,
+            allocation_bias = excluded.allocation_bias,
             updated_at = datetime('now')",
-        params![analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots],
+        params![analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias],
     )?;
     // Also append to history log
     conn.execute(
-        "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
-        params![analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots],
+        "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        params![analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias],
     )?;
     // Get the id (could be new or existing)
     let id: i64 = conn.query_row(
@@ -282,7 +343,7 @@ fn upsert_view(
 
 fn get_view(conn: &Connection, analyst: &str, asset: &str) -> Result<Option<AnalystView>> {
     let mut stmt = conn.prepare(
-        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, updated_at
+        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias, updated_at
          FROM analyst_views WHERE analyst = ? AND asset = ?",
     )?;
     let mut rows = stmt.query_map(params![analyst, asset], AnalystView::from_row)?;
@@ -300,7 +361,7 @@ fn list_views(
     limit: Option<usize>,
 ) -> Result<Vec<AnalystView>> {
     let mut query = String::from(
-        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, updated_at
+        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias, updated_at
          FROM analyst_views WHERE 1=1",
     );
     if let Some(a) = analyst {
@@ -389,7 +450,7 @@ fn get_view_history(
     limit: Option<usize>,
 ) -> Result<Vec<AnalystViewHistoryEntry>> {
     let mut query = String::from(
-        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, recorded_at
+        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias, recorded_at
          FROM analyst_view_history WHERE UPPER(asset) = UPPER(?)",
     );
     if let Some(a) = analyst {
@@ -421,6 +482,7 @@ type ViewPgRow = (
     String,
     Option<String>,
     Option<String>,
+    Option<String>,
     String,
 );
 
@@ -434,7 +496,8 @@ fn view_from_pg(r: ViewPgRow) -> AnalystView {
         reasoning_summary: r.5,
         key_evidence: r.6,
         blind_spots: r.7,
-        updated_at: r.8,
+        allocation_bias: r.8,
+        updated_at: r.9,
     }
 }
 
@@ -448,17 +511,19 @@ fn upsert_view_postgres(
     reasoning_summary: &str,
     key_evidence: Option<&str>,
     blind_spots: Option<&str>,
+    allocation_bias: Option<&str>,
 ) -> Result<i64> {
     let id: i64 = crate::db::pg_runtime::block_on(async {
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO analyst_views (analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "INSERT INTO analyst_views (analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT(analyst, asset) DO UPDATE SET
                 direction = EXCLUDED.direction,
                 conviction = EXCLUDED.conviction,
                 reasoning_summary = EXCLUDED.reasoning_summary,
                 key_evidence = EXCLUDED.key_evidence,
                 blind_spots = EXCLUDED.blind_spots,
+                allocation_bias = EXCLUDED.allocation_bias,
                 updated_at = NOW()
              RETURNING id",
         )
@@ -469,12 +534,13 @@ fn upsert_view_postgres(
         .bind(reasoning_summary)
         .bind(key_evidence)
         .bind(blind_spots)
+        .bind(allocation_bias)
         .fetch_one(pool)
         .await?;
         // Also append to history log
         sqlx::query(
-            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(analyst)
         .bind(asset)
@@ -483,6 +549,7 @@ fn upsert_view_postgres(
         .bind(reasoning_summary)
         .bind(key_evidence)
         .bind(blind_spots)
+        .bind(allocation_bias)
         .execute(pool)
         .await?;
         Ok::<i64, sqlx::Error>(id)
@@ -493,7 +560,7 @@ fn upsert_view_postgres(
 fn get_view_postgres(pool: &PgPool, analyst: &str, asset: &str) -> Result<Option<AnalystView>> {
     let row: Option<ViewPgRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, updated_at::text
+            "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias, updated_at::text
              FROM analyst_views WHERE analyst = $1 AND asset = $2",
         )
         .bind(analyst)
@@ -511,7 +578,7 @@ fn list_views_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<AnalystView>> {
     let mut query = String::from(
-        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, updated_at::text
+        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias, updated_at::text
          FROM analyst_views WHERE 1=1",
     );
     if let Some(a) = analyst {
@@ -601,6 +668,7 @@ type HistoryPgRow = (
     String,
     Option<String>,
     Option<String>,
+    Option<String>,
     String,
 );
 
@@ -614,7 +682,8 @@ fn history_from_pg(r: HistoryPgRow) -> AnalystViewHistoryEntry {
         reasoning_summary: r.5,
         key_evidence: r.6,
         blind_spots: r.7,
-        recorded_at: r.8,
+        allocation_bias: r.8,
+        recorded_at: r.9,
     }
 }
 
@@ -625,7 +694,7 @@ fn get_view_history_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<AnalystViewHistoryEntry>> {
     let mut query = String::from(
-        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, recorded_at::text
+        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias, recorded_at::text
          FROM analyst_view_history WHERE UPPER(asset) = UPPER($1)",
     );
     if let Some(a) = analyst {
@@ -655,19 +724,21 @@ pub fn upsert_view_backend(
     reasoning_summary: &str,
     key_evidence: Option<&str>,
     blind_spots: Option<&str>,
+    allocation_bias: Option<&str>,
 ) -> Result<i64> {
     validate_analyst(analyst)?;
     validate_direction(direction)?;
     validate_conviction(conviction)?;
+    validate_allocation_bias(allocation_bias)?;
     query::dispatch(
         backend,
         |conn| {
             ensure_tables(conn)?;
-            upsert_view(conn, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots)
+            upsert_view(conn, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias)
         },
         |pool| {
             ensure_tables_postgres(pool)?;
-            upsert_view_postgres(pool, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots)
+            upsert_view_postgres(pool, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias)
         },
     )
 }
@@ -1016,7 +1087,7 @@ fn get_all_view_history(
 ) -> Result<Vec<AnalystViewHistoryEntry>> {
     ensure_tables(conn)?;
     let mut query = String::from(
-        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, recorded_at
+        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias, recorded_at
          FROM analyst_view_history WHERE 1=1",
     );
     if let Some(a) = analyst {
@@ -1050,7 +1121,7 @@ fn get_all_view_history_postgres(
 ) -> Result<Vec<AnalystViewHistoryEntry>> {
     ensure_tables_postgres(pool)?;
     let mut query = String::from(
-        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, recorded_at::text
+        "SELECT id, analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias, recorded_at::text
          FROM analyst_view_history WHERE 1=1",
     );
     if let Some(a) = analyst {
@@ -1391,6 +1462,406 @@ pub fn compute_accuracy_backend(
 }
 
 // ---------------------------------------------------------------------------
+// Convergence — deterministic aggregation across analysts for a single asset
+// ---------------------------------------------------------------------------
+
+/// Per-view payload included in a `ConvergenceReport`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConvergenceView {
+    pub analyst: String,
+    pub direction: String,
+    pub conviction: i64,
+    pub reasoning_summary: String,
+    pub key_evidence: Option<String>,
+    pub blind_spots: Option<String>,
+    pub allocation_bias: Option<String>,
+    pub recorded_at: String,
+}
+
+/// Aggregate statistics across the views included in a convergence report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConvergenceStats {
+    pub n_views: usize,
+    pub avg_conviction: f64,
+    pub min_conviction: i64,
+    pub max_conviction: i64,
+    pub max_divergence: i64,
+    pub alloc_bias_counts: std::collections::BTreeMap<String, usize>,
+}
+
+/// Deterministic convergence report for one asset within a lookback window.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConvergenceReport {
+    pub asset: String,
+    pub as_of: String,
+    pub views: Vec<ConvergenceView>,
+    pub stats: ConvergenceStats,
+    pub summary: String,
+}
+
+/// Internal tuple shape of a view row loaded for convergence aggregation.
+/// Fields: (analyst, direction, conviction, reasoning_summary, key_evidence,
+/// blind_spots, allocation_bias, recorded_at).
+type ConvergenceRow = (
+    String,
+    String,
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+);
+
+/// The five allowed allocation-bias buckets, plus a synthetic `null` bucket
+/// for views that did not specify one.
+const ALLOC_BIAS_BUCKETS: [&str; 6] = [
+    "overweight",
+    "slight-overweight",
+    "at-target",
+    "slight-underweight",
+    "underweight",
+    "null",
+];
+
+/// Parse a `--since <duration>` string into an RFC3339 timestamp `Some` (relative)
+/// or `None` (no window — include all rows).
+///
+/// Accepted suffixes: `h` (hours), `d` (days), `w` (weeks), `m` (months ≈ 30d).
+/// Absolute RFC3339 or `YYYY-MM-DD` timestamps are also accepted and returned as-is
+/// (normalised to RFC3339).
+pub fn parse_since(value: &str) -> Result<String> {
+    use chrono::{DateTime, Utc};
+
+    if let Some(stripped) = value.strip_suffix('h') {
+        let hours: i64 = stripped.parse()?;
+        Ok((Utc::now() - chrono::Duration::hours(hours)).to_rfc3339())
+    } else if let Some(stripped) = value.strip_suffix('d') {
+        let days: i64 = stripped.parse()?;
+        Ok((Utc::now() - chrono::Duration::days(days)).to_rfc3339())
+    } else if let Some(stripped) = value.strip_suffix('w') {
+        let weeks: i64 = stripped.parse()?;
+        Ok((Utc::now() - chrono::Duration::weeks(weeks)).to_rfc3339())
+    } else if let Some(stripped) = value.strip_suffix('m') {
+        let months: i64 = stripped.parse()?;
+        Ok((Utc::now() - chrono::Duration::days(months * 30)).to_rfc3339())
+    } else if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
+        Ok(dt.to_rfc3339())
+    } else if let Ok(naive_date) = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+        let naive_dt = naive_date.and_hms_opt(0, 0, 0).unwrap();
+        Ok(DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc).to_rfc3339())
+    } else {
+        anyhow::bail!(
+            "could not parse --since '{}': expected Nh/Nd/Nw/Nm, RFC3339, or YYYY-MM-DD",
+            value
+        );
+    }
+}
+
+/// Deterministic classifier for a convergence summary based on aggregate stats.
+///
+/// Branches (evaluated in order):
+/// 1. `n_views < 2`                                       → `"insufficient-views"`
+/// 2. `max_divergence > 4`                                → `"divergent"`
+/// 3. `max_divergence > 2` && `-1 <= avg <= 1`            → `"neutral-with-divergence"`
+/// 4. `avg >= 3` && `max_divergence <= 2`                 → `"strong-convergent-bull"`
+/// 5. `avg >= 1` && `max_divergence <= 3`                 → `"convergent-bull"`
+/// 6. `avg <= -3` && `max_divergence <= 2`                → `"strong-convergent-bear"`
+/// 7. `avg <= -1` && `max_divergence <= 3`                → `"convergent-bear"`
+/// 8. otherwise                                           → `"convergent-neutral"`
+pub fn classify_convergence(n_views: usize, avg_conviction: f64, max_divergence: i64) -> &'static str {
+    if n_views < 2 {
+        return "insufficient-views";
+    }
+    if max_divergence > 4 {
+        return "divergent";
+    }
+    if max_divergence > 2 && (-1.0..=1.0).contains(&avg_conviction) {
+        return "neutral-with-divergence";
+    }
+    if avg_conviction >= 3.0 && max_divergence <= 2 {
+        return "strong-convergent-bull";
+    }
+    if avg_conviction >= 1.0 && max_divergence <= 3 {
+        return "convergent-bull";
+    }
+    if avg_conviction <= -3.0 && max_divergence <= 2 {
+        return "strong-convergent-bear";
+    }
+    if avg_conviction <= -1.0 && max_divergence <= 3 {
+        return "convergent-bear";
+    }
+    "convergent-neutral"
+}
+
+/// Internal de-duplicated entry: everything except the analyst (used as map key).
+type LatestEntry = (
+    String,
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+);
+
+/// Build a `ConvergenceReport` from a flat list of historical view rows for one asset.
+fn build_report_for_asset(
+    asset: &str,
+    rows: Vec<ConvergenceRow>,
+    as_of: &str,
+) -> ConvergenceReport {
+    // De-duplicate per-analyst: keep the most recent view per analyst layer in the window.
+    let mut latest: std::collections::BTreeMap<String, LatestEntry> =
+        std::collections::BTreeMap::new();
+    for (analyst, direction, conviction, reasoning, evidence, blind, bias, recorded_at) in rows {
+        let existing = latest.get(&analyst);
+        let keep_new = match existing {
+            None => true,
+            Some(prev) => recorded_at >= prev.6,
+        };
+        if keep_new {
+            latest.insert(
+                analyst,
+                (
+                    direction,
+                    conviction,
+                    reasoning,
+                    evidence,
+                    blind,
+                    bias,
+                    recorded_at,
+                ),
+            );
+        }
+    }
+
+    let mut views: Vec<ConvergenceView> = latest
+        .into_iter()
+        .map(
+            |(analyst, (direction, conviction, reasoning, evidence, blind, bias, recorded_at))| ConvergenceView {
+                analyst,
+                direction,
+                conviction,
+                reasoning_summary: reasoning,
+                key_evidence: evidence,
+                blind_spots: blind,
+                allocation_bias: bias,
+                recorded_at,
+            },
+        )
+        .collect();
+    views.sort_by(|a, b| a.analyst.cmp(&b.analyst));
+
+    let n_views = views.len();
+    let (avg_conviction, min_conv, max_conv, max_divergence) = if n_views == 0 {
+        (0.0_f64, 0_i64, 0_i64, 0_i64)
+    } else {
+        let convs: Vec<i64> = views.iter().map(|v| v.conviction).collect();
+        let sum: i64 = convs.iter().sum();
+        let avg = sum as f64 / n_views as f64;
+        let min = *convs.iter().min().unwrap();
+        let max = *convs.iter().max().unwrap();
+        (avg, min, max, max - min)
+    };
+
+    let mut alloc_bias_counts: std::collections::BTreeMap<String, usize> = ALLOC_BIAS_BUCKETS
+        .iter()
+        .map(|b| ((*b).to_string(), 0usize))
+        .collect();
+    for v in &views {
+        let key = match v.allocation_bias.as_deref() {
+            Some(b) if ALLOC_BIAS_BUCKETS.contains(&b) => b.to_string(),
+            _ => "null".to_string(),
+        };
+        *alloc_bias_counts.entry(key).or_insert(0) += 1;
+    }
+
+    let summary = classify_convergence(n_views, avg_conviction, max_divergence).to_string();
+
+    ConvergenceReport {
+        asset: asset.to_string(),
+        as_of: as_of.to_string(),
+        views,
+        stats: ConvergenceStats {
+            n_views,
+            avg_conviction: (avg_conviction * 100.0).round() / 100.0,
+            min_conviction: min_conv,
+            max_conviction: max_conv,
+            max_divergence,
+            alloc_bias_counts,
+        },
+        summary,
+    }
+}
+
+/// SQLite path: load all view rows for the asset whose `recorded_at >= since`
+/// (or all rows if `since` is `None`).
+fn load_convergence_rows_sqlite(
+    conn: &Connection,
+    asset: &str,
+    since: Option<&str>,
+) -> Result<Vec<ConvergenceRow>> {
+    let mut q = String::from(
+        "SELECT analyst, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias, recorded_at
+         FROM analyst_view_history
+         WHERE UPPER(asset) = UPPER(?)",
+    );
+    if let Some(s) = since {
+        q.push_str(&format!(" AND recorded_at >= '{}'", s.replace('\'', "''")));
+    }
+    q.push_str(" ORDER BY recorded_at ASC, id ASC");
+    let mut stmt = conn.prepare(&q)?;
+    let rows = stmt.query_map(params![asset], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<String>>(5)?,
+            row.get::<_, Option<String>>(6)?,
+            row.get::<_, String>(7)?,
+        ))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// SQLite path: list every asset symbol with at least one view in the window.
+fn load_convergence_assets_sqlite(
+    conn: &Connection,
+    since: Option<&str>,
+) -> Result<Vec<String>> {
+    let q = if let Some(s) = since {
+        format!(
+            "SELECT DISTINCT asset FROM analyst_view_history WHERE recorded_at >= '{}' ORDER BY asset",
+            s.replace('\'', "''")
+        )
+    } else {
+        String::from("SELECT DISTINCT asset FROM analyst_view_history ORDER BY asset")
+    };
+    let mut stmt = conn.prepare(&q)?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// Postgres path counterparts.
+fn load_convergence_rows_postgres(
+    pool: &PgPool,
+    asset: &str,
+    since: Option<&str>,
+) -> Result<Vec<ConvergenceRow>> {
+    type Row = (
+        String,
+        String,
+        i32,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        String,
+    );
+    let mut q = String::from(
+        "SELECT analyst, direction, conviction, reasoning_summary, key_evidence, blind_spots, allocation_bias, recorded_at::text
+         FROM analyst_view_history
+         WHERE UPPER(asset) = UPPER($1)",
+    );
+    if let Some(s) = since {
+        q.push_str(&format!(
+            " AND recorded_at >= '{}'::timestamptz",
+            s.replace('\'', "''")
+        ));
+    }
+    q.push_str(" ORDER BY recorded_at ASC, id ASC");
+    let rows: Vec<Row> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(&q).bind(asset).fetch_all(pool).await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|(analyst, direction, conviction, reasoning, evidence, blind, bias, recorded_at)| {
+            (
+                analyst,
+                direction,
+                conviction as i64,
+                reasoning,
+                evidence,
+                blind,
+                bias,
+                recorded_at,
+            )
+        })
+        .collect())
+}
+
+fn load_convergence_assets_postgres(pool: &PgPool, since: Option<&str>) -> Result<Vec<String>> {
+    let q = if let Some(s) = since {
+        format!(
+            "SELECT DISTINCT asset FROM analyst_view_history WHERE recorded_at >= '{}'::timestamptz ORDER BY asset",
+            s.replace('\'', "''")
+        )
+    } else {
+        String::from("SELECT DISTINCT asset FROM analyst_view_history ORDER BY asset")
+    };
+    let rows: Vec<(String,)> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(&q).fetch_all(pool).await
+    })?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+/// Public dispatch: build a convergence report for a single asset.
+pub fn convergence_report_backend(
+    backend: &BackendConnection,
+    asset: &str,
+    since: Option<&str>,
+) -> Result<ConvergenceReport> {
+    let as_of = chrono::Utc::now().to_rfc3339();
+    let rows = query::dispatch(
+        backend,
+        |conn| {
+            ensure_tables(conn)?;
+            load_convergence_rows_sqlite(conn, asset, since)
+        },
+        |pool| {
+            ensure_tables_postgres(pool)?;
+            load_convergence_rows_postgres(pool, asset, since)
+        },
+    )?;
+    Ok(build_report_for_asset(&asset.to_uppercase(), rows, &as_of))
+}
+
+/// Public dispatch: build a convergence report for every asset with ≥1 view in window.
+pub fn convergence_all_backend(
+    backend: &BackendConnection,
+    since: Option<&str>,
+) -> Result<Vec<ConvergenceReport>> {
+    let assets = query::dispatch(
+        backend,
+        |conn| {
+            ensure_tables(conn)?;
+            load_convergence_assets_sqlite(conn, since)
+        },
+        |pool| {
+            ensure_tables_postgres(pool)?;
+            load_convergence_assets_postgres(pool, since)
+        },
+    )?;
+    let mut reports = Vec::new();
+    for asset in assets {
+        let report = convergence_report_backend(backend, &asset, since)?;
+        reports.push(report);
+    }
+    Ok(reports)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1448,7 +1919,7 @@ mod tests {
             3,
             "Short-term momentum strong, breaking resistance.",
             Some("RSI 62, MACD cross bullish, volume surge"),
-            Some("Whale selling could cap upside"),
+            Some("Whale selling could cap upside"), None,
         )
         .unwrap();
         assert!(id > 0);
@@ -1483,7 +1954,7 @@ mod tests {
             4,
             "Structural central bank buying.",
             None,
-            None,
+            None, None,
         )
         .unwrap();
 
@@ -1496,7 +1967,7 @@ mod tests {
             1,
             "Central bank buying slowing. Mixed signals.",
             Some("PBOC paused, WGC data"),
-            Some("Could resume if DXY weakens"),
+            Some("Could resume if DXY weakens"), None,
         )
         .unwrap();
 
@@ -1513,10 +1984,10 @@ mod tests {
     #[test]
     fn test_list_views_filters() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None).unwrap();
-        upsert_view(&conn, "medium", "BTC", "bull", 2, "Swing bullish", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "bear", -2, "Valuation stretched", None, None).unwrap();
-        upsert_view(&conn, "low", "GLD", "bull", 4, "Gold momentum", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None, None).unwrap();
+        upsert_view(&conn, "medium", "BTC", "bull", 2, "Swing bullish", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "Valuation stretched", None, None, None).unwrap();
+        upsert_view(&conn, "low", "GLD", "bull", 4, "Gold momentum", None, None, None).unwrap();
 
         // All views
         let all = list_views(&conn, None, None, None).unwrap();
@@ -1543,10 +2014,10 @@ mod tests {
     #[test]
     fn test_view_matrix() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "bear", -2, "Overvalued", None, None).unwrap();
-        upsert_view(&conn, "low", "GLD", "bull", 4, "Safe haven bid", None, None).unwrap();
-        upsert_view(&conn, "macro", "GLD", "bull", 5, "Structural", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "Overvalued", None, None, None).unwrap();
+        upsert_view(&conn, "low", "GLD", "bull", 4, "Safe haven bid", None, None, None).unwrap();
+        upsert_view(&conn, "macro", "GLD", "bull", 5, "Structural", None, None, None).unwrap();
 
         let matrix = get_view_matrix(&conn).unwrap();
         assert_eq!(matrix.len(), 2); // BTC and GLD
@@ -1561,7 +2032,7 @@ mod tests {
     #[test]
     fn test_delete_view() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Test", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Test", None, None, None).unwrap();
         assert!(get_view(&conn, "low", "BTC").unwrap().is_some());
 
         let deleted = delete_view(&conn, "low", "BTC").unwrap();
@@ -1603,7 +2074,7 @@ mod tests {
     #[test]
     fn test_case_insensitive_asset_filter() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Test", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Test", None, None, None).unwrap();
 
         let btc_lower = list_views(&conn, None, Some("btc"), None).unwrap();
         assert_eq!(btc_lower.len(), 1);
@@ -1623,7 +2094,7 @@ mod tests {
     fn test_portfolio_matrix_includes_all_symbols() {
         let conn = setup_db();
         // Only BTC has a view
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None, None).unwrap();
 
         // Portfolio has BTC, GLD, SLV — GLD and SLV have no views
         let symbols = vec!["BTC".to_string(), "GLD".to_string(), "SLV".to_string()];
@@ -1642,7 +2113,7 @@ mod tests {
     fn test_portfolio_matrix_includes_viewed_assets_not_in_portfolio() {
         let conn = setup_db();
         // TSLA has a view but is not in portfolio
-        upsert_view(&conn, "high", "TSLA", "bear", -2, "Overvalued", None, None).unwrap();
+        upsert_view(&conn, "high", "TSLA", "bear", -2, "Overvalued", None, None, None).unwrap();
 
         let symbols = vec!["BTC".to_string(), "GLD".to_string()];
         let matrix = get_portfolio_view_matrix(&conn, &symbols).unwrap();
@@ -1657,7 +2128,7 @@ mod tests {
     #[test]
     fn test_portfolio_matrix_deduplicates() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Test", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Test", None, None, None).unwrap();
 
         // BTC is in both portfolio and has views — should not be duplicated
         let symbols = vec!["BTC".to_string()];
@@ -1671,7 +2142,7 @@ mod tests {
     #[test]
     fn test_portfolio_matrix_empty_portfolio() {
         let conn = setup_db();
-        upsert_view(&conn, "macro", "GLD", "bull", 5, "Structural", None, None).unwrap();
+        upsert_view(&conn, "macro", "GLD", "bull", 5, "Structural", None, None, None).unwrap();
 
         // Empty portfolio — should still show assets with views
         let symbols: Vec<String> = vec![];
@@ -1684,7 +2155,7 @@ mod tests {
     #[test]
     fn test_portfolio_matrix_sorted() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "TSLA", "bear", -1, "Test", None, None).unwrap();
+        upsert_view(&conn, "low", "TSLA", "bear", -1, "Test", None, None, None).unwrap();
 
         let symbols = vec!["SLV".to_string(), "BTC".to_string(), "GLD".to_string()];
         let matrix = get_portfolio_view_matrix(&conn, &symbols).unwrap();
@@ -1711,7 +2182,7 @@ mod tests {
     #[test]
     fn test_upsert_appends_to_history() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None, None).unwrap();
 
         let history = get_view_history(&conn, "BTC", None, None).unwrap();
         assert_eq!(history.len(), 1);
@@ -1723,9 +2194,9 @@ mod tests {
     #[test]
     fn test_multiple_upserts_create_multiple_history_entries() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None).unwrap();
-        upsert_view(&conn, "low", "BTC", "bull", 4, "Momentum accelerating", None, None).unwrap();
-        upsert_view(&conn, "low", "BTC", "bear", -2, "Reversal signal", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 4, "Momentum accelerating", None, None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bear", -2, "Reversal signal", None, None, None).unwrap();
 
         // Current view should be latest
         let current = get_view(&conn, "low", "BTC").unwrap().unwrap();
@@ -1744,8 +2215,8 @@ mod tests {
     #[test]
     fn test_history_filter_by_analyst() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Low view", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "bear", -2, "High view", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Low view", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "High view", None, None, None).unwrap();
 
         let low_history = get_view_history(&conn, "BTC", Some("low"), None).unwrap();
         assert_eq!(low_history.len(), 1);
@@ -1768,7 +2239,7 @@ mod tests {
                 i,
                 &format!("Update {}", i),
                 None,
-                None,
+                None, None,
             )
             .unwrap();
         }
@@ -1780,7 +2251,7 @@ mod tests {
     #[test]
     fn test_history_case_insensitive_asset() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Test", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Test", None, None, None).unwrap();
 
         let history_lower = get_view_history(&conn, "btc", None, None).unwrap();
         assert_eq!(history_lower.len(), 1);
@@ -1800,7 +2271,7 @@ mod tests {
             5,
             "Structural central bank buying",
             Some("WGC Q4, PBOC reserves"),
-            Some("Risk-on shift"),
+            Some("Risk-on shift"), None,
         )
         .unwrap();
 
@@ -1820,10 +2291,10 @@ mod tests {
     #[test]
     fn test_history_multi_analyst_interleaved() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 2, "Low initial", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "bear", -3, "High initial", None, None).unwrap();
-        upsert_view(&conn, "low", "BTC", "bull", 4, "Low updated", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "neutral", 0, "High revised", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 2, "Low initial", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -3, "High initial", None, None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 4, "Low updated", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "neutral", 0, "High revised", None, None, None).unwrap();
 
         // All history for BTC
         let all = get_view_history(&conn, "BTC", None, None).unwrap();
@@ -1848,8 +2319,8 @@ mod tests {
     fn test_divergence_basic() {
         let conn = setup_db();
         // BTC: LOW bull +3, HIGH bear -2 → spread = 5
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "bear", -2, "Overvalued", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Momentum up", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "Overvalued", None, None, None).unwrap();
 
         let divs = compute_divergence(&conn, 2, None, None, None).unwrap();
         assert_eq!(divs.len(), 1);
@@ -1866,11 +2337,11 @@ mod tests {
     fn test_divergence_min_spread_filter() {
         let conn = setup_db();
         // BTC: spread 5 (bull +3, bear -2)
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "bear", -2, "Down", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "Down", None, None, None).unwrap();
         // GLD: spread 2 (bull +4, neutral +2)
-        upsert_view(&conn, "low", "GLD", "bull", 4, "Safe haven", None, None).unwrap();
-        upsert_view(&conn, "macro", "GLD", "bull", 2, "Moderate", None, None).unwrap();
+        upsert_view(&conn, "low", "GLD", "bull", 4, "Safe haven", None, None, None).unwrap();
+        upsert_view(&conn, "macro", "GLD", "bull", 2, "Moderate", None, None, None).unwrap();
 
         // min_spread 3: only BTC qualifies
         let divs = compute_divergence(&conn, 3, None, None, None).unwrap();
@@ -1886,11 +2357,11 @@ mod tests {
     fn test_divergence_sorted_by_spread_desc() {
         let conn = setup_db();
         // GLD: spread 9 (bull +5, bear -4)
-        upsert_view(&conn, "macro", "GLD", "bull", 5, "Structural", None, None).unwrap();
-        upsert_view(&conn, "low", "GLD", "bear", -4, "Short-term sell", None, None).unwrap();
+        upsert_view(&conn, "macro", "GLD", "bull", 5, "Structural", None, None, None).unwrap();
+        upsert_view(&conn, "low", "GLD", "bear", -4, "Short-term sell", None, None, None).unwrap();
         // BTC: spread 5 (bull +3, bear -2)
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "bear", -2, "Down", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "Down", None, None, None).unwrap();
 
         let divs = compute_divergence(&conn, 2, None, None, None).unwrap();
         assert_eq!(divs.len(), 2);
@@ -1903,10 +2374,10 @@ mod tests {
     #[test]
     fn test_divergence_asset_filter() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "bear", -2, "Down", None, None).unwrap();
-        upsert_view(&conn, "low", "GLD", "bull", 4, "Up", None, None).unwrap();
-        upsert_view(&conn, "high", "GLD", "bear", -3, "Down", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -2, "Down", None, None, None).unwrap();
+        upsert_view(&conn, "low", "GLD", "bull", 4, "Up", None, None, None).unwrap();
+        upsert_view(&conn, "high", "GLD", "bear", -3, "Down", None, None, None).unwrap();
 
         let divs = compute_divergence(&conn, 2, Some("BTC"), None, None).unwrap();
         assert_eq!(divs.len(), 1);
@@ -1918,8 +2389,8 @@ mod tests {
         let conn = setup_db();
         // Create 3 divergent assets
         for (asset, conv_hi, conv_lo) in [("BTC", 3, -2), ("GLD", 5, -4), ("SLV", 2, -1)] {
-            upsert_view(&conn, "low", asset, "bull", conv_hi, "Up", None, None).unwrap();
-            upsert_view(&conn, "high", asset, "bear", conv_lo, "Down", None, None).unwrap();
+            upsert_view(&conn, "low", asset, "bull", conv_hi, "Up", None, None, None).unwrap();
+            upsert_view(&conn, "high", asset, "bear", conv_lo, "Down", None, None, None).unwrap();
         }
 
         let divs = compute_divergence(&conn, 2, None, None, Some(2)).unwrap();
@@ -1932,11 +2403,11 @@ mod tests {
     #[test]
     fn test_divergence_layer_filter_matches_extremes_only() {
         let conn = setup_db();
-        upsert_view(&conn, "low", "BTC", "bull", 4, "Momentum", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "bear", -3, "Resistance", None, None).unwrap();
-        upsert_view(&conn, "medium", "GLD", "bull", 1, "Rotation", None, None).unwrap();
-        upsert_view(&conn, "macro", "GLD", "bear", -4, "Deflation", None, None).unwrap();
-        upsert_view(&conn, "high", "GLD", "neutral", 0, "Waiting", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 4, "Momentum", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -3, "Resistance", None, None, None).unwrap();
+        upsert_view(&conn, "medium", "GLD", "bull", 1, "Rotation", None, None, None).unwrap();
+        upsert_view(&conn, "macro", "GLD", "bear", -4, "Deflation", None, None, None).unwrap();
+        upsert_view(&conn, "high", "GLD", "neutral", 0, "Waiting", None, None, None).unwrap();
 
         let high_divs = compute_divergence(&conn, 2, None, Some("high"), None).unwrap();
         assert_eq!(high_divs.len(), 1);
@@ -1951,7 +2422,7 @@ mod tests {
     fn test_divergence_single_analyst_excluded() {
         let conn = setup_db();
         // Only one analyst on this asset → no divergence
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None, None).unwrap();
 
         let divs = compute_divergence(&conn, 0, None, None, None).unwrap();
         assert!(divs.is_empty());
@@ -1961,9 +2432,9 @@ mod tests {
     fn test_divergence_all_agree() {
         let conn = setup_db();
         // All analysts agree on bull +3 → spread 0
-        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None).unwrap();
-        upsert_view(&conn, "high", "BTC", "bull", 3, "Up", None, None).unwrap();
-        upsert_view(&conn, "macro", "BTC", "bull", 3, "Up", None, None).unwrap();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Up", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bull", 3, "Up", None, None, None).unwrap();
+        upsert_view(&conn, "macro", "BTC", "bull", 3, "Up", None, None, None).unwrap();
 
         let divs = compute_divergence(&conn, 1, None, None, None).unwrap();
         assert!(divs.is_empty());
@@ -2311,5 +2782,367 @@ mod tests {
 
         let limited = get_all_view_history(&conn, None, None, Some(1)).unwrap();
         assert_eq!(limited.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // allocation_bias migration + round-trip tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_allocation_bias_column_present() {
+        let conn = setup_db();
+        // Column exists on both tables after ensure_tables runs.
+        for table in ["analyst_views", "analyst_view_history"] {
+            let has: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name = 'allocation_bias'",
+                        table
+                    ),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(has, 1, "{} missing allocation_bias column", table);
+        }
+    }
+
+    #[test]
+    fn test_allocation_bias_migration_adds_column_to_legacy_table() {
+        // Simulate a legacy DB with the column missing.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE analyst_views (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                analyst TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                direction TEXT NOT NULL DEFAULT 'neutral',
+                conviction INTEGER NOT NULL DEFAULT 0,
+                reasoning_summary TEXT NOT NULL,
+                key_evidence TEXT,
+                blind_spots TEXT,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE analyst_view_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                analyst TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                conviction INTEGER NOT NULL,
+                reasoning_summary TEXT NOT NULL,
+                key_evidence TEXT,
+                blind_spots TEXT,
+                recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+        // Pre-condition: column missing.
+        let has_before: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('analyst_views') WHERE name = 'allocation_bias'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_before, 0);
+
+        // Run migration.
+        ensure_tables(&conn).unwrap();
+
+        // Post-condition: column present on both tables.
+        for table in ["analyst_views", "analyst_view_history"] {
+            let has: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name = 'allocation_bias'",
+                        table
+                    ),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(has, 1, "{} migration failed", table);
+        }
+        // Idempotent: running again should be a no-op (no errors).
+        ensure_tables(&conn).unwrap();
+    }
+
+    #[test]
+    fn test_allocation_bias_round_trip() {
+        let conn = setup_db();
+        upsert_view(
+            &conn,
+            "low",
+            "BTC",
+            "bull",
+            3,
+            "Momentum strong",
+            Some("RSI 62"),
+            Some("Whale selling"),
+            Some("slight-overweight"),
+        )
+        .unwrap();
+
+        let v = get_view(&conn, "low", "BTC").unwrap().unwrap();
+        assert_eq!(v.allocation_bias.as_deref(), Some("slight-overweight"));
+
+        let history = get_view_history(&conn, "BTC", None, None).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].allocation_bias.as_deref(), Some("slight-overweight"));
+    }
+
+    #[test]
+    fn test_validate_allocation_bias() {
+        assert!(validate_allocation_bias(None).is_ok());
+        for v in [
+            "overweight",
+            "slight-overweight",
+            "at-target",
+            "slight-underweight",
+            "underweight",
+        ] {
+            assert!(validate_allocation_bias(Some(v)).is_ok(), "expected {} ok", v);
+        }
+        assert!(validate_allocation_bias(Some("neutral")).is_err());
+        assert!(validate_allocation_bias(Some("")).is_err());
+        assert!(validate_allocation_bias(Some("OVERWEIGHT")).is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // classify_convergence — the 8 branches
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_classify_insufficient_views() {
+        assert_eq!(classify_convergence(0, 0.0, 0), "insufficient-views");
+        assert_eq!(classify_convergence(1, 5.0, 0), "insufficient-views");
+    }
+
+    #[test]
+    fn test_classify_divergent_when_spread_above_4() {
+        // max_divergence > 4 short-circuits before any avg check
+        assert_eq!(classify_convergence(2, 0.0, 5), "divergent");
+        assert_eq!(classify_convergence(4, 3.0, 8), "divergent");
+    }
+
+    #[test]
+    fn test_classify_neutral_with_divergence() {
+        // max_divergence in (2, 4], avg in [-1, 1]
+        assert_eq!(classify_convergence(2, 0.0, 3), "neutral-with-divergence");
+        assert_eq!(classify_convergence(2, 1.0, 4), "neutral-with-divergence");
+        assert_eq!(classify_convergence(2, -1.0, 3), "neutral-with-divergence");
+    }
+
+    #[test]
+    fn test_classify_strong_convergent_bull() {
+        assert_eq!(classify_convergence(2, 3.0, 0), "strong-convergent-bull");
+        assert_eq!(classify_convergence(4, 4.5, 2), "strong-convergent-bull");
+    }
+
+    #[test]
+    fn test_classify_convergent_bull() {
+        assert_eq!(classify_convergence(2, 1.0, 0), "convergent-bull");
+        assert_eq!(classify_convergence(3, 2.0, 3), "convergent-bull");
+        // avg >= 3 but divergence too wide for strong → falls through to convergent-bull
+        assert_eq!(classify_convergence(3, 3.0, 3), "convergent-bull");
+    }
+
+    #[test]
+    fn test_classify_strong_convergent_bear() {
+        assert_eq!(classify_convergence(2, -3.0, 0), "strong-convergent-bear");
+        assert_eq!(classify_convergence(3, -4.0, 2), "strong-convergent-bear");
+    }
+
+    #[test]
+    fn test_classify_convergent_bear() {
+        assert_eq!(classify_convergence(2, -1.0, 0), "convergent-bear");
+        assert_eq!(classify_convergence(3, -2.0, 3), "convergent-bear");
+        // avg <= -3 but divergence > 2 → falls through to convergent-bear
+        assert_eq!(classify_convergence(3, -3.0, 3), "convergent-bear");
+    }
+
+    #[test]
+    fn test_classify_convergent_neutral_default() {
+        // n_views >= 2, low divergence, avg in (-1, 1) excl
+        assert_eq!(classify_convergence(2, 0.5, 0), "convergent-neutral");
+        assert_eq!(classify_convergence(3, 0.0, 1), "convergent-neutral");
+        // avg=-0.5 with no divergence
+        assert_eq!(classify_convergence(2, -0.5, 2), "convergent-neutral");
+    }
+
+    // -----------------------------------------------------------------------
+    // convergence aggregation end-to-end (8 branches via synthetic data)
+    // -----------------------------------------------------------------------
+
+    fn convergence_for(conn: &Connection, asset: &str) -> ConvergenceReport {
+        let rows = load_convergence_rows_sqlite(conn, asset, None).unwrap();
+        build_report_for_asset(&asset.to_uppercase(), rows, "test")
+    }
+
+    #[test]
+    fn test_convergence_insufficient_views() {
+        let conn = setup_db();
+        // No views
+        let r = convergence_for(&conn, "BTC");
+        assert_eq!(r.stats.n_views, 0);
+        assert_eq!(r.summary, "insufficient-views");
+
+        // Exactly one view
+        upsert_view(&conn, "low", "BTC", "bull", 3, "Reasoning", None, None, None).unwrap();
+        let r = convergence_for(&conn, "BTC");
+        assert_eq!(r.stats.n_views, 1);
+        assert_eq!(r.summary, "insufficient-views");
+    }
+
+    #[test]
+    fn test_convergence_strong_convergent_bull() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "GC=F", "bull", 4, "r", None, None, Some("overweight")).unwrap();
+        upsert_view(&conn, "medium", "GC=F", "bull", 3, "r", None, None, Some("slight-overweight")).unwrap();
+        upsert_view(&conn, "high", "GC=F", "bull", 5, "r", None, None, Some("overweight")).unwrap();
+
+        let r = convergence_for(&conn, "GC=F");
+        assert_eq!(r.stats.n_views, 3);
+        assert_eq!(r.summary, "strong-convergent-bull");
+        assert!(r.stats.avg_conviction >= 3.0);
+        assert!(r.stats.max_divergence <= 2);
+        // alloc bias buckets
+        assert_eq!(r.stats.alloc_bias_counts.get("overweight").copied(), Some(2));
+        assert_eq!(r.stats.alloc_bias_counts.get("slight-overweight").copied(), Some(1));
+        assert_eq!(r.stats.alloc_bias_counts.get("null").copied(), Some(0));
+    }
+
+    #[test]
+    fn test_convergence_convergent_bull() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "SLV", "bull", 2, "r", None, None, None).unwrap();
+        upsert_view(&conn, "medium", "SLV", "bull", 1, "r", None, None, None).unwrap();
+
+        let r = convergence_for(&conn, "SLV");
+        assert_eq!(r.summary, "convergent-bull");
+    }
+
+    #[test]
+    fn test_convergence_strong_convergent_bear() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "ARKK", "bear", -4, "r", None, None, Some("underweight")).unwrap();
+        upsert_view(&conn, "medium", "ARKK", "bear", -3, "r", None, None, Some("underweight")).unwrap();
+        upsert_view(&conn, "high", "ARKK", "bear", -3, "r", None, None, Some("underweight")).unwrap();
+
+        let r = convergence_for(&conn, "ARKK");
+        assert_eq!(r.summary, "strong-convergent-bear");
+    }
+
+    #[test]
+    fn test_convergence_convergent_bear() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "QQQ", "bear", -2, "r", None, None, None).unwrap();
+        upsert_view(&conn, "medium", "QQQ", "bear", -1, "r", None, None, None).unwrap();
+
+        let r = convergence_for(&conn, "QQQ");
+        assert_eq!(r.summary, "convergent-bear");
+    }
+
+    #[test]
+    fn test_convergence_convergent_neutral() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "MID", "neutral", 0, "r", None, None, Some("at-target")).unwrap();
+        upsert_view(&conn, "medium", "MID", "neutral", 1, "r", None, None, Some("at-target")).unwrap();
+
+        let r = convergence_for(&conn, "MID");
+        // avg 0.5, max_div 1 → falls to convergent-neutral
+        assert_eq!(r.summary, "convergent-neutral");
+    }
+
+    #[test]
+    fn test_convergence_divergent() {
+        let conn = setup_db();
+        // Spread 9 (>4) → divergent
+        upsert_view(&conn, "low", "BTC", "bull", 5, "r", None, None, Some("overweight")).unwrap();
+        upsert_view(&conn, "high", "BTC", "bear", -4, "r", None, None, Some("underweight")).unwrap();
+
+        let r = convergence_for(&conn, "BTC");
+        assert_eq!(r.summary, "divergent");
+        assert_eq!(r.stats.max_divergence, 9);
+    }
+
+    #[test]
+    fn test_convergence_neutral_with_divergence() {
+        let conn = setup_db();
+        // avg = 0, max_div = 4
+        upsert_view(&conn, "low", "XX", "bull", 2, "r", None, None, None).unwrap();
+        upsert_view(&conn, "high", "XX", "bear", -2, "r", None, None, None).unwrap();
+
+        let r = convergence_for(&conn, "XX");
+        // avg 0, divergence 4 → neutral-with-divergence
+        assert_eq!(r.summary, "neutral-with-divergence");
+    }
+
+    #[test]
+    fn test_convergence_dedupes_per_analyst_keeping_latest() {
+        let conn = setup_db();
+        // Same analyst writes twice — only latest should be in the report
+        upsert_view(&conn, "low", "BTC", "bull", 2, "first", None, None, None).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        upsert_view(&conn, "low", "BTC", "bear", -3, "second", None, None, None).unwrap();
+        upsert_view(&conn, "medium", "BTC", "bear", -2, "r", None, None, None).unwrap();
+
+        let r = convergence_for(&conn, "BTC");
+        assert_eq!(r.stats.n_views, 2); // low (latest) + medium
+        let low = r.views.iter().find(|v| v.analyst == "low").unwrap();
+        assert_eq!(low.direction, "bear");
+        assert_eq!(low.conviction, -3);
+    }
+
+    #[test]
+    fn test_convergence_all_returns_one_per_distinct_asset() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "BTC", "bull", 3, "r", None, None, None).unwrap();
+        upsert_view(&conn, "medium", "BTC", "bull", 2, "r", None, None, None).unwrap();
+        upsert_view(&conn, "low", "GC=F", "bull", 4, "r", None, None, None).unwrap();
+        upsert_view(&conn, "low", "SLV", "neutral", 0, "r", None, None, None).unwrap();
+
+        let assets = load_convergence_assets_sqlite(&conn, None).unwrap();
+        assert_eq!(assets, vec!["BTC", "GC=F", "SLV"]);
+    }
+
+    #[test]
+    fn test_convergence_since_filter() {
+        let conn = setup_db();
+        // Insert old + new directly into history with explicit recorded_at timestamps.
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('low', 'BTC', 'bull', 3, 'old', '2020-01-01 00:00:00')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+             VALUES ('medium', 'BTC', 'bull', 4, 'fresh', ?)",
+            params![chrono::Utc::now().to_rfc3339()],
+        )
+        .unwrap();
+
+        // Window = last 1 hour → only the fresh row qualifies
+        let since = (chrono::Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
+        let rows = load_convergence_rows_sqlite(&conn, "BTC", Some(&since)).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "medium");
+
+        // No window → both rows included
+        let rows_all = load_convergence_rows_sqlite(&conn, "BTC", None).unwrap();
+        assert_eq!(rows_all.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_since_variants() {
+        // Relative suffixes parse without panicking.
+        for s in ["24h", "7d", "2w", "3m"] {
+            assert!(parse_since(s).is_ok(), "expected {} to parse", s);
+        }
+        // Absolute YYYY-MM-DD parses.
+        assert!(parse_since("2025-01-01").is_ok());
+        // Garbage rejected.
+        assert!(parse_since("not-a-duration").is_err());
     }
 }

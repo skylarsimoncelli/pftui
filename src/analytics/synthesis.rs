@@ -1291,17 +1291,17 @@ mod tests {
         analyst_views::upsert_view_backend(
             &backend, "low", "BTC", "bear", -2,
             "Short-term bearish on momentum",
-            Some("RSI overbought"), Some("Could spike on ETF news"),
+            Some("RSI overbought"), Some("Could spike on ETF news"), None,
         ).unwrap();
         analyst_views::upsert_view_backend(
             &backend, "medium", "BTC", "bull", 3,
             "Medium-term bullish on halving cycle",
-            Some("COT positioning favorable"), Some("Regulation risk"),
+            Some("COT positioning favorable"), Some("Regulation risk"), None,
         ).unwrap();
         analyst_views::upsert_view_backend(
             &backend, "high", "BTC", "bull", 4,
             "Long-term structural demand",
-            Some("Institutional adoption"), Some("Quantum computing risk"),
+            Some("Institutional adoption"), Some("Quantum computing risk"), None,
         ).unwrap();
 
         let report = build_report_backend(&backend).unwrap();
@@ -1330,11 +1330,11 @@ mod tests {
 
         analyst_views::upsert_view_backend(
             &backend, "low", "TSLA", "bear", -3,
-            "Bearish", Some("ev"), Some("bs"),
+            "Bearish", Some("ev"), Some("bs"), None,
         ).unwrap();
         analyst_views::upsert_view_backend(
             &backend, "medium", "TSLA", "bear", -2,
-            "Bearish medium", Some("ev"), Some("bs"),
+            "Bearish medium", Some("ev"), Some("bs"), None,
         ).unwrap();
 
         let report = build_report_backend(&backend).unwrap();
@@ -1355,15 +1355,15 @@ mod tests {
 
         analyst_views::upsert_view_backend(
             &backend, "low", "BTC", "bull", 1,
-            "Weak bull", Some("ev"), Some("bs"),
+            "Weak bull", Some("ev"), Some("bs"), None,
         ).unwrap();
         analyst_views::upsert_view_backend(
             &backend, "low", "GC=F", "bull", 5,
-            "Strong bull", Some("ev"), Some("bs"),
+            "Strong bull", Some("ev"), Some("bs"), None,
         ).unwrap();
         analyst_views::upsert_view_backend(
             &backend, "medium", "GC=F", "bull", 4,
-            "Medium bull", Some("ev"), Some("bs"),
+            "Medium bull", Some("ev"), Some("bs"), None,
         ).unwrap();
 
         let report = build_report_backend(&backend).unwrap();

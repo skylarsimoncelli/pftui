@@ -93,6 +93,16 @@ Canonical author identifiers:
 
 When adding a new agent or routine, mint a new `analyst-*` or `agent-*` identifier (kebab-case, no dots) and update this table.
 
+## Analyst Views & Convergence
+
+The `analyst_views` table records each analyst's structured per-asset view (direction, conviction -5..+5, reasoning, evidence, blind spots, allocation bias). The 4 timeframe-analyst routines populate this for every held position on every run.
+
+Deterministic convergence aggregation:
+- `pftui analytics views convergence --asset <SYM>` — one asset
+- `pftui analytics views convergence-all` — every asset with views in window
+
+Summary classifications: `insufficient-views`, `divergent`, `neutral-with-divergence`, `strong-convergent-bull`, `convergent-bull`, `convergent-neutral`, `convergent-bear`, `strong-convergent-bear`. See `src/db/analyst_views.rs::classify_convergence` for the exact formula — do NOT introduce alternative ad-hoc classifications.
+
 ## CLI Design Rules
 
 - **Commands navigate, arguments parameterize.** Functions are subcommands in a hierarchy. Data inputs are `--flags`. Never make a parameter a subcommand or a function a flag.
