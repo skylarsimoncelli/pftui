@@ -93,6 +93,7 @@ pftui data calendar --json                # upcoming economic events today
 pftui analytics alerts check --json       # any newly triggered alerts (RSI/SMA/MACD evaluated)
 pftui analytics scenario list --json      # active scenarios for news filtering
 ```
+News JSON includes `source_tier`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional.
 
 Only use web_search for what pftui cannot provide:
 - Breaking geopolitical news not yet in RSS feeds

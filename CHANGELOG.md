@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: classify news source tiers at ingest
+
+- What: news ingest now records `source_domain`, `source_tier`, and `source_tier_inferred`, seeds a `news_source_tiers` reference table, backfills existing cached articles, and exposes `pftui data news sources list/set/remove`. `pftui data news --json` and analyst routines now surface tier-weighted news reasoning.
+- Why: Reuters/Bloomberg/AP/FT/WSJ wires should carry more analytical weight than aggregators, blogs, and unknown domains when agents reason over headline flow.
+
 ### 2026-05-28 — feat: surface applied prediction lessons
 
 - What: predictions can now store `lessons_applied` IDs via `pftui journal prediction add --lessons`, and `pftui analytics lessons applied --since 24h --json` aggregates this run's guarded predictions, most-referenced lessons, and strongest wrong-call analog. Analyst routines and report instructions now tell agents to carry lesson IDs into new predictions and surface them in daily reports.

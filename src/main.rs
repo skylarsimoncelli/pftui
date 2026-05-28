@@ -1073,6 +1073,26 @@ fn run_cli(cli: Cli) -> Result<()> {
                         commands::news::run_feeds_reset(&backend, &feed_id, json)
                     }
                 },
+                Some(cli::DataNewsCommand::Sources { command }) => match command {
+                    cli::DataNewsSourcesCommand::List { json } => {
+                        commands::news::run_sources_list(&backend, json)
+                    }
+                    cli::DataNewsSourcesCommand::Set {
+                        domain,
+                        tier,
+                        notes,
+                        json,
+                    } => commands::news::run_sources_set(
+                        &backend,
+                        &domain,
+                        tier,
+                        notes.as_deref(),
+                        json,
+                    ),
+                    cli::DataNewsSourcesCommand::Remove { domain, json } => {
+                        commands::news::run_sources_remove(&backend, &domain, json)
+                    }
+                },
                 None => commands::news::run(
                     &backend,
                     &config,

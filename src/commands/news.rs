@@ -212,6 +212,68 @@ pub fn run_feeds_reset(backend: &BackendConnection, feed_id: &str, json: bool) -
     Ok(())
 }
 
+pub fn run_sources_list(backend: &BackendConnection, json: bool) -> Result<()> {
+    let sources = crate::db::news_cache::list_news_source_tiers_backend(backend)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "sources": sources }))?
+        );
+    } else {
+        println!("{:<32} {:<5} Notes", "Domain", "Tier");
+        println!("{}", "-".repeat(72));
+        for source in sources {
+            println!(
+                "{:<32} {:<5} {}",
+                source.domain,
+                source.tier,
+                source.notes.unwrap_or_default()
+            );
+        }
+    }
+    Ok(())
+}
+
+pub fn run_sources_set(
+    backend: &BackendConnection,
+    domain: &str,
+    tier: i64,
+    notes: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let source = crate::db::news_cache::set_news_source_tier_backend(backend, domain, tier, notes)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "status": "set",
+                "source": source,
+            }))?
+        );
+    } else {
+        println!("Set {} to tier {}", source.domain, source.tier);
+    }
+    Ok(())
+}
+
+pub fn run_sources_remove(backend: &BackendConnection, domain: &str, json: bool) -> Result<()> {
+    let removed = crate::db::news_cache::remove_news_source_tier_backend(backend, domain)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "status": if removed { "removed" } else { "missing" },
+                "domain": domain,
+            }))?
+        );
+    } else if removed {
+        println!("Removed source tier mapping for {}", domain);
+    } else {
+        println!("No source tier mapping found for {}", domain);
+    }
+    Ok(())
+}
+
 fn fetch_live_entries(
     backend: &BackendConnection,
     config: &Config,
@@ -262,6 +324,8 @@ fn fetch_live_entries(
     }
 
     for item in rss_report.items {
+        let classification =
+            crate::db::news_cache::classify_news_source_backend(backend, &item.url, &item.source)?;
         let entry = NewsEntry {
             id: 0,
             title: item.title,
@@ -269,6 +333,9 @@ fn fetch_live_entries(
             source: item.source,
             source_type: "rss".to_string(),
             symbol_tag: None,
+            source_domain: classification.domain,
+            source_tier: classification.tier,
+            source_tier_inferred: classification.inferred,
             description: String::new(),
             extra_snippets: Vec::new(),
             category: item.category.as_str().to_string(),
@@ -280,13 +347,19 @@ fn fetch_live_entries(
     }
 
     for item in brave_results {
+        let source = item.source.unwrap_or_else(|| "Brave".to_string());
+        let classification =
+            crate::db::news_cache::classify_news_source_backend(backend, &item.url, &source)?;
         let entry = NewsEntry {
             id: 0,
             title: item.title,
             url: item.url,
-            source: item.source.unwrap_or_else(|| "Brave".to_string()),
+            source,
             source_type: "brave".to_string(),
             symbol_tag: None,
+            source_domain: classification.domain,
+            source_tier: classification.tier,
+            source_tier_inferred: classification.inferred,
             description: item.description,
             extra_snippets: item.extra_snippets,
             category: "markets".to_string(),
@@ -421,25 +494,27 @@ fn format_timestamp(ts: i64) -> String {
 ///
 /// Always outputs valid JSON. If serialization fails (shouldn't happen with
 /// serde_json::Value), falls back to an empty array.
+fn news_entry_json(entry: &NewsEntry) -> serde_json::Value {
+    json!({
+        "id": entry.id,
+        "title": entry.title,
+        "url": entry.url,
+        "source": entry.source,
+        "source_type": entry.source_type,
+        "symbol_tag": entry.symbol_tag,
+        "source_domain": entry.source_domain,
+        "source_tier": entry.source_tier,
+        "source_tier_inferred": entry.source_tier_inferred,
+        "description": entry.description,
+        "extra_snippets": entry.extra_snippets,
+        "category": entry.category,
+        "published_at": entry.published_at,
+        "fetched_at": entry.fetched_at,
+    })
+}
+
 fn print_json(entries: &[NewsEntry]) -> Result<()> {
-    let json_entries: Vec<_> = entries
-        .iter()
-        .map(|entry| {
-            json!({
-                "id": entry.id,
-                "title": entry.title,
-                "url": entry.url,
-                "source": entry.source,
-                "source_type": entry.source_type,
-                "symbol_tag": entry.symbol_tag,
-                "description": entry.description,
-                "extra_snippets": entry.extra_snippets,
-                "category": entry.category,
-                "published_at": entry.published_at,
-                "fetched_at": entry.fetched_at,
-            })
-        })
-        .collect();
+    let json_entries: Vec<_> = entries.iter().map(news_entry_json).collect();
 
     match serde_json::to_string_pretty(&json_entries) {
         Ok(output) => println!("{output}"),
@@ -465,6 +540,9 @@ fn print_json_with_sentiment(entries: &[NewsEntry]) -> Result<()> {
                 "source": s.entry.source,
                 "source_type": s.entry.source_type,
                 "symbol_tag": s.entry.symbol_tag,
+                "source_domain": s.entry.source_domain,
+                "source_tier": s.entry.source_tier,
+                "source_tier_inferred": s.entry.source_tier_inferred,
                 "description": s.entry.description,
                 "extra_snippets": s.entry.extra_snippets,
                 "category": s.entry.category,
@@ -527,6 +605,9 @@ mod tests {
                 source: "TestSource".to_string(),
                 source_type: "rss".to_string(),
                 symbol_tag: None,
+                source_domain: "example.com".to_string(),
+                source_tier: 3,
+                source_tier_inferred: true,
                 description: "A test article".to_string(),
                 extra_snippets: vec!["snippet1".to_string()],
                 category: "markets".to_string(),
@@ -540,6 +621,9 @@ mod tests {
                 source: "OtherSource".to_string(),
                 source_type: "brave".to_string(),
                 symbol_tag: Some("BTC".to_string()),
+                source_domain: "example.com".to_string(),
+                source_tier: 3,
+                source_tier_inferred: true,
                 description: "".to_string(),
                 extra_snippets: vec![],
                 category: "crypto".to_string(),
@@ -550,6 +634,31 @@ mod tests {
 
         let result = print_json(&entries);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn news_entry_json_includes_source_tier_fields() {
+        let entry = NewsEntry {
+            id: 1,
+            title: "Fed headline".to_string(),
+            url: "https://reuters.com/markets/fed".to_string(),
+            source: "Reuters".to_string(),
+            source_type: "rss".to_string(),
+            symbol_tag: None,
+            source_domain: "reuters.com".to_string(),
+            source_tier: 1,
+            source_tier_inferred: false,
+            description: String::new(),
+            extra_snippets: vec![],
+            category: "macro".to_string(),
+            published_at: 1709610000,
+            fetched_at: "2024-03-05 10:00:00".to_string(),
+        };
+
+        let payload = news_entry_json(&entry);
+        assert_eq!(payload["source_domain"], "reuters.com");
+        assert_eq!(payload["source_tier"], 1);
+        assert_eq!(payload["source_tier_inferred"], false);
     }
 
     #[test]
@@ -657,6 +766,9 @@ mod tests {
                 source: "Reuters".to_string(),
                 source_type: "rss".to_string(),
                 symbol_tag: None,
+                source_domain: "example.com".to_string(),
+                source_tier: 3,
+                source_tier_inferred: true,
                 description: "Fresh macro update".to_string(),
                 extra_snippets: Vec::new(),
                 category: "macro".to_string(),
@@ -670,6 +782,9 @@ mod tests {
                 source: "Reuters".to_string(),
                 source_type: "brave".to_string(),
                 symbol_tag: None,
+                source_domain: "example.com".to_string(),
+                source_tier: 3,
+                source_tier_inferred: true,
                 description: "Duplicate URL".to_string(),
                 extra_snippets: Vec::new(),
                 category: "macro".to_string(),
@@ -683,6 +798,9 @@ mod tests {
                 source: "CoinDesk".to_string(),
                 source_type: "rss".to_string(),
                 symbol_tag: None,
+                source_domain: "example.com".to_string(),
+                source_tier: 3,
+                source_tier_inferred: true,
                 description: "Crypto move".to_string(),
                 extra_snippets: Vec::new(),
                 category: "crypto".to_string(),

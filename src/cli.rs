@@ -663,6 +663,11 @@ pub enum DataNewsCommand {
         #[command(subcommand)]
         command: DataNewsFeedsCommand,
     },
+    /// Manage news source tier mappings
+    Sources {
+        #[command(subcommand)]
+        command: DataNewsSourcesCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -677,6 +682,38 @@ pub enum DataNewsFeedsCommand {
     Reset {
         /// Feed ID, usually the feed name shown by `feeds list`
         feed_id: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DataNewsSourcesCommand {
+    /// List source domain tier mappings
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set or update a source domain tier
+    Set {
+        /// Source domain, e.g. reuters.com
+        domain: String,
+        /// Tier 1-4 (1 primary wire, 4 unverified/blog)
+        #[arg(long)]
+        tier: i64,
+        /// Optional operator note
+        #[arg(long)]
+        notes: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a source domain tier mapping
+    Remove {
+        /// Source domain to remove
+        domain: String,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -8606,6 +8643,96 @@ mod tests {
             panic!("expected news feeds reset");
         };
         assert_eq!(feed_id, "Bloomberg Commodities");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_sources_list_json() {
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "news", "sources", "list", "--json"]).unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            command: Some(DataNewsCommand::Sources { command }),
+            ..
+        } = command
+        else {
+            panic!("expected news sources command");
+        };
+        let DataNewsSourcesCommand::List { json } = command else {
+            panic!("expected news sources list");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_sources_set_json() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "news",
+            "sources",
+            "set",
+            "example.com",
+            "--tier",
+            "4",
+            "--notes",
+            "blog",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            command: Some(DataNewsCommand::Sources { command }),
+            ..
+        } = command
+        else {
+            panic!("expected news sources command");
+        };
+        let DataNewsSourcesCommand::Set {
+            domain,
+            tier,
+            notes,
+            json,
+        } = command
+        else {
+            panic!("expected news sources set");
+        };
+        assert_eq!(domain, "example.com");
+        assert_eq!(tier, 4);
+        assert_eq!(notes.as_deref(), Some("blog"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_sources_remove_json() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "news",
+            "sources",
+            "remove",
+            "example.com",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            command: Some(DataNewsCommand::Sources { command }),
+            ..
+        } = command
+        else {
+            panic!("expected news sources command");
+        };
+        let DataNewsSourcesCommand::Remove { domain, json } = command else {
+            panic!("expected news sources remove");
+        };
+        assert_eq!(domain, "example.com");
         assert!(json);
     }
 

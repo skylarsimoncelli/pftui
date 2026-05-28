@@ -83,6 +83,7 @@ pftui data consensus list --json          # standing analyst targets for context
 pftui analytics scenario list --json      # scenario probabilities for framing
 pftui analytics calibration --json        # scenario vs prediction market divergences
 ```
+News JSON includes `source_tier`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional.
 
 5. Only use web_search (1-2 searches max) for context behind specific overnight developments that pftui news flagged but didn't explain.
 
