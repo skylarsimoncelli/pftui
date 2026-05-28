@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: port report factor exposure
+
+- What: Added the native `factor-exposure` report chart with Python-parity SVG output, ASCII/PNG support, JSON input mode, and agent docs.
+- Why: Daily reports can now render portfolio scenario-factor exposure bars directly from pftui instead of the Python `factor_exposure` helper.
+
 ### 2026-05-28 — feat: port report outlook arrows
 
 - What: Added the native `outlook-arrows` report chart with Python-parity SVG output, ASCII/PNG support, JSON input mode, and DB input from LOW/MEDIUM/HIGH analyst views.

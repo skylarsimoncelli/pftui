@@ -66,6 +66,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui report chart open-predictions-table --from-json predictions.json --format html [--json]` | Render an HTML-native due table from JSON `{ "predictions": [{"asset": "SPY", "claim": "...", "days_remaining": 1, "confidence": 0.40}] }` or a bare prediction array |
 | `pftui report chart outlook-arrows --from-db BTC [--format svg\|png\|ascii] [--json]` | Native horizon outlook arrows using current LOW/MEDIUM/HIGH `analyst_views` as days/weeks/months |
 | `pftui report chart outlook-arrows --from-json outlook.json [--format svg\|png\|ascii] [--json]` | Render outlook arrows from JSON `{ "days": ["flat", "medium"], "weeks": ["up", "medium"], "months": ["up_strong", "high"] }` |
+| `pftui report chart factor-exposure --from-json factors.json [--format svg\|png\|ascii] [--json]` | Render factor exposure bars from JSON `{ "factors": [{"name": "Inflation Spike", "exposure_pct": 51.0, "direction": "bull", "prob_pct": 88.0}] }` or a bare factor array |
 
 ### Portfolio State
 
