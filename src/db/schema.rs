@@ -14,6 +14,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             currency TEXT NOT NULL DEFAULT 'USD',
             date TEXT NOT NULL,
             notes TEXT,
+            paired_tx_id INTEGER REFERENCES transactions(id),
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -1068,6 +1069,24 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     if !has_previous_close {
         conn.execute_batch("ALTER TABLE price_cache ADD COLUMN previous_close TEXT")?;
     }
+
+    // Migration: add paired transaction linkage for auto cash legs.
+    let has_paired_tx_id: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('transactions') WHERE name = 'paired_tx_id'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_paired_tx_id {
+        conn.execute_batch(
+            "ALTER TABLE transactions ADD COLUMN paired_tx_id INTEGER REFERENCES transactions(id)",
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_transactions_paired_tx_id
+            ON transactions(paired_tx_id);",
+    )?;
 
     // F53: Situation Engine — add phase/resolved columns to scenarios
     let has_scenario_phase: bool = conn

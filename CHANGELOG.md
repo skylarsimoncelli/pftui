@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: auto-pair transaction cash legs
+
+- What: `pftui portfolio transaction add` now inserts a paired cash debit/credit for non-cash buy/sell transactions by default, with `--cash-currency` and `--no-auto-cash` controls. Transactions persist `paired_tx_id`, `transaction remove` removes paired legs unless `--unpaired` is passed, `transaction list --paired` surfaces pair IDs, and `set-cash` warns before discarding paired cash rows.
+- Why: asset buys and sells previously changed holdings without changing cash, which could inflate portfolio totals and lose the audit trail until a manual `set-cash` reconciliation replaced cash history.
+
 ### 2026-05-28 — chore: remove completed backlog entries
 
 - What: removed already-shipped `[Done]` entries from `TODO.md`, including the completed P1 prediction-lesson bulk command and older shipped P2 feedback items.

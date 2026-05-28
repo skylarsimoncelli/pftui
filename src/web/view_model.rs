@@ -322,6 +322,7 @@ mod tests {
             currency: "USD".to_string(),
             date: date.to_string(),
             notes: None,
+            paired_tx_id: None,
             created_at: "2026-01-01T00:00:00Z".to_string(),
         }
     }

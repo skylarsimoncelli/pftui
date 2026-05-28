@@ -47,6 +47,7 @@ pub struct Transaction {
     pub currency: String,
     pub date: String,
     pub notes: Option<String>,
+    pub paired_tx_id: Option<i64>,
     pub created_at: String,
 }
 

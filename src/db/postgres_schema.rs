@@ -46,6 +46,7 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
                 currency TEXT NOT NULL DEFAULT 'USD',
                 date TEXT NOT NULL,
                 notes TEXT,
+                paired_tx_id BIGINT REFERENCES transactions(id),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
         )
@@ -811,6 +812,18 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query("ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS previous_close NUMERIC")
             .execute(pool)
             .await?;
+
+        // Auto cash-leg pairing.
+        sqlx::query(
+            "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS paired_tx_id BIGINT REFERENCES transactions(id)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_transactions_paired_tx_id ON transactions(paired_tx_id)",
+        )
+        .execute(pool)
+        .await?;
 
         // F53: Situation Engine — add phase/resolved columns to scenarios
         sqlx::query("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS phase TEXT NOT NULL DEFAULT 'hypothesis'")

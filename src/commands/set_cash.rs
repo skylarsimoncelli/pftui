@@ -4,7 +4,9 @@ use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
 use crate::db::query;
-use crate::db::transactions::insert_transaction_backend;
+use crate::db::transactions::{
+    insert_transaction_backend, list_transactions_backend, set_paired_transaction_backend,
+};
 use crate::models::asset::AssetCategory;
 use crate::models::transaction::{NewTransaction, TxType};
 
@@ -54,6 +56,24 @@ pub fn run(backend: &BackendConnection, symbol: &str, amount: &str) -> Result<()
             "Warning: '{}' is not a recognized currency. Proceeding anyway.",
             symbol
         );
+    }
+
+    let existing_transactions = list_transactions_backend(backend)?;
+    let paired_cash_rows: Vec<_> = existing_transactions
+        .iter()
+        .filter(|tx| tx.symbol == symbol && tx.paired_tx_id.is_some())
+        .collect();
+    if !paired_cash_rows.is_empty() {
+        eprintln!(
+            "Warning: replacing {} will discard {} paired cash leg(s). Prefer `portfolio transaction remove` for paired transactions.",
+            symbol,
+            paired_cash_rows.len()
+        );
+        for tx in &paired_cash_rows {
+            if let Some(paired_id) = tx.paired_tx_id {
+                set_paired_transaction_backend(backend, paired_id, None)?;
+            }
+        }
     }
 
     // Delete existing transactions for this cash symbol
@@ -239,5 +259,47 @@ mod tests {
         assert_eq!(txs.len(), 2);
         assert!(txs.iter().any(|t| t.symbol == "AAPL"));
         assert!(txs.iter().any(|t| t.symbol == "USD"));
+    }
+
+    #[test]
+    fn test_set_cash_unpairs_discarded_cash_legs() {
+        let conn = open_in_memory();
+        let backend = to_backend(conn);
+        let asset_tx = crate::models::transaction::NewTransaction {
+            symbol: "AAPL".to_string(),
+            category: AssetCategory::Equity,
+            tx_type: TxType::Buy,
+            quantity: dec!(10),
+            price_per: dec!(150),
+            currency: "USD".to_string(),
+            date: "2025-01-15".to_string(),
+            notes: None,
+        };
+        let cash_tx = crate::models::transaction::NewTransaction {
+            symbol: "USD".to_string(),
+            category: AssetCategory::Cash,
+            tx_type: TxType::Sell,
+            quantity: dec!(1500),
+            price_per: Decimal::ONE,
+            currency: "USD".to_string(),
+            date: "2025-01-15".to_string(),
+            notes: None,
+        };
+        let asset_id = insert_transaction_backend(&backend, &asset_tx).unwrap();
+        let cash_id = insert_transaction_backend(&backend, &cash_tx).unwrap();
+        crate::db::transactions::set_paired_transaction_backend(&backend, asset_id, Some(cash_id))
+            .unwrap();
+        crate::db::transactions::set_paired_transaction_backend(&backend, cash_id, Some(asset_id))
+            .unwrap();
+
+        run(&backend, "USD", "25000").unwrap();
+
+        let txs = list_transactions_backend(&backend).unwrap();
+        let asset = txs.iter().find(|tx| tx.id == asset_id).unwrap();
+        assert_eq!(asset.paired_tx_id, None);
+        assert!(txs.iter().any(|tx| tx.symbol == "USD"
+            && tx.category == AssetCategory::Cash
+            && tx.quantity == dec!(25000)));
+        assert!(!txs.iter().any(|tx| tx.id == cash_id));
     }
 }

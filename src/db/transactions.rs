@@ -31,6 +31,18 @@ pub fn delete_transaction(conn: &Connection, id: i64) -> Result<bool> {
     Ok(affected > 0)
 }
 
+pub fn set_paired_transaction(
+    conn: &Connection,
+    id: i64,
+    paired_tx_id: Option<i64>,
+) -> Result<bool> {
+    let affected = conn.execute(
+        "UPDATE transactions SET paired_tx_id = ?1 WHERE id = ?2",
+        params![paired_tx_id, id],
+    )?;
+    Ok(affected > 0)
+}
+
 pub fn update_transaction(conn: &Connection, id: i64, tx: &NewTransaction) -> Result<bool> {
     let affected = conn.execute(
         "UPDATE transactions
@@ -53,7 +65,7 @@ pub fn update_transaction(conn: &Connection, id: i64, tx: &NewTransaction) -> Re
 
 pub fn list_transactions(conn: &Connection) -> Result<Vec<Transaction>> {
     let mut stmt = conn.prepare(
-        "SELECT id, symbol, category, tx_type, quantity, price_per, currency, date, notes, created_at
+        "SELECT id, symbol, category, tx_type, quantity, price_per, currency, date, notes, paired_tx_id, created_at
          FROM transactions ORDER BY date ASC, id ASC",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -70,7 +82,8 @@ pub fn list_transactions(conn: &Connection) -> Result<Vec<Transaction>> {
             currency: row.get(6)?,
             date: row.get(7)?,
             notes: row.get(8)?,
-            created_at: row.get(9)?,
+            paired_tx_id: row.get(9)?,
+            created_at: row.get(10)?,
         })
     })?;
     let mut result = Vec::new();
@@ -82,7 +95,7 @@ pub fn list_transactions(conn: &Connection) -> Result<Vec<Transaction>> {
 
 pub fn get_transaction(conn: &Connection, id: i64) -> Result<Option<Transaction>> {
     let mut stmt = conn.prepare(
-        "SELECT id, symbol, category, tx_type, quantity, price_per, currency, date, notes, created_at
+        "SELECT id, symbol, category, tx_type, quantity, price_per, currency, date, notes, paired_tx_id, created_at
          FROM transactions WHERE id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], |row| {
@@ -99,7 +112,8 @@ pub fn get_transaction(conn: &Connection, id: i64) -> Result<Option<Transaction>
             currency: row.get(6)?,
             date: row.get(7)?,
             notes: row.get(8)?,
-            created_at: row.get(9)?,
+            paired_tx_id: row.get(9)?,
+            created_at: row.get(10)?,
         })
     })?;
     match rows.next() {
@@ -141,6 +155,18 @@ pub fn delete_transaction_backend(backend: &BackendConnection, id: i64) -> Resul
         backend,
         |conn| delete_transaction(conn, id),
         |pool| delete_transaction_postgres(pool, id),
+    )
+}
+
+pub fn set_paired_transaction_backend(
+    backend: &BackendConnection,
+    id: i64,
+    paired_tx_id: Option<i64>,
+) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| set_paired_transaction(conn, id, paired_tx_id),
+        |pool| set_paired_transaction_postgres(pool, id, paired_tx_id),
     )
 }
 
@@ -195,8 +221,19 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 currency TEXT NOT NULL DEFAULT 'USD',
                 date TEXT NOT NULL,
                 notes TEXT,
+                paired_tx_id BIGINT REFERENCES transactions(id),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS paired_tx_id BIGINT REFERENCES transactions(id)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_transactions_paired_tx_id ON transactions(paired_tx_id)",
         )
         .execute(pool)
         .await?;
@@ -238,6 +275,22 @@ fn delete_transaction_postgres(pool: &PgPool, id: i64) -> Result<bool> {
     Ok(rows.rows_affected() > 0)
 }
 
+fn set_paired_transaction_postgres(
+    pool: &PgPool,
+    id: i64,
+    paired_tx_id: Option<i64>,
+) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let rows = crate::db::pg_runtime::block_on(async {
+        sqlx::query("UPDATE transactions SET paired_tx_id = $1 WHERE id = $2")
+            .bind(paired_tx_id)
+            .bind(id)
+            .execute(pool)
+            .await
+    })?;
+    Ok(rows.rows_affected() > 0)
+}
+
 fn update_transaction_postgres(pool: &PgPool, id: i64, tx: &NewTransaction) -> Result<bool> {
     ensure_tables_postgres(pool)?;
     let rows = crate::db::pg_runtime::block_on(async {
@@ -271,6 +324,7 @@ type TxRow = (
     String,
     String,
     Option<String>,
+    Option<i64>,
     String,
 );
 
@@ -285,7 +339,8 @@ fn tx_from_row(r: TxRow) -> Transaction {
         currency: r.6,
         date: r.7,
         notes: r.8,
-        created_at: r.9,
+        paired_tx_id: r.9,
+        created_at: r.10,
     }
 }
 
@@ -293,7 +348,7 @@ fn list_transactions_postgres(pool: &PgPool) -> Result<Vec<Transaction>> {
     ensure_tables_postgres(pool)?;
     let rows: Vec<TxRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, symbol, category, tx_type, quantity::TEXT, price_per::TEXT, currency, date, notes, created_at::text
+            "SELECT id, symbol, category, tx_type, quantity::TEXT, price_per::TEXT, currency, date, notes, paired_tx_id, created_at::text
              FROM transactions
              ORDER BY date ASC, id ASC",
         )
@@ -307,7 +362,7 @@ fn get_transaction_postgres(pool: &PgPool, id: i64) -> Result<Option<Transaction
     ensure_tables_postgres(pool)?;
     let row: Option<TxRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, symbol, category, tx_type, quantity::TEXT, price_per::TEXT, currency, date, notes, created_at::text
+            "SELECT id, symbol, category, tx_type, quantity::TEXT, price_per::TEXT, currency, date, notes, paired_tx_id, created_at::text
              FROM transactions
              WHERE id = $1",
         )
@@ -383,6 +438,24 @@ mod tests {
         assert!(delete_transaction(&conn, id).unwrap());
         assert!(!delete_transaction(&conn, id).unwrap());
         assert_eq!(list_transactions(&conn).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_set_paired_transaction() {
+        let conn = open_in_memory();
+        let id = insert_transaction(&conn, &sample_tx()).unwrap();
+        let mut pair = sample_tx();
+        pair.symbol = "USD".to_string();
+        pair.category = AssetCategory::Cash;
+        let paired_id = insert_transaction(&conn, &pair).unwrap();
+
+        assert!(set_paired_transaction(&conn, id, Some(paired_id)).unwrap());
+        assert!(set_paired_transaction(&conn, paired_id, Some(id)).unwrap());
+
+        let tx = get_transaction(&conn, id).unwrap().unwrap();
+        let paired = get_transaction(&conn, paired_id).unwrap().unwrap();
+        assert_eq!(tx.paired_tx_id, Some(paired_id));
+        assert_eq!(paired.paired_tx_id, Some(id));
     }
 
     #[test]

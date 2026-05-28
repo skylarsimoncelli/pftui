@@ -1742,6 +1742,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                     quantity,
                     price,
                     currency,
+                    cash_currency,
+                    no_auto_cash,
                     date,
                     notes,
                 } => {
@@ -1749,20 +1751,34 @@ fn run_cli(cli: Cli) -> Result<()> {
                         bail!("add-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
                     }
                     commands::add_tx::run(
-                        &backend, symbol, category, tx_type, quantity, price, currency, date, notes,
+                        &backend,
+                        symbol,
+                        category,
+                        tx_type,
+                        quantity,
+                        price,
+                        currency,
+                        cash_currency,
+                        no_auto_cash,
+                        date,
+                        notes,
                     )
                 }
-                cli::PortfolioTransactionCommand::Remove { id } => {
+                cli::PortfolioTransactionCommand::Remove { id, unpaired } => {
                     if config.is_percentage_mode() {
                         bail!("remove-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
                     }
-                    commands::remove_tx::run(&backend, id)
+                    commands::remove_tx::run(&backend, id, unpaired)
                 }
-                cli::PortfolioTransactionCommand::List { notes, json } => {
+                cli::PortfolioTransactionCommand::List {
+                    notes,
+                    paired,
+                    json,
+                } => {
                     if config.is_percentage_mode() {
                         bail!("list-tx is not available in percentage mode (no transactions).\nRun `pftui setup` to switch to full mode.");
                     }
-                    commands::list_tx::run(&backend, notes, json)
+                    commands::list_tx::run(&backend, notes, paired, json)
                 }
             },
             Some(cli::PortfolioCommand::Broker { command }) => match command {

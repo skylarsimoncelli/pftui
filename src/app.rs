@@ -6253,6 +6253,7 @@ mod vim_motion_tests {
                 currency: "USD".to_string(),
                 date: "2025-01-01".to_string(),
                 notes: None,
+                paired_tx_id: None,
                 created_at: "2025-01-01".to_string(),
             });
         }
@@ -6350,6 +6351,7 @@ mod vim_motion_tests {
                 currency: "USD".to_string(),
                 date: "2025-01-01".to_string(),
                 notes: None,
+                paired_tx_id: None,
                 created_at: "2025-01-01".to_string(),
             });
         }
@@ -9619,6 +9621,7 @@ mod mouse_tests {
                 currency: "USD".to_string(),
                 date: "2026-03-01".to_string(),
                 notes: None,
+                paired_tx_id: None,
                 created_at: "2026-03-01T00:00:00Z".to_string(),
             },
             Transaction {
@@ -9631,6 +9634,7 @@ mod mouse_tests {
                 currency: "USD".to_string(),
                 date: "2026-03-02".to_string(),
                 notes: None,
+                paired_tx_id: None,
                 created_at: "2026-03-02T00:00:00Z".to_string(),
             },
         ];
