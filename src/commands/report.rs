@@ -18,7 +18,8 @@ use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::db::scenarios;
 use crate::db::transactions::list_transactions_backend;
-use crate::models::position::{compute_positions, compute_positions_from_allocations};
+use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
+use crate::report::charts::drift_bar::DriftBarInput;
 use crate::report::charts::prob_bar::ProbBarInput;
 use crate::report::charts::stacked_bar::{StackedBarInput, StackedBarSegment};
 use crate::report::palette;
@@ -149,7 +150,7 @@ fn chart_input_from_db(
     query: &str,
 ) -> Result<ChartInput> {
     match kind {
-        ChartKind::StackedBar => {
+        ChartKind::Stacked => {
             let normalized = query.trim().to_ascii_lowercase();
             if !matches!(
                 normalized.as_str(),
@@ -160,12 +161,15 @@ fn chart_input_from_db(
                     query
                 );
             }
-            Ok(ChartInput::StackedBar(stacked_bar_from_portfolio_backend(
+            Ok(ChartInput::Stacked(stacked_bar_from_portfolio_backend(
                 backend, config,
             )?))
         }
-        ChartKind::ProbBar => Ok(ChartInput::ProbBar(prob_bar_from_scenario_backend(
+        ChartKind::Probability => Ok(ChartInput::Probability(prob_bar_from_scenario_backend(
             backend, query,
+        )?)),
+        ChartKind::Drift => Ok(ChartInput::Drift(drift_bar_from_portfolio_backend(
+            backend, config, query,
         )?)),
     }
 }
@@ -214,10 +218,10 @@ fn report_format_name(format: ChartOutputFormat) -> &'static str {
     }
 }
 
-fn stacked_bar_from_portfolio_backend(
+fn portfolio_positions_backend(
     backend: &BackendConnection,
     config: &Config,
-) -> Result<StackedBarInput> {
+) -> Result<Vec<Position>> {
     let cached = get_all_cached_prices_backend(backend)?;
     let mut prices: HashMap<String, Decimal> = cached
         .into_iter()
@@ -225,7 +229,7 @@ fn stacked_bar_from_portfolio_backend(
         .collect();
     let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
 
-    let positions = match config.portfolio_mode {
+    Ok(match config.portfolio_mode {
         PortfolioMode::Full => {
             let transactions = list_transactions_backend(backend)?;
             for tx in &transactions {
@@ -239,9 +243,14 @@ fn stacked_bar_from_portfolio_backend(
             let allocations = list_allocations_backend(backend)?;
             compute_positions_from_allocations(&allocations, &prices, &fx_rates)
         }
-    };
+    })
+}
 
-    let mut segments = positions
+fn stacked_bar_from_portfolio_backend(
+    backend: &BackendConnection,
+    config: &Config,
+) -> Result<StackedBarInput> {
+    let mut segments = portfolio_positions_backend(backend, config)?
         .into_iter()
         .filter_map(|position| {
             let allocation = position.allocation_pct?;
@@ -268,6 +277,37 @@ fn stacked_bar_from_portfolio_backend(
 
     Ok(StackedBarInput {
         segments,
+        width: None,
+        height: None,
+    })
+}
+
+fn drift_bar_from_portfolio_backend(
+    backend: &BackendConnection,
+    config: &Config,
+    symbol: &str,
+) -> Result<DriftBarInput> {
+    let symbol = symbol.trim();
+    if symbol.is_empty() {
+        bail!("drift-bar --from-db expects a portfolio symbol");
+    }
+
+    let target = crate::db::allocation_targets::list_targets_backend(backend)?
+        .into_iter()
+        .find(|target| target.symbol.eq_ignore_ascii_case(symbol))
+        .with_context(|| format!("allocation target '{}' not found", symbol))?;
+    let actual_pct = portfolio_positions_backend(backend, config)?
+        .into_iter()
+        .find(|position| position.symbol.eq_ignore_ascii_case(&target.symbol))
+        .and_then(|position| position.allocation_pct)
+        .unwrap_or(Decimal::ZERO);
+
+    Ok(DriftBarInput {
+        symbol: target.symbol,
+        target_pct: decimal_to_f64_2(target.target_pct),
+        actual_pct: decimal_to_f64_2(actual_pct),
+        band_pct: decimal_to_f64_2(target.drift_band_pct),
+        max_pct: None,
         width: None,
         height: None,
     })
@@ -339,6 +379,7 @@ fn decimal_to_f64_2(value: Decimal) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::allocation_targets::set_target_backend;
     use crate::db::backend::BackendConnection;
     use crate::db::price_cache::upsert_price;
     use crate::db::transactions::insert_transaction;
@@ -411,6 +452,64 @@ mod tests {
             .segments
             .iter()
             .any(|s| s.color == palette::DARK.crypto));
+    }
+
+    #[test]
+    fn report_drift_bar_uses_synthetic_target_and_allocation() {
+        let backend = backend();
+        let config = Config::default();
+        let conn = backend.sqlite();
+
+        insert_transaction(
+            conn,
+            &NewTransaction {
+                symbol: "USD".to_string(),
+                category: AssetCategory::Cash,
+                tx_type: TxType::Buy,
+                quantity: dec!(50_000),
+                price_per: dec!(1),
+                currency: "USD".to_string(),
+                date: "2026-01-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        insert_transaction(
+            conn,
+            &NewTransaction {
+                symbol: "BTC".to_string(),
+                category: AssetCategory::Crypto,
+                tx_type: TxType::Buy,
+                quantity: dec!(1),
+                price_per: dec!(50_000),
+                currency: "USD".to_string(),
+                date: "2026-01-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        upsert_price(
+            conn,
+            &PriceQuote {
+                symbol: "BTC".to_string(),
+                price: dec!(50_000),
+                currency: "USD".to_string(),
+                source: "test".to_string(),
+                fetched_at: "2026-01-01T00:00:00Z".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: None,
+            },
+        )
+        .unwrap();
+        set_target_backend(&backend, "BTC", dec!(40), dec!(5)).unwrap();
+
+        let input = drift_bar_from_portfolio_backend(&backend, &config, "btc").unwrap();
+        assert_eq!(input.symbol, "BTC");
+        assert_eq!(input.target_pct, 40.0);
+        assert_eq!(input.actual_pct, 50.0);
+        assert_eq!(input.band_pct, 5.0);
     }
 
     #[test]

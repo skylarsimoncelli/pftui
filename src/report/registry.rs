@@ -2,13 +2,15 @@ use anyhow::{bail, Result};
 use serde::Serialize;
 use serde_json::Value;
 
+use super::charts::drift_bar::{self, DriftBarInput};
 use super::charts::prob_bar::{self, ProbBarInput};
 use super::charts::stacked_bar::{self, StackedBarInput};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum ChartKind {
-    StackedBar,
-    ProbBar,
+    Stacked,
+    Probability,
+    Drift,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -29,9 +31,11 @@ pub struct ChartDefinition {
 #[serde(tag = "chart", content = "input")]
 pub enum ChartInput {
     #[serde(rename = "stacked-bar")]
-    StackedBar(StackedBarInput),
+    Stacked(StackedBarInput),
     #[serde(rename = "prob-bar")]
-    ProbBar(ProbBarInput),
+    Probability(ProbBarInput),
+    #[serde(rename = "drift-bar")]
+    Drift(DriftBarInput),
 }
 
 pub const CHARTS: &[ChartDefinition] = &[
@@ -45,12 +49,20 @@ pub const CHARTS: &[ChartDefinition] = &[
         description: "Scenario probability bar with 7-day ghost and delta",
         formats: &["svg", "png", "ascii"],
     },
+    ChartDefinition {
+        name: "drift-bar",
+        description: "Allocation drift bar with target tick and tolerance band",
+        formats: &["svg", "png", "ascii"],
+    },
 ];
 
 pub fn kind_from_name(name: &str) -> Result<ChartKind> {
     match name.trim().to_ascii_lowercase().as_str() {
-        "stacked-bar" | "stacked_bar" | "stacked" | "allocation" => Ok(ChartKind::StackedBar),
-        "prob-bar" | "prob_bar" | "probability" | "scenario-probability" => Ok(ChartKind::ProbBar),
+        "stacked-bar" | "stacked_bar" | "stacked" | "allocation" => Ok(ChartKind::Stacked),
+        "prob-bar" | "prob_bar" | "probability" | "scenario-probability" => {
+            Ok(ChartKind::Probability)
+        }
+        "drift-bar" | "drift_bar" | "drift" | "allocation-drift" => Ok(ChartKind::Drift),
         other => bail!(
             "unknown report chart '{}'. Available charts: {}",
             other,
@@ -61,29 +73,33 @@ pub fn kind_from_name(name: &str) -> Result<ChartKind> {
 
 pub fn parse_input(kind: ChartKind, value: Value) -> Result<ChartInput> {
     Ok(match kind {
-        ChartKind::StackedBar => ChartInput::StackedBar(StackedBarInput::from_value(value)?),
-        ChartKind::ProbBar => ChartInput::ProbBar(ProbBarInput::from_value(value)?),
+        ChartKind::Stacked => ChartInput::Stacked(StackedBarInput::from_value(value)?),
+        ChartKind::Probability => ChartInput::Probability(ProbBarInput::from_value(value)?),
+        ChartKind::Drift => ChartInput::Drift(DriftBarInput::from_value(value)?),
     })
 }
 
 pub fn render_svg(input: &ChartInput) -> String {
     match input {
-        ChartInput::StackedBar(input) => stacked_bar::render_svg(input),
-        ChartInput::ProbBar(input) => prob_bar::render_svg(input),
+        ChartInput::Stacked(input) => stacked_bar::render_svg(input),
+        ChartInput::Probability(input) => prob_bar::render_svg(input),
+        ChartInput::Drift(input) => drift_bar::render_svg(input),
     }
 }
 
 pub fn render_ascii(input: &ChartInput) -> String {
     match input {
-        ChartInput::StackedBar(input) => stacked_bar::render_ascii(input),
-        ChartInput::ProbBar(input) => prob_bar::render_ascii(input),
+        ChartInput::Stacked(input) => stacked_bar::render_ascii(input),
+        ChartInput::Probability(input) => prob_bar::render_ascii(input),
+        ChartInput::Drift(input) => drift_bar::render_ascii(input),
     }
 }
 
 pub fn chart_name(input: &ChartInput) -> &'static str {
     match input {
-        ChartInput::StackedBar(_) => "stacked-bar",
-        ChartInput::ProbBar(_) => "prob-bar",
+        ChartInput::Stacked(_) => "stacked-bar",
+        ChartInput::Probability(_) => "prob-bar",
+        ChartInput::Drift(_) => "drift-bar",
     }
 }
 
@@ -101,10 +117,14 @@ mod tests {
 
     #[test]
     fn registry_maps_chart_aliases() {
+        assert_eq!(kind_from_name("stacked-bar").unwrap(), ChartKind::Stacked);
         assert_eq!(
-            kind_from_name("stacked-bar").unwrap(),
-            ChartKind::StackedBar
+            kind_from_name("probability").unwrap(),
+            ChartKind::Probability
         );
-        assert_eq!(kind_from_name("probability").unwrap(), ChartKind::ProbBar);
+        assert_eq!(
+            kind_from_name("allocation-drift").unwrap(),
+            ChartKind::Drift
+        );
     }
 }
