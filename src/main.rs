@@ -13,6 +13,7 @@ mod models;
 mod notify;
 mod price;
 mod regime;
+mod report;
 mod tui;
 mod web;
 
@@ -949,6 +950,34 @@ fn run_cli(cli: Cli) -> Result<()> {
     }) = cli.command
     {
         return commands::market_hours::run(json);
+    }
+
+    // JSON-sourced report charts do not need the portfolio database.
+    if let Some(Command::Report {
+        command:
+            cli::ReportCommand::Chart {
+                chart_name,
+                from_db,
+                from_json,
+                out,
+                format,
+                json,
+            },
+    }) = &cli.command
+    {
+        if from_db.is_some() && from_json.is_some() {
+            bail!("use either --from-db or --from-json, not both");
+        }
+        if from_json.is_some() || from_db.is_none() {
+            return commands::report::run_chart_without_db(commands::report::ReportChartOptions {
+                chart_name,
+                from_db: from_db.as_deref(),
+                from_json: from_json.as_deref(),
+                out: out.as_deref(),
+                format: *format,
+                json_output: *json,
+            });
+        }
     }
 
     let config = load_config_with_first_run_prompt()?;
@@ -1940,6 +1969,29 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             },
         },
+
+        Some(Command::Report {
+            command:
+                cli::ReportCommand::Chart {
+                    chart_name,
+                    from_db,
+                    from_json,
+                    out,
+                    format,
+                    json,
+                },
+        }) => commands::report::run_chart(
+            &backend,
+            &config,
+            commands::report::ReportChartOptions {
+                chart_name: &chart_name,
+                from_db: from_db.as_deref(),
+                from_json: from_json.as_deref(),
+                out: out.as_deref(),
+                format,
+                json_output: json,
+            },
+        ),
 
         Some(Command::Agent { command }) => match command {
             crate::cli::AgentCommand::Message { command } => match command {

@@ -63,6 +63,7 @@ rustls-pemfile = "2"
 sha2 = "0.10"
 hex = "0.4"
 hmac = "0.12"
+resvg = "0.47.0"
 
 [package.metadata.generate-rpm]
 assets = [
