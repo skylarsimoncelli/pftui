@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: track news source accuracy
+
+- What: predictions can now store `topic` and `source_article_id`, scoring a source-attributed prediction updates a per-domain/topic `news_source_accuracy` ledger, and `pftui analytics news-sources accuracy|rank --json` exposes source hit rates and trailing-180d weights. Brief JSON and agent routines now surface source-history weighting for daily reports.
+- Why: static source tiers are only priors; pftui needs to learn which outlets were actually right on Fed, inflation, geopolitics, commodities, crypto, and equities calls.
+
 ### 2026-05-28 — feat: tag news source independence
 
 - What: news ingest now classifies each cached article as `independent`, `wire`, `restatement`, `rumor`, or `unknown`, stores `source_independence`, exposes it in `pftui data news --json`, sentiment/brief payloads, and adds `pftui data news --filter-independence independent,wire`.

@@ -544,8 +544,11 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             symbol TEXT,
             conviction TEXT NOT NULL DEFAULT 'medium',
             timeframe TEXT NOT NULL DEFAULT 'medium',
+            topic TEXT NOT NULL DEFAULT 'other'
+                CHECK(topic IN ('fed','inflation','geopolitics','commodities','crypto','equities','other')),
             confidence REAL,
             source_agent TEXT,
+            source_article_id INTEGER REFERENCES news_cache(id),
             target_date TEXT,
             resolution_criteria TEXT,
             outcome TEXT NOT NULL DEFAULT 'pending',
@@ -557,6 +560,37 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_user_predictions_outcome ON user_predictions(outcome);
         CREATE INDEX IF NOT EXISTS idx_user_predictions_symbol ON user_predictions(symbol);
+        CREATE INDEX IF NOT EXISTS idx_user_predictions_topic ON user_predictions(topic);
+        CREATE INDEX IF NOT EXISTS idx_user_predictions_source_article
+            ON user_predictions(source_article_id);
+
+        CREATE TABLE IF NOT EXISTS news_source_accuracy (
+            source_domain TEXT NOT NULL,
+            topic TEXT NOT NULL
+                CHECK(topic IN ('fed','inflation','geopolitics','commodities','crypto','equities','other')),
+            n_predictions_implied INTEGER NOT NULL DEFAULT 0,
+            n_correct INTEGER NOT NULL DEFAULT 0,
+            n_wrong INTEGER NOT NULL DEFAULT 0,
+            n_partial INTEGER NOT NULL DEFAULT 0,
+            last_updated TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY(source_domain, topic)
+        );
+        CREATE INDEX IF NOT EXISTS idx_news_source_accuracy_topic
+            ON news_source_accuracy(topic);
+
+        CREATE TABLE IF NOT EXISTS news_source_accuracy_events (
+            prediction_id INTEGER PRIMARY KEY REFERENCES user_predictions(id) ON DELETE CASCADE,
+            source_article_id INTEGER REFERENCES news_cache(id),
+            source_domain TEXT NOT NULL,
+            topic TEXT NOT NULL
+                CHECK(topic IN ('fed','inflation','geopolitics','commodities','crypto','equities','other')),
+            outcome TEXT NOT NULL CHECK(outcome IN ('correct','partial','wrong')),
+            scored_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_news_source_accuracy_events_source
+            ON news_source_accuracy_events(source_domain, topic);
+        CREATE INDEX IF NOT EXISTS idx_news_source_accuracy_events_scored
+            ON news_source_accuracy_events(scored_at);
 
         CREATE TABLE IF NOT EXISTS agent_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -874,6 +908,34 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             "ALTER TABLE user_predictions ADD COLUMN lessons_applied TEXT NOT NULL DEFAULT '[]'",
         )?;
     }
+
+    // Migration: add news-source attribution to user_predictions.
+    let has_prediction_topic: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('user_predictions') WHERE name = 'topic'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_prediction_topic {
+        conn.execute_batch(
+            "ALTER TABLE user_predictions ADD COLUMN topic TEXT NOT NULL DEFAULT 'other'
+                CHECK(topic IN ('fed','inflation','geopolitics','commodities','crypto','equities','other'))",
+        )?;
+    }
+
+    let has_source_article_id: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('user_predictions') WHERE name = 'source_article_id'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_source_article_id {
+        conn.execute_batch("ALTER TABLE user_predictions ADD COLUMN source_article_id INTEGER")?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_user_predictions_topic ON user_predictions(topic);
+         CREATE INDEX IF NOT EXISTS idx_user_predictions_source_article
+            ON user_predictions(source_article_id);",
+    )?;
+    crate::db::news_source_accuracy::ensure_tables(conn)?;
 
     // Migration: add source_type column to news_cache (rss|brave)
     let has_news_source_type: bool = conn

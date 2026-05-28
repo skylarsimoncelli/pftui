@@ -83,7 +83,7 @@ pftui data consensus list --json          # standing analyst targets for context
 pftui analytics scenario list --json      # scenario probabilities for framing
 pftui analytics calibration --json        # scenario vs prediction market divergences
 ```
-News JSON includes `source_tier` and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events.
+News JSON includes `id`, `source_tier`, and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 5. Only use web_search (1-2 searches max) for context behind specific overnight developments that pftui news flagged but didn't explain.
 
@@ -226,7 +226,8 @@ If you make any specific market call in the morning brief, log it first:
 ```bash
 pftui journal prediction add "[cause] will [effect] by [date]" --symbol [SYM] \
   --target-date [YYYY-MM-DD] --conviction [level] --timeframe low \
-  --confidence [0.X] --source-agent morning-intelligence
+  --confidence [0.X] --source-agent morning-intelligence \
+  --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived]
 ```
 
 Capture the morning's situational state as a journal entry so it's queryable later:

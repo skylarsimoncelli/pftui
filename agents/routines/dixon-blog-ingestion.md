@@ -87,7 +87,8 @@ pftui journal prediction add "<claim>" \
   --timeframe <short|medium|long> \
   --conviction medium \
   --confidence 0.5 \
-  --source-agent dixon-blog
+  --source-agent dixon-blog \
+  --topic <fed|inflation|geopolitics|commodities|crypto|equities|other>
 ```
 
 Dixon often speaks in structural terms, not precise dates. Map as:

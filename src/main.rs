@@ -116,6 +116,8 @@ fn run_agent_journal(
                 timeframe,
                 confidence,
                 source_agent,
+                topic,
+                source_article_id,
                 target_date,
                 resolution_criteria,
                 lessons,
@@ -148,6 +150,8 @@ fn run_agent_journal(
                     None,
                     None,
                     false,
+                    topic.as_deref(),
+                    source_article_id,
                     json,
                 )
             }
@@ -177,6 +181,8 @@ fn run_agent_journal(
                 None,
                 limit,
                 false,
+                None,
+                None,
                 json,
             ),
             cli::JournalPredictionCommand::Score {
@@ -211,6 +217,8 @@ fn run_agent_journal(
                     None,
                     None,
                     false,
+                    None,
+                    None,
                     json,
                 )
             }
@@ -241,6 +249,8 @@ fn run_agent_journal(
                 None,                          // date
                 None,                          // limit
                 false,                         // lesson_coverage
+                None,                          // topic
+                None,                          // source_article_id
                 json,
             ),
             cli::JournalPredictionCommand::Scorecard { date, limit, lesson_coverage, json } => {
@@ -264,6 +274,8 @@ fn run_agent_journal(
                     date.as_deref(),
                     limit,
                     lesson_coverage,
+                    None,
+                    None,
                     json,
                 )
             }
@@ -744,6 +756,8 @@ fn dispatch_predictions(
                 None,                          // date
                 None,                          // limit
                 false,                         // lesson_coverage
+                None,                          // topic
+                None,                          // source_article_id
                 j || json,
             )
         }
@@ -772,6 +786,8 @@ fn dispatch_predictions(
             date.as_deref(),    // date
             lim,                // limit
             lesson_coverage,
+            None,               // topic
+            None,               // source_article_id
             j || json,
         ),
         Some(cli::DataPredictionsCommand::Unanswered {
@@ -799,6 +815,8 @@ fn dispatch_predictions(
             None,                          // date
             lim,                           // limit
             false,                         // lesson_coverage
+            None,                          // topic
+            None,                          // source_article_id
             j || json,
         ),
         Some(cli::DataPredictionsCommand::Map {
@@ -842,6 +860,8 @@ fn dispatch_predictions(
             timeframe,
             confidence,
             source_agent,
+            topic,
+            source_article_id,
             target_date,
             resolution_criteria,
             lessons,
@@ -866,6 +886,8 @@ fn dispatch_predictions(
             None,
             None,
             false,
+            topic.as_deref(),
+            source_article_id,
             j || json,
         ),
     }
@@ -2456,6 +2478,32 @@ fn run_cli(cli: Cli) -> Result<()> {
                 cli::AnalyticsDebateScoreCommand::Unscored { limit, json } => {
                     commands::debate_score::unscored(&backend, limit, json)
                 }
+            },
+            cli::AnalyticsCommand::NewsSources { command } => match command {
+                cli::AnalyticsNewsSourcesCommand::Accuracy {
+                    domain,
+                    topic,
+                    window_days,
+                    json,
+                } => commands::analytics::run_news_source_accuracy(
+                    &backend,
+                    domain.as_deref(),
+                    topic.as_deref(),
+                    window_days,
+                    json,
+                ),
+                cli::AnalyticsNewsSourcesCommand::Rank {
+                    topic,
+                    window_days,
+                    limit,
+                    json,
+                } => commands::analytics::run_news_source_rank(
+                    &backend,
+                    topic.as_deref(),
+                    window_days,
+                    limit,
+                    json,
+                ),
             },
             cli::AnalyticsCommand::Views { command } => match command {
                 cli::AnalyticsViewsCommand::Set {

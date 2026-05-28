@@ -72,7 +72,7 @@ pftui data etf-flows --days 7 --json      # BTC ETF flow trend
 pftui data consensus list --json          # analyst calls (Goldman, JPM, etc.) — read before searching
 pftui analytics scenario list --json      # active scenarios with probabilities
 ```
-News JSON includes `source_tier` and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events.
+News JSON includes `id`, `source_tier`, and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 ## Web Research (for what pftui cannot provide)
 
@@ -279,7 +279,7 @@ Before making new predictions, review some of your recent inaccurate predictions
 Make 3-5 cause-and-effect predictions for the next 1-4 weeks:
 
 ```bash
-pftui journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level] --timeframe medium --confidence [0.X] --source-agent medium-agent --lessons "[ids]"
+pftui journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level] --timeframe medium --confidence [0.X] --source-agent medium-agent --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]"
 ```
 
 ## Output to Evening Analyst

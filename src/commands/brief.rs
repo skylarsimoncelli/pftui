@@ -31,6 +31,7 @@ use crate::models::position::{compute_positions, compute_positions_from_allocati
 
 use crate::commands::correlations::{CorrelationBreak as CorrelationsBreak, interpret_break};
 use crate::commands::scan::{compute_scan_highlights, compute_scan_highlights_sqlite, ScanHighlight};
+use crate::db::news_source_accuracy;
 use crate::db::scenario_contract_mappings;
 use crate::db::scenarios::Scenario;
 
@@ -77,6 +78,8 @@ struct AgentBrief {
     scenarios: Vec<ScenarioSummaryJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
     calibration: Option<CalibrationSummaryJson>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    news_source_accuracy: Vec<NewsSourceAccuracyBriefJson>,
 }
 
 /// Compact scenario summary for the brief payload.
@@ -108,6 +111,15 @@ struct CalibrationEntryJson {
     market_pct: f64,
     divergence_pp: f64,
     significant: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct NewsSourceAccuracyBriefJson {
+    source_domain: String,
+    topic: String,
+    n_predictions_implied: i64,
+    hit_rate_pct: f64,
+    weight: f64,
 }
 
 #[derive(Serialize)]
@@ -540,6 +552,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
 
     // Calibration: scenario vs prediction market divergences
     let calibration = build_calibration_json_sqlite(conn);
+    let news_source_accuracy = build_news_source_accuracy_json_sqlite(conn);
 
     let brief = AgentBrief {
         timestamp,
@@ -563,6 +576,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
         scan_highlights,
         scenarios,
         calibration,
+        news_source_accuracy,
     };
 
     let json = serde_json::to_string_pretty(&brief)?;
@@ -766,6 +780,7 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
 
     // Calibration: scenario vs prediction market divergences
     let calibration = build_calibration_json_backend(backend);
+    let news_source_accuracy = build_news_source_accuracy_json_backend(backend);
 
     let brief = AgentBrief {
         timestamp,
@@ -789,6 +804,7 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
         scan_highlights,
         scenarios,
         calibration,
+        news_source_accuracy,
     };
     println!("{}", serde_json::to_string_pretty(&brief)?);
     Ok(())
@@ -3196,6 +3212,36 @@ fn build_calibration_json_backend(backend: &BackendConnection) -> Option<Calibra
     build_calibration_from_mappings(&mappings)
 }
 
+fn build_news_source_accuracy_json_backend(
+    backend: &BackendConnection,
+) -> Vec<NewsSourceAccuracyBriefJson> {
+    news_source_accuracy::rank_sources_backend(backend, None, Some(180), Some(8))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| NewsSourceAccuracyBriefJson {
+            source_domain: row.source_domain,
+            topic: row.topic,
+            n_predictions_implied: row.n_predictions_implied,
+            hit_rate_pct: row.hit_rate_pct,
+            weight: row.weight,
+        })
+        .collect()
+}
+
+fn build_news_source_accuracy_json_sqlite(conn: &Connection) -> Vec<NewsSourceAccuracyBriefJson> {
+    news_source_accuracy::rank_sources(conn, None, Some(180), Some(8))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| NewsSourceAccuracyBriefJson {
+            source_domain: row.source_domain,
+            topic: row.topic,
+            n_predictions_implied: row.n_predictions_implied,
+            hit_rate_pct: row.hit_rate_pct,
+            weight: row.weight,
+        })
+        .collect()
+}
+
 fn build_calibration_json_sqlite(conn: &Connection) -> Option<CalibrationSummaryJson> {
     let mappings = scenario_contract_mappings::list_enriched(conn).ok()?;
     build_calibration_from_mappings(&mappings)
@@ -4522,6 +4568,7 @@ mod tests {
             scan_highlights: vec![highlight],
             scenarios: vec![],
             calibration: None,
+            news_source_accuracy: vec![],
         };
         let json = serde_json::to_string(&brief).unwrap();
         assert!(json.contains("scan_highlights"), "scan_highlights should appear when non-empty");
@@ -4562,6 +4609,7 @@ mod tests {
             scan_highlights: vec![],
             scenarios: vec![],
             calibration: None,
+            news_source_accuracy: vec![],
         };
         let json = serde_json::to_string(&brief).unwrap();
         assert!(

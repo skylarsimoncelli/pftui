@@ -1043,6 +1043,14 @@ pub enum DataPredictionsCommand {
         #[arg(long = "source-agent", visible_alias = "agent")]
         source_agent: Option<String>,
 
+        /// Fixed news topic for source-accuracy attribution
+        #[arg(long)]
+        topic: Option<String>,
+
+        /// News article ID from `pftui data news --json` when this prediction is derived from one article
+        #[arg(long = "source-article-id")]
+        source_article_id: Option<i64>,
+
         /// Target date for evaluation (YYYY-MM-DD)
         #[arg(long)]
         target_date: Option<String>,
@@ -1964,6 +1972,12 @@ pub enum JournalPredictionCommand {
         confidence: Option<f64>,
         #[arg(long = "source-agent", visible_alias = "agent")]
         source_agent: Option<String>,
+        /// Fixed news topic for source-accuracy attribution: fed, inflation, geopolitics, commodities, crypto, equities, other
+        #[arg(long)]
+        topic: Option<String>,
+        /// News article ID from `pftui data news --json` when this prediction is derived from one article
+        #[arg(long = "source-article-id")]
+        source_article_id: Option<i64>,
         #[arg(long)]
         target_date: Option<String>,
         #[arg(long = "resolution-criteria")]
@@ -3707,6 +3721,46 @@ pub enum AnalyticsDebateScoreCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsNewsSourcesCommand {
+    /// Per-source prediction accuracy, optionally focused by domain/topic
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics news-sources accuracy --json
+    ///   pftui analytics news-sources accuracy --domain bloomberg.com --topic fed --json
+    Accuracy {
+        /// Source domain to inspect, e.g. bloomberg.com
+        #[arg(long)]
+        domain: Option<String>,
+        /// Fixed topic or alias, e.g. fed, inflation, iran, btc
+        #[arg(long)]
+        topic: Option<String>,
+        /// Restrict to predictions scored in the last N days
+        #[arg(long = "window-days")]
+        window_days: Option<i64>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Rank sources by historical hit rate for one topic
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics news-sources rank --topic iran --json
+    ///   pftui analytics news-sources rank --topic fed --limit 10
+    Rank {
+        /// Fixed topic or alias, e.g. fed, inflation, iran, btc
+        #[arg(long)]
+        topic: Option<String>,
+        /// Trailing scoring window in days
+        #[arg(long = "window-days", default_value_t = 180)]
+        window_days: i64,
+        /// Maximum sources to return
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsCommand {
     /// Full synthesized intelligence blob for a single asset
     Asset {
@@ -3815,6 +3869,15 @@ pub enum AnalyticsCommand {
     DebateScore {
         #[command(subcommand)]
         command: AnalyticsDebateScoreCommand,
+    },
+    /// News-source accuracy ledger and rankings
+    #[command(
+        name = "news-sources",
+        after_help = "Tracks how often predictions derived from specific news articles later\nscore correct, partial, or wrong. Use source article IDs from `data news --json`\nwhen writing predictions.\n\nExamples:\n  pftui analytics news-sources accuracy --json\n  pftui analytics news-sources accuracy --domain bloomberg.com --topic fed --json\n  pftui analytics news-sources rank --topic iran --json"
+    )]
+    NewsSources {
+        #[command(subcommand)]
+        command: AnalyticsNewsSourcesCommand,
     },
     /// Per-analyst, per-asset directional views with conviction scores (F57: Timeframe Analyst Self-Awareness)
     #[command(after_help = "Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) writes a structured\nview per asset on every run. Views include direction, conviction (-5 to +5),\nreasoning, key evidence, and blind spots.\n\nSubcommands:\n  set              — write/update an analyst's view on an asset\n  list             — list views with optional analyst/asset filters\n  matrix           — full cross-analyst view matrix\n  portfolio-matrix — portfolio-aware matrix with coverage stats\n  history          — view evolution over time for an asset\n  divergence       — surface assets where analysts strongly disagree\n  accuracy         — per-analyst accuracy against price outcomes\n  delete           — remove a view\n\nExamples:\n  pftui analytics views set --analyst low --asset BTC --direction bull \\\n    --conviction 3 --reasoning \"Momentum strong\" --json\n  pftui analytics views list --asset BTC --json\n  pftui analytics views history --asset BTC --json\n  pftui analytics views divergence --json\n  pftui analytics views accuracy --json\n  pftui analytics views matrix --json\n\nSee also: analytics alignment, analytics divergence")]
@@ -5896,6 +5959,76 @@ mod tests {
     }
 
     #[test]
+    fn parse_analytics_news_sources_accuracy() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "news-sources",
+            "accuracy",
+            "--domain",
+            "bloomberg.com",
+            "--topic",
+            "fed",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::NewsSources {
+                    command:
+                        AnalyticsNewsSourcesCommand::Accuracy {
+                            domain,
+                            topic,
+                            json,
+                            ..
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics news-sources accuracy command");
+        };
+        assert_eq!(domain.as_deref(), Some("bloomberg.com"));
+        assert_eq!(topic.as_deref(), Some("fed"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_news_sources_rank() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "news-sources",
+            "rank",
+            "--topic",
+            "iran",
+            "--limit",
+            "5",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::NewsSources {
+                    command:
+                        AnalyticsNewsSourcesCommand::Rank {
+                            topic,
+                            limit,
+                            window_days,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics news-sources rank command");
+        };
+        assert_eq!(topic.as_deref(), Some("iran"));
+        assert_eq!(limit, 5);
+        assert_eq!(window_days, 180);
+        assert!(!json);
+    }
+
+    #[test]
     fn parse_analytics_debate_score_unscored() {
         let cli = Cli::try_parse_from([
             "pftui",
@@ -7601,6 +7734,44 @@ mod tests {
 
         assert_eq!(claim.as_deref(), Some("BTC decouples from SPY into close"));
         assert_eq!(lessons.as_deref(), Some("218,240"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_prediction_add_source_attribution_flags() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "add",
+            "--claim",
+            "Fed cut odds rise after Bloomberg report",
+            "--topic",
+            "fed",
+            "--source-article-id",
+            "12",
+            "--json",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command:
+                        JournalPredictionCommand::Add {
+                            topic,
+                            source_article_id,
+                            json,
+                            ..
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction add command");
+        };
+
+        assert_eq!(topic.as_deref(), Some("fed"));
+        assert_eq!(source_article_id, Some(12));
         assert!(json);
     }
 
