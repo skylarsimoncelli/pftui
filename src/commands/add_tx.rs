@@ -1,8 +1,12 @@
 use anyhow::{bail, Context, Result};
 use rust_decimal::Decimal;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{self, Write};
 
+use crate::commands::transaction_summary::{
+    add_summary, print_summary, PlannedCashLeg, TransactionChangeSummary,
+};
 use crate::db::backend::BackendConnection;
 use crate::db::fx_cache::get_all_fx_rates_backend;
 use crate::db::transactions::{
@@ -30,6 +34,8 @@ pub fn run(
     currency: String,
     cash_currency: String,
     no_auto_cash: bool,
+    dry_run: bool,
+    json: bool,
     date: Option<String>,
     notes: Option<String>,
 ) -> Result<()> {
@@ -102,7 +108,7 @@ pub fn run(
         let rates = get_all_fx_rates_backend(backend)?;
         let (cash_amount, fx_rate) =
             convert_cash_amount(trade_value, &currency, &cash_currency, &rates)?;
-        Some((cash_amount, fx_rate, trade_value))
+        Some((cash_amount, fx_rate, trade_value, cash_leg_type(tx_type)))
     } else {
         None
     };
@@ -118,12 +124,44 @@ pub fn run(
         notes,
     };
 
+    let planned_cash_leg =
+        cash_leg
+            .as_ref()
+            .map(|(cash_amount, _, _, cash_tx_type)| PlannedCashLeg {
+                symbol: cash_currency.clone(),
+                tx_type: *cash_tx_type,
+                quantity: *cash_amount,
+            });
+    let summary = add_summary(backend, &tx, planned_cash_leg.as_ref())?;
+
+    if dry_run {
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&AddTransactionOutput::dry_run(summary))?
+            );
+        } else {
+            println!(
+                "Dry run: would add {} {} {} @ {} on {}",
+                tx_type, quantity, symbol, price_per, tx.date
+            );
+            if let Some(leg) = &planned_cash_leg {
+                println!(
+                    "Dry run: would add paired cash leg: {} {} {} @ 1",
+                    leg.tx_type, leg.quantity, leg.symbol
+                );
+            }
+            print_summary("Post-add summary:", &summary);
+        }
+        return Ok(());
+    }
+
     let id = insert_transaction_backend(backend, &tx)?;
-    let cash_summary = if let Some((cash_amount, fx_rate, trade_value)) = cash_leg {
+    let cash_summary = if let Some((cash_amount, fx_rate, trade_value, cash_tx_type)) = cash_leg {
         let cash_tx = NewTransaction {
             symbol: cash_currency.clone(),
             category: AssetCategory::Cash,
-            tx_type: cash_leg_type(tx_type),
+            tx_type: cash_tx_type,
             quantity: cash_amount,
             price_per: Decimal::ONE,
             currency: cash_currency.clone(),
@@ -157,6 +195,18 @@ pub fn run(
         None
     };
 
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&AddTransactionOutput::added(
+                id,
+                cash_summary.map(|(cash_id, _)| cash_id),
+                summary
+            ))?
+        );
+        return Ok(());
+    }
+
     println!(
         "Added transaction #{}: {} {} {} @ {}",
         id, tx_type, quantity, symbol, price_per
@@ -170,7 +220,40 @@ pub fn run(
             cash_currency
         );
     }
+    print_summary("Post-add summary:", &summary);
     Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct AddTransactionOutput {
+    status: &'static str,
+    transaction_id: Option<i64>,
+    paired_cash_transaction_id: Option<i64>,
+    post_add_summary: TransactionChangeSummary,
+}
+
+impl AddTransactionOutput {
+    fn dry_run(post_add_summary: TransactionChangeSummary) -> Self {
+        Self {
+            status: "dry_run",
+            transaction_id: None,
+            paired_cash_transaction_id: None,
+            post_add_summary,
+        }
+    }
+
+    fn added(
+        transaction_id: i64,
+        paired_cash_transaction_id: Option<i64>,
+        post_add_summary: TransactionChangeSummary,
+    ) -> Self {
+        Self {
+            status: "added",
+            transaction_id: Some(transaction_id),
+            paired_cash_transaction_id,
+            post_add_summary,
+        }
+    }
 }
 
 fn normalize_currency(currency: &str) -> String {
@@ -273,6 +356,8 @@ mod tests {
             currency.to_string(),
             cash_currency.to_string(),
             no_auto_cash,
+            false,
+            false,
             Some("2026-05-28".to_string()),
             Some("test".to_string()),
         )
@@ -337,6 +422,31 @@ mod tests {
         assert_eq!(txs.len(), 1);
         assert_eq!(txs[0].symbol, "AAPL");
         assert_eq!(txs[0].paired_tx_id, None);
+    }
+
+    #[test]
+    fn dry_run_does_not_insert_asset_or_cash_leg() {
+        let backend = backend();
+
+        run(
+            &backend,
+            Some("AAPL".to_string()),
+            Some("equity".to_string()),
+            Some("buy".to_string()),
+            Some("1".to_string()),
+            Some("100".to_string()),
+            "USD".to_string(),
+            "USD".to_string(),
+            false,
+            true,
+            false,
+            Some("2026-05-28".to_string()),
+            Some("test".to_string()),
+        )
+        .unwrap();
+
+        let txs = list_transactions_backend(&backend).unwrap();
+        assert!(txs.is_empty());
     }
 
     #[test]

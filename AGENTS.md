@@ -85,8 +85,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 
 | Command | What It Does |
 |---|---|
-| `pftui portfolio transaction add --symbol SYM --category CAT --tx-type buy/sell --quantity N --price P --date D [--cash-currency USD] [--no-auto-cash]` | Add transaction; non-cash buys/sells auto-insert a paired cash debit/credit unless opted out |
-| `pftui portfolio transaction remove ID [--unpaired]` | Remove transaction by ID; paired cash legs are removed too unless `--unpaired` is passed |
+| `pftui portfolio transaction add --symbol SYM --category CAT --tx-type buy/sell --quantity N --price P --date D [--cash-currency USD] [--no-auto-cash] [--dry-run] [--json]` | Add transaction; non-cash buys/sells auto-insert a paired cash debit/credit unless opted out; dry-run/JSON include post-add allocation, drift, and cash delta |
+| `pftui portfolio transaction remove ID [--unpaired] [--dry-run] [--json]` | Remove transaction by ID; paired cash legs are removed too unless `--unpaired` is passed; dry-run/JSON preview post-remove allocation, drift, and cash delta |
 | `pftui portfolio transaction list --paired --json` | List transactions with paired transaction IDs |
 | `pftui portfolio set-cash CURRENCY AMOUNT [--confirm] [--dry-run] [--json]` | Replace cash transactions with an exact cash position; requires `--confirm` when more than one row would be discarded |
 | `pftui portfolio watchlist add SYMBOL [--target PRICE]` | Add to watchlist |
