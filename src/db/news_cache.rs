@@ -4,7 +4,7 @@
 //! Deduplicates by URL.
 //! Query by source, category, search term, or time range.
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use rusqlite::{params, Connection};
 use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 
@@ -19,11 +19,499 @@ pub struct NewsEntry {
     pub source: String,
     pub source_type: String,
     pub symbol_tag: Option<String>,
+    pub source_domain: String,
+    pub source_tier: i64,
+    pub source_tier_inferred: bool,
     pub description: String,
     pub extra_snippets: Vec<String>,
     pub category: String,
     pub published_at: i64,
     pub fetched_at: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NewsSourceTier {
+    pub domain: String,
+    pub tier: i64,
+    pub notes: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewsSourceClassification {
+    pub domain: String,
+    pub tier: i64,
+    pub inferred: bool,
+}
+
+const SOURCE_TIER_SEEDS: &[(&str, i64, &str)] = &[
+    ("reuters.com", 1, "primary wire"),
+    ("bloomberg.com", 1, "primary wire"),
+    ("apnews.com", 1, "primary wire"),
+    ("ft.com", 1, "primary financial press"),
+    ("wsj.com", 1, "primary financial press"),
+    ("nytimes.com", 2, "major outlet"),
+    ("cnbc.com", 2, "major outlet"),
+    ("theguardian.com", 2, "major outlet"),
+    ("economist.com", 2, "major outlet"),
+    ("seekingalpha.com", 3, "aggregator"),
+    ("marketwatch.com", 3, "aggregator"),
+    ("finance.yahoo.com", 3, "aggregator"),
+    ("yahoo.com", 3, "aggregator"),
+    ("coindesk.com", 3, "crypto trade outlet"),
+    ("cointelegraph.com", 3, "crypto trade outlet"),
+    ("decrypt.co", 3, "crypto trade outlet"),
+    ("theblock.co", 3, "crypto trade outlet"),
+    ("zerohedge.com", 4, "blog/unverified"),
+    ("substack.com", 4, "blog platform"),
+    ("medium.com", 4, "blog platform"),
+];
+
+fn strip_host_prefixes(host: &str) -> String {
+    let mut value = host
+        .trim()
+        .trim_matches('.')
+        .trim_start_matches("www.")
+        .trim_start_matches("m.")
+        .to_ascii_lowercase();
+    while value.starts_with('.') {
+        value.remove(0);
+    }
+    value
+}
+
+pub fn normalize_source_domain(value: &str) -> Option<String> {
+    let trimmed = value
+        .trim()
+        .trim_matches(|ch| matches!(ch, '"' | '\'' | '(' | ')' | '[' | ']' | '<' | '>' | ','));
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let parse_candidates = if trimmed.contains("://") {
+        vec![trimmed.to_string()]
+    } else {
+        vec![format!("https://{}", trimmed), trimmed.to_string()]
+    };
+
+    for candidate in parse_candidates {
+        if let Ok(parsed) = reqwest::Url::parse(&candidate) {
+            if let Some(host) = parsed.host_str() {
+                let domain = strip_host_prefixes(host);
+                if domain.contains('.') {
+                    return Some(domain);
+                }
+            }
+        }
+    }
+
+    let host = trimmed
+        .split("://")
+        .last()
+        .unwrap_or(trimmed)
+        .split('/')
+        .next()
+        .unwrap_or(trimmed)
+        .split('?')
+        .next()
+        .unwrap_or(trimmed)
+        .split('#')
+        .next()
+        .unwrap_or(trimmed)
+        .split(':')
+        .next()
+        .unwrap_or(trimmed);
+    let domain = strip_host_prefixes(host);
+    if domain.contains('.') {
+        Some(domain)
+    } else {
+        None
+    }
+}
+
+fn known_source_domain(source: &str) -> Option<&'static str> {
+    let lower = source.to_ascii_lowercase();
+    let compact: String = lower
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect();
+
+    if compact.contains("reuters") {
+        Some("reuters.com")
+    } else if compact.contains("bloomberg") {
+        Some("bloomberg.com")
+    } else if compact == "ap" || compact.contains("associatedpress") {
+        Some("apnews.com")
+    } else if compact.contains("financialtimes") || compact == "ft" {
+        Some("ft.com")
+    } else if compact.contains("wallstreetjournal") || compact == "wsj" {
+        Some("wsj.com")
+    } else if compact.contains("nytimes") || compact.contains("newyorktimes") {
+        Some("nytimes.com")
+    } else if compact.contains("cnbc") {
+        Some("cnbc.com")
+    } else if compact.contains("guardian") {
+        Some("theguardian.com")
+    } else if compact.contains("economist") {
+        Some("economist.com")
+    } else if compact.contains("seekingalpha") {
+        Some("seekingalpha.com")
+    } else if compact.contains("marketwatch") {
+        Some("marketwatch.com")
+    } else if compact.contains("yahoofinance") {
+        Some("finance.yahoo.com")
+    } else if compact.contains("yahoo") {
+        Some("yahoo.com")
+    } else if compact.contains("coindesk") {
+        Some("coindesk.com")
+    } else if compact.contains("cointelegraph") {
+        Some("cointelegraph.com")
+    } else if compact.contains("decrypt") {
+        Some("decrypt.co")
+    } else if compact.contains("theblock") {
+        Some("theblock.co")
+    } else if compact.contains("zerohedge") {
+        Some("zerohedge.com")
+    } else if compact.contains("substack") {
+        Some("substack.com")
+    } else {
+        None
+    }
+}
+
+fn source_key(source: &str) -> Option<String> {
+    let lowered = source.trim().to_ascii_lowercase();
+    let parts: Vec<_> = lowered
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("-"))
+    }
+}
+
+pub fn source_domain_for(url: &str, source: &str) -> String {
+    normalize_source_domain(url)
+        .or_else(|| known_source_domain(source).map(str::to_string))
+        .or_else(|| normalize_source_domain(source))
+        .or_else(|| source_key(source))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn normalize_source_mapping_domain(value: &str) -> Option<String> {
+    normalize_source_domain(value)
+        .or_else(|| known_source_domain(value).map(str::to_string))
+        .or_else(|| source_key(value))
+}
+
+fn domain_candidates(domain: &str) -> Vec<String> {
+    let domain = strip_host_prefixes(domain);
+    let labels: Vec<_> = domain.split('.').filter(|part| !part.is_empty()).collect();
+    let mut candidates = Vec::new();
+    for idx in 0..labels.len() {
+        let candidate = labels[idx..].join(".");
+        if candidate.contains('.') && !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+    if candidates.is_empty() && !domain.is_empty() {
+        candidates.push(domain);
+    }
+    candidates
+}
+
+fn validate_source_tier(tier: i64) -> Result<()> {
+    if (1..=4).contains(&tier) {
+        Ok(())
+    } else {
+        bail!("source tier must be between 1 and 4")
+    }
+}
+
+fn news_column_exists(conn: &Connection, name: &str) -> Result<bool> {
+    let count = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('news_cache') WHERE name = ?1")?
+        .query_row(params![name], |row| row.get::<_, i64>(0))
+        .unwrap_or(0);
+    Ok(count > 0)
+}
+
+fn ensure_source_tier_schema(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS news_source_tiers (
+            domain TEXT PRIMARY KEY,
+            tier INTEGER NOT NULL CHECK(tier BETWEEN 1 AND 4),
+            notes TEXT,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
+    )?;
+
+    if !news_column_exists(conn, "source_domain")? {
+        conn.execute_batch(
+            "ALTER TABLE news_cache ADD COLUMN source_domain TEXT NOT NULL DEFAULT ''",
+        )?;
+    }
+    if !news_column_exists(conn, "source_tier")? {
+        conn.execute_batch(
+            "ALTER TABLE news_cache ADD COLUMN source_tier INTEGER NOT NULL DEFAULT 3 CHECK(source_tier BETWEEN 1 AND 4)",
+        )?;
+    }
+    if !news_column_exists(conn, "source_tier_inferred")? {
+        conn.execute_batch(
+            "ALTER TABLE news_cache ADD COLUMN source_tier_inferred INTEGER NOT NULL DEFAULT 1 CHECK(source_tier_inferred IN (0, 1))",
+        )?;
+    }
+
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_news_source_domain ON news_cache(source_domain);
+         CREATE INDEX IF NOT EXISTS idx_news_source_tier ON news_cache(source_tier);",
+    )?;
+
+    Ok(())
+}
+
+fn seed_source_tiers(conn: &Connection) -> Result<()> {
+    let count = conn.query_row("SELECT COUNT(*) FROM news_source_tiers", [], |row| {
+        row.get::<_, i64>(0)
+    })?;
+    if count > 0 {
+        return Ok(());
+    }
+
+    for (domain, tier, notes) in SOURCE_TIER_SEEDS {
+        conn.execute(
+            "INSERT INTO news_source_tiers (domain, tier, notes, updated_at)
+             VALUES (?1, ?2, ?3, datetime('now'))
+             ON CONFLICT(domain) DO NOTHING",
+            params![domain, tier, notes],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn lookup_source_tier_inner(conn: &Connection, domain: &str) -> Result<(i64, bool)> {
+    for candidate in domain_candidates(domain) {
+        let tier = conn.query_row(
+            "SELECT tier FROM news_source_tiers WHERE domain = ?1",
+            params![candidate],
+            |row| row.get::<_, i64>(0),
+        );
+        match tier {
+            Ok(tier) => return Ok((tier, false)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    Ok((3, true))
+}
+
+pub fn lookup_source_tier(conn: &Connection, domain: &str) -> Result<(i64, bool)> {
+    ensure_source_tier_schema(conn)?;
+    seed_source_tiers(conn)?;
+    lookup_source_tier_inner(conn, domain)
+}
+
+pub fn classify_news_source(
+    conn: &Connection,
+    url: &str,
+    source: &str,
+) -> Result<NewsSourceClassification> {
+    ensure_source_tier_schema(conn)?;
+    seed_source_tiers(conn)?;
+    let domain = source_domain_for(url, source);
+    let (tier, inferred) = lookup_source_tier_inner(conn, &domain)?;
+    Ok(NewsSourceClassification {
+        domain,
+        tier,
+        inferred,
+    })
+}
+
+pub fn classify_news_source_backend(
+    backend: &BackendConnection,
+    url: &str,
+    source: &str,
+) -> Result<NewsSourceClassification> {
+    query::dispatch(
+        backend,
+        |conn| classify_news_source(conn, url, source),
+        |pool| classify_news_source_postgres(pool, url, source),
+    )
+}
+
+fn backfill_news_source_tiers(conn: &Connection) -> Result<()> {
+    let rows = {
+        let mut stmt = conn.prepare(
+            "SELECT id, url, source
+             FROM news_cache
+             WHERE source_domain = ''",
+        )?;
+        let mapped = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut rows = Vec::new();
+        for row in mapped {
+            rows.push(row?);
+        }
+        rows
+    };
+
+    for (id, url, source) in rows {
+        let classification = classify_news_source(conn, &url, &source)?;
+        conn.execute(
+            "UPDATE news_cache
+             SET source_domain = ?1, source_tier = ?2, source_tier_inferred = ?3
+             WHERE id = ?4",
+            params![
+                classification.domain,
+                classification.tier,
+                if classification.inferred { 1 } else { 0 },
+                id
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
+pub fn ensure_source_tier_tables(conn: &Connection) -> Result<()> {
+    ensure_source_tier_schema(conn)?;
+    seed_source_tiers(conn)?;
+    backfill_news_source_tiers(conn)?;
+    Ok(())
+}
+
+pub fn list_news_source_tiers(conn: &Connection) -> Result<Vec<NewsSourceTier>> {
+    ensure_source_tier_schema(conn)?;
+    seed_source_tiers(conn)?;
+
+    let mut stmt = conn.prepare(
+        "SELECT domain, tier, notes, updated_at
+         FROM news_source_tiers
+         ORDER BY tier ASC, domain ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(NewsSourceTier {
+            domain: row.get(0)?,
+            tier: row.get(1)?,
+            notes: row.get(2)?,
+            updated_at: row.get(3)?,
+        })
+    })?;
+
+    let mut tiers = Vec::new();
+    for row in rows {
+        tiers.push(row?);
+    }
+    Ok(tiers)
+}
+
+pub fn list_news_source_tiers_backend(backend: &BackendConnection) -> Result<Vec<NewsSourceTier>> {
+    query::dispatch(
+        backend,
+        list_news_source_tiers,
+        list_news_source_tiers_postgres,
+    )
+}
+
+pub fn set_news_source_tier(
+    conn: &Connection,
+    domain: &str,
+    tier: i64,
+    notes: Option<&str>,
+) -> Result<NewsSourceTier> {
+    validate_source_tier(tier)?;
+    ensure_source_tier_schema(conn)?;
+    seed_source_tiers(conn)?;
+    let domain = normalize_source_mapping_domain(domain)
+        .ok_or_else(|| anyhow::anyhow!("source domain cannot be empty"))?;
+
+    conn.execute(
+        "INSERT INTO news_source_tiers (domain, tier, notes, updated_at)
+         VALUES (?1, ?2, ?3, datetime('now'))
+         ON CONFLICT(domain) DO UPDATE
+         SET tier = excluded.tier,
+             notes = excluded.notes,
+             updated_at = datetime('now')",
+        params![domain, tier, notes],
+    )?;
+
+    let child_pattern = format!("%.{}", domain);
+    conn.execute(
+        "UPDATE news_cache
+         SET source_tier = ?2, source_tier_inferred = 0
+         WHERE source_domain = ?1 OR source_domain LIKE ?3",
+        params![domain, tier, child_pattern],
+    )?;
+
+    get_news_source_tier(conn, &domain)
+}
+
+pub fn set_news_source_tier_backend(
+    backend: &BackendConnection,
+    domain: &str,
+    tier: i64,
+    notes: Option<&str>,
+) -> Result<NewsSourceTier> {
+    query::dispatch(
+        backend,
+        |conn| set_news_source_tier(conn, domain, tier, notes),
+        |pool| set_news_source_tier_postgres(pool, domain, tier, notes),
+    )
+}
+
+pub fn remove_news_source_tier(conn: &Connection, domain: &str) -> Result<bool> {
+    ensure_source_tier_schema(conn)?;
+    let domain = normalize_source_mapping_domain(domain)
+        .ok_or_else(|| anyhow::anyhow!("source domain cannot be empty"))?;
+    let deleted = conn.execute(
+        "DELETE FROM news_source_tiers WHERE domain = ?1",
+        params![domain],
+    )?;
+
+    let child_pattern = format!("%.{}", domain);
+    conn.execute(
+        "UPDATE news_cache
+         SET source_tier = 3, source_tier_inferred = 1
+         WHERE source_domain = ?1 OR source_domain LIKE ?2",
+        params![domain, child_pattern],
+    )?;
+
+    Ok(deleted > 0)
+}
+
+pub fn remove_news_source_tier_backend(backend: &BackendConnection, domain: &str) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| remove_news_source_tier(conn, domain),
+        |pool| remove_news_source_tier_postgres(pool, domain),
+    )
+}
+
+fn get_news_source_tier(conn: &Connection, domain: &str) -> Result<NewsSourceTier> {
+    Ok(conn.query_row(
+        "SELECT domain, tier, notes, updated_at
+         FROM news_source_tiers
+         WHERE domain = ?1",
+        params![domain],
+        |row| {
+            Ok(NewsSourceTier {
+                domain: row.get(0)?,
+                tier: row.get(1)?,
+                notes: row.get(2)?,
+                updated_at: row.get(3)?,
+            })
+        },
+    )?)
 }
 
 /// Insert a news item into the cache.
@@ -81,16 +569,20 @@ pub fn insert_news_with_source_type(
     extra_snippets: &[String],
 ) -> Result<()> {
     let snippets_json = serde_json::to_string(extra_snippets).unwrap_or_else(|_| "[]".to_string());
+    let classification = classify_news_source(conn, url, source)?;
     conn.execute(
         "INSERT OR IGNORE INTO news_cache
-         (title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))",
+         (title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, description, extra_snippets, category, published_at, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now'))",
         params![
             title,
             url,
             source,
             source_type,
             symbol_tag,
+            classification.domain,
+            classification.tier,
+            if classification.inferred { 1 } else { 0 },
             description.unwrap_or(""),
             snippets_json,
             category,
@@ -157,7 +649,8 @@ pub fn get_latest_news(
     search_term: Option<&str>,
     hours_back: Option<i64>,
 ) -> Result<Vec<NewsEntry>> {
-    let mut sql = "SELECT id, title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at
+    ensure_source_tier_tables(conn)?;
+    let mut sql = "SELECT id, title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, description, extra_snippets, category, published_at, fetched_at
                    FROM news_cache
                    WHERE 1=1".to_string();
 
@@ -198,12 +691,15 @@ pub fn get_latest_news(
             source: row.get(3)?,
             source_type: row.get(4)?,
             symbol_tag: row.get(5)?,
-            description: row.get(6)?,
-            extra_snippets: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(7)?)
+            source_domain: row.get(6)?,
+            source_tier: row.get(7)?,
+            source_tier_inferred: row.get::<_, i64>(8)? != 0,
+            description: row.get(9)?,
+            extra_snippets: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(10)?)
                 .unwrap_or_default(),
-            category: row.get(8)?,
-            published_at: row.get(9)?,
-            fetched_at: row.get(10)?,
+            category: row.get(11)?,
+            published_at: row.get(12)?,
+            fetched_at: row.get(13)?,
         })
     })?;
 
@@ -311,6 +807,192 @@ pub fn latest_fetched_at_by_source_type_backend(
     )
 }
 
+async fn seed_source_tiers_postgres(pool: &PgPool) -> Result<()> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM news_source_tiers")
+        .fetch_one(pool)
+        .await?;
+    if count > 0 {
+        return Ok(());
+    }
+
+    for (domain, tier, notes) in SOURCE_TIER_SEEDS {
+        sqlx::query(
+            "INSERT INTO news_source_tiers (domain, tier, notes, updated_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (domain) DO NOTHING",
+        )
+        .bind(domain)
+        .bind(tier)
+        .bind(notes)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn lookup_source_tier_postgres_inner(pool: &PgPool, domain: &str) -> Result<(i64, bool)> {
+    for candidate in domain_candidates(domain) {
+        let tier: Option<i64> =
+            sqlx::query_scalar("SELECT tier::BIGINT FROM news_source_tiers WHERE domain = $1")
+                .bind(candidate)
+                .fetch_optional(pool)
+                .await?;
+        if let Some(tier) = tier {
+            return Ok((tier, false));
+        }
+    }
+
+    Ok((3, true))
+}
+
+fn classify_news_source_postgres(
+    pool: &PgPool,
+    url: &str,
+    source: &str,
+) -> Result<NewsSourceClassification> {
+    ensure_tables_postgres(pool)?;
+    crate::db::pg_runtime::block_on(async {
+        let domain = source_domain_for(url, source);
+        let (tier, inferred) = lookup_source_tier_postgres_inner(pool, &domain).await?;
+        Ok::<_, anyhow::Error>(NewsSourceClassification {
+            domain,
+            tier,
+            inferred,
+        })
+    })
+}
+
+async fn backfill_news_source_tiers_postgres(pool: &PgPool) -> Result<()> {
+    let rows = sqlx::query(
+        "SELECT id, url, source
+         FROM news_cache
+         WHERE source_domain = ''",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for row in rows {
+        let id: i64 = row.try_get(0)?;
+        let url: String = row.try_get(1)?;
+        let source: String = row.try_get(2)?;
+        let domain = source_domain_for(&url, &source);
+        let (tier, inferred) = lookup_source_tier_postgres_inner(pool, &domain).await?;
+        sqlx::query(
+            "UPDATE news_cache
+             SET source_domain = $1, source_tier = $2, source_tier_inferred = $3
+             WHERE id = $4",
+        )
+        .bind(domain)
+        .bind(tier)
+        .bind(inferred)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+fn list_news_source_tiers_postgres(pool: &PgPool) -> Result<Vec<NewsSourceTier>> {
+    ensure_tables_postgres(pool)?;
+    let rows = crate::db::pg_runtime::block_on(async {
+        sqlx::query(
+            "SELECT domain, tier::BIGINT, notes, updated_at::text
+             FROM news_source_tiers
+             ORDER BY tier ASC, domain ASC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(NewsSourceTier {
+                domain: row.try_get(0)?,
+                tier: row.try_get(1)?,
+                notes: row.try_get(2)?,
+                updated_at: row.try_get(3)?,
+            })
+        })
+        .collect()
+}
+
+fn set_news_source_tier_postgres(
+    pool: &PgPool,
+    domain: &str,
+    tier: i64,
+    notes: Option<&str>,
+) -> Result<NewsSourceTier> {
+    validate_source_tier(tier)?;
+    let domain = normalize_source_mapping_domain(domain)
+        .ok_or_else(|| anyhow::anyhow!("source domain cannot be empty"))?;
+    ensure_tables_postgres(pool)?;
+    let row = crate::db::pg_runtime::block_on(async {
+        let row = sqlx::query(
+            "INSERT INTO news_source_tiers (domain, tier, notes, updated_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (domain) DO UPDATE
+             SET tier = EXCLUDED.tier,
+                 notes = EXCLUDED.notes,
+                 updated_at = NOW()
+             RETURNING domain, tier::BIGINT, notes, updated_at::text",
+        )
+        .bind(&domain)
+        .bind(tier)
+        .bind(notes)
+        .fetch_one(pool)
+        .await?;
+
+        let child_pattern = format!("%.{}", domain);
+        sqlx::query(
+            "UPDATE news_cache
+             SET source_tier = $2, source_tier_inferred = FALSE
+             WHERE source_domain = $1 OR source_domain LIKE $3",
+        )
+        .bind(&domain)
+        .bind(tier)
+        .bind(child_pattern)
+        .execute(pool)
+        .await?;
+
+        Ok::<_, sqlx::Error>(row)
+    })?;
+
+    Ok(NewsSourceTier {
+        domain: row.try_get(0)?,
+        tier: row.try_get(1)?,
+        notes: row.try_get(2)?,
+        updated_at: row.try_get(3)?,
+    })
+}
+
+fn remove_news_source_tier_postgres(pool: &PgPool, domain: &str) -> Result<bool> {
+    let domain = normalize_source_mapping_domain(domain)
+        .ok_or_else(|| anyhow::anyhow!("source domain cannot be empty"))?;
+    ensure_tables_postgres(pool)?;
+    let deleted = crate::db::pg_runtime::block_on(async {
+        let result = sqlx::query("DELETE FROM news_source_tiers WHERE domain = $1")
+            .bind(&domain)
+            .execute(pool)
+            .await?;
+
+        let child_pattern = format!("%.{}", domain);
+        sqlx::query(
+            "UPDATE news_cache
+             SET source_tier = 3, source_tier_inferred = TRUE
+             WHERE source_domain = $1 OR source_domain LIKE $2",
+        )
+        .bind(&domain)
+        .bind(child_pattern)
+        .execute(pool)
+        .await?;
+
+        Ok::<_, sqlx::Error>(result.rows_affected() > 0)
+    })?;
+    Ok(deleted)
+}
+
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
     crate::db::pg_runtime::block_on(async {
         sqlx::query(
@@ -321,6 +1003,9 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 source TEXT NOT NULL,
                 source_type TEXT NOT NULL DEFAULT 'rss',
                 symbol_tag TEXT,
+                source_domain TEXT NOT NULL DEFAULT '',
+                source_tier INTEGER NOT NULL DEFAULT 3 CHECK(source_tier BETWEEN 1 AND 4),
+                source_tier_inferred BOOLEAN NOT NULL DEFAULT TRUE,
                 description TEXT NOT NULL DEFAULT '',
                 extra_snippets TEXT NOT NULL DEFAULT '[]',
                 category TEXT NOT NULL DEFAULT 'general',
@@ -330,7 +1015,36 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
-        Ok::<(), sqlx::Error>(())
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS news_source_tiers (
+                domain TEXT PRIMARY KEY,
+                tier INTEGER NOT NULL CHECK(tier BETWEEN 1 AND 4),
+                notes TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("ALTER TABLE news_cache ADD COLUMN IF NOT EXISTS source_domain TEXT NOT NULL DEFAULT ''")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE news_cache ADD COLUMN IF NOT EXISTS source_tier INTEGER NOT NULL DEFAULT 3 CHECK(source_tier BETWEEN 1 AND 4)")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE news_cache ADD COLUMN IF NOT EXISTS source_tier_inferred BOOLEAN NOT NULL DEFAULT TRUE")
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_news_source_domain ON news_cache(source_domain)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_news_source_tier ON news_cache(source_tier)")
+            .execute(pool)
+            .await?;
+        seed_source_tiers_postgres(pool).await?;
+        backfill_news_source_tiers_postgres(pool).await?;
+        Ok::<(), anyhow::Error>(())
     })?;
     Ok(())
 }
@@ -372,23 +1086,30 @@ fn insert_news_with_source_type_postgres(
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
     let snippets_json = serde_json::to_string(extra_snippets).unwrap_or_else(|_| "[]".to_string());
+    let classification = classify_news_source_postgres(pool, url, source)?;
     crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO news_cache
-             (title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+             (title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, description, extra_snippets, category, published_at, fetched_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
              ON CONFLICT (url) DO UPDATE
              SET description = CASE
                  WHEN news_cache.description = '' AND EXCLUDED.description != ''
                  THEN EXCLUDED.description
                  ELSE news_cache.description
-             END",
+             END,
+             source_domain = EXCLUDED.source_domain,
+             source_tier = EXCLUDED.source_tier,
+             source_tier_inferred = EXCLUDED.source_tier_inferred",
         )
         .bind(title)
         .bind(url)
         .bind(source)
         .bind(source_type)
         .bind(symbol_tag)
+        .bind(classification.domain)
+        .bind(classification.tier)
+        .bind(classification.inferred)
         .bind(description.unwrap_or(""))
         .bind(snippets_json)
         .bind(category)
@@ -411,7 +1132,7 @@ fn get_latest_news_postgres(
     ensure_tables_postgres(pool)?;
     let rows = crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
-            "SELECT id, title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at::text
+            "SELECT id, title, url, source, source_type, symbol_tag, source_domain, source_tier::BIGINT, source_tier_inferred, description, extra_snippets, category, published_at, fetched_at::text
              FROM news_cache
              WHERE TRUE",
         );
@@ -438,7 +1159,7 @@ fn get_latest_news_postgres(
 
     rows.into_iter()
         .map(|row| {
-            let snippets_json: String = row.try_get(7)?;
+            let snippets_json: String = row.try_get(10)?;
             Ok(NewsEntry {
                 id: row.try_get(0)?,
                 title: row.try_get(1)?,
@@ -446,12 +1167,15 @@ fn get_latest_news_postgres(
                 source: row.try_get(3)?,
                 source_type: row.try_get(4)?,
                 symbol_tag: row.try_get(5)?,
-                description: row.try_get(6)?,
+                source_domain: row.try_get(6)?,
+                source_tier: row.try_get(7)?,
+                source_tier_inferred: row.try_get(8)?,
+                description: row.try_get(9)?,
                 extra_snippets: serde_json::from_str::<Vec<String>>(&snippets_json)
                     .unwrap_or_default(),
-                category: row.try_get(8)?,
-                published_at: row.try_get(9)?,
-                fetched_at: row.try_get(10)?,
+                category: row.try_get(11)?,
+                published_at: row.try_get(12)?,
+                fetched_at: row.try_get(13)?,
             })
         })
         .collect()
@@ -527,6 +1251,88 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Bitcoin hits $100k");
         assert_eq!(items[0].source, "CoinDesk");
+        assert_eq!(items[0].source_domain, "example.com");
+        assert_eq!(items[0].source_tier, 3);
+        assert!(items[0].source_tier_inferred);
+    }
+
+    #[test]
+    fn source_tier_lookup_matches_seeded_domains() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let reuters =
+            classify_news_source(&conn, "https://www.reuters.com/markets/rates", "Reuters")
+                .unwrap();
+        assert_eq!(reuters.domain, "reuters.com");
+        assert_eq!(reuters.tier, 1);
+        assert!(!reuters.inferred);
+
+        let substack =
+            classify_news_source(&conn, "https://macro.substack.com/p/post", "Substack").unwrap();
+        assert_eq!(substack.domain, "macro.substack.com");
+        assert_eq!(substack.tier, 4);
+        assert!(!substack.inferred);
+    }
+
+    #[test]
+    fn unknown_domain_defaults_to_tier_three_inferred() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let classification =
+            classify_news_source(&conn, "https://unknown.example/news", "Unknown Source").unwrap();
+
+        assert_eq!(classification.domain, "unknown.example");
+        assert_eq!(classification.tier, 3);
+        assert!(classification.inferred);
+    }
+
+    #[test]
+    fn source_tier_backfill_updates_existing_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO news_cache
+             (title, url, source, category, published_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                "Fed wire",
+                "https://www.reuters.com/markets/fed",
+                "Reuters",
+                "macro",
+                1709610000
+            ],
+        )
+        .unwrap();
+
+        ensure_source_tier_tables(&conn).unwrap();
+        let items = get_latest_news(&conn, 10, None, None, None, None).unwrap();
+        assert_eq!(items[0].source_domain, "reuters.com");
+        assert_eq!(items[0].source_tier, 1);
+        assert!(!items[0].source_tier_inferred);
+    }
+
+    #[test]
+    fn source_tier_set_and_remove_manage_reference_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let row = set_news_source_tier(&conn, "blog.example", 4, Some("unverified")).unwrap();
+        assert_eq!(row.domain, "blog.example");
+        assert_eq!(row.tier, 4);
+
+        let classification =
+            classify_news_source(&conn, "https://blog.example/post", "Blog Example").unwrap();
+        assert_eq!(classification.tier, 4);
+        assert!(!classification.inferred);
+
+        assert!(remove_news_source_tier(&conn, "blog.example").unwrap());
+        let classification =
+            classify_news_source(&conn, "https://blog.example/post", "Blog Example").unwrap();
+        assert_eq!(classification.tier, 3);
+        assert!(classification.inferred);
     }
 
     #[test]

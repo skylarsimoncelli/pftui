@@ -23,6 +23,7 @@ pftui analytics scenario list --json
 pftui analytics alerts list --json
 pftui analytics macro regime current --json
 ```
+News JSON includes `source_tier`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional.
 
 3. For each alert, investigate:
 - **What happened?** Pull the current price/value and the alert threshold.

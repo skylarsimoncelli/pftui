@@ -74,6 +74,7 @@ pftui analytics macro cycles list --json
 pftui analytics power-flow list --days 7 --json
 pftui analytics power-flow balance --json
 ```
+News JSON includes `source_tier`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional.
 
 ### Structural Framework
 ```bash
@@ -346,6 +347,7 @@ Previous reports cited CPI at 7.0% when actual was 2.4%. This kind of error is u
 ### 4c: Cross-check news claims
 For any claim about a specific event (e.g. "Iran rejected ceasefire", "OECD forecast X%"),
 verify it actually happened via `web_search`. Do not cite events you cannot verify.
+When weighing the news bundle, use `source_tier` before narrative salience: tier-1 at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2.
 
 ### 4d: Fix ALL errors in the markdown
 If you find ANY inaccuracy, fix it in the markdown source file NOW. Do not proceed
