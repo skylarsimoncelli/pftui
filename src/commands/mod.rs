@@ -28,6 +28,7 @@ pub mod demo;
 pub mod dividends;
 pub mod doctor;
 pub mod drift;
+pub mod drawdown;
 pub mod economy;
 pub mod eod;
 pub mod etf_flows;

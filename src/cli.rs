@@ -1273,6 +1273,12 @@ pub enum PortfolioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show current drawdown, max MTD/YTD drawdowns, and latest move decomposition
+    Drawdown {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Suggest trades to rebalance to target allocations
     Rebalance {
         /// Output as JSON
@@ -4431,6 +4437,18 @@ mod tests {
                 command: Some(PortfolioCommand::Status { json }),
             }) => assert!(!json),
             _ => panic!("expected portfolio status command"),
+        }
+    }
+
+    #[test]
+    fn parses_portfolio_drawdown_json() {
+        let cli =
+            Cli::try_parse_from(["pftui", "portfolio", "drawdown", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command: Some(PortfolioCommand::Drawdown { json }),
+            }) => assert!(json),
+            _ => panic!("expected portfolio drawdown command"),
         }
     }
 

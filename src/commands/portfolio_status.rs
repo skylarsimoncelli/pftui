@@ -12,6 +12,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 
+use crate::analytics::drawdown::DrawdownSummary;
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations_backend;
 use crate::db::backend::BackendConnection;
@@ -52,6 +53,8 @@ struct PortfolioStatusOutput {
     total_unrealized_gain_pct: f64,
     total_daily_pnl: f64,
     total_daily_pnl_pct: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    drawdown: Option<DrawdownSummary>,
     date: String,
     currency: String,
     position_count: usize,
@@ -226,6 +229,10 @@ fn run_full(
     } else {
         None
     };
+    let drawdown_summary = crate::commands::drawdown::build_report_backend(backend, config)
+        .ok()
+        .flatten()
+        .map(|report| report.summary);
 
     // Build category summaries
     let mut cat_map: HashMap<String, (Decimal, Decimal, Option<Decimal>, usize)> = HashMap::new();
@@ -268,6 +275,7 @@ fn run_full(
             total_unrealized_gain_pct: dec_to_f64_2(total_unrealized_pct),
             total_daily_pnl: dec_to_f64_2(total_daily_pnl),
             total_daily_pnl_pct: total_daily_pnl_pct.map(dec_to_f64_2),
+            drawdown: drawdown_summary.clone(),
             date: today_str,
             currency: config.base_currency.clone(),
             position_count: pos_statuses.len(),
@@ -305,6 +313,12 @@ fn run_full(
             pnl_sign,
             total_daily_pnl_pct.map_or("N/A".to_string(), |p| format!("{}", p.round_dp(2))),
         );
+        if let Some(summary) = &drawdown_summary {
+            println!(
+                "  {}",
+                crate::commands::drawdown::format_summary_line(summary, csym)
+            );
+        }
         println!();
 
         // Category breakdown

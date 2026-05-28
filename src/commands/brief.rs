@@ -8,6 +8,7 @@ use rust_decimal_macros::dec;
 use serde::Serialize;
 
 use crate::alerts::AlertStatus;
+use crate::analytics::drawdown::{self, DrawdownSummary};
 use crate::analytics::levels::{nearest_actionable_levels, ActionableLevelPair};
 use crate::analytics::risk;
 use crate::analytics::technicals::{
@@ -117,6 +118,8 @@ struct PortfolioSummaryJson {
     total_gain_pct: String,
     daily_pnl: Option<String>,
     daily_pnl_pct: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    drawdown: Option<DrawdownSummary>,
     base_currency: String,
 }
 
@@ -330,6 +333,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
 
     let today = Utc::now().date_naive();
     let yesterday = today - chrono::Duration::days(1);
+    let today_str = today.format("%Y-%m-%d").to_string();
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     let symbols: Vec<String> = prices.keys().cloned().collect();
     let hist_1d = enrich_hist_1d_with_cached_previous_close(
@@ -382,6 +386,20 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     } else {
         None
     };
+    let current_drawdown_value = if total_value > dec!(0) {
+        Some(total_value)
+    } else {
+        None
+    };
+    let latest_decomposition =
+        drawdown::compute_latest_decomposition(&positions, &hist_1d, &today_str, &yesterday_str);
+    let drawdown_summary = drawdown::compute_drawdown_report(
+        &get_all_portfolio_snapshots(conn).unwrap_or_default(),
+        Some(&today_str),
+        current_drawdown_value,
+        latest_decomposition,
+    )
+    .map(|report| report.summary);
 
     let portfolio_summary = PortfolioSummaryJson {
         total_value: total_value.to_string(),
@@ -394,6 +412,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
             None
         },
         daily_pnl_pct: daily_pnl_pct.map(|p| p.round_dp(2).to_string()),
+        drawdown: drawdown_summary,
         base_currency: base.to_string(),
     };
 
@@ -557,6 +576,7 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
 
     let today = Utc::now().date_naive();
     let yesterday = today - chrono::Duration::days(1);
+    let today_str = today.format("%Y-%m-%d").to_string();
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     let symbols: Vec<String> = prices.keys().cloned().collect();
     let hist_1d = enrich_hist_1d_with_cached_previous_close(
@@ -605,6 +625,20 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
     } else {
         None
     };
+    let current_drawdown_value = if total_value > dec!(0) {
+        Some(total_value)
+    } else {
+        None
+    };
+    let latest_decomposition =
+        drawdown::compute_latest_decomposition(&positions, &hist_1d, &today_str, &yesterday_str);
+    let drawdown_summary = drawdown::compute_drawdown_report(
+        &crate::db::snapshots::get_all_portfolio_snapshots_backend(backend).unwrap_or_default(),
+        Some(&today_str),
+        current_drawdown_value,
+        latest_decomposition,
+    )
+    .map(|report| report.summary);
 
     let portfolio_summary = PortfolioSummaryJson {
         total_value: total_value.to_string(),
@@ -617,6 +651,7 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
             None
         },
         daily_pnl_pct: daily_pnl_pct.map(|p| p.round_dp(2).to_string()),
+        drawdown: drawdown_summary,
         base_currency: base.to_string(),
     };
 
@@ -1763,6 +1798,20 @@ fn run_full(
             day_pct.round_dp(2),
         );
     }
+    if let Some(report) = drawdown::compute_drawdown_report(
+        &get_all_portfolio_snapshots(conn).unwrap_or_default(),
+        Some(&date_str),
+        Some(total_value),
+        None,
+    ) {
+        println!(
+            "**{}**",
+            crate::commands::drawdown::format_summary_line(
+                &report.summary,
+                config.currency_symbol()
+            )
+        );
+    }
     print_risk_summary(conn, &positions);
     print_benchmark_comparison(conn, &positions, hist_1d);
     print_correlation_summary(conn, &positions);
@@ -1970,6 +2019,20 @@ fn run_full_backend(
             fmt_currency(daily_pnl.abs(), 2, base),
             day_sign,
             day_pct.round_dp(2),
+        );
+    }
+    if let Some(report) = drawdown::compute_drawdown_report(
+        &crate::db::snapshots::get_all_portfolio_snapshots_backend(backend).unwrap_or_default(),
+        Some(&date_str),
+        Some(total_value),
+        None,
+    ) {
+        println!(
+            "**{}**",
+            crate::commands::drawdown::format_summary_line(
+                &report.summary,
+                config.currency_symbol()
+            )
         );
     }
     print_risk_summary_backend(backend, &positions);
@@ -4420,6 +4483,7 @@ mod tests {
                 total_gain_pct: "11.11".to_string(),
                 daily_pnl: None,
                 daily_pnl_pct: None,
+                drawdown: None,
                 base_currency: "USD".to_string(),
             },
             positions: vec![],
@@ -4459,6 +4523,7 @@ mod tests {
                 total_gain_pct: "11.11".to_string(),
                 daily_pnl: None,
                 daily_pnl_pct: None,
+                drawdown: None,
                 base_currency: "USD".to_string(),
             },
             positions: vec![],

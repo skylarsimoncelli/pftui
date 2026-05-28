@@ -1435,6 +1435,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 commands::allocation::run(&backend, group_by.as_ref(), json)
             }
             Some(cli::PortfolioCommand::Drift { json }) => commands::drift::run(&backend, json),
+            Some(cli::PortfolioCommand::Drawdown { json }) => {
+                commands::drawdown::run(&backend, &config, json)
+            }
             Some(cli::PortfolioCommand::Rebalance { json }) => {
                 commands::rebalance::run(&backend, json)
             }
