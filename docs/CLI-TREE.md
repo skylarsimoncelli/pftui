@@ -142,7 +142,8 @@ pftui
 │       ├── drift-bar
 │       ├── what-changed-strip
 │       ├── open-predictions-table
-│       └── outlook-arrows
+│       ├── outlook-arrows
+│       └── factor-exposure
 └── system
     ├── config
     ├── db-info

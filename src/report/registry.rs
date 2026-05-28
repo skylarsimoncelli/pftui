@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::charts::drift_bar::{self, DriftBarInput};
+use super::charts::factor_exposure::{self, FactorExposureInput};
 use super::charts::open_predictions_table::{self, OpenPredictionsTableInput};
 use super::charts::outlook_arrows::{self, OutlookArrowsInput};
 use super::charts::prob_bar::{self, ProbBarInput};
@@ -17,6 +18,7 @@ pub enum ChartKind {
     WhatChanged,
     OpenPredictions,
     OutlookArrows,
+    FactorExposure,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -49,6 +51,8 @@ pub enum ChartInput {
     OpenPredictions(OpenPredictionsTableInput),
     #[serde(rename = "outlook-arrows")]
     OutlookArrows(OutlookArrowsInput),
+    #[serde(rename = "factor-exposure")]
+    FactorExposure(FactorExposureInput),
 }
 
 pub const CHARTS: &[ChartDefinition] = &[
@@ -82,6 +86,11 @@ pub const CHARTS: &[ChartDefinition] = &[
         description: "Days/weeks/months direction and conviction arrows",
         formats: &["svg", "png", "ascii"],
     },
+    ChartDefinition {
+        name: "factor-exposure",
+        description: "Portfolio exposure bars by scenario factor",
+        formats: &["svg", "png", "ascii"],
+    },
 ];
 
 pub fn kind_from_name(name: &str) -> Result<ChartKind> {
@@ -100,6 +109,9 @@ pub fn kind_from_name(name: &str) -> Result<ChartKind> {
         | "predictions-table"
         | "predictions" => Ok(ChartKind::OpenPredictions),
         "outlook-arrows" | "outlook_arrows" | "outlook" | "arrows" => Ok(ChartKind::OutlookArrows),
+        "factor-exposure" | "factor_exposure" | "factor" | "exposure" | "factors" => {
+            Ok(ChartKind::FactorExposure)
+        }
         other => bail!(
             "unknown report chart '{}'. Available charts: {}",
             other,
@@ -122,6 +134,9 @@ pub fn parse_input(kind: ChartKind, value: Value) -> Result<ChartInput> {
         ChartKind::OutlookArrows => {
             ChartInput::OutlookArrows(OutlookArrowsInput::from_value(value)?)
         }
+        ChartKind::FactorExposure => {
+            ChartInput::FactorExposure(FactorExposureInput::from_value(value)?)
+        }
     })
 }
 
@@ -135,6 +150,7 @@ pub fn render_svg(input: &ChartInput) -> Result<String> {
             bail!("open-predictions-table is HTML-native; use --format html or --format ascii")
         }
         ChartInput::OutlookArrows(input) => Ok(outlook_arrows::render_svg(input)),
+        ChartInput::FactorExposure(input) => Ok(factor_exposure::render_svg(input)),
     }
 }
 
@@ -157,6 +173,7 @@ pub fn render_ascii(input: &ChartInput) -> String {
         ChartInput::WhatChanged(input) => what_changed_strip::render_ascii(input),
         ChartInput::OpenPredictions(input) => open_predictions_table::render_ascii(input),
         ChartInput::OutlookArrows(input) => outlook_arrows::render_ascii(input),
+        ChartInput::FactorExposure(input) => factor_exposure::render_ascii(input),
     }
 }
 
@@ -168,6 +185,7 @@ pub fn chart_name(input: &ChartInput) -> &'static str {
         ChartInput::WhatChanged(_) => "what-changed-strip",
         ChartInput::OpenPredictions(_) => "open-predictions-table",
         ChartInput::OutlookArrows(_) => "outlook-arrows",
+        ChartInput::FactorExposure(_) => "factor-exposure",
     }
 }
 
@@ -179,6 +197,7 @@ pub fn supported_formats(input: &ChartInput) -> &'static [&'static str] {
         ChartInput::WhatChanged(_) => &["svg", "png", "ascii"],
         ChartInput::OpenPredictions(_) => &["html", "ascii"],
         ChartInput::OutlookArrows(_) => &["svg", "png", "ascii"],
+        ChartInput::FactorExposure(_) => &["svg", "png", "ascii"],
     }
 }
 
@@ -217,6 +236,10 @@ mod tests {
         assert_eq!(
             kind_from_name("outlook_arrows").unwrap(),
             ChartKind::OutlookArrows
+        );
+        assert_eq!(
+            kind_from_name("factor_exposure").unwrap(),
+            ChartKind::FactorExposure
         );
     }
 }

@@ -189,6 +189,9 @@ fn chart_input_from_db(
         ChartKind::OutlookArrows => Ok(ChartInput::OutlookArrows(
             outlook_arrows_from_analyst_views_backend(backend, query)?,
         )),
+        ChartKind::FactorExposure => {
+            bail!("factor-exposure does not have a canonical --from-db source; use --from-json")
+        }
     }
 }
 
