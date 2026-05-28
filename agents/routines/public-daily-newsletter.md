@@ -74,7 +74,7 @@ pftui analytics macro cycles list --json
 pftui analytics power-flow list --days 7 --json
 pftui analytics power-flow balance --json
 ```
-News JSON includes `source_tier` and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events.
+News JSON includes `id`, `source_tier`, and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 ### Structural Framework
 ```bash
@@ -197,6 +197,15 @@ backed by capital flows? What quiet data points looked minor but carry structura
 significance? This demonstrates the "follow the money, not the narrative" principle
 in action. Example: "Headlines focused on the diplomatic talks, but institutional
 gold purchases accelerated. The money is saying something different from the news."]
+
+Include a source-weighting note when the ledger has samples. Pull topic-specific ranks
+for the dominant news themes and write one sentence such as "This run weighted Reuters
+at 1.00 and Bloomberg at 0.95 on Fed-policy news based on trailing-180d source-attributed
+prediction outcomes." Use:
+```bash
+pftui analytics news-sources rank --topic fed --json
+pftui analytics news-sources rank --topic geopolitics --json
+```
 
 ### Prediction Accountability
 [Recent prediction hit rate across timeframes. What we got right and what reasoning

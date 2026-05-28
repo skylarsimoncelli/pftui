@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
+use crate::db::news_source_accuracy;
 use crate::db::query;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,8 +16,10 @@ pub struct UserPrediction {
     pub symbol: Option<String>,
     pub conviction: String,
     pub timeframe: Option<String>,
+    pub topic: String,
     pub confidence: Option<f64>,
     pub source_agent: Option<String>,
+    pub source_article_id: Option<i64>,
     pub target_date: Option<String>,
     pub resolution_criteria: Option<String>,
     pub outcome: String,
@@ -61,16 +64,18 @@ impl UserPrediction {
             symbol: row.get(2)?,
             conviction: row.get(3)?,
             timeframe: row.get(4)?,
-            confidence: row.get(5)?,
-            source_agent: row.get(6)?,
-            target_date: row.get(7)?,
-            resolution_criteria: row.get(8)?,
-            outcome: row.get(9)?,
-            score_notes: row.get(10)?,
-            lesson: row.get(11)?,
-            lessons_applied: parse_lessons_applied(row.get(12)?),
-            created_at: row.get(13)?,
-            scored_at: row.get(14)?,
+            topic: row.get(5)?,
+            confidence: row.get(6)?,
+            source_agent: row.get(7)?,
+            source_article_id: row.get(8)?,
+            target_date: row.get(9)?,
+            resolution_criteria: row.get(10)?,
+            outcome: row.get(11)?,
+            score_notes: row.get(12)?,
+            lesson: row.get(13)?,
+            lessons_applied: parse_lessons_applied(row.get(14)?),
+            created_at: row.get(15)?,
+            scored_at: row.get(16)?,
         })
     }
 }
@@ -87,8 +92,13 @@ fn lessons_applied_json(lesson_ids: &[i64]) -> String {
 fn ensure_prediction_columns(conn: &Connection) -> Result<()> {
     let required = [
         ("timeframe", "TEXT NOT NULL DEFAULT 'medium'"),
+        (
+            "topic",
+            "TEXT NOT NULL DEFAULT 'other' CHECK(topic IN ('fed','inflation','geopolitics','commodities','crypto','equities','other'))",
+        ),
         ("confidence", "REAL"),
         ("source_agent", "TEXT"),
+        ("source_article_id", "INTEGER"),
         ("lesson", "TEXT"),
         ("resolution_criteria", "TEXT"),
         ("lessons_applied", "TEXT NOT NULL DEFAULT '[]'"),
@@ -106,6 +116,11 @@ fn ensure_prediction_columns(conn: &Connection) -> Result<()> {
             )?;
         }
     }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_user_predictions_topic ON user_predictions(topic);
+         CREATE INDEX IF NOT EXISTS idx_user_predictions_source_article
+            ON user_predictions(source_article_id);",
+    )?;
     Ok(())
 }
 
@@ -118,8 +133,11 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
                 symbol TEXT,
                 conviction TEXT NOT NULL DEFAULT 'medium',
                 timeframe TEXT NOT NULL DEFAULT 'medium',
+                topic TEXT NOT NULL DEFAULT 'other'
+                    CHECK(topic IN ('fed','inflation','geopolitics','commodities','crypto','equities','other')),
                 confidence DOUBLE PRECISION,
                 source_agent TEXT,
+                source_article_id BIGINT,
                 target_date TEXT,
                 resolution_criteria TEXT,
                 outcome TEXT NOT NULL DEFAULT 'pending',
@@ -145,6 +163,9 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
         sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS timeframe TEXT NOT NULL DEFAULT 'medium'")
             .execute(pool)
             .await?;
+        sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS topic TEXT NOT NULL DEFAULT 'other' CHECK(topic IN ('fed','inflation','geopolitics','commodities','crypto','equities','other'))")
+            .execute(pool)
+            .await?;
         sqlx::query(
             "ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION",
         )
@@ -153,6 +174,11 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
         sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS source_agent TEXT")
             .execute(pool)
             .await?;
+        sqlx::query(
+            "ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS source_article_id BIGINT",
+        )
+        .execute(pool)
+        .await?;
         sqlx::query(
             "ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS resolution_criteria TEXT",
         )
@@ -163,6 +189,17 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
             .await?;
         sqlx::query(
             "ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS lessons_applied TEXT NOT NULL DEFAULT '[]'",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_user_predictions_topic ON user_predictions(topic)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_user_predictions_source_article
+             ON user_predictions(source_article_id)",
         )
         .execute(pool)
         .await?;
@@ -177,7 +214,14 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
 fn normalize_symbol(s: Option<&str>) -> Option<&str> {
     match s {
         None => None,
-        Some(v) if matches!(v.trim(), "" | "null" | "NULL" | "none" | "NONE" | "MACRO" | "NFP" | "CPI" | "PMI" | "GDP") => None,
+        Some(v)
+            if matches!(
+                v.trim(),
+                "" | "null" | "NULL" | "none" | "NONE" | "MACRO" | "NFP" | "CPI" | "PMI" | "GDP"
+            ) =>
+        {
+            None
+        }
         Some(v) => Some(v.trim()),
     }
 }
@@ -222,18 +266,72 @@ pub fn add_prediction_with_lessons(
     resolution_criteria: Option<&str>,
     lessons_applied: &[i64],
 ) -> Result<i64> {
+    add_prediction_with_details(
+        conn,
+        claim,
+        symbol,
+        conviction,
+        timeframe,
+        confidence,
+        source_agent,
+        target_date,
+        resolution_criteria,
+        lessons_applied,
+        None,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn add_prediction_with_details(
+    conn: &Connection,
+    claim: &str,
+    symbol: Option<&str>,
+    conviction: Option<&str>,
+    timeframe: Option<&str>,
+    confidence: Option<f64>,
+    source_agent: Option<&str>,
+    target_date: Option<&str>,
+    resolution_criteria: Option<&str>,
+    lessons_applied: &[i64],
+    topic: Option<&str>,
+    source_article_id: Option<i64>,
+) -> Result<i64> {
+    ensure_prediction_columns(conn)?;
     let symbol = normalize_symbol(symbol);
     let lessons_applied = lessons_applied_json(lessons_applied);
+    let topic = news_source_accuracy::normalize_topic(topic)?;
+    if let Some(article_id) = source_article_id {
+        if article_id <= 0 {
+            anyhow::bail!("source_article_id must be positive");
+        }
+        let exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM news_cache WHERE id = ?1",
+                params![article_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !exists {
+            anyhow::bail!(
+                "source_article_id {} does not exist in news_cache",
+                article_id
+            );
+        }
+    }
     conn.execute(
-        "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, lessons_applied)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, topic, confidence, source_agent, source_article_id, target_date, resolution_criteria, lessons_applied)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             claim,
             symbol,
             conviction.unwrap_or("medium"),
             timeframe.unwrap_or("medium"),
+            topic,
             confidence,
             source_agent,
+            source_article_id,
             target_date,
             resolution_criteria,
             lessons_applied
@@ -250,7 +348,7 @@ pub fn list_predictions(
     limit: Option<usize>,
 ) -> Result<Vec<UserPrediction>> {
     let mut query = String::from(
-        "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, outcome, score_notes, lesson, lessons_applied, created_at, scored_at
+        "SELECT id, claim, symbol, conviction, timeframe, topic, confidence, source_agent, source_article_id, target_date, resolution_criteria, outcome, score_notes, lesson, lessons_applied, created_at, scored_at
          FROM user_predictions",
     );
 
@@ -284,6 +382,18 @@ pub fn list_predictions(
     Ok(items)
 }
 
+fn get_prediction(conn: &Connection, id: i64) -> Result<Option<UserPrediction>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, claim, symbol, conviction, timeframe, topic, confidence, source_agent, source_article_id, target_date, resolution_criteria, outcome, score_notes, lesson, lessons_applied, created_at, scored_at
+         FROM user_predictions
+         WHERE id = ?1",
+    )?;
+    let row = stmt
+        .query_row(params![id], UserPrediction::from_row)
+        .optional()?;
+    Ok(row)
+}
+
 pub fn score_prediction(
     conn: &Connection,
     id: i64,
@@ -291,12 +401,25 @@ pub fn score_prediction(
     notes: Option<&str>,
     lesson: Option<&str>,
 ) -> Result<()> {
-    conn.execute(
+    ensure_prediction_columns(conn)?;
+    let existing = get_prediction(conn, id)?;
+    let updated = conn.execute(
         "UPDATE user_predictions
          SET outcome = ?, score_notes = ?, lesson = ?, scored_at = datetime('now')
          WHERE id = ?",
         params![outcome, notes, lesson, id],
     )?;
+    if updated > 0 {
+        if let Some(prediction) = existing {
+            news_source_accuracy::sync_prediction_outcome(
+                conn,
+                id,
+                prediction.source_article_id,
+                &prediction.topic,
+                outcome,
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -416,11 +539,43 @@ pub fn add_prediction_backend(
     resolution_criteria: Option<&str>,
     lessons_applied: &[i64],
 ) -> Result<i64> {
+    add_prediction_backend_with_details(
+        backend,
+        claim,
+        symbol,
+        conviction,
+        timeframe,
+        confidence,
+        source_agent,
+        target_date,
+        resolution_criteria,
+        lessons_applied,
+        None,
+        None,
+    )
+}
+
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+pub fn add_prediction_backend_with_details(
+    backend: &BackendConnection,
+    claim: &str,
+    symbol: Option<&str>,
+    conviction: Option<&str>,
+    timeframe: Option<&str>,
+    confidence: Option<f64>,
+    source_agent: Option<&str>,
+    target_date: Option<&str>,
+    resolution_criteria: Option<&str>,
+    lessons_applied: &[i64],
+    topic: Option<&str>,
+    source_article_id: Option<i64>,
+) -> Result<i64> {
     query::dispatch(
         backend,
         |conn| {
             ensure_prediction_columns(conn)?;
-            add_prediction_with_lessons(
+            add_prediction_with_details(
                 conn,
                 claim,
                 symbol,
@@ -431,6 +586,8 @@ pub fn add_prediction_backend(
                 target_date,
                 resolution_criteria,
                 lessons_applied,
+                topic,
+                source_article_id,
             )
         },
         |pool| {
@@ -446,6 +603,8 @@ pub fn add_prediction_backend(
                 target_date,
                 resolution_criteria,
                 lessons_applied,
+                topic,
+                source_article_id,
             )
         },
     )
@@ -642,41 +801,46 @@ pub fn get_stats_backend(backend: &BackendConnection) -> Result<PredictionStats>
     })
 }
 
-type PredictionRow = (
-    i64,
-    String,
-    Option<String>,
-    String,
-    Option<String>,
-    Option<f64>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    String,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    String,
-    Option<String>,
-);
+#[derive(sqlx::FromRow)]
+struct PredictionRow {
+    id: i64,
+    claim: String,
+    symbol: Option<String>,
+    conviction: String,
+    timeframe: Option<String>,
+    topic: String,
+    confidence: Option<f64>,
+    source_agent: Option<String>,
+    source_article_id: Option<i64>,
+    target_date: Option<String>,
+    resolution_criteria: Option<String>,
+    outcome: String,
+    score_notes: Option<String>,
+    lesson: Option<String>,
+    lessons_applied: Option<String>,
+    created_at: String,
+    scored_at: Option<String>,
+}
 
 fn from_pg_row(r: PredictionRow) -> UserPrediction {
     UserPrediction {
-        id: r.0,
-        claim: r.1,
-        symbol: r.2,
-        conviction: r.3,
-        timeframe: r.4,
-        confidence: r.5,
-        source_agent: r.6,
-        target_date: r.7,
-        resolution_criteria: r.8,
-        outcome: r.9,
-        score_notes: r.10,
-        lesson: r.11,
-        lessons_applied: parse_lessons_applied(r.12),
-        created_at: r.13,
-        scored_at: r.14,
+        id: r.id,
+        claim: r.claim,
+        symbol: r.symbol,
+        conviction: r.conviction,
+        timeframe: r.timeframe,
+        topic: r.topic,
+        confidence: r.confidence,
+        source_agent: r.source_agent,
+        source_article_id: r.source_article_id,
+        target_date: r.target_date,
+        resolution_criteria: r.resolution_criteria,
+        outcome: r.outcome,
+        score_notes: r.score_notes,
+        lesson: r.lesson,
+        lessons_applied: parse_lessons_applied(r.lessons_applied),
+        created_at: r.created_at,
+        scored_at: r.scored_at,
     }
 }
 
@@ -693,26 +857,49 @@ fn add_prediction_postgres(
     target_date: Option<&str>,
     resolution_criteria: Option<&str>,
     lessons_applied: &[i64],
+    topic: Option<&str>,
+    source_article_id: Option<i64>,
 ) -> Result<i64> {
     let symbol = normalize_symbol(symbol);
     let lessons_applied = lessons_applied_json(lessons_applied);
+    let topic = news_source_accuracy::normalize_topic(topic)?;
+    if let Some(article_id) = source_article_id {
+        if article_id <= 0 {
+            anyhow::bail!("source_article_id must be positive");
+        }
+    }
     let id: i64 = crate::db::pg_runtime::block_on(async {
-        sqlx::query_scalar(
-            "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, lessons_applied)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        if let Some(article_id) = source_article_id {
+            let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM news_cache WHERE id = $1")
+                .bind(article_id)
+                .fetch_optional(pool)
+                .await?;
+            if exists.is_none() {
+                anyhow::bail!(
+                    "source_article_id {} does not exist in news_cache",
+                    article_id
+                );
+            }
+        }
+        let id = sqlx::query_scalar(
+            "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, topic, confidence, source_agent, source_article_id, target_date, resolution_criteria, lessons_applied)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              RETURNING id",
         )
         .bind(claim)
         .bind(symbol)
         .bind(conviction.unwrap_or("medium"))
         .bind(timeframe.unwrap_or("medium"))
+        .bind(topic)
         .bind(confidence)
         .bind(source_agent)
+        .bind(source_article_id)
         .bind(target_date)
         .bind(resolution_criteria)
         .bind(lessons_applied)
         .fetch_one(pool)
-        .await
+        .await?;
+        Ok::<i64, anyhow::Error>(id)
     })?;
     Ok(id)
 }
@@ -726,7 +913,7 @@ fn list_predictions_postgres(
 ) -> Result<Vec<UserPrediction>> {
     let mut rows: Vec<PredictionRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, outcome, score_notes, lesson, lessons_applied, created_at::text, scored_at::text
+            "SELECT id, claim, symbol, conviction, timeframe, topic, confidence, source_agent, source_article_id, target_date, resolution_criteria, outcome, score_notes, lesson, lessons_applied, created_at::text AS created_at, scored_at::text AS scored_at
              FROM user_predictions
              ORDER BY created_at DESC",
         )
@@ -734,13 +921,13 @@ fn list_predictions_postgres(
         .await
     })?;
     if let Some(o) = outcome_filter {
-        rows.retain(|r| r.9 == o);
+        rows.retain(|r| r.outcome == o);
     }
     if let Some(s) = symbol {
-        rows.retain(|r| r.2.as_deref().is_some_and(|v| v == s));
+        rows.retain(|r| r.symbol.as_deref().is_some_and(|v| v == s));
     }
     if let Some(tf) = timeframe_filter {
-        rows.retain(|r| r.4.as_deref().is_some_and(|v| v == tf));
+        rows.retain(|r| r.timeframe.as_deref().is_some_and(|v| v == tf));
     }
     if let Some(n) = limit {
         rows.truncate(n);
@@ -756,7 +943,15 @@ fn score_prediction_postgres(
     notes: Option<&str>,
     lesson: Option<&str>,
 ) -> Result<()> {
-    crate::db::pg_runtime::block_on(async {
+    let existing = crate::db::pg_runtime::block_on(async {
+        let existing: Option<(Option<i64>, String)> = sqlx::query_as(
+            "SELECT source_article_id, topic
+             FROM user_predictions
+             WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
         sqlx::query(
             "UPDATE user_predictions
              SET outcome = $1, score_notes = $2, lesson = $3, scored_at = NOW()
@@ -768,8 +963,17 @@ fn score_prediction_postgres(
         .bind(id)
         .execute(pool)
         .await?;
-        Ok::<(), sqlx::Error>(())
+        Ok::<_, anyhow::Error>(existing)
     })?;
+    if let Some((source_article_id, topic)) = existing {
+        news_source_accuracy::sync_prediction_outcome_postgres(
+            pool,
+            id,
+            source_article_id,
+            &topic,
+            outcome,
+        )?;
+    }
     Ok(())
 }
 
@@ -799,6 +1003,57 @@ mod tests {
         let rows = list_predictions(&conn, None, None, None, None).unwrap();
         let row = rows.into_iter().find(|row| row.id == id).unwrap();
         assert_eq!(row.lessons_applied, vec![218, 240]);
+    }
+
+    #[test]
+    fn scoring_source_attributed_prediction_updates_news_source_accuracy() {
+        let conn = db::open_in_memory();
+        crate::db::news_cache::insert_news(
+            &conn,
+            "Fed cut odds rise",
+            "https://www.bloomberg.com/news/fed-cut-odds",
+            "Bloomberg",
+            "macro",
+            1_709_610_000,
+        )
+        .unwrap();
+        let article_id: i64 = conn
+            .query_row(
+                "SELECT id FROM news_cache WHERE url = ?1",
+                params!["https://www.bloomberg.com/news/fed-cut-odds"],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        let id = add_prediction_with_details(
+            &conn,
+            "Fed cut odds will continue rising",
+            None,
+            Some("medium"),
+            Some("medium"),
+            Some(0.65),
+            Some("medium-agent"),
+            Some("2026-06-30"),
+            Some("Fed funds futures price higher odds"),
+            &[],
+            Some("fed"),
+            Some(article_id),
+        )
+        .unwrap();
+
+        score_prediction(&conn, id, "correct", Some("Resolved higher"), None).unwrap();
+
+        let rows = crate::db::news_source_accuracy::list_accuracy(
+            &conn,
+            Some("bloomberg.com"),
+            Some("fed"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].n_predictions_implied, 1);
+        assert_eq!(rows[0].n_correct, 1);
+        assert_eq!(rows[0].weight, 1.0);
     }
 
     #[test]

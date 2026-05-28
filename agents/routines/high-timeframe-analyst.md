@@ -262,7 +262,8 @@ Make 1-3 structural cause-and-effect predictions (3-12 month horizon):
 
 ```bash
 pftui journal prediction add "[structural cause] will [structural effect] by [date]" \
-  --target-date [YYYY-MM-DD] --conviction [level] --timeframe high --confidence [0.X] --source-agent high-agent --lessons "[ids]"
+  --target-date [YYYY-MM-DD] --conviction [level] --timeframe high --confidence [0.X] --source-agent high-agent \
+  --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]"
 ```
 
 ## Output to Evening Analyst

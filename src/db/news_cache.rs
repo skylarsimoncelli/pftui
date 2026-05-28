@@ -1008,10 +1008,32 @@ pub fn get_latest_news_filtered_backend(
 /// Delete news older than 48 hours.
 pub fn cleanup_old_news(conn: &Connection) -> Result<usize> {
     let cutoff = chrono::Utc::now().timestamp() - (48 * 3600);
-    let deleted = conn.execute(
-        "DELETE FROM news_cache WHERE published_at < ?1",
-        params![cutoff],
-    )?;
+    let has_prediction_attribution: bool = conn
+        .prepare(
+            "SELECT COUNT(*)
+             FROM pragma_table_info('user_predictions')
+             WHERE name = 'source_article_id'",
+        )
+        .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+        .unwrap_or(0)
+        > 0;
+    let deleted = if has_prediction_attribution {
+        conn.execute(
+            "DELETE FROM news_cache
+             WHERE published_at < ?1
+               AND id NOT IN (
+                   SELECT source_article_id
+                   FROM user_predictions
+                   WHERE source_article_id IS NOT NULL
+               )",
+            params![cutoff],
+        )?
+    } else {
+        conn.execute(
+            "DELETE FROM news_cache WHERE published_at < ?1",
+            params![cutoff],
+        )?
+    };
     Ok(deleted)
 }
 
@@ -1503,10 +1525,35 @@ fn cleanup_old_news_postgres(pool: &PgPool) -> Result<usize> {
     ensure_tables_postgres(pool)?;
     let cutoff = chrono::Utc::now().timestamp() - (48 * 3600);
     let result = crate::db::pg_runtime::block_on(async {
-        sqlx::query("DELETE FROM news_cache WHERE published_at < $1")
+        let has_prediction_attribution: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'user_predictions'
+                  AND column_name = 'source_article_id'
+            )",
+        )
+        .fetch_one(pool)
+        .await?;
+        if has_prediction_attribution {
+            sqlx::query(
+                "DELETE FROM news_cache
+                 WHERE published_at < $1
+                   AND id NOT IN (
+                       SELECT source_article_id
+                       FROM user_predictions
+                       WHERE source_article_id IS NOT NULL
+                   )",
+            )
             .bind(cutoff)
             .execute(pool)
             .await
+        } else {
+            sqlx::query("DELETE FROM news_cache WHERE published_at < $1")
+                .bind(cutoff)
+                .execute(pool)
+                .await
+        }
     })?;
     Ok(result.rows_affected() as usize)
 }
@@ -1975,6 +2022,53 @@ mod tests {
         let items = get_latest_news(&conn, 10, None, None, None, None).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Fresh news");
+    }
+
+    #[test]
+    fn cleanup_preserves_news_referenced_by_predictions() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let three_days_ago = chrono::Utc::now().timestamp() - (3 * 24 * 3600);
+        insert_news(
+            &conn,
+            "Old but attributed news",
+            "https://example.com/attributed",
+            "Bloomberg",
+            "macro",
+            three_days_ago,
+        )
+        .unwrap();
+        let article_id: i64 = conn
+            .query_row(
+                "SELECT id FROM news_cache WHERE url = ?1",
+                params!["https://example.com/attributed"],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        crate::db::user_predictions::add_prediction_with_details(
+            &conn,
+            "Fed path shifts after attributed article",
+            None,
+            None,
+            Some("medium"),
+            None,
+            None,
+            None,
+            None,
+            &[],
+            Some("fed"),
+            Some(article_id),
+        )
+        .unwrap();
+
+        let deleted = cleanup_old_news(&conn).unwrap();
+        assert_eq!(deleted, 0);
+
+        let items = get_latest_news(&conn, 10, None, None, None, None).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Old but attributed news");
     }
 
     #[test]

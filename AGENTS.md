@@ -123,7 +123,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui journal scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
 | `pftui journal scenario signal add "SIGNAL" --scenario "NAME"` | Attach a tracked signal to a scenario |
 | `pftui journal scenario history "NAME" --limit N --json` | Show scenario probability history |
-| `pftui journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent] [--lessons 218,240]` | Add a prediction call for later scoring, optionally recording lesson IDs that guarded the call |
+| `pftui journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent] [--topic fed] [--source-article-id 123] [--lessons 218,240]` | Add a prediction call for later scoring, optionally recording lesson IDs and news-source attribution |
 | `pftui journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
 | `pftui journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
 | `pftui journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
@@ -158,6 +158,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics narrative --json` | Structured analytical memory: recap, scenario/conviction/trend shifts, scorecard, surprises, lessons, catalyst outcomes |
 | `pftui analytics calibration --json [--window-days 90]` | Scenario-vs-market divergences plus realised prediction hit-rate calibration by layer and conviction band |
 | `pftui analytics lessons applied --since 24h --json` | Lessons referenced by this run's predictions, top guards, and strongest historical analog |
+| `pftui analytics news-sources accuracy --json [--domain bloomberg.com] [--topic fed]` | Per-source hit-rate ledger for predictions derived from news articles |
+| `pftui analytics news-sources rank --topic iran --json` | Rank news sources for a topic using trailing source-attributed prediction outcomes |
 | `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |
 | `pftui analytics signals --json` | Show all signals (cross-timeframe + per-symbol technical) |
 | `pftui analytics signals --source technical --json` | Per-symbol technical signals: RSI overbought/oversold, MACD cross, SMA 200 reclaim/break, BB squeeze, volume expansion, 52W extremes |
@@ -202,6 +204,8 @@ The active backend database is the single source of truth. All interfaces (TUI, 
 ├── calendar_events                # Economic calendar
 ├── news_cache                     # RSS/Brave articles with source tier and independence metadata (48h retention)
 ├── news_source_tiers              # Domain-to-tier mapping used at ingest
+├── news_source_accuracy           # Per-domain/topic prediction outcome counts for article-derived calls
+├── news_source_accuracy_events    # One scored prediction → source-domain outcome event for trailing windows
 ├── rss_feed_health                # Per-feed RSS status, failure counters, and disable state
 ├── sentiment_cache                # Fear & Greed indices
 ├── prediction_cache               # Polymarket odds
@@ -211,6 +215,7 @@ The active backend database is the single source of truth. All interfaces (TUI, 
 ├── worldbank_cache                # Global macro indicators
 ├── onchain_cache                  # BTC on-chain + ETF flows
 ├── scenarios                      # Macro scenarios + probabilities
+├── user_predictions               # Falsifiable calls with topic/source-article attribution and scoring
 ├── scenario_signals               # Signal checklist per scenario
 ├── scenario_history               # Probability change log
 ├── thesis                         # Current thesis sections
@@ -296,7 +301,7 @@ SENTIMENT=$(pftui data sentiment --json)
 # Analyse all of the above, then compose and deliver your brief
 ```
 
-News JSON includes `source_tier` and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in news reasoning. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events.
+News JSON includes `id`, `source_tier`, and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in news reasoning, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 ### Alert Monitoring
 

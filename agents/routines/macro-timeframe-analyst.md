@@ -310,7 +310,8 @@ Make 1-2 MACRO predictions (6-24 month horizon) grounded in the frameworks:
 
 ```bash
 pftui journal prediction add "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
-  --target-date [YYYY-MM-DD] --conviction [level] --timeframe macro --confidence [0.X] --source-agent macro-agent --lessons "[ids]"
+  --target-date [YYYY-MM-DD] --conviction [level] --timeframe macro --confidence [0.X] --source-agent macro-agent \
+  --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]"
 ```
 
 Score any MACRO predictions that accumulated enough evidence. For macro predictions, evidence direction matters more than binary resolution.

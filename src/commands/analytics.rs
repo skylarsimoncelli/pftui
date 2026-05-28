@@ -16,9 +16,10 @@ use crate::analytics::synthesis;
 use crate::analytics::technicals::{load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME};
 use crate::db::backend::BackendConnection;
 use crate::db::{
-    agent_messages, alerts, analyst_views, convictions, correlation_snapshots, price_cache, regime_snapshots,
-    research_questions, scenarios, structural, technical_levels, technical_snapshots, thesis,
-    timeframe_signals, transactions, trends, user_predictions, watchlist,
+    agent_messages, alerts, analyst_views, convictions, correlation_snapshots, news_source_accuracy,
+    price_cache, regime_snapshots, research_questions, scenarios, structural, technical_levels,
+    technical_snapshots, thesis, timeframe_signals, transactions, trends, user_predictions,
+    watchlist,
 };
 use crate::db::{price_history, query};
 use crate::commands::correlations::{compute_breaks_backend, interpret_break};
@@ -570,6 +571,108 @@ pub fn run_asset_intelligence(
         }
     }
 
+    Ok(())
+}
+
+pub fn run_news_source_accuracy(
+    backend: &BackendConnection,
+    domain: Option<&str>,
+    topic: Option<&str>,
+    window_days: Option<i64>,
+    json_output: bool,
+) -> Result<()> {
+    let normalized_topic = topic
+        .map(|value| news_source_accuracy::normalize_topic(Some(value)))
+        .transpose()?;
+    let rows = news_source_accuracy::list_accuracy_backend(
+        backend,
+        domain,
+        normalized_topic.as_deref(),
+        window_days,
+    )?;
+    if json_output {
+        let output = json!({
+            "domain": domain,
+            "topic": normalized_topic,
+            "window_days": window_days,
+            "count": rows.len(),
+            "sources": rows,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
+    if rows.is_empty() {
+        println!("No news-source accuracy rows found.");
+        return Ok(());
+    }
+
+    let window = window_days
+        .map(|days| format!("trailing {days}d"))
+        .unwrap_or_else(|| "lifetime".to_string());
+    println!("News-source accuracy ({window}):");
+    for row in rows {
+        println!(
+            "  {:<28} {:<12} weight {:.2} hit {:.1}% n={} ({} correct, {} partial, {} wrong)",
+            row.source_domain,
+            row.topic,
+            row.weight,
+            row.hit_rate_pct,
+            row.n_predictions_implied,
+            row.n_correct,
+            row.n_partial,
+            row.n_wrong
+        );
+    }
+    Ok(())
+}
+
+pub fn run_news_source_rank(
+    backend: &BackendConnection,
+    topic: Option<&str>,
+    window_days: i64,
+    limit: usize,
+    json_output: bool,
+) -> Result<()> {
+    let normalized_topic = topic
+        .map(|value| news_source_accuracy::normalize_topic(Some(value)))
+        .transpose()?;
+    let rows = news_source_accuracy::rank_sources_backend(
+        backend,
+        normalized_topic.as_deref(),
+        Some(window_days),
+        Some(limit),
+    )?;
+    if json_output {
+        let output = json!({
+            "topic": normalized_topic,
+            "window_days": window_days,
+            "limit": limit,
+            "count": rows.len(),
+            "sources": rows,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
+    if rows.is_empty() {
+        println!("No news-source accuracy rows found for this ranking.");
+        return Ok(());
+    }
+
+    let topic_label = normalized_topic.as_deref().unwrap_or("all");
+    println!("News-source ranking (topic={topic_label}, trailing {window_days}d):");
+    for (idx, row) in rows.iter().enumerate() {
+        println!(
+            "  #{:<2} {:<28} weight {:.2} hit {:.1}% n={} [{}]",
+            idx + 1,
+            row.source_domain,
+            row.weight,
+            row.hit_rate_pct,
+            row.n_predictions_implied,
+            row.topic
+        );
+    }
     Ok(())
 }
 
@@ -5616,8 +5719,10 @@ mod tests {
                 symbol: Some("BTC".to_string()),
                 conviction: "high".to_string(),
                 timeframe: Some("low".to_string()),
+                topic: "other".to_string(),
                 confidence: Some(0.7),
                 source_agent: Some("low-agent".to_string()),
+                source_article_id: None,
                 target_date: None,
                 resolution_criteria: None,
                 outcome: "pending".to_string(),
@@ -5633,8 +5738,10 @@ mod tests {
                 symbol: Some("ETH".to_string()),
                 conviction: "medium".to_string(),
                 timeframe: Some("medium".to_string()),
+                topic: "other".to_string(),
                 confidence: Some(0.6),
                 source_agent: Some("medium-agent".to_string()),
+                source_article_id: None,
                 target_date: None,
                 resolution_criteria: None,
                 outcome: "pending".to_string(),
@@ -5650,8 +5757,10 @@ mod tests {
                 symbol: Some("GC=F".to_string()),
                 conviction: "high".to_string(),
                 timeframe: Some("low".to_string()),
+                topic: "other".to_string(),
                 confidence: Some(0.8),
                 source_agent: Some("low-agent".to_string()),
+                source_article_id: None,
                 target_date: None,
                 resolution_criteria: None,
                 outcome: "pending".to_string(),

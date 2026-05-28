@@ -184,6 +184,8 @@ pub fn run(
     date: Option<&str>,
     limit: Option<usize>,
     lesson_coverage: bool,
+    topic: Option<&str>,
+    source_article_id: Option<i64>,
     json_output: bool,
 ) -> Result<()> {
     match action {
@@ -202,7 +204,7 @@ pub fn run(
                 }
             }
             let lessons_applied = parse_lessons_applied_arg(lessons_applied)?;
-            let new_id = user_predictions::add_prediction_backend(
+            let new_id = user_predictions::add_prediction_backend_with_details(
                 backend,
                 claim,
                 symbol,
@@ -213,6 +215,8 @@ pub fn run(
                 target_date,
                 resolution_criteria,
                 &lessons_applied,
+                topic,
+                source_article_id,
             )?;
 
             if json_output {
@@ -2151,8 +2155,10 @@ mod tests {
             symbol: Some("BTC-USD".to_string()),
             conviction: "high".to_string(),
             timeframe: Some("high".to_string()),
+            topic: "other".to_string(),
             confidence: Some(0.8),
             source_agent: Some("high-agent".to_string()),
+            source_article_id: None,
             target_date: Some("2026-08-01".to_string()),
             resolution_criteria: Some("Close above 100k".to_string()),
             outcome: "wrong".to_string(),
@@ -2190,8 +2196,10 @@ mod tests {
             symbol: None,
             conviction: "medium".to_string(),
             timeframe: None,
+            topic: "other".to_string(),
             confidence: None,
             source_agent: None,
+            source_article_id: None,
             target_date: None,
             resolution_criteria: None,
             outcome: "wrong".to_string(),
