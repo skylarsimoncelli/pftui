@@ -195,7 +195,7 @@ Before exiting, for EACH held asset (currently BTC, GC=F, SI=F, and any other sy
 
 ```bash
 pftui analytics views set \
-  --analyst analyst-high \
+  --analyst high \
   --asset <symbol> \
   --direction <bull|bear|neutral> \
   --conviction <-5..+5> \
