@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: calibrate LOW predictions by sample size
+
+- What: `pftui journal prediction add` now enforces a soft 5-per-hour cap for LOW analyst predictions unless `--override-cap` is used, and `pftui analytics calibration --by-layer --json` returns strict per-layer hit rates with sample counts, 1σ standard error, low-sample flags, and conviction-bin breakdowns.
+- Why: LOW predictions were dominating aggregate calibration while sparse HIGH/MACRO samples looked more certain than they were; daily reports now show per-layer accountability with uncertainty instead of aggregate-only accuracy claims.
+
 ### 2026-05-28 — feat: track news silence baselines
 
 - What: `pftui analytics news-silence --json` now records rolling weekday baselines for tier-1/2 topic volume, flags silent/saturated topics against p30/p80 thresholds, and emits synthesis messages when a topic changes news-volume regime.

@@ -34,6 +34,9 @@ struct CalibrationReport {
     summary: CalibrationSummary,
     /// Realised hit rate vs predicted confidence for recent user predictions
     prediction_accuracy: PredictionAccuracyReport,
+    /// Strict per-layer calibration with sample size and uncertainty
+    #[serde(skip_serializing_if = "Option::is_none")]
+    by_layer: Option<PredictionLayerCalibrationReport>,
 }
 
 #[derive(Debug, Serialize)]
@@ -85,12 +88,52 @@ struct PredictionAccuracyRow {
     band: String,
     predicted_conf_mean: f64,
     realised_hit_rate: f64,
+    strict_hit_rate: f64,
+    strict_hit_rate_pct: f64,
     n: usize,
+    sigma: f64,
+    sigma_pp: f64,
+    low_sample: bool,
     correct: usize,
     partial: usize,
     wrong: usize,
     /// realised_hit_rate - predicted_conf_mean, in percentage points
     miscalibration_pp: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PredictionLayerCalibrationReport {
+    window_days: i64,
+    rows: Vec<PredictionLayerCalibrationRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PredictionLayerCalibrationRow {
+    layer: String,
+    strict_hit_rate: f64,
+    strict_hit_rate_pct: f64,
+    n: usize,
+    sigma: f64,
+    sigma_pp: f64,
+    low_sample: bool,
+    correct: usize,
+    partial: usize,
+    wrong: usize,
+    bin_breakdown: Vec<PredictionLayerCalibrationBin>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PredictionLayerCalibrationBin {
+    band: String,
+    strict_hit_rate: f64,
+    strict_hit_rate_pct: f64,
+    n: usize,
+    sigma: f64,
+    sigma_pp: f64,
+    low_sample: bool,
+    correct: usize,
+    partial: usize,
+    wrong: usize,
 }
 
 // ── Core logic ─────────────────────────────────────────────────────
@@ -99,10 +142,19 @@ pub fn run(
     backend: &BackendConnection,
     threshold: f64,
     window_days: i64,
+    by_layer: bool,
     json_output: bool,
 ) -> Result<()> {
     let mappings = scenario_contract_mappings::list_enriched_backend(backend)?;
     let prediction_accuracy = build_prediction_accuracy_report(backend, window_days)?;
+    let by_layer = if by_layer {
+        Some(build_prediction_layer_calibration_report(
+            backend,
+            window_days,
+        )?)
+    } else {
+        None
+    };
 
     if mappings.is_empty() {
         if json_output {
@@ -121,6 +173,7 @@ pub fn run(
                         aligned: 0,
                     },
                     prediction_accuracy,
+                    by_layer,
                 })?
             );
         } else {
@@ -132,6 +185,10 @@ pub fn run(
             println!("See: pftui data predictions map --help");
             println!();
             print_prediction_accuracy(&prediction_accuracy);
+            if let Some(report) = &by_layer {
+                println!();
+                print_layer_calibration(report);
+            }
         }
         return Ok(());
     }
@@ -217,6 +274,7 @@ pub fn run(
         entries,
         summary,
         prediction_accuracy,
+        by_layer,
     };
 
     if json_output {
@@ -302,6 +360,10 @@ fn print_text(report: &CalibrationReport) {
     println!();
     println!("Lower divergence = better calibrated. Target: mean <10pp.");
     println!();
+    if let Some(layer_report) = &report.by_layer {
+        print_layer_calibration(layer_report);
+        println!();
+    }
     print_prediction_accuracy(&report.prediction_accuracy);
 }
 
@@ -311,6 +373,17 @@ fn build_prediction_accuracy_report(
 ) -> Result<PredictionAccuracyReport> {
     let predictions = user_predictions::list_predictions_backend(backend, None, None, None, None)?;
     Ok(build_prediction_accuracy_from_predictions(
+        &predictions,
+        window_days,
+    ))
+}
+
+fn build_prediction_layer_calibration_report(
+    backend: &BackendConnection,
+    window_days: i64,
+) -> Result<PredictionLayerCalibrationReport> {
+    let predictions = user_predictions::list_predictions_backend(backend, None, None, None, None)?;
+    Ok(build_prediction_layer_calibration_from_predictions(
         &predictions,
         window_days,
     ))
@@ -360,12 +433,19 @@ fn build_prediction_accuracy_from_predictions(
             let partial = bucket.iter().filter(|p| p.outcome == "partial").count();
             let wrong = bucket.iter().filter(|p| p.outcome == "wrong").count();
             let realised_hit_rate = (correct as f64 + 0.5 * partial as f64) / n as f64;
+            let strict_hit_rate = strict_hit_rate(correct, n);
+            let sigma = standard_error(strict_hit_rate, n);
             PredictionAccuracyRow {
                 layer,
                 band,
                 predicted_conf_mean: round4(predicted_conf_mean),
                 realised_hit_rate: round4(realised_hit_rate),
+                strict_hit_rate: round4(strict_hit_rate),
+                strict_hit_rate_pct: round2(strict_hit_rate * 100.0),
                 n,
+                sigma: round4(sigma),
+                sigma_pp: round2(sigma * 100.0),
+                low_sample: is_low_sample(n),
                 correct,
                 partial,
                 wrong,
@@ -385,6 +465,97 @@ fn build_prediction_accuracy_from_predictions(
         total_scored,
         scored_with_confidence,
         rows,
+    }
+}
+
+fn build_prediction_layer_calibration_from_predictions(
+    predictions: &[UserPrediction],
+    window_days: i64,
+) -> PredictionLayerCalibrationReport {
+    let cutoff = (Utc::now().date_naive() - Duration::days(window_days))
+        .format("%Y-%m-%d")
+        .to_string();
+    let mut buckets: BTreeMap<String, Vec<&UserPrediction>> = BTreeMap::new();
+
+    for prediction in predictions {
+        if !is_scored_outcome(&prediction.outcome) || !is_in_window(prediction, &cutoff) {
+            continue;
+        }
+        let Some(layer) = prediction_layer(prediction) else {
+            continue;
+        };
+        buckets.entry(layer).or_default().push(prediction);
+    }
+
+    let mut rows: Vec<PredictionLayerCalibrationRow> = buckets
+        .into_iter()
+        .map(|(layer, bucket)| build_layer_calibration_row(layer, &bucket))
+        .collect();
+    rows.sort_by_key(|row| layer_order(&row.layer));
+
+    PredictionLayerCalibrationReport { window_days, rows }
+}
+
+fn build_layer_calibration_row(
+    layer: String,
+    bucket: &[&UserPrediction],
+) -> PredictionLayerCalibrationRow {
+    let n = bucket.len();
+    let correct = bucket.iter().filter(|p| p.outcome == "correct").count();
+    let partial = bucket.iter().filter(|p| p.outcome == "partial").count();
+    let wrong = bucket.iter().filter(|p| p.outcome == "wrong").count();
+    let strict_hit_rate = strict_hit_rate(correct, n);
+    let sigma = standard_error(strict_hit_rate, n);
+
+    let mut bin_buckets: BTreeMap<String, Vec<&UserPrediction>> = BTreeMap::new();
+    for prediction in bucket {
+        if let Some(band) = prediction_band(&prediction.conviction) {
+            bin_buckets.entry(band).or_default().push(*prediction);
+        }
+    }
+    let mut bin_breakdown: Vec<PredictionLayerCalibrationBin> = bin_buckets
+        .into_iter()
+        .map(|(band, bucket)| build_layer_calibration_bin(band, &bucket))
+        .collect();
+    bin_breakdown.sort_by_key(|bin| band_order(&bin.band));
+
+    PredictionLayerCalibrationRow {
+        layer,
+        strict_hit_rate: round4(strict_hit_rate),
+        strict_hit_rate_pct: round2(strict_hit_rate * 100.0),
+        n,
+        sigma: round4(sigma),
+        sigma_pp: round2(sigma * 100.0),
+        low_sample: is_low_sample(n),
+        correct,
+        partial,
+        wrong,
+        bin_breakdown,
+    }
+}
+
+fn build_layer_calibration_bin(
+    band: String,
+    bucket: &[&UserPrediction],
+) -> PredictionLayerCalibrationBin {
+    let n = bucket.len();
+    let correct = bucket.iter().filter(|p| p.outcome == "correct").count();
+    let partial = bucket.iter().filter(|p| p.outcome == "partial").count();
+    let wrong = bucket.iter().filter(|p| p.outcome == "wrong").count();
+    let strict_hit_rate = strict_hit_rate(correct, n);
+    let sigma = standard_error(strict_hit_rate, n);
+
+    PredictionLayerCalibrationBin {
+        band,
+        strict_hit_rate: round4(strict_hit_rate),
+        strict_hit_rate_pct: round2(strict_hit_rate * 100.0),
+        n,
+        sigma: round4(sigma),
+        sigma_pp: round2(sigma * 100.0),
+        low_sample: is_low_sample(n),
+        correct,
+        partial,
+        wrong,
     }
 }
 
@@ -409,16 +580,63 @@ fn print_prediction_accuracy(report: &PredictionAccuracyReport) {
             "calibrated"
         };
         println!(
-            "  {:<6} {:<6} predicted {:.0}%  realised {:.0}%  n={:<2}  {} ({:+.0}pp)",
+            "  {:<6} {:<6} strict {:.1}% ({} scored, σ ±{:.1}pp)  predicted {:.0}%  weighted {:.0}%  {} ({:+.0}pp)",
             row.layer.to_uppercase(),
             row.band.to_uppercase(),
+            row.strict_hit_rate_pct,
+            row.n,
+            row.sigma_pp,
             row.predicted_conf_mean * 100.0,
             row.realised_hit_rate * 100.0,
-            row.n,
             direction,
             row.miscalibration_pp
         );
     }
+}
+
+fn print_layer_calibration(report: &PredictionLayerCalibrationReport) {
+    println!("Per-Layer Strict Calibration");
+    println!("────────────────────────────────────────────────────────────────");
+    if report.rows.is_empty() {
+        println!(
+            "No scored predictions by layer in trailing {}d.",
+            report.window_days
+        );
+        return;
+    }
+
+    for row in &report.rows {
+        println!("  {}", format_layer_calibration_cell(row));
+        if !row.bin_breakdown.is_empty() {
+            let bins = row
+                .bin_breakdown
+                .iter()
+                .map(format_layer_calibration_bin)
+                .collect::<Vec<_>>()
+                .join("  ");
+            println!("    bins: {}", bins);
+        }
+    }
+}
+
+fn format_layer_calibration_cell(row: &PredictionLayerCalibrationRow) -> String {
+    let low_sample = if row.low_sample { " [low sample]" } else { "" };
+    format!(
+        "{}: {:.1}% strict ({} scored, σ ±{:.1}pp){}",
+        row.layer.to_uppercase(),
+        row.strict_hit_rate_pct,
+        row.n,
+        row.sigma_pp,
+        low_sample
+    )
+}
+
+fn format_layer_calibration_bin(bin: &PredictionLayerCalibrationBin) -> String {
+    let low_sample = if bin.low_sample { " [low sample]" } else { "" };
+    format!(
+        "{} {:.1}% (n={}, σ ±{:.1}pp){}",
+        bin.band, bin.strict_hit_rate_pct, bin.n, bin.sigma_pp, low_sample
+    )
 }
 
 fn is_scored_outcome(outcome: &str) -> bool {
@@ -486,6 +704,26 @@ fn band_order(band: &str) -> u8 {
         "high" => 2,
         _ => 3,
     }
+}
+
+fn strict_hit_rate(correct: usize, n: usize) -> f64 {
+    if n == 0 {
+        0.0
+    } else {
+        correct as f64 / n as f64
+    }
+}
+
+fn standard_error(p: f64, n: usize) -> f64 {
+    if n == 0 {
+        0.0
+    } else {
+        (p * (1.0 - p) / n as f64).sqrt()
+    }
+}
+
+fn is_low_sample(n: usize) -> bool {
+    n < 10
 }
 
 fn format_signed(v: f64) -> String {
@@ -592,7 +830,7 @@ mod tests {
     fn calibration_empty_mappings() {
         let backend = setup_test_db();
         // Should not panic with empty data
-        let result = run(&backend, 15.0, 90, false);
+        let result = run(&backend, 15.0, 90, false, false);
         assert!(result.is_ok());
     }
 
@@ -611,7 +849,7 @@ mod tests {
         scenario_contract_mappings::add_mapping(backend.sqlite(), sid, "contract-abc").unwrap();
 
         // Run calibration
-        let result = run(&backend, 15.0, 90, false);
+        let result = run(&backend, 15.0, 90, false, false);
         assert!(result.is_ok());
     }
 
@@ -628,7 +866,7 @@ mod tests {
         );
         scenario_contract_mappings::add_mapping(backend.sqlite(), sid, "contract-fed").unwrap();
 
-        let result = run(&backend, 15.0, 90, true);
+        let result = run(&backend, 15.0, 90, false, true);
         assert!(result.is_ok());
     }
 
@@ -729,6 +967,13 @@ mod tests {
     }
 
     #[test]
+    fn calibration_standard_error_uses_binomial_formula() {
+        let sigma = standard_error(0.445, 137);
+        assert!((sigma - 0.04245).abs() < 0.0001);
+        assert_eq!(round2(sigma * 100.0), 4.25);
+    }
+
+    #[test]
     fn test_format_signed() {
         assert_eq!(format_signed(16.0), "+16.0");
         assert_eq!(format_signed(-5.3), "-5.3");
@@ -787,6 +1032,72 @@ mod tests {
         assert_eq!(low_high.wrong, 1);
         assert_eq!(low_high.predicted_conf_mean, 0.7);
         assert_eq!(low_high.realised_hit_rate, 0.5);
+        assert_eq!(low_high.strict_hit_rate, 0.5);
+        assert_eq!(low_high.strict_hit_rate_pct, 50.0);
+        assert_eq!(low_high.sigma_pp, 35.36);
+        assert!(low_high.low_sample);
         assert_eq!(low_high.miscalibration_pp, -20.0);
+    }
+
+    #[test]
+    fn calibration_by_layer_returns_strict_rates_sample_size_and_bins() {
+        let today = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let rows = vec![
+            prediction("low", "high", Some(0.8), "correct", &today),
+            prediction("low", "high", Some(0.7), "correct", &today),
+            prediction("low", "high", Some(0.6), "wrong", &today),
+            prediction("low", "medium", Some(0.5), "partial", &today),
+            prediction("low", "medium", Some(0.5), "wrong", &today),
+            prediction("low", "low", Some(0.4), "correct", &today),
+            prediction("low", "low", Some(0.4), "wrong", &today),
+            prediction("low", "low", Some(0.4), "wrong", &today),
+            prediction("low", "low", Some(0.4), "partial", &today),
+            prediction("low", "low", Some(0.4), "correct", &today),
+            prediction("high", "high", Some(0.7), "correct", &today),
+        ];
+
+        let report = build_prediction_layer_calibration_from_predictions(&rows, 90);
+        let low = report.rows.iter().find(|row| row.layer == "low").unwrap();
+        assert_eq!(low.n, 10);
+        assert_eq!(low.correct, 4);
+        assert_eq!(low.partial, 2);
+        assert_eq!(low.wrong, 4);
+        assert_eq!(low.strict_hit_rate, 0.4);
+        assert_eq!(low.strict_hit_rate_pct, 40.0);
+        assert_eq!(low.sigma_pp, 15.49);
+        assert!(!low.low_sample);
+        assert_eq!(low.bin_breakdown.len(), 3);
+
+        let high_bin = low
+            .bin_breakdown
+            .iter()
+            .find(|bin| bin.band == "high")
+            .unwrap();
+        assert_eq!(high_bin.n, 3);
+        assert_eq!(high_bin.correct, 2);
+        assert_eq!(high_bin.strict_hit_rate_pct, 66.67);
+        assert!(high_bin.low_sample);
+    }
+
+    #[test]
+    fn layer_calibration_cell_flags_low_sample_with_adjacent_n_and_sigma() {
+        let today = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let rows = vec![
+            prediction("low", "high", Some(0.8), "correct", &today),
+            prediction("low", "high", Some(0.8), "correct", &today),
+            prediction("low", "high", Some(0.8), "correct", &today),
+            prediction("low", "medium", Some(0.5), "correct", &today),
+            prediction("low", "medium", Some(0.5), "wrong", &today),
+            prediction("low", "medium", Some(0.5), "wrong", &today),
+            prediction("low", "low", Some(0.4), "wrong", &today),
+            prediction("low", "low", Some(0.4), "wrong", &today),
+            prediction("low", "low", Some(0.4), "partial", &today),
+        ];
+
+        let report = build_prediction_layer_calibration_from_predictions(&rows, 90);
+        let low = report.rows.iter().find(|row| row.layer == "low").unwrap();
+        let cell = format_layer_calibration_cell(low);
+
+        assert_eq!(cell, "LOW: 44.4% strict (9 scored, σ ±16.6pp) [low sample]");
     }
 }

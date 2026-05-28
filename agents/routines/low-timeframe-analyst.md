@@ -212,7 +212,7 @@ You may override the conviction→bias mapping when your reasoning warrants it (
 
 ## Pre-Market Run
 
-9. Make 3-5 LOW predictions for today. Cause-and-effect, not price targets. Read your notes and scenario context to inform predictions:
+9. Make 3-5 LOW predictions for today. Write no more than 5 predictions per run. Prefer fewer high-quality calls with explicit mechanism over more low-conviction calls. Cause-and-effect, not price targets. Read your notes and scenario context to inform predictions:
 ```bash
 pftui journal notes list --limit 5 --json
 pftui journal scenario list --json
@@ -235,6 +235,7 @@ Example prediction format:
 ```bash
 pftui journal prediction add "[cause] will [effect] today" --symbol [SYM] --target-date $(date +%Y-%m-%d) --conviction [level] --timeframe low --confidence [0.X] --source-agent low-agent --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]"
 ```
+If a sixth LOW prediction is genuinely necessary because a new high-mechanism setup appeared, pass `--override-cap` and explain the mechanism in the claim or notes.
 
 ## Midday Run
 

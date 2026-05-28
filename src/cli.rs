@@ -1056,7 +1056,7 @@ pub enum DataPredictionsCommand {
     },
     /// Add a personal prediction (convenience alias for `journal prediction add`)
     #[command(
-        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`.\n\nTimeframe accepts: low, medium, high, macro (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\nUse either `--source-agent` or the shorter alias `--agent`.\nUse `--lessons` to record which structured lesson IDs informed the call.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD --lessons 218,240\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high --agent medium-agent\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
+        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`.\n\nTimeframe accepts: low, medium, high, macro (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\nUse either `--source-agent` or the shorter alias `--agent`.\nUse `--lessons` to record which structured lesson IDs informed the call.\nLOW analyst calls are capped at 5/hour unless `--override-cap` is passed.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD --lessons 218,240\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high --agent medium-agent\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
     )]
     Add {
         /// The prediction claim text
@@ -1102,6 +1102,10 @@ pub enum DataPredictionsCommand {
         /// Comma-separated structured lesson IDs that informed this prediction
         #[arg(long)]
         lessons: Option<String>,
+
+        /// Allow LOW analyst predictions beyond the soft 5-per-hour cap
+        #[arg(long = "override-cap")]
+        override_cap: bool,
 
         /// Output as JSON
         #[arg(long)]
@@ -1985,6 +1989,7 @@ pub enum JournalEntryCommand {
 #[derive(Subcommand)]
 pub enum JournalPredictionCommand {
     /// Add a prediction. Timeframe accepts: low, medium, high, macro (aliases: short=low, long=high).
+    /// LOW analyst calls are capped at 5/hour unless --override-cap is passed.
     /// Prefer --claim flag for the prediction text; positional form kept for backwards compatibility.
     ///
     /// Examples:
@@ -2025,6 +2030,9 @@ pub enum JournalPredictionCommand {
         /// Comma-separated structured lesson IDs that informed this prediction
         #[arg(long)]
         lessons: Option<String>,
+        /// Allow LOW analyst predictions beyond the soft 5-per-hour cap
+        #[arg(long = "override-cap")]
+        override_cap: bool,
         #[arg(long)]
         json: bool,
     },
@@ -3888,7 +3896,7 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// Compare pftui scenario probabilities vs prediction market consensus. Flag divergences.
-    #[command(after_help = "Compares pftui scenario probabilities against prediction market\nconsensus (Polymarket contracts). Flags divergences above the threshold\n(default: 15pp).\n\nRequires scenario↔contract mappings created via:\n  pftui data predictions map --scenario \"<name>\" --search \"<query>\"\n\nExample:\n  pftui analytics calibration --json\n  pftui analytics calibration --threshold 10 --json\n\nSee also: data predictions map, analytics scenario list")]
+    #[command(after_help = "Compares pftui scenario probabilities against prediction market\nconsensus (Polymarket contracts). Flags divergences above the threshold\n(default: 15pp).\n\nRequires scenario↔contract mappings created via:\n  pftui data predictions map --scenario \"<name>\" --search \"<query>\"\n\nExample:\n  pftui analytics calibration --json\n  pftui analytics calibration --by-layer --json\n  pftui analytics calibration --threshold 10 --json\n\nSee also: data predictions map, analytics scenario list")]
     Calibration {
         /// Divergence threshold in percentage points (default: 15)
         #[arg(long, default_value = "15")]
@@ -3896,6 +3904,9 @@ pub enum AnalyticsCommand {
         /// Trailing window for realised prediction accuracy calibration
         #[arg(long, default_value = "90")]
         window_days: i64,
+        /// Include strict per-layer calibration with sample size and 1σ uncertainty
+        #[arg(long = "by-layer")]
+        by_layer: bool,
         #[arg(long)]
         json: bool,
     },
@@ -5474,6 +5485,7 @@ mod tests {
                 AnalyticsCommand::Calibration {
                     threshold,
                     window_days,
+                    by_layer,
                     json,
                 },
         }) = cli.command
@@ -5482,6 +5494,7 @@ mod tests {
         };
         assert!((threshold - 15.0).abs() < f64::EPSILON);
         assert_eq!(window_days, 90);
+        assert!(!by_layer);
         assert!(json);
     }
 
@@ -5504,6 +5517,7 @@ mod tests {
                 AnalyticsCommand::Calibration {
                     threshold,
                     window_days,
+                    by_layer,
                     json,
                 },
         }) = cli.command
@@ -5512,6 +5526,36 @@ mod tests {
         };
         assert!((threshold - 10.0).abs() < f64::EPSILON);
         assert_eq!(window_days, 30);
+        assert!(!by_layer);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_calibration_by_layer() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "calibration",
+            "--by-layer",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Calibration {
+                    threshold,
+                    window_days,
+                    by_layer,
+                    json,
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics calibration command");
+        };
+        assert!((threshold - 15.0).abs() < f64::EPSILON);
+        assert_eq!(window_days, 90);
+        assert!(by_layer);
         assert!(json);
     }
 
@@ -7890,6 +7934,44 @@ mod tests {
         assert_eq!(topic.as_deref(), Some("fed"));
         assert_eq!(source_article_id, Some(12));
         assert!(json);
+    }
+
+    #[test]
+    fn parse_prediction_add_override_cap() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "add",
+            "--claim",
+            "LOW mechanism still matters after cap",
+            "--timeframe",
+            "low",
+            "--source-agent",
+            "low-agent",
+            "--override-cap",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command:
+                        JournalPredictionCommand::Add {
+                            override_cap,
+                            source_agent,
+                            timeframe,
+                            ..
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction add command");
+        };
+
+        assert!(override_cap);
+        assert_eq!(source_agent.as_deref(), Some("low-agent"));
+        assert_eq!(timeframe.as_deref(), Some("low"));
     }
 
     #[test]

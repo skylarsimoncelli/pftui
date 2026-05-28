@@ -45,6 +45,7 @@ pftui analytics macro regime current --json
 pftui journal notes list --limit 50 --json
 pftui journal prediction list --limit 30 --json
 pftui journal prediction stats --json
+pftui analytics calibration --by-layer --json
 pftui journal conviction list --json
 pftui journal scenario list --json
 ```
@@ -216,11 +217,14 @@ pftui analytics news-sources rank --topic geopolitics --json
 ```
 
 ### Prediction Accountability
-[Recent prediction hit rate across timeframes. What we got right and what reasoning
-worked. What we got wrong and what we missed. This is genuine self-reflection, not
-a scorecard. Explain what the system LEARNED from its mistakes. Example: "We predicted
-gold would hold $5K. It didn't. The error was underweighting DXY momentum. We've
-since recalibrated our dollar sensitivity model."
+[Recent prediction hit rate by layer from `pftui analytics calibration --by-layer --json`.
+Do not publish only an aggregate hit rate. Render per-layer cells with sample size and
+uncertainty adjacent to the rate, e.g. `LOW: 44.5% strict (137 scored, σ ±4.2pp)`.
+If `low_sample` is true or `n < 10`, append `[low sample]` and do not claim that layer
+is accurate or best. Then explain what we got right, what reasoning worked, what we
+got wrong, and what the system learned. This is genuine self-reflection, not a scorecard.
+Example: "We predicted gold would hold $5K. It didn't. The error was underweighting
+DXY momentum. We've since recalibrated our dollar sensitivity model."
 
 Include a "lessons applied this run" paragraph from:
 ```bash
@@ -315,8 +319,10 @@ everything. No manual web scraping for core data.
 - The system learns from its mistakes. Past prediction accuracy informs future confidence.
 
 **Accountability:** Every prediction is logged, scored, and reviewed. The system's
-hit rate is published in every report. Wrong calls are analysed for what was missed,
-and the lessons are fed back into the analytical framework.
+per-layer strict hit rate is published in every report with scored sample size and
+1σ uncertainty; layers with fewer than 10 scored predictions are marked `[low sample]`.
+Wrong calls are analysed for what was missed, and the lessons are fed back into the
+analytical framework.
 
 Learn more and explore the codebase: [pftui.com](https://pftui.com)
 

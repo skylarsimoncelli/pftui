@@ -76,8 +76,10 @@ Score predictions, add lessons for wrong calls:
 ```bash
 pftui journal prediction scorecard --date today --json
 pftui journal prediction lessons --json
+pftui analytics calibration --by-layer --json
 # Add lessons for any wrong predictions missing them
 ```
+Use the calibration output only in the footer or FEEDBACK.csv, not the market-intelligence body. Any displayed calibration rate must include the adjacent scored sample size and 1σ uncertainty, for example `LOW: 44.5% strict (137 scored, σ ±4.2pp)`, and cells with `n < 10` must be marked `[low sample]` with no accuracy claim.
 
 Update scenarios and convictions based on today's evidence:
 ```bash

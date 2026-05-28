@@ -11,6 +11,8 @@ use crate::db::price_cache::get_cached_price_backend;
 use crate::db::price_history::get_price_at_date_backend;
 use crate::db::user_predictions;
 
+const LOW_PREDICTION_CAP_PER_HOUR: usize = 5;
+
 #[derive(Debug, Clone, Serialize)]
 struct ScorecardLessonCoverageRow {
     id: i64,
@@ -119,6 +121,35 @@ fn parse_date_filter(value: Option<&str>) -> Result<Option<NaiveDate>> {
     Ok(Some(parsed))
 }
 
+fn should_apply_low_prediction_cap(timeframe: Option<&str>, source_agent: Option<&str>) -> bool {
+    matches!(timeframe, Some("low"))
+        && source_agent
+            .map(user_predictions::is_low_analyst_agent)
+            .unwrap_or(false)
+}
+
+fn enforce_low_prediction_cap(
+    backend: &BackendConnection,
+    timeframe: Option<&str>,
+    source_agent: Option<&str>,
+    override_cap: bool,
+) -> Result<()> {
+    if override_cap || !should_apply_low_prediction_cap(timeframe, source_agent) {
+        return Ok(());
+    }
+
+    let recent = user_predictions::count_recent_low_analyst_predictions_backend(backend)?;
+    if recent >= LOW_PREDICTION_CAP_PER_HOUR {
+        bail!(
+            "LOW prediction cap reached: low analyst has already written {} predictions in the last hour (cap {}). Use --override-cap only for an exceptional high-mechanism call.",
+            recent,
+            LOW_PREDICTION_CAP_PER_HOUR
+        );
+    }
+
+    Ok(())
+}
+
 fn extract_date(raw: &str) -> Option<NaiveDate> {
     timestamp_date_in_timezone(raw, local_fixed_offset())
 }
@@ -186,6 +217,7 @@ pub fn run(
     lesson_coverage: bool,
     topic: Option<&str>,
     source_article_id: Option<i64>,
+    override_cap: bool,
     json_output: bool,
 ) -> Result<()> {
     match action {
@@ -203,6 +235,12 @@ pub fn run(
                     bail!("invalid confidence '{}'. Valid range: 0.0..=1.0", conf);
                 }
             }
+            enforce_low_prediction_cap(
+                backend,
+                resolved_timeframe.as_deref(),
+                source_agent,
+                override_cap,
+            )?;
             let lessons_applied = parse_lessons_applied_arg(lessons_applied)?;
             let new_id = user_predictions::add_prediction_backend_with_details(
                 backend,
@@ -1734,6 +1772,83 @@ mod tests {
     #[test]
     fn resolve_alias_canonical_high_passthrough() {
         assert_eq!(resolve_timeframe_alias("high"), "high");
+    }
+
+    #[test]
+    fn low_prediction_cap_blocks_sixth_low_agent_prediction() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+
+        for i in 0..LOW_PREDICTION_CAP_PER_HOUR {
+            user_predictions::add_prediction_backend(
+                &backend,
+                &format!("LOW setup prediction {}", i + 1),
+                None,
+                Some("medium"),
+                Some("low"),
+                Some(0.55),
+                Some("low-agent"),
+                None,
+                None,
+                &[],
+            )
+            .unwrap();
+        }
+
+        let blocked = run(
+            &backend,
+            "add",
+            Some("sixth low prediction"),
+            None,
+            None,
+            Some("medium"),
+            Some("low"),
+            Some(0.6),
+            Some("low-agent"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            false,
+            false,
+        );
+        let err = blocked.unwrap_err();
+        assert!(format!("{err:#}").contains("LOW prediction cap reached"));
+
+        let override_result = run(
+            &backend,
+            "add",
+            Some("override low prediction"),
+            None,
+            None,
+            Some("medium"),
+            Some("low"),
+            Some(0.6),
+            Some("low-agent"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            true,
+            false,
+        );
+        assert!(override_result.is_ok());
     }
 
     #[test]
