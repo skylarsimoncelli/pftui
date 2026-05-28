@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: track news silence baselines
+
+- What: `pftui analytics news-silence --json` now records rolling weekday baselines for tier-1/2 topic volume, flags silent/saturated topics against p30/p80 thresholds, and emits synthesis messages when a topic changes news-volume regime.
+- Why: daily reports need a structured negative-space signal so quiet topics and saturation are treated as analytical evidence rather than informal narrative color.
+
 ### 2026-05-28 — feat: score narrative-vs-money divergence
 
 - What: active scenarios now get a `narrative_money_history` row and `pftui analytics narrative-divergence --json` score comparing tier/independence-weighted topic news pressure against mapped prediction-market movement. Brief scenario payloads include `narrative_vs_money`, and threshold crossings emit synthesis messages.

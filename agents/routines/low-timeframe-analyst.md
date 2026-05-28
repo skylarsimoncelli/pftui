@@ -92,8 +92,9 @@ pftui data etf-flows --json               # BTC ETF inflows/outflows by fund
 pftui data calendar --json                # upcoming economic events today
 pftui analytics alerts check --json       # any newly triggered alerts (RSI/SMA/MACD evaluated)
 pftui analytics scenario list --json      # active scenarios for news filtering
+pftui analytics news-silence --json       # topic volume versus weekday baseline
 ```
-News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
+News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. Use `analytics news-silence` to catch intraday quiet/saturation regimes before assuming no-news means no-signal. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 Only use web_search for what pftui cannot provide:
 - Breaking geopolitical news not yet in RSS feeds
@@ -125,6 +126,7 @@ For each major news event or price move today, ask three questions:
 - **Where did the money flow?** Not what the headline says — where did capital actually move? Check ETF flows, bond yields, gold/oil direction. Do the flows match the narrative or contradict it?
 - **Who benefits?** Classify the event by which industrial complex gains: Financial (FIC — BlackRock, banks, SWFs, asset managers), Military (MIC — defense contractors, military budgets), or Technical (TIC — tech platforms, AI, surveillance, programmable money).
 - **Narrative vs money divergence?** If media says "crisis" but VIX is dropping and defense stocks are flat, that divergence IS the intelligence. Flag it explicitly.
+- **News volume vs baseline?** If `analytics news-silence` says the relevant topic is silent or saturated, treat that as evidence about attention, crowding, or fading concern.
 
 **8. Power Composite Signals Dashboard:**
 

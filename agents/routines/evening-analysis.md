@@ -46,6 +46,7 @@ pftui analytics alignment --json
 pftui analytics macro regime current --json
 pftui analytics scenario list --json
 pftui analytics narrative-divergence --json
+pftui analytics news-silence --json
 pftui analytics situation --json
 pftui analytics catalysts --json --window week
 pftui agent message list --to evening-analyst --unacked
@@ -55,7 +56,7 @@ pftui analytics views portfolio-matrix --json
 pftui journal conviction list --json
 pftui journal prediction list --limit 15 --json
 ```
-News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
+News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. Use `analytics news-silence` to identify whether a topic's quietness or saturation was itself the signal. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 Read today's public report as your base:
 ```bash
@@ -113,6 +114,7 @@ The 3-5 most important things that happened today. Same as the public report but
 - What happened
 - Why it matters structurally (not just the headline)
 - What capital flows say vs what the narrative says
+- Whether topic volume was silent/saturated versus baseline, if `analytics news-silence` flagged it
 
 ## Scenarios
 

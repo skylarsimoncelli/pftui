@@ -3911,6 +3911,15 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Compare topic news volume against rolling weekday baselines
+    #[command(name = "news-silence", after_help = "Reports whether tier-1/2 article volume by topic is silent, normal,\nor saturated versus a rolling weekday-matched baseline.\n\nExamples:\n  pftui analytics news-silence --json\n  pftui analytics news-silence --window-days 60\n\nSee also: data news, data news topics, analytics narrative-divergence")]
+    NewsSilence {
+        /// Rolling baseline window in days
+        #[arg(long, default_value = "90")]
+        window_days: i64,
+        #[arg(long)]
+        json: bool,
+    },
     /// Aggregate lessons referenced by recent prediction writes
     Lessons {
         #[command(subcommand)]
@@ -5533,6 +5542,32 @@ mod tests {
         };
         assert_eq!(hours, 48);
         assert!((threshold - 1.5).abs() < f64::EPSILON);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_news_silence_custom() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "news-silence",
+            "--window-days",
+            "60",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::NewsSilence {
+                    window_days,
+                    json,
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics news silence command");
+        };
+        assert_eq!(window_days, 60);
         assert!(json);
     }
 

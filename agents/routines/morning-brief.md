@@ -83,8 +83,9 @@ pftui data consensus list --json          # standing analyst targets for context
 pftui analytics scenario list --json      # scenario probabilities for framing
 pftui analytics calibration --json        # scenario vs prediction market divergences
 pftui analytics narrative-divergence --json # narrative pressure vs prediction-market movement
+pftui analytics news-silence --json       # topic volume versus weekday baseline
 ```
-News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
+News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. Use `analytics news-silence` to flag overnight topics that are silent or saturated versus baseline. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 5. Only use web_search (1-2 searches max) for context behind specific overnight developments that pftui news flagged but didn't explain.
 
@@ -139,6 +140,10 @@ why the divergence exists or what it suggests. If no mappings exist, omit this s
 [If `analytics narrative-divergence` has non-aligned rows: add the top 1-2
 Narrative vs Money labels and explain whether headlines are leading pricing or pricing
 is moving without headline confirmation.]
+
+[If `analytics news-silence` has silent or saturated rows: add the top 1-2 topics,
+show observed count versus weekday median, and explain whether the absence/excess of
+coverage matters for today's watch list.]
 
 ## Cross-Timeframe Alignment
 

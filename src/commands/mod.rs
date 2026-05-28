@@ -57,6 +57,7 @@ pub mod morning_brief;
 pub mod movers;
 pub mod narrative_divergence;
 pub mod news;
+pub mod news_silence;
 pub mod news_sentiment;
 pub mod notes;
 pub mod oil;
