@@ -74,7 +74,7 @@ pftui analytics macro cycles list --json
 pftui analytics power-flow list --days 7 --json
 pftui analytics power-flow balance --json
 ```
-News JSON includes `id`, `source_tier`, and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
+News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 ### Structural Framework
 ```bash
@@ -129,6 +129,7 @@ Apply first principles: follow the money, not the narrative.]
 [3-5 major events from the past 24 hours. For EACH one:]
 - What happened (facts only)
 - Where the money moved (capital flows, not narrative)
+- Bound market check from the article's `bound_markets`, e.g. "Polymarket [contract]: 99.9% YES"; if unavailable, say the topic binding is missing rather than inventing pricing
 - Who benefits (which power complex: financial, military, or technical)
 - What it means structurally (connect to scenarios and macro forces)
 
@@ -356,7 +357,7 @@ Previous reports cited CPI at 7.0% when actual was 2.4%. This kind of error is u
 ### 4c: Cross-check news claims
 For any claim about a specific event (e.g. "Iran rejected ceasefire", "OECD forecast X%"),
 verify it actually happened via `web_search`. Do not cite events you cannot verify.
-When weighing the news bundle, use `source_tier` before narrative salience: tier-1 at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2. Use `source_independence` to separate event confirmation from positioning; `restatement` and `rumor` are not independent confirmation.
+When weighing the news bundle, use each article's `topic` and `bound_markets` before narrative salience: if headline fear and market pricing diverge, say so. Use `source_tier` for source weight: tier-1 at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2. Use `source_independence` to separate event confirmation from positioning; `restatement` and `rumor` are not independent confirmation.
 
 ### 4d: Fix ALL errors in the markdown
 If you find ANY inaccuracy, fix it in the markdown source file NOW. Do not proceed

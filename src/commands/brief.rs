@@ -966,15 +966,24 @@ fn get_regime_json_backend(backend: &BackendConnection) -> Result<serde_json::Va
 fn get_news_summary_json_backend(backend: &BackendConnection) -> Result<Vec<serde_json::Value>> {
     let items =
         crate::db::news_cache::get_latest_news_backend(backend, 10, None, None, None, None)?;
+    let topics = items.iter().map(|n| n.topic.clone()).collect::<Vec<_>>();
+    let bound_by_topic =
+        crate::db::news_topic_markets::bound_markets_by_topic_backend(backend, &topics)
+            .unwrap_or_default();
     Ok(items
         .into_iter()
-        .map(|n| serde_json::json!({
-            "title": n.title, "url": n.url, "source": n.source, "source_type": n.source_type,
-            "source_domain": n.source_domain, "source_tier": n.source_tier,
-            "source_tier_inferred": n.source_tier_inferred,
-            "source_independence": n.source_independence.as_str(),
-            "description": n.description, "extra_snippets": n.extra_snippets, "published_at": n.published_at,
-        }))
+        .map(|n| {
+            let bound_markets = bound_by_topic.get(&n.topic).cloned().unwrap_or_default();
+            serde_json::json!({
+                "title": n.title, "url": n.url, "source": n.source, "source_type": n.source_type,
+                "source_domain": n.source_domain, "source_tier": n.source_tier,
+                "source_tier_inferred": n.source_tier_inferred,
+                "source_independence": n.source_independence.as_str(),
+                "description": n.description, "extra_snippets": n.extra_snippets, "topic": n.topic,
+                "bound_markets": bound_markets,
+                "published_at": n.published_at,
+            })
+        })
         .collect())
 }
 
@@ -1398,9 +1407,13 @@ fn get_regime_json(conn: &Connection) -> Result<serde_json::Value> {
 
 fn get_news_summary_json(conn: &Connection) -> Result<Vec<serde_json::Value>> {
     let items = crate::db::news_cache::get_latest_news(conn, 10, None, None, None, None)?;
+    let topics = items.iter().map(|n| n.topic.clone()).collect::<Vec<_>>();
+    let bound_by_topic =
+        crate::db::news_topic_markets::bound_markets_by_topic(conn, &topics).unwrap_or_default();
     Ok(items
         .into_iter()
         .map(|n| {
+            let bound_markets = bound_by_topic.get(&n.topic).cloned().unwrap_or_default();
             serde_json::json!({
                 "title": n.title,
                 "url": n.url,
@@ -1412,6 +1425,8 @@ fn get_news_summary_json(conn: &Connection) -> Result<Vec<serde_json::Value>> {
                 "source_independence": n.source_independence.as_str(),
                 "description": n.description,
                 "extra_snippets": n.extra_snippets,
+                "topic": n.topic,
+                "bound_markets": bound_markets,
                 "published_at": n.published_at,
             })
         })

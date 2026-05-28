@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: bind news topics to prediction markets
+
+- What: news ingest now classifies articles into durable topics, stores `news_topic_markets` mappings, exposes `pftui data news topics list|set|remove`, and adds `topic` plus `bound_markets` pricing to `pftui data news --json` and brief news payloads.
+- Why: agents need real-money market consensus surfaced beside headline flow so narrative shocks are checked mechanically instead of relying on analyst memory.
+
 ### 2026-05-28 — feat: track news source accuracy
 
 - What: predictions can now store `topic` and `source_article_id`, scoring a source-attributed prediction updates a per-domain/topic `news_source_accuracy` ledger, and `pftui analytics news-sources accuracy|rank --json` exposes source hit rates and trailing-180d weights. Brief JSON and agent routines now surface source-history weighting for daily reports.

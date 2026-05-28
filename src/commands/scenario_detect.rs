@@ -576,6 +576,7 @@ mod tests {
             description: "Markets rally on easing hopes.".to_string(),
             extra_snippets: Vec::new(),
             category: "macro".to_string(),
+            topic: "fed-policy".to_string(),
             published_at: Utc::now().timestamp(),
             fetched_at: Utc::now().to_rfc3339(),
         };

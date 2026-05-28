@@ -672,6 +672,11 @@ pub enum DataNewsCommand {
         #[command(subcommand)]
         command: DataNewsSourcesCommand,
     },
+    /// Manage news-topic to prediction-market bindings
+    Topics {
+        #[command(subcommand)]
+        command: DataNewsTopicsCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -718,6 +723,41 @@ pub enum DataNewsSourcesCommand {
     Remove {
         /// Source domain to remove
         domain: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DataNewsTopicsCommand {
+    /// List topic-to-market bindings used to annotate news JSON
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set or update a topic-to-market binding
+    Set {
+        /// Topic key, e.g. iran-hormuz or fed-policy
+        topic: String,
+        /// Primary prediction-market contract ID
+        #[arg(long = "primary-market-id")]
+        primary_market_id: String,
+        /// Secondary prediction-market contract ID
+        #[arg(long = "secondary-market-id")]
+        secondary_market_id: Option<String>,
+        /// Optional operator note
+        #[arg(long)]
+        notes: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a topic-to-market binding
+    Remove {
+        /// Topic key to remove
+        topic: String,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -8912,6 +8952,103 @@ mod tests {
             panic!("expected news sources remove");
         };
         assert_eq!(domain, "example.com");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_topics_list_json() {
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "news", "topics", "list", "--json"]).unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            command: Some(DataNewsCommand::Topics { command }),
+            ..
+        } = command
+        else {
+            panic!("expected news topics command");
+        };
+        let DataNewsTopicsCommand::List { json } = command else {
+            panic!("expected news topics list");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_topics_set_json() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "news",
+            "topics",
+            "set",
+            "iran-hormuz",
+            "--primary-market-id",
+            "polymarket-iran-ceasefire-2026",
+            "--secondary-market-id",
+            "polymarket-oil-above-100-EOM",
+            "--notes",
+            "Hormuz shock checks",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            command: Some(DataNewsCommand::Topics { command }),
+            ..
+        } = command
+        else {
+            panic!("expected news topics command");
+        };
+        let DataNewsTopicsCommand::Set {
+            topic,
+            primary_market_id,
+            secondary_market_id,
+            notes,
+            json,
+        } = command
+        else {
+            panic!("expected news topics set");
+        };
+        assert_eq!(topic, "iran-hormuz");
+        assert_eq!(primary_market_id, "polymarket-iran-ceasefire-2026");
+        assert_eq!(
+            secondary_market_id.as_deref(),
+            Some("polymarket-oil-above-100-EOM")
+        );
+        assert_eq!(notes.as_deref(), Some("Hormuz shock checks"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_topics_remove_json() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "news",
+            "topics",
+            "remove",
+            "fed-policy",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            command: Some(DataNewsCommand::Topics { command }),
+            ..
+        } = command
+        else {
+            panic!("expected news topics command");
+        };
+        let DataNewsTopicsCommand::Remove { topic, json } = command else {
+            panic!("expected news topics remove");
+        };
+        assert_eq!(topic, "fed-policy");
         assert!(json);
     }
 

@@ -26,6 +26,7 @@ pub struct NewsEntry {
     pub description: String,
     pub extra_snippets: Vec<String>,
     pub category: String,
+    pub topic: String,
     pub published_at: i64,
     pub fetched_at: String,
 }
@@ -430,6 +431,7 @@ fn ensure_source_tier_schema(conn: &Connection) -> Result<()> {
          CREATE INDEX IF NOT EXISTS idx_news_source_tier ON news_cache(source_tier);
          CREATE INDEX IF NOT EXISTS idx_news_source_independence ON news_cache(source_independence);",
     )?;
+    crate::db::news_topic_markets::ensure_news_cache_topic_column(conn)?;
 
     Ok(())
 }
@@ -587,6 +589,8 @@ pub fn ensure_source_tier_tables(conn: &Connection) -> Result<()> {
     seed_source_tiers(conn)?;
     backfill_news_source_tiers(conn)?;
     backfill_news_source_independence(conn)?;
+    crate::db::news_topic_markets::ensure_tables(conn)?;
+    crate::db::news_topic_markets::backfill_news_cache_topics(conn)?;
     Ok(())
 }
 
@@ -772,10 +776,16 @@ pub fn insert_news_with_source_type(
     let classification = classify_news_source(conn, url, source)?;
     let independence =
         classify_news_source_independence(title, source, description, extra_snippets);
+    let topic = crate::db::news_topic_markets::classify_news_topic(
+        title,
+        category,
+        description,
+        extra_snippets,
+    );
     conn.execute(
         "INSERT OR IGNORE INTO news_cache
-         (title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, source_independence, description, extra_snippets, category, published_at, fetched_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now'))",
+         (title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, source_independence, description, extra_snippets, category, topic, published_at, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, datetime('now'))",
         params![
             title,
             url,
@@ -789,6 +799,7 @@ pub fn insert_news_with_source_type(
             description.unwrap_or(""),
             snippets_json,
             category,
+            topic,
             published_at
         ],
     )?;
@@ -876,7 +887,7 @@ pub fn get_latest_news_filtered(
     independence_filter: Option<&[NewsSourceIndependence]>,
 ) -> Result<Vec<NewsEntry>> {
     ensure_source_tier_tables(conn)?;
-    let mut sql = "SELECT id, title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, source_independence, description, extra_snippets, category, published_at, fetched_at
+    let mut sql = "SELECT id, title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, source_independence, description, extra_snippets, category, topic, published_at, fetched_at
                    FROM news_cache
                    WHERE 1=1".to_string();
 
@@ -937,8 +948,9 @@ pub fn get_latest_news_filtered(
             extra_snippets: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(11)?)
                 .unwrap_or_default(),
             category: row.get(12)?,
-            published_at: row.get(13)?,
-            fetched_at: row.get(14)?,
+            topic: row.get(13)?,
+            published_at: row.get(14)?,
+            fetched_at: row.get(15)?,
         })
     })?;
 
@@ -1326,6 +1338,7 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 description TEXT NOT NULL DEFAULT '',
                 extra_snippets TEXT NOT NULL DEFAULT '[]',
                 category TEXT NOT NULL DEFAULT 'general',
+                topic TEXT NOT NULL DEFAULT 'other',
                 published_at BIGINT NOT NULL,
                 fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
@@ -1355,6 +1368,11 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
         sqlx::query(
+            "ALTER TABLE news_cache ADD COLUMN IF NOT EXISTS topic TEXT NOT NULL DEFAULT 'other'",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_news_source_domain ON news_cache(source_domain)",
         )
         .execute(pool)
@@ -1365,9 +1383,14 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_news_source_independence ON news_cache(source_independence)")
             .execute(pool)
             .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_news_topic ON news_cache(topic)")
+            .execute(pool)
+            .await?;
         seed_source_tiers_postgres(pool).await?;
         backfill_news_source_tiers_postgres(pool).await?;
         backfill_news_source_independence_postgres(pool).await?;
+        crate::db::news_topic_markets::ensure_tables_postgres(pool)?;
+        crate::db::news_topic_markets::backfill_news_cache_topics_postgres(pool)?;
         Ok::<(), anyhow::Error>(())
     })?;
     Ok(())
@@ -1413,11 +1436,17 @@ fn insert_news_with_source_type_postgres(
     let classification = classify_news_source_postgres(pool, url, source)?;
     let independence =
         classify_news_source_independence(title, source, description, extra_snippets);
+    let topic = crate::db::news_topic_markets::classify_news_topic(
+        title,
+        category,
+        description,
+        extra_snippets,
+    );
     crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO news_cache
-             (title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, source_independence, description, extra_snippets, category, published_at, fetched_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+             (title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, source_independence, description, extra_snippets, category, topic, published_at, fetched_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
              ON CONFLICT (url) DO UPDATE
              SET description = CASE
                  WHEN news_cache.description = '' AND EXCLUDED.description != ''
@@ -1427,7 +1456,8 @@ fn insert_news_with_source_type_postgres(
              source_domain = EXCLUDED.source_domain,
              source_tier = EXCLUDED.source_tier,
              source_tier_inferred = EXCLUDED.source_tier_inferred,
-             source_independence = EXCLUDED.source_independence",
+             source_independence = EXCLUDED.source_independence,
+             topic = EXCLUDED.topic",
         )
         .bind(title)
         .bind(url)
@@ -1441,6 +1471,7 @@ fn insert_news_with_source_type_postgres(
         .bind(description.unwrap_or(""))
         .bind(snippets_json)
         .bind(category)
+        .bind(topic)
         .bind(published_at)
         .execute(pool)
         .await?;
@@ -1461,7 +1492,7 @@ fn get_latest_news_postgres(
     ensure_tables_postgres(pool)?;
     let rows = crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
-            "SELECT id, title, url, source, source_type, symbol_tag, source_domain, source_tier::BIGINT, source_tier_inferred, source_independence, description, extra_snippets, category, published_at, fetched_at::text
+            "SELECT id, title, url, source, source_type, symbol_tag, source_domain, source_tier::BIGINT, source_tier_inferred, source_independence, description, extra_snippets, category, topic, published_at, fetched_at::text
              FROM news_cache
              WHERE TRUE",
         );
@@ -1514,8 +1545,9 @@ fn get_latest_news_postgres(
                 extra_snippets: serde_json::from_str::<Vec<String>>(&snippets_json)
                     .unwrap_or_default(),
                 category: row.try_get(12)?,
-                published_at: row.try_get(13)?,
-                fetched_at: row.try_get(14)?,
+                topic: row.try_get(13)?,
+                published_at: row.try_get(14)?,
+                fetched_at: row.try_get(15)?,
             })
         })
         .collect()
@@ -1619,6 +1651,7 @@ mod tests {
         assert_eq!(items[0].source_domain, "example.com");
         assert_eq!(items[0].source_tier, 3);
         assert!(items[0].source_tier_inferred);
+        assert_eq!(items[0].topic, "crypto");
         assert_eq!(
             items[0].source_independence,
             NewsSourceIndependence::Independent
@@ -1828,6 +1861,7 @@ mod tests {
         assert_eq!(items[0].source_tier, 1);
         assert!(!items[0].source_tier_inferred);
         assert_eq!(items[0].source_independence, NewsSourceIndependence::Wire);
+        assert_eq!(items[0].topic, "fed-policy");
     }
 
     #[test]

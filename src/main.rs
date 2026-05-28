@@ -1116,6 +1116,28 @@ fn run_cli(cli: Cli) -> Result<()> {
                         commands::news::run_sources_remove(&backend, &domain, json)
                     }
                 },
+                Some(cli::DataNewsCommand::Topics { command }) => match command {
+                    cli::DataNewsTopicsCommand::List { json } => {
+                        commands::news::run_topics_list(&backend, json)
+                    }
+                    cli::DataNewsTopicsCommand::Set {
+                        topic,
+                        primary_market_id,
+                        secondary_market_id,
+                        notes,
+                        json,
+                    } => commands::news::run_topics_set(
+                        &backend,
+                        &topic,
+                        &primary_market_id,
+                        secondary_market_id.as_deref(),
+                        notes.as_deref(),
+                        json,
+                    ),
+                    cli::DataNewsTopicsCommand::Remove { topic, json } => {
+                        commands::news::run_topics_remove(&backend, &topic, json)
+                    }
+                },
                 None => commands::news::run(
                     &backend,
                     &config,

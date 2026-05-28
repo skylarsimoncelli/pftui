@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use serde_json::json;
@@ -11,6 +11,7 @@ use crate::db::backend::BackendConnection;
 use crate::db::news_cache::{
     get_latest_news_filtered_backend, parse_news_source_independence_filter, NewsEntry,
 };
+use crate::db::news_topic_markets::{self, BoundNewsMarket};
 use crate::db::rss_feed_health;
 
 fn news_empty_diagnostics(backend: &BackendConnection) -> serde_json::Value {
@@ -171,9 +172,9 @@ pub fn run(
 
     if json {
         if with_sentiment {
-            print_json_with_sentiment(&entries)?;
+            print_json_with_sentiment(backend, &entries)?;
         } else {
-            print_json(&entries)?;
+            print_json(backend, &entries)?;
         }
     } else {
         print_table(&entries);
@@ -297,6 +298,82 @@ pub fn run_sources_remove(backend: &BackendConnection, domain: &str, json: bool)
     Ok(())
 }
 
+pub fn run_topics_list(backend: &BackendConnection, json: bool) -> Result<()> {
+    let topics = news_topic_markets::list_topic_markets_backend(backend)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "topics": topics }))?
+        );
+    } else {
+        println!(
+            "{:<18} {:<34} {:<34} Notes",
+            "Topic", "Primary Market", "Secondary Market"
+        );
+        println!("{}", "-".repeat(104));
+        for topic in topics {
+            println!(
+                "{:<18} {:<34} {:<34} {}",
+                topic.topic,
+                topic.primary_market_id,
+                topic.secondary_market_id.unwrap_or_default(),
+                topic.notes.unwrap_or_default()
+            );
+        }
+    }
+    Ok(())
+}
+
+pub fn run_topics_set(
+    backend: &BackendConnection,
+    topic: &str,
+    primary_market_id: &str,
+    secondary_market_id: Option<&str>,
+    notes: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let mapping = news_topic_markets::set_topic_market_backend(
+        backend,
+        topic,
+        primary_market_id,
+        secondary_market_id,
+        notes,
+    )?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "status": "set",
+                "topic": mapping,
+            }))?
+        );
+    } else {
+        println!(
+            "Set {} -> {}",
+            mapping.topic, mapping.primary_market_id
+        );
+    }
+    Ok(())
+}
+
+pub fn run_topics_remove(backend: &BackendConnection, topic: &str, json: bool) -> Result<()> {
+    let removed = news_topic_markets::remove_topic_market_backend(backend, topic)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "status": if removed { "removed" } else { "missing" },
+                "topic": topic,
+            }))?
+        );
+    } else if removed {
+        println!("Removed news topic market mapping for {}", topic);
+    } else {
+        println!("No news topic market mapping found for {}", topic);
+    }
+    Ok(())
+}
+
 fn fetch_live_entries(
     backend: &BackendConnection,
     config: &Config,
@@ -356,9 +433,19 @@ fn fetch_live_entries(
             item.description.as_deref(),
             &[],
         );
+        let title = item.title;
+        let description = item.description.unwrap_or_default();
+        let category = item.category.as_str().to_string();
+        let extra_snippets = Vec::new();
+        let topic = news_topic_markets::classify_news_topic(
+            &title,
+            &category,
+            Some(&description),
+            &extra_snippets,
+        );
         let entry = NewsEntry {
             id: 0,
-            title: item.title,
+            title,
             url: item.url,
             source: item.source,
             source_type: "rss".to_string(),
@@ -367,9 +454,10 @@ fn fetch_live_entries(
             source_tier: classification.tier,
             source_tier_inferred: classification.inferred,
             source_independence: independence,
-            description: item.description.unwrap_or_default(),
-            extra_snippets: Vec::new(),
-            category: item.category.as_str().to_string(),
+            description,
+            extra_snippets,
+            category,
+            topic,
             published_at: item.published_at,
             fetched_at: fetched_at.clone(),
         };
@@ -387,9 +475,19 @@ fn fetch_live_entries(
             Some(&item.description),
             &item.extra_snippets,
         );
+        let title = item.title;
+        let description = item.description;
+        let extra_snippets = item.extra_snippets;
+        let category = "markets".to_string();
+        let topic = news_topic_markets::classify_news_topic(
+            &title,
+            &category,
+            Some(&description),
+            &extra_snippets,
+        );
         let entry = NewsEntry {
             id: 0,
-            title: item.title,
+            title,
             url: item.url,
             source,
             source_type: "brave".to_string(),
@@ -398,9 +496,10 @@ fn fetch_live_entries(
             source_tier: classification.tier,
             source_tier_inferred: classification.inferred,
             source_independence: independence,
-            description: item.description,
-            extra_snippets: item.extra_snippets,
-            category: "markets".to_string(),
+            description,
+            extra_snippets,
+            category,
+            topic,
             published_at: chrono::Utc::now().timestamp(),
             fetched_at: fetched_at.clone(),
         };
@@ -545,7 +644,21 @@ fn format_timestamp(ts: i64) -> String {
 ///
 /// Always outputs valid JSON. If serialization fails (shouldn't happen with
 /// serde_json::Value), falls back to an empty array.
-fn news_entry_json(entry: &NewsEntry) -> serde_json::Value {
+fn bound_markets_for_entries(
+    backend: &BackendConnection,
+    entries: &[NewsEntry],
+) -> HashMap<String, Vec<BoundNewsMarket>> {
+    let topics = entries
+        .iter()
+        .map(|entry| entry.topic.clone())
+        .collect::<Vec<_>>();
+    news_topic_markets::bound_markets_by_topic_backend(backend, &topics).unwrap_or_else(|err| {
+        eprintln!("warning: failed to bind news topics to prediction markets: {err:#}");
+        HashMap::new()
+    })
+}
+
+fn news_entry_json(entry: &NewsEntry, bound_markets: &[BoundNewsMarket]) -> serde_json::Value {
     json!({
         "id": entry.id,
         "title": entry.title,
@@ -560,13 +673,27 @@ fn news_entry_json(entry: &NewsEntry) -> serde_json::Value {
         "description": entry.description,
         "extra_snippets": entry.extra_snippets,
         "category": entry.category,
+        "topic": entry.topic,
+        "bound_markets": bound_markets,
         "published_at": entry.published_at,
         "fetched_at": entry.fetched_at,
     })
 }
 
-fn print_json(entries: &[NewsEntry]) -> Result<()> {
-    let json_entries: Vec<_> = entries.iter().map(news_entry_json).collect();
+fn print_json(backend: &BackendConnection, entries: &[NewsEntry]) -> Result<()> {
+    let bound_by_topic = bound_markets_for_entries(backend, entries);
+    let json_entries: Vec<_> = entries
+        .iter()
+        .map(|entry| {
+            news_entry_json(
+                entry,
+                bound_by_topic
+                    .get(&entry.topic)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+            )
+        })
+        .collect();
 
     match serde_json::to_string_pretty(&json_entries) {
         Ok(output) => println!("{output}"),
@@ -580,8 +707,9 @@ fn print_json(entries: &[NewsEntry]) -> Result<()> {
 }
 
 /// Print news entries as JSON with sentiment scores.
-fn print_json_with_sentiment(entries: &[NewsEntry]) -> Result<()> {
+fn print_json_with_sentiment(backend: &BackendConnection, entries: &[NewsEntry]) -> Result<()> {
     let scored = news_sentiment::score_all(entries);
+    let bound_by_topic = bound_markets_for_entries(backend, entries);
     let json_entries: Vec<_> = scored
         .iter()
         .map(|s| {
@@ -599,6 +727,11 @@ fn print_json_with_sentiment(entries: &[NewsEntry]) -> Result<()> {
                 "description": s.entry.description,
                 "extra_snippets": s.entry.extra_snippets,
                 "category": s.entry.category,
+                "topic": s.entry.topic,
+                "bound_markets": bound_by_topic
+                    .get(&s.entry.topic)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
                 "published_at": s.entry.published_at,
                 "fetched_at": s.entry.fetched_at,
                 "sentiment_score": s.score,
@@ -644,7 +777,8 @@ mod tests {
     #[test]
     fn test_print_json_empty() {
         let entries: Vec<NewsEntry> = vec![];
-        let result = print_json(&entries);
+        let backend = to_backend(crate::db::open_in_memory());
+        let result = print_json(&backend, &entries);
         assert!(result.is_ok());
     }
 
@@ -665,6 +799,7 @@ mod tests {
                 description: "A test article".to_string(),
                 extra_snippets: vec!["snippet1".to_string()],
                 category: "markets".to_string(),
+                topic: "equities".to_string(),
                 published_at: 1709610000,
                 fetched_at: "2024-03-05 10:00:00".to_string(),
             },
@@ -682,12 +817,14 @@ mod tests {
                 description: "".to_string(),
                 extra_snippets: vec![],
                 category: "crypto".to_string(),
+                topic: "crypto".to_string(),
                 published_at: 1709620000,
                 fetched_at: "2024-03-05 12:00:00".to_string(),
             },
         ];
 
-        let result = print_json(&entries);
+        let backend = to_backend(crate::db::open_in_memory());
+        let result = print_json(&backend, &entries);
         assert!(result.is_ok());
     }
 
@@ -707,15 +844,35 @@ mod tests {
             description: String::new(),
             extra_snippets: vec![],
             category: "macro".to_string(),
+            topic: "fed-policy".to_string(),
             published_at: 1709610000,
             fetched_at: "2024-03-05 10:00:00".to_string(),
         };
 
-        let payload = news_entry_json(&entry);
+        let bound = BoundNewsMarket {
+            role: "primary".to_string(),
+            contract_id: "fed-contract".to_string(),
+            available: true,
+            exchange: Some("polymarket".to_string()),
+            event_id: Some("evt-fed".to_string()),
+            event_title: Some("Fed decision".to_string()),
+            question: Some("Will the Fed hold?".to_string()),
+            category: Some("economics".to_string()),
+            probability: Some(0.62),
+            probability_pct: Some(62.0),
+            volume_24h: Some(1000.0),
+            liquidity: Some(5000.0),
+            end_date: None,
+            updated_at: Some(1711670000),
+        };
+        let payload = news_entry_json(&entry, &[bound]);
         assert_eq!(payload["source_domain"], "reuters.com");
         assert_eq!(payload["source_tier"], 1);
         assert_eq!(payload["source_tier_inferred"], false);
         assert_eq!(payload["source_independence"], "wire");
+        assert_eq!(payload["topic"], "fed-policy");
+        assert_eq!(payload["bound_markets"][0]["contract_id"], "fed-contract");
+        assert_eq!(payload["bound_markets"][0]["probability_pct"], 62.0);
     }
 
     #[test]
@@ -830,6 +987,7 @@ mod tests {
                 description: "Fresh macro update".to_string(),
                 extra_snippets: Vec::new(),
                 category: "macro".to_string(),
+                topic: "fed-policy".to_string(),
                 published_at: now,
                 fetched_at: "2026-04-22 12:00:00".to_string(),
             },
@@ -847,6 +1005,7 @@ mod tests {
                 description: "Duplicate URL".to_string(),
                 extra_snippets: Vec::new(),
                 category: "macro".to_string(),
+                topic: "fed-policy".to_string(),
                 published_at: now - 60,
                 fetched_at: "2026-04-22 12:00:00".to_string(),
             },
@@ -864,6 +1023,7 @@ mod tests {
                 description: "Crypto move".to_string(),
                 extra_snippets: Vec::new(),
                 category: "crypto".to_string(),
+                topic: "crypto".to_string(),
                 published_at: now - 7200,
                 fetched_at: "2026-04-22 12:00:00".to_string(),
             },

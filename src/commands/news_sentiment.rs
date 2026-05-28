@@ -512,6 +512,12 @@ mod tests {
             description: String::new(),
             extra_snippets: vec![],
             category: category.to_string(),
+            topic: crate::db::news_topic_markets::classify_news_topic(
+                title,
+                category,
+                None,
+                &[],
+            ),
             published_at: 1709610000,
             fetched_at: "2024-03-05 10:00:00".to_string(),
         }
