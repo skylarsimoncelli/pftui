@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: port report outlook arrows
+
+- What: Added the native `outlook-arrows` report chart with Python-parity SVG output, ASCII/PNG support, JSON input mode, and DB input from LOW/MEDIUM/HIGH analyst views.
+- Why: Daily reports can now render horizon outlook arrows directly from pftui instead of the Python `outlook_arrows` helper.
+
 ### 2026-05-28 — feat: port report open predictions table
 
 - What: Added the native `open-predictions-table` report chart with Python-parity HTML output, ASCII support, JSON input mode, and DB input from pending `user_predictions` rows with target dates.
