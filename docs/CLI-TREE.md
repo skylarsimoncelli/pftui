@@ -141,7 +141,8 @@ pftui
 │       ├── prob-bar
 │       ├── drift-bar
 │       ├── what-changed-strip
-│       └── open-predictions-table
+│       ├── open-predictions-table
+│       └── outlook-arrows
 └── system
     ├── config
     ├── db-info

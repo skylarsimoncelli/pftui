@@ -14,6 +14,7 @@ use serde_json::Value;
 use crate::cli::ReportChartFormat;
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations_backend;
+use crate::db::analyst_views;
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::db::scenarios;
@@ -22,6 +23,7 @@ use crate::db::user_predictions;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 use crate::report::charts::drift_bar::DriftBarInput;
 use crate::report::charts::open_predictions_table::{OpenPredictionRow, OpenPredictionsTableInput};
+use crate::report::charts::outlook_arrows::{OutlookArrowsInput, OutlookPoint};
 use crate::report::charts::prob_bar::ProbBarInput;
 use crate::report::charts::stacked_bar::{StackedBarInput, StackedBarSegment};
 use crate::report::palette;
@@ -184,6 +186,9 @@ fn chart_input_from_db(
         ChartKind::OpenPredictions => Ok(ChartInput::OpenPredictions(
             open_predictions_table_from_backend(backend, query)?,
         )),
+        ChartKind::OutlookArrows => Ok(ChartInput::OutlookArrows(
+            outlook_arrows_from_analyst_views_backend(backend, query)?,
+        )),
     }
 }
 
@@ -311,6 +316,64 @@ fn parse_open_predictions_limit(raw: &str) -> Result<usize> {
         bail!("open-predictions-table limit must be greater than zero");
     }
     Ok(limit)
+}
+
+fn outlook_arrows_from_analyst_views_backend(
+    backend: &BackendConnection,
+    asset: &str,
+) -> Result<OutlookArrowsInput> {
+    let asset = asset.trim();
+    if asset.is_empty() {
+        bail!("outlook-arrows --from-db expects an asset symbol");
+    }
+
+    let views = analyst_views::list_views_backend(backend, None, Some(asset), None)?;
+    if views.is_empty() {
+        bail!("no analyst views found for '{}'", asset);
+    }
+
+    Ok(OutlookArrowsInput {
+        days: outlook_point_for_analyst(&views, "low", asset)?,
+        weeks: outlook_point_for_analyst(&views, "medium", asset)?,
+        months: outlook_point_for_analyst(&views, "high", asset)?,
+        width: None,
+        height: None,
+    })
+}
+
+fn outlook_point_for_analyst(
+    views: &[analyst_views::AnalystView],
+    analyst: &str,
+    asset: &str,
+) -> Result<OutlookPoint> {
+    let view = views
+        .iter()
+        .find(|view| view.analyst.eq_ignore_ascii_case(analyst))
+        .with_context(|| format!("missing {} analyst view for '{}'", analyst, asset))?;
+    Ok(outlook_point_from_view(view))
+}
+
+fn outlook_point_from_view(view: &analyst_views::AnalystView) -> OutlookPoint {
+    let magnitude = view.conviction.abs();
+    let conviction = if magnitude >= 4 {
+        "high"
+    } else if magnitude >= 2 {
+        "medium"
+    } else {
+        "low"
+    };
+    let direction = match view.direction.trim().to_ascii_lowercase().as_str() {
+        "bull" if magnitude >= 4 => "up_strong",
+        "bull" => "up",
+        "bear" if magnitude >= 4 => "down_strong",
+        "bear" => "down",
+        _ => "flat",
+    };
+
+    OutlookPoint {
+        direction: direction.to_string(),
+        conviction: conviction.to_string(),
+    }
 }
 
 fn portfolio_positions_backend(
@@ -646,6 +709,56 @@ mod tests {
         assert_eq!(input.predictions[0].asset, "BTC");
         assert_eq!(input.predictions[0].days_remaining, 2);
         assert_eq!(input.predictions[0].confidence, Some(0.65));
+    }
+
+    #[test]
+    fn report_outlook_arrows_uses_synthetic_analyst_views() {
+        let backend = backend();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "low",
+            "BTC",
+            "neutral",
+            1,
+            "Flat near term",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "medium",
+            "BTC",
+            "bull",
+            3,
+            "Trend improving",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "high",
+            "BTC",
+            "bull",
+            5,
+            "Structural bull case",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let input = outlook_arrows_from_analyst_views_backend(&backend, "btc").unwrap();
+
+        assert_eq!(input.days.direction, "flat");
+        assert_eq!(input.days.conviction, "low");
+        assert_eq!(input.weeks.direction, "up");
+        assert_eq!(input.weeks.conviction, "medium");
+        assert_eq!(input.months.direction, "up_strong");
+        assert_eq!(input.months.conviction, "high");
     }
 
     #[test]

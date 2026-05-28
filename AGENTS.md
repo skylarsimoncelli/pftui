@@ -64,6 +64,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui report chart what-changed-strip --from-json deltas.json [--format svg\|png\|ascii] [--json]` | Render a since-last-report delta strip from JSON `{ "deltas": [{"label": "BTC", "delta_str": "+3.2%", "direction": "bull"}] }` or a bare delta array |
 | `pftui report chart open-predictions-table --from-db pending [--format html\|ascii] [--json]` | Native open-predictions due table from pending `user_predictions` rows with target dates |
 | `pftui report chart open-predictions-table --from-json predictions.json --format html [--json]` | Render an HTML-native due table from JSON `{ "predictions": [{"asset": "SPY", "claim": "...", "days_remaining": 1, "confidence": 0.40}] }` or a bare prediction array |
+| `pftui report chart outlook-arrows --from-db BTC [--format svg\|png\|ascii] [--json]` | Native horizon outlook arrows using current LOW/MEDIUM/HIGH `analyst_views` as days/weeks/months |
+| `pftui report chart outlook-arrows --from-json outlook.json [--format svg\|png\|ascii] [--json]` | Render outlook arrows from JSON `{ "days": ["flat", "medium"], "weeks": ["up", "medium"], "months": ["up_strong", "high"] }` |
 
 ### Portfolio State
 
