@@ -59,6 +59,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui report chart stacked-bar --from-json segments.json [--format svg\|png\|ascii] [--json]` | Render a stacked bar from JSON `{ "segments": [{"label": "...", "value": 12.3, "color": "#..."}] }` or a bare segment array |
 | `pftui report chart prob-bar --from-db "Scenario Name" [--out scenario.svg] [--format svg\|png\|ascii] [--json]` | Native scenario probability bar with 7-day-prior ghost and delta pulled from `scenarios` + `scenario_history` |
 | `pftui report chart prob-bar --from-json scenario.json [--format svg\|png\|ascii] [--json]` | Render a probability bar from JSON `{ "name": "...", "current": 88, "prior_7d": 80, "color": "bear" }` |
+| `pftui report chart drift-bar --from-db BTC [--out drift.svg] [--format svg\|png\|ascii] [--json]` | Native allocation drift bar using allocation targets plus current portfolio allocation |
+| `pftui report chart drift-bar --from-json drift.json [--format svg\|png\|ascii] [--json]` | Render a drift bar from JSON `{ "symbol": "BTC", "target_pct": 25.0, "actual_pct": 31.5, "band_pct": 2.0 }` |
 
 ### Portfolio State
 

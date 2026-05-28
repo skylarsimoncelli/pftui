@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: port report drift bar
+
+- What: Added the native `drift-bar` report chart with Python-parity SVG output, ASCII/PNG support through the shared registry, JSON input mode, and DB input from allocation targets plus current portfolio allocation.
+- Why: Daily reports can now render allocation drift directly from pftui instead of depending on the Python `drift_bar` helper.
+
 ### 2026-05-28 — feat: scaffold native report charts
 
 - What: Added the new top-level `pftui report chart` namespace with native `stacked-bar` and `prob-bar` renderers, SVG/PNG/ASCII output, JSON metadata mode, a chart registry, report palette/theme primitives, and Python-parity golden snapshots.

@@ -138,7 +138,8 @@ pftui
 ├── report
 │   └── chart
 │       ├── stacked-bar
-│       └── prob-bar
+│       ├── prob-bar
+│       └── drift-bar
 └── system
     ├── config
     ├── db-info
