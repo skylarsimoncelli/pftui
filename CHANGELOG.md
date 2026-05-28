@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — chore: remove completed backlog entries
+
+- What: removed already-shipped `[Done]` entries from `TODO.md`, including the completed P1 prediction-lesson bulk command and older shipped P2 feedback items.
+- Why: the backlog policy is to remove completed work instead of keeping checked-off entries, so agents can start from the highest remaining active priority without re-reading shipped tasks.
+
 ### 2026-04-23 — fix: document and validate manual macro regime labels
 
 - What: `pftui analytics macro regime set` now documents the full supported regime label set directly in `--help`, including `lean risk-on`, `neutral`, `transition`, `lean risk-off`, `crisis`, and `stagflation`. The command now validates manual regime labels before storing them, accepts friendly aliases such as `transitioning` and underscore/spaced variants, and normalizes those aliases to canonical stored labels.
