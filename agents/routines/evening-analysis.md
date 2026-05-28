@@ -45,6 +45,7 @@ pftui analytics synthesis --json
 pftui analytics alignment --json
 pftui analytics macro regime current --json
 pftui analytics scenario list --json
+pftui analytics narrative-divergence --json
 pftui analytics situation --json
 pftui analytics catalysts --json --window week
 pftui agent message list --to evening-analyst --unacked
@@ -115,7 +116,7 @@ The 3-5 most important things that happened today. Same as the public report but
 
 ## Scenarios
 
-Active scenario probabilities and what moved them today. Only include scenarios where something actually changed — evidence, probability shift, or a new invalidation condition. If nothing moved, say so in one line and skip.
+Active scenario probabilities and what moved them today. Include the Narrative vs Money label when it is not aligned so the synthesis can separate headline pressure from positioning. Only include scenarios where something actually changed — evidence, probability shift, narrative-vs-money divergence, or a new invalidation condition. If nothing moved, say so in one line and skip.
 
 ## Sector Watch
 

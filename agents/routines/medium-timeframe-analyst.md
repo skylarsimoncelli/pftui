@@ -27,6 +27,7 @@ pftui analytics opportunities --json
 pftui analytics synthesis --json
 pftui analytics medium --json
 pftui journal scenario list --json
+pftui analytics narrative-divergence --json
 pftui journal conviction list --json
 pftui journal prediction list --json
 pftui journal notes list --limit 10 --json
@@ -71,6 +72,7 @@ pftui data predictions markets --search "recession" --json                      
 pftui data etf-flows --days 7 --json      # BTC ETF flow trend
 pftui data consensus list --json          # analyst calls (Goldman, JPM, etc.) — read before searching
 pftui analytics scenario list --json      # active scenarios with probabilities
+pftui analytics narrative-divergence --json # scenario news pressure vs prediction-market movement
 ```
 News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
@@ -144,7 +146,8 @@ For each scenario:
 1. What NEW evidence accumulated since last update?
 2. Does this evidence increase or decrease probability?
 3. What is the specific analytical chain? (not "data suggests" but "[specific data point] because [cause] -> [downstream effect] -> [asset impact] -> [scenario probability change]")
-4. What would reverse this trend?
+4. Does `analytics narrative-divergence` say narrative is leading money, money is leading narrative, or the two are aligned?
+5. What would reverse this trend?
 
 ```bash
 pftui journal scenario update "<name>" --probability <new> --notes "[Evidence]: [Analytical chain]: [Reversal condition]"

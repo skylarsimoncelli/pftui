@@ -3899,6 +3899,18 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Compare scenario news pressure against mapped prediction-market movement
+    #[command(name = "narrative-divergence", after_help = "Scores each active scenario by comparing 24h topic-tagged news pressure\nagainst mapped prediction-market movement. Positive scores mean narrative\nis running ahead of money; negative scores mean pricing moved with little\nheadline confirmation.\n\nExamples:\n  pftui analytics narrative-divergence --json\n  pftui analytics narrative-divergence --hours 48 --threshold 1.5\n\nSee also: data news topics, data predictions map, analytics calibration")]
+    NarrativeDivergence {
+        /// News lookback window in hours
+        #[arg(long, default_value = "24")]
+        hours: i64,
+        /// Alert threshold in z-score units
+        #[arg(long, default_value = "2")]
+        threshold: f64,
+        #[arg(long)]
+        json: bool,
+    },
     /// Aggregate lessons referenced by recent prediction writes
     Lessons {
         #[command(subcommand)]
@@ -5491,6 +5503,36 @@ mod tests {
         };
         assert!((threshold - 10.0).abs() < f64::EPSILON);
         assert_eq!(window_days, 30);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_narrative_divergence_custom() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "narrative-divergence",
+            "--hours",
+            "48",
+            "--threshold",
+            "1.5",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::NarrativeDivergence {
+                    hours,
+                    threshold,
+                    json,
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics narrative divergence command");
+        };
+        assert_eq!(hours, 48);
+        assert!((threshold - 1.5).abs() < f64::EPSILON);
         assert!(json);
     }
 
