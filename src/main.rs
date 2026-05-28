@@ -1760,6 +1760,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                     currency,
                     cash_currency,
                     no_auto_cash,
+                    dry_run,
+                    json,
                     date,
                     notes,
                 } => {
@@ -1776,15 +1778,22 @@ fn run_cli(cli: Cli) -> Result<()> {
                         currency,
                         cash_currency,
                         no_auto_cash,
+                        dry_run,
+                        json,
                         date,
                         notes,
                     )
                 }
-                cli::PortfolioTransactionCommand::Remove { id, unpaired } => {
+                cli::PortfolioTransactionCommand::Remove {
+                    id,
+                    unpaired,
+                    dry_run,
+                    json,
+                } => {
                     if config.is_percentage_mode() {
                         bail!("remove-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
                     }
-                    commands::remove_tx::run(&backend, id, unpaired)
+                    commands::remove_tx::run(&backend, id, unpaired, dry_run, json)
                 }
                 cli::PortfolioTransactionCommand::List {
                     notes,

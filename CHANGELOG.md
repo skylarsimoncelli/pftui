@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: preview transaction allocation impact
+
+- What: `pftui portfolio transaction add` and `transaction remove` now support `--dry-run` and `--json`, and both paths report post-change allocation, drift versus target, and paired cash delta without requiring a separate status call.
+- Why: staging real-money transaction edits needed a non-mutating preview and immediate allocation context so agents do not have to add, inspect, undo, and retry.
+
 ### 2026-05-28 — feat: add portfolio drawdown tracking
 
 - What: `portfolio status --json` now includes a drawdown summary, terminal status and `portfolio brief` render a top-line drawdown readout, and `pftui portfolio drawdown [--json]` reports the last 90 days of daily drawdown plus latest position contribution data.

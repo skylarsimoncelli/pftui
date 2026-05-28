@@ -1009,6 +1009,12 @@ pub enum PortfolioTransactionCommand {
         /// Do not insert the paired cash leg for buy/sell transactions
         #[arg(long = "no-auto-cash")]
         no_auto_cash: bool,
+        /// Validate and preview the transaction impact without writing to the database
+        #[arg(long)]
+        dry_run: bool,
+        /// Output JSON
+        #[arg(long)]
+        json: bool,
         #[arg(long)]
         date: Option<String>,
         #[arg(long)]
@@ -1021,6 +1027,12 @@ pub enum PortfolioTransactionCommand {
         /// Remove only this transaction and leave its paired leg unlinked
         #[arg(long)]
         unpaired: bool,
+        /// Preview the removal impact without deleting anything
+        #[arg(long)]
+        dry_run: bool,
+        /// Output JSON
+        #[arg(long)]
+        json: bool,
     },
     /// List all transactions
     List {
@@ -4483,6 +4495,83 @@ mod tests {
                 assert!(json);
             }
             _ => panic!("expected portfolio set-cash command"),
+        }
+    }
+
+    #[test]
+    fn parses_portfolio_transaction_add_preview_flags() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "transaction",
+            "add",
+            "--symbol",
+            "GC=F",
+            "--category",
+            "commodity",
+            "--tx-type",
+            "buy",
+            "--quantity",
+            "2",
+            "--price",
+            "4500",
+            "--dry-run",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command:
+                    Some(PortfolioCommand::Transaction {
+                        command:
+                            PortfolioTransactionCommand::Add {
+                                symbol,
+                                dry_run,
+                                json,
+                                ..
+                            },
+                    }),
+            }) => {
+                assert_eq!(symbol.as_deref(), Some("GC=F"));
+                assert!(dry_run);
+                assert!(json);
+            }
+            _ => panic!("expected portfolio transaction add command"),
+        }
+    }
+
+    #[test]
+    fn parses_portfolio_transaction_remove_preview_flags() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "transaction",
+            "remove",
+            "21",
+            "--unpaired",
+            "--dry-run",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command:
+                    Some(PortfolioCommand::Transaction {
+                        command:
+                            PortfolioTransactionCommand::Remove {
+                                id,
+                                unpaired,
+                                dry_run,
+                                json,
+                            },
+                    }),
+            }) => {
+                assert_eq!(id, 21);
+                assert!(unpaired);
+                assert!(dry_run);
+                assert!(json);
+            }
+            _ => panic!("expected portfolio transaction remove command"),
         }
     }
 
