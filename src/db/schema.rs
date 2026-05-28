@@ -321,6 +321,8 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             source_domain TEXT NOT NULL DEFAULT '',
             source_tier INTEGER NOT NULL DEFAULT 3 CHECK(source_tier BETWEEN 1 AND 4),
             source_tier_inferred INTEGER NOT NULL DEFAULT 1 CHECK(source_tier_inferred IN (0, 1)),
+            source_independence TEXT NOT NULL DEFAULT 'unknown'
+                CHECK(source_independence IN ('independent','wire','restatement','rumor','unknown')),
             description TEXT NOT NULL DEFAULT '',
             extra_snippets TEXT NOT NULL DEFAULT '[]',
             category TEXT NOT NULL,
@@ -330,6 +332,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_news_source ON news_cache(source);
         CREATE INDEX IF NOT EXISTS idx_news_source_domain ON news_cache(source_domain);
         CREATE INDEX IF NOT EXISTS idx_news_source_tier ON news_cache(source_tier);
+        CREATE INDEX IF NOT EXISTS idx_news_source_independence ON news_cache(source_independence);
         CREATE INDEX IF NOT EXISTS idx_news_category ON news_cache(category);
         CREATE INDEX IF NOT EXISTS idx_news_published_at ON news_cache(published_at);
 

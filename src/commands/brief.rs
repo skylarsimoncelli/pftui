@@ -956,6 +956,7 @@ fn get_news_summary_json_backend(backend: &BackendConnection) -> Result<Vec<serd
             "title": n.title, "url": n.url, "source": n.source, "source_type": n.source_type,
             "source_domain": n.source_domain, "source_tier": n.source_tier,
             "source_tier_inferred": n.source_tier_inferred,
+            "source_independence": n.source_independence.as_str(),
             "description": n.description, "extra_snippets": n.extra_snippets, "published_at": n.published_at,
         }))
         .collect())
@@ -1392,6 +1393,7 @@ fn get_news_summary_json(conn: &Connection) -> Result<Vec<serde_json::Value>> {
                 "source_domain": n.source_domain,
                 "source_tier": n.source_tier,
                 "source_tier_inferred": n.source_tier_inferred,
+                "source_independence": n.source_independence.as_str(),
                 "description": n.description,
                 "extra_snippets": n.extra_snippets,
                 "published_at": n.published_at,

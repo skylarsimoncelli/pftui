@@ -22,11 +22,69 @@ pub struct NewsEntry {
     pub source_domain: String,
     pub source_tier: i64,
     pub source_tier_inferred: bool,
+    pub source_independence: NewsSourceIndependence,
     pub description: String,
     pub extra_snippets: Vec<String>,
     pub category: String,
     pub published_at: i64,
     pub fetched_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewsSourceIndependence {
+    Independent,
+    Wire,
+    Restatement,
+    Rumor,
+    Unknown,
+}
+
+impl NewsSourceIndependence {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Independent => "independent",
+            Self::Wire => "wire",
+            Self::Restatement => "restatement",
+            Self::Rumor => "rumor",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "independent" => Ok(Self::Independent),
+            "wire" => Ok(Self::Wire),
+            "restatement" => Ok(Self::Restatement),
+            "rumor" | "rumour" => Ok(Self::Rumor),
+            "unknown" => Ok(Self::Unknown),
+            other => bail!(
+                "invalid source independence '{other}'; expected independent, wire, restatement, rumor, or unknown"
+            ),
+        }
+    }
+
+    fn from_stored(value: &str) -> Self {
+        Self::parse(value).unwrap_or(Self::Unknown)
+    }
+}
+
+impl std::fmt::Display for NewsSourceIndependence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+pub fn parse_news_source_independence_filter(value: &str) -> Result<Vec<NewsSourceIndependence>> {
+    let values = value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(NewsSourceIndependence::parse)
+        .collect::<Result<Vec<_>>>()?;
+    if values.is_empty() {
+        bail!("source-independence filter cannot be empty")
+    }
+    Ok(values)
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -193,6 +251,103 @@ fn source_key(source: &str) -> Option<String> {
     }
 }
 
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
+}
+
+fn article_haystack(
+    title: &str,
+    source: &str,
+    description: Option<&str>,
+    extra_snippets: &[String],
+) -> String {
+    let mut parts = vec![title.trim(), source.trim()];
+    if let Some(description) = description {
+        parts.push(description.trim());
+    }
+    for snippet in extra_snippets {
+        parts.push(snippet.trim());
+    }
+    parts
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
+}
+
+pub fn classify_news_source_independence(
+    title: &str,
+    source: &str,
+    description: Option<&str>,
+    extra_snippets: &[String],
+) -> NewsSourceIndependence {
+    let haystack = article_haystack(title, source, description, extra_snippets);
+    if haystack.trim().is_empty() {
+        return NewsSourceIndependence::Unknown;
+    }
+
+    let rumor_patterns = [
+        "according to people familiar",
+        "people familiar with the matter",
+        "people familiar with the talks",
+        "people familiar with the plans",
+        "person familiar with the matter",
+        "anonymous source",
+        "anonymous sources",
+        "unnamed source",
+        "unnamed sources",
+        "according to sources",
+        "sources said",
+        "source said",
+        "reportedly",
+    ];
+    if contains_any(&haystack, &rumor_patterns) {
+        return NewsSourceIndependence::Rumor;
+    }
+
+    let restatement_patterns = [
+        "said in a statement",
+        "according to a statement",
+        "according to the statement",
+        "the statement said",
+        "statement said",
+        "said in the statement",
+        "said in a press release",
+        "according to a press release",
+        "press release said",
+        "announced in a statement",
+        "said on x",
+        "said on twitter",
+        "wrote on x",
+        "posted on x",
+    ];
+    if contains_any(&haystack, &restatement_patterns) {
+        return NewsSourceIndependence::Restatement;
+    }
+
+    let wire_header_patterns = [
+        "(reuters)",
+        "(bloomberg)",
+        "(ap)",
+        " reuters - ",
+        " bloomberg - ",
+        " associated press - ",
+    ];
+    let source_key = source_key(source).unwrap_or_default();
+    let padded_haystack = format!(" {haystack} ");
+    if contains_any(&padded_haystack, &wire_header_patterns)
+        || matches!(
+            source_key.as_str(),
+            "reuters" | "ap" | "associated-press" | "associatedpress"
+        )
+    {
+        return NewsSourceIndependence::Wire;
+    }
+
+    NewsSourceIndependence::Independent
+}
+
 pub fn source_domain_for(url: &str, source: &str) -> String {
     normalize_source_domain(url)
         .or_else(|| known_source_domain(source).map(str::to_string))
@@ -264,10 +419,16 @@ fn ensure_source_tier_schema(conn: &Connection) -> Result<()> {
             "ALTER TABLE news_cache ADD COLUMN source_tier_inferred INTEGER NOT NULL DEFAULT 1 CHECK(source_tier_inferred IN (0, 1))",
         )?;
     }
+    if !news_column_exists(conn, "source_independence")? {
+        conn.execute_batch(
+            "ALTER TABLE news_cache ADD COLUMN source_independence TEXT NOT NULL DEFAULT 'unknown' CHECK(source_independence IN ('independent','wire','restatement','rumor','unknown'))",
+        )?;
+    }
 
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_news_source_domain ON news_cache(source_domain);
-         CREATE INDEX IF NOT EXISTS idx_news_source_tier ON news_cache(source_tier);",
+         CREATE INDEX IF NOT EXISTS idx_news_source_tier ON news_cache(source_tier);
+         CREATE INDEX IF NOT EXISTS idx_news_source_independence ON news_cache(source_independence);",
     )?;
 
     Ok(())
@@ -383,10 +544,49 @@ fn backfill_news_source_tiers(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn backfill_news_source_independence(conn: &Connection) -> Result<()> {
+    let rows = {
+        let mut stmt = conn.prepare(
+            "SELECT id, title, source, description, extra_snippets
+             FROM news_cache
+             WHERE source_independence = 'unknown' OR source_independence = ''",
+        )?;
+        let mapped = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?;
+        let mut rows = Vec::new();
+        for row in mapped {
+            rows.push(row?);
+        }
+        rows
+    };
+
+    for (id, title, source, description, snippets_json) in rows {
+        let snippets = serde_json::from_str::<Vec<String>>(&snippets_json).unwrap_or_default();
+        let independence =
+            classify_news_source_independence(&title, &source, Some(&description), &snippets);
+        conn.execute(
+            "UPDATE news_cache
+             SET source_independence = ?1
+             WHERE id = ?2",
+            params![independence.as_str(), id],
+        )?;
+    }
+
+    Ok(())
+}
+
 pub fn ensure_source_tier_tables(conn: &Connection) -> Result<()> {
     ensure_source_tier_schema(conn)?;
     seed_source_tiers(conn)?;
     backfill_news_source_tiers(conn)?;
+    backfill_news_source_independence(conn)?;
     Ok(())
 }
 
@@ -570,10 +770,12 @@ pub fn insert_news_with_source_type(
 ) -> Result<()> {
     let snippets_json = serde_json::to_string(extra_snippets).unwrap_or_else(|_| "[]".to_string());
     let classification = classify_news_source(conn, url, source)?;
+    let independence =
+        classify_news_source_independence(title, source, description, extra_snippets);
     conn.execute(
         "INSERT OR IGNORE INTO news_cache
-         (title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, description, extra_snippets, category, published_at, fetched_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now'))",
+         (title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, source_independence, description, extra_snippets, category, published_at, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now'))",
         params![
             title,
             url,
@@ -583,6 +785,7 @@ pub fn insert_news_with_source_type(
             classification.domain,
             classification.tier,
             if classification.inferred { 1 } else { 0 },
+            independence.as_str(),
             description.unwrap_or(""),
             snippets_json,
             category,
@@ -649,8 +852,31 @@ pub fn get_latest_news(
     search_term: Option<&str>,
     hours_back: Option<i64>,
 ) -> Result<Vec<NewsEntry>> {
+    get_latest_news_filtered(
+        conn,
+        limit,
+        source_filter,
+        category_filter,
+        search_term,
+        hours_back,
+        None,
+    )
+}
+
+/// Get latest N news items with optional source-independence filtering.
+///
+/// Filters can be combined (AND logic).
+pub fn get_latest_news_filtered(
+    conn: &Connection,
+    limit: usize,
+    source_filter: Option<&str>,
+    category_filter: Option<&str>,
+    search_term: Option<&str>,
+    hours_back: Option<i64>,
+    independence_filter: Option<&[NewsSourceIndependence]>,
+) -> Result<Vec<NewsEntry>> {
     ensure_source_tier_tables(conn)?;
-    let mut sql = "SELECT id, title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, description, extra_snippets, category, published_at, fetched_at
+    let mut sql = "SELECT id, title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, source_independence, description, extra_snippets, category, published_at, fetched_at
                    FROM news_cache
                    WHERE 1=1".to_string();
 
@@ -677,6 +903,18 @@ pub fn get_latest_news(
         params_vec.push(Box::new(cutoff));
     }
 
+    if let Some(independence_values) = independence_filter.filter(|values| !values.is_empty()) {
+        sql.push_str(" AND source_independence IN (");
+        for (idx, value) in independence_values.iter().enumerate() {
+            if idx > 0 {
+                sql.push_str(", ");
+            }
+            sql.push('?');
+            params_vec.push(Box::new(value.as_str().to_string()));
+        }
+        sql.push(')');
+    }
+
     sql.push_str(" ORDER BY published_at DESC LIMIT ?");
     params_vec.push(Box::new(limit as i64));
 
@@ -694,12 +932,13 @@ pub fn get_latest_news(
             source_domain: row.get(6)?,
             source_tier: row.get(7)?,
             source_tier_inferred: row.get::<_, i64>(8)? != 0,
-            description: row.get(9)?,
-            extra_snippets: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(10)?)
+            source_independence: NewsSourceIndependence::from_stored(&row.get::<_, String>(9)?),
+            description: row.get(10)?,
+            extra_snippets: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(11)?)
                 .unwrap_or_default(),
-            category: row.get(11)?,
-            published_at: row.get(12)?,
-            fetched_at: row.get(13)?,
+            category: row.get(12)?,
+            published_at: row.get(13)?,
+            fetched_at: row.get(14)?,
         })
     })?;
 
@@ -719,16 +958,37 @@ pub fn get_latest_news_backend(
     search_term: Option<&str>,
     hours_back: Option<i64>,
 ) -> Result<Vec<NewsEntry>> {
+    get_latest_news_filtered_backend(
+        backend,
+        limit,
+        source_filter,
+        category_filter,
+        search_term,
+        hours_back,
+        None,
+    )
+}
+
+pub fn get_latest_news_filtered_backend(
+    backend: &BackendConnection,
+    limit: usize,
+    source_filter: Option<&str>,
+    category_filter: Option<&str>,
+    search_term: Option<&str>,
+    hours_back: Option<i64>,
+    independence_filter: Option<&[NewsSourceIndependence]>,
+) -> Result<Vec<NewsEntry>> {
     query::dispatch(
         backend,
         |conn| {
-            get_latest_news(
+            get_latest_news_filtered(
                 conn,
                 limit,
                 source_filter,
                 category_filter,
                 search_term,
                 hours_back,
+                independence_filter,
             )
         },
         |pool| {
@@ -739,6 +999,7 @@ pub fn get_latest_news_backend(
                 category_filter,
                 search_term,
                 hours_back,
+                independence_filter,
             )
         },
     )
@@ -894,6 +1155,38 @@ async fn backfill_news_source_tiers_postgres(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
+async fn backfill_news_source_independence_postgres(pool: &PgPool) -> Result<()> {
+    let rows = sqlx::query(
+        "SELECT id, title, source, description, extra_snippets
+         FROM news_cache
+         WHERE source_independence = 'unknown' OR source_independence = ''",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for row in rows {
+        let id: i64 = row.try_get(0)?;
+        let title: String = row.try_get(1)?;
+        let source: String = row.try_get(2)?;
+        let description: String = row.try_get(3)?;
+        let snippets_json: String = row.try_get(4)?;
+        let snippets = serde_json::from_str::<Vec<String>>(&snippets_json).unwrap_or_default();
+        let independence =
+            classify_news_source_independence(&title, &source, Some(&description), &snippets);
+        sqlx::query(
+            "UPDATE news_cache
+             SET source_independence = $1
+             WHERE id = $2",
+        )
+        .bind(independence.as_str())
+        .bind(id)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
 fn list_news_source_tiers_postgres(pool: &PgPool) -> Result<Vec<NewsSourceTier>> {
     ensure_tables_postgres(pool)?;
     let rows = crate::db::pg_runtime::block_on(async {
@@ -1006,6 +1299,8 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 source_domain TEXT NOT NULL DEFAULT '',
                 source_tier INTEGER NOT NULL DEFAULT 3 CHECK(source_tier BETWEEN 1 AND 4),
                 source_tier_inferred BOOLEAN NOT NULL DEFAULT TRUE,
+                source_independence TEXT NOT NULL DEFAULT 'unknown'
+                    CHECK(source_independence IN ('independent','wire','restatement','rumor','unknown')),
                 description TEXT NOT NULL DEFAULT '',
                 extra_snippets TEXT NOT NULL DEFAULT '[]',
                 category TEXT NOT NULL DEFAULT 'general',
@@ -1034,6 +1329,9 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         sqlx::query("ALTER TABLE news_cache ADD COLUMN IF NOT EXISTS source_tier_inferred BOOLEAN NOT NULL DEFAULT TRUE")
             .execute(pool)
             .await?;
+        sqlx::query("ALTER TABLE news_cache ADD COLUMN IF NOT EXISTS source_independence TEXT NOT NULL DEFAULT 'unknown' CHECK(source_independence IN ('independent','wire','restatement','rumor','unknown'))")
+            .execute(pool)
+            .await?;
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_news_source_domain ON news_cache(source_domain)",
         )
@@ -1042,8 +1340,12 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_news_source_tier ON news_cache(source_tier)")
             .execute(pool)
             .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_news_source_independence ON news_cache(source_independence)")
+            .execute(pool)
+            .await?;
         seed_source_tiers_postgres(pool).await?;
         backfill_news_source_tiers_postgres(pool).await?;
+        backfill_news_source_independence_postgres(pool).await?;
         Ok::<(), anyhow::Error>(())
     })?;
     Ok(())
@@ -1087,11 +1389,13 @@ fn insert_news_with_source_type_postgres(
     ensure_tables_postgres(pool)?;
     let snippets_json = serde_json::to_string(extra_snippets).unwrap_or_else(|_| "[]".to_string());
     let classification = classify_news_source_postgres(pool, url, source)?;
+    let independence =
+        classify_news_source_independence(title, source, description, extra_snippets);
     crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO news_cache
-             (title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, description, extra_snippets, category, published_at, fetched_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+             (title, url, source, source_type, symbol_tag, source_domain, source_tier, source_tier_inferred, source_independence, description, extra_snippets, category, published_at, fetched_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
              ON CONFLICT (url) DO UPDATE
              SET description = CASE
                  WHEN news_cache.description = '' AND EXCLUDED.description != ''
@@ -1100,7 +1404,8 @@ fn insert_news_with_source_type_postgres(
              END,
              source_domain = EXCLUDED.source_domain,
              source_tier = EXCLUDED.source_tier,
-             source_tier_inferred = EXCLUDED.source_tier_inferred",
+             source_tier_inferred = EXCLUDED.source_tier_inferred,
+             source_independence = EXCLUDED.source_independence",
         )
         .bind(title)
         .bind(url)
@@ -1110,6 +1415,7 @@ fn insert_news_with_source_type_postgres(
         .bind(classification.domain)
         .bind(classification.tier)
         .bind(classification.inferred)
+        .bind(independence.as_str())
         .bind(description.unwrap_or(""))
         .bind(snippets_json)
         .bind(category)
@@ -1128,11 +1434,12 @@ fn get_latest_news_postgres(
     category_filter: Option<&str>,
     search_term: Option<&str>,
     hours_back: Option<i64>,
+    independence_filter: Option<&[NewsSourceIndependence]>,
 ) -> Result<Vec<NewsEntry>> {
     ensure_tables_postgres(pool)?;
     let rows = crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
-            "SELECT id, title, url, source, source_type, symbol_tag, source_domain, source_tier::BIGINT, source_tier_inferred, description, extra_snippets, category, published_at, fetched_at::text
+            "SELECT id, title, url, source, source_type, symbol_tag, source_domain, source_tier::BIGINT, source_tier_inferred, source_independence, description, extra_snippets, category, published_at, fetched_at::text
              FROM news_cache
              WHERE TRUE",
         );
@@ -1151,6 +1458,14 @@ fn get_latest_news_postgres(
             let cutoff = chrono::Utc::now().timestamp() - (hours * 3600);
             qb.push(" AND published_at > ").push_bind(cutoff);
         }
+        if let Some(independence_values) = independence_filter.filter(|values| !values.is_empty()) {
+            qb.push(" AND source_independence IN (");
+            let mut separated = qb.separated(", ");
+            for value in independence_values {
+                separated.push_bind(value.as_str());
+            }
+            separated.push_unseparated(")");
+        }
 
         qb.push(" ORDER BY published_at DESC LIMIT ")
             .push_bind(limit as i64);
@@ -1159,7 +1474,7 @@ fn get_latest_news_postgres(
 
     rows.into_iter()
         .map(|row| {
-            let snippets_json: String = row.try_get(10)?;
+            let snippets_json: String = row.try_get(11)?;
             Ok(NewsEntry {
                 id: row.try_get(0)?,
                 title: row.try_get(1)?,
@@ -1170,12 +1485,15 @@ fn get_latest_news_postgres(
                 source_domain: row.try_get(6)?,
                 source_tier: row.try_get(7)?,
                 source_tier_inferred: row.try_get(8)?,
-                description: row.try_get(9)?,
+                source_independence: NewsSourceIndependence::from_stored(
+                    &row.try_get::<String, _>(9)?,
+                ),
+                description: row.try_get(10)?,
                 extra_snippets: serde_json::from_str::<Vec<String>>(&snippets_json)
                     .unwrap_or_default(),
-                category: row.try_get(11)?,
-                published_at: row.try_get(12)?,
-                fetched_at: row.try_get(13)?,
+                category: row.try_get(12)?,
+                published_at: row.try_get(13)?,
+                fetched_at: row.try_get(14)?,
             })
         })
         .collect()
@@ -1254,6 +1572,10 @@ mod tests {
         assert_eq!(items[0].source_domain, "example.com");
         assert_eq!(items[0].source_tier, 3);
         assert!(items[0].source_tier_inferred);
+        assert_eq!(
+            items[0].source_independence,
+            NewsSourceIndependence::Independent
+        );
     }
 
     #[test]
@@ -1289,6 +1611,152 @@ mod tests {
     }
 
     #[test]
+    fn source_independence_classifier_matches_hand_tagged_fixtures() {
+        let empty_snippets: Vec<String> = Vec::new();
+        let fixtures = vec![
+            (
+                "Fed leaves rates unchanged after two-day meeting",
+                "Bloomberg Markets",
+                "Reporters reviewed the statement and market reaction after the decision.",
+                NewsSourceIndependence::Independent,
+            ),
+            (
+                "(Reuters) - Oil rises as OPEC supply cuts tighten market",
+                "Reuters",
+                "",
+                NewsSourceIndependence::Wire,
+            ),
+            (
+                "Company says buyback was approved",
+                "MarketWatch",
+                "The company said in a statement that the board approved a buyback.",
+                NewsSourceIndependence::Restatement,
+            ),
+            (
+                "Treasury plan discussed by advisers",
+                "CNBC",
+                "The plan is being debated, according to people familiar with the matter.",
+                NewsSourceIndependence::Rumor,
+            ),
+            (
+                "Chip stocks climb after suppliers report stronger orders",
+                "Financial Times",
+                "Filings and interviews with suppliers point to a pickup in orders.",
+                NewsSourceIndependence::Independent,
+            ),
+            (
+                "(Bloomberg) -- Dollar slips as traders price July cut",
+                "Bloomberg",
+                "",
+                NewsSourceIndependence::Wire,
+            ),
+            (
+                "Minister announces tariff review",
+                "The Guardian",
+                "The minister wrote on X that the review would begin next week.",
+                NewsSourceIndependence::Restatement,
+            ),
+            (
+                "Bank merger talks reportedly restart",
+                "Yahoo Finance",
+                "Negotiations have reportedly restarted after collapsing last month.",
+                NewsSourceIndependence::Rumor,
+            ),
+            (
+                "AP - US jobless claims edge lower",
+                "AP",
+                "",
+                NewsSourceIndependence::Wire,
+            ),
+            (
+                "Copper inventories fall for third week",
+                "Bloomberg Commodities",
+                "Exchange data showed inventories falling across major warehouses.",
+                NewsSourceIndependence::Independent,
+            ),
+            (
+                "Candidate rejects currency-devaluation claim",
+                "Reuters",
+                "The campaign said in a press release that the claim was false.",
+                NewsSourceIndependence::Restatement,
+            ),
+            (
+                "Exchange explores new listing rules",
+                "CoinDesk",
+                "Anonymous sources said the exchange is weighing a rule change.",
+                NewsSourceIndependence::Rumor,
+            ),
+            (
+                "Inflation swaps move after CPI surprise",
+                "Wall Street Journal",
+                "Market pricing moved after the CPI release beat consensus forecasts.",
+                NewsSourceIndependence::Independent,
+            ),
+            (
+                "Company denies financing stress",
+                "Seeking Alpha",
+                "The statement said liquidity remained strong.",
+                NewsSourceIndependence::Restatement,
+            ),
+            (
+                "Bonds rally as growth fears deepen",
+                "Reuters",
+                "Reuters - Bonds rallied as investors bought duration.",
+                NewsSourceIndependence::Wire,
+            ),
+            (
+                "Crypto lender weighs sale",
+                "The Block",
+                "A person familiar with the matter said a sale is being considered.",
+                NewsSourceIndependence::Rumor,
+            ),
+            (
+                "Gold ETF holdings rise with real yields lower",
+                "Financial Times",
+                "Fund-flow data compiled by the outlet showed two weeks of inflows.",
+                NewsSourceIndependence::Independent,
+            ),
+            (
+                "Prime minister comments on sanctions",
+                "BBC",
+                "The prime minister said on Twitter that sanctions would remain.",
+                NewsSourceIndependence::Restatement,
+            ),
+            (
+                "Markets steady before Fed minutes",
+                "CNBC",
+                "Traders awaited minutes while equity futures held narrow ranges.",
+                NewsSourceIndependence::Independent,
+            ),
+            (
+                "Central bank leadership change considered",
+                "Bloomberg",
+                "The change is being discussed, according to sources.",
+                NewsSourceIndependence::Rumor,
+            ),
+        ];
+
+        let mut correct = 0usize;
+        for (title, source, description, expected) in &fixtures {
+            let actual = classify_news_source_independence(
+                title,
+                source,
+                Some(description),
+                &empty_snippets,
+            );
+            if actual == *expected {
+                correct += 1;
+            }
+        }
+
+        let accuracy = correct as f64 / fixtures.len() as f64;
+        assert!(
+            accuracy >= 0.80,
+            "classifier accuracy {accuracy:.2} below 80% on fixture set"
+        );
+    }
+
+    #[test]
     fn source_tier_backfill_updates_existing_rows() {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
@@ -1312,6 +1780,7 @@ mod tests {
         assert_eq!(items[0].source_domain, "reuters.com");
         assert_eq!(items[0].source_tier, 1);
         assert!(!items[0].source_tier_inferred);
+        assert_eq!(items[0].source_independence, NewsSourceIndependence::Wire);
     }
 
     #[test]
@@ -1363,6 +1832,55 @@ mod tests {
 
         let items = get_latest_news(&conn, 10, None, None, None, None).unwrap();
         assert_eq!(items.len(), 1); // Only one entry, duplicate ignored
+    }
+
+    #[test]
+    fn filters_by_source_independence() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        insert_news_with_source_type(
+            &conn,
+            "Independent market report",
+            "https://example.com/independent",
+            "Bloomberg Markets",
+            "rss",
+            None,
+            "markets",
+            1709610000,
+            Some("Exchange data showed inventories falling."),
+            &[],
+        )
+        .unwrap();
+        insert_news_with_source_type(
+            &conn,
+            "Company comments on buyback",
+            "https://example.com/restatement",
+            "MarketWatch",
+            "rss",
+            None,
+            "markets",
+            1709610001,
+            Some("The company said in a statement that the buyback was approved."),
+            &[],
+        )
+        .unwrap();
+
+        let items = get_latest_news_filtered(
+            &conn,
+            10,
+            None,
+            None,
+            None,
+            None,
+            Some(&[NewsSourceIndependence::Independent]),
+        )
+        .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(
+            items[0].source_independence,
+            NewsSourceIndependence::Independent
+        );
     }
 
     #[test]

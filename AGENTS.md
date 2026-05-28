@@ -76,7 +76,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics movers --json [--threshold N] [--overnight]` | Significant daily/overnight moves (default >3%) |
 | `pftui data predictions --json [--limit N]` | Polymarket prediction market odds |
 | `pftui data sentiment --json` | Crypto + traditional Fear & Greed, COT positioning |
-| `pftui data news --json [--limit N]` | Financial news from RSS and Brave-backed cache, including `source_tier` |
+| `pftui data news --json [--limit N] [--filter-independence independent,wire]` | Financial news from RSS and Brave-backed cache, including `source_tier` and `source_independence` |
 | `pftui data news feeds list --json` | RSS feed health by feed, including status, failure counts, and last failure reason |
 | `pftui data news feeds reset FEED_ID [--json]` | Re-enable a degraded or disabled RSS feed after review |
 | `pftui data news sources list --json` | Source-domain tier mappings used by news ingest |
@@ -200,7 +200,7 @@ The active backend database is the single source of truth. All interfaces (TUI, 
 ├── targets                        # Target allocation floor/ceiling ranges
 ├── journal_entries                # Trade journal + notes
 ├── calendar_events                # Economic calendar
-├── news_cache                     # RSS/Brave articles with source tier metadata (48h retention)
+├── news_cache                     # RSS/Brave articles with source tier and independence metadata (48h retention)
 ├── news_source_tiers              # Domain-to-tier mapping used at ingest
 ├── rss_feed_health                # Per-feed RSS status, failure counters, and disable state
 ├── sentiment_cache                # Fear & Greed indices
@@ -296,7 +296,7 @@ SENTIMENT=$(pftui data sentiment --json)
 # Analyse all of the above, then compose and deliver your brief
 ```
 
-News JSON includes `source_tier`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in news reasoning. Treat `source_tier_inferred` as provisional.
+News JSON includes `source_tier` and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in news reasoning. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events.
 
 ### Alert Monitoring
 
