@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: port report open predictions table
+
+- What: Added the native `open-predictions-table` report chart with Python-parity HTML output, ASCII support, JSON input mode, and DB input from pending `user_predictions` rows with target dates.
+- Why: Daily reports can now render the open prediction due table through pftui instead of the Python `open_predictions_table` helper.
+
 ### 2026-05-28 — feat: port report what-changed strip
 
 - What: Added the native `what-changed-strip` report chart with Python-parity SVG output, ASCII/PNG support through the shared registry, JSON input mode, and agent docs.

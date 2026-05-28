@@ -140,7 +140,8 @@ pftui
 │       ├── stacked-bar
 │       ├── prob-bar
 │       ├── drift-bar
-│       └── what-changed-strip
+│       ├── what-changed-strip
+│       └── open-predictions-table
 └── system
     ├── config
     ├── db-info
