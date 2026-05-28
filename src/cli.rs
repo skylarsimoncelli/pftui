@@ -986,6 +986,7 @@ pub enum DataPredictionsCommand {
     },
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 pub enum PortfolioTransactionCommand {
     /// Add a transaction
@@ -1002,6 +1003,12 @@ pub enum PortfolioTransactionCommand {
         price: Option<String>,
         #[arg(long, default_value = "USD")]
         currency: String,
+        /// Cash currency to debit/credit for paired cash leg
+        #[arg(long = "cash-currency", default_value = "USD")]
+        cash_currency: String,
+        /// Do not insert the paired cash leg for buy/sell transactions
+        #[arg(long = "no-auto-cash")]
+        no_auto_cash: bool,
         #[arg(long)]
         date: Option<String>,
         #[arg(long)]
@@ -1011,12 +1018,19 @@ pub enum PortfolioTransactionCommand {
     Remove {
         /// Transaction ID to remove
         id: i64,
+        /// Remove only this transaction and leave its paired leg unlinked
+        #[arg(long)]
+        unpaired: bool,
     },
     /// List all transactions
     List {
         /// Show transaction notes column
         #[arg(long)]
         notes: bool,
+
+        /// Show paired transaction ID column
+        #[arg(long)]
+        paired: bool,
 
         /// Output as JSON
         #[arg(long)]

@@ -501,6 +501,7 @@ mod tests {
                 currency: "USD".to_string(),
                 date: "2025-01-15".to_string(),
                 notes: None,
+                paired_tx_id: None,
                 created_at: "2025-01-15".to_string(),
             },
             crate::models::transaction::Transaction {
@@ -513,6 +514,7 @@ mod tests {
                 currency: "USD".to_string(),
                 date: "2025-06-01".to_string(),
                 notes: None,
+                paired_tx_id: None,
                 created_at: "2025-06-01".to_string(),
             },
         ];
@@ -546,6 +548,7 @@ mod tests {
             currency: "USD".to_string(),
             date: "2025-01-15".to_string(),
             notes: None,
+            paired_tx_id: None,
             created_at: "2025-01-15".to_string(),
         }];
 
