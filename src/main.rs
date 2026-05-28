@@ -118,6 +118,7 @@ fn run_agent_journal(
                 source_agent,
                 target_date,
                 resolution_criteria,
+                lessons,
                 json,
             } => {
                 let text = claim.or(value).ok_or_else(|| {
@@ -128,26 +129,28 @@ fn run_agent_journal(
                     )
                 })?;
                 commands::predict::run(
-                backend,
-                "add",
-                Some(&text),
-                None,
-                symbol.as_deref(),
-                conviction.as_deref(),
-                timeframe.as_deref().or(timeframe_pos.as_deref()),
-                confidence.or(confidence_pos),
-                source_agent.as_deref(),
-                target_date.as_deref(),
-                resolution_criteria.as_deref(),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                false,
-                json,
-            )},
+                    backend,
+                    "add",
+                    Some(&text),
+                    None,
+                    symbol.as_deref(),
+                    conviction.as_deref(),
+                    timeframe.as_deref().or(timeframe_pos.as_deref()),
+                    confidence.or(confidence_pos),
+                    source_agent.as_deref(),
+                    target_date.as_deref(),
+                    resolution_criteria.as_deref(),
+                    lessons.as_deref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    json,
+                )
+            }
             cli::JournalPredictionCommand::List {
                 filter,
                 timeframe,
@@ -162,6 +165,7 @@ fn run_agent_journal(
                 symbol.as_deref(),
                 None,
                 timeframe.as_deref(),
+                None,
                 None,
                 None,
                 None,
@@ -199,6 +203,7 @@ fn run_agent_journal(
                     None,
                     None,
                     None,
+                    None,
                     merged_outcome.as_deref(),
                     merged_notes.as_deref(),
                     lesson.as_deref(),
@@ -228,6 +233,7 @@ fn run_agent_journal(
                 agent.as_deref(),              // source_agent
                 None,                          // target_date
                 None,                          // resolution_criteria
+                None,                          // lessons_applied
                 None,                          // outcome
                 None,                          // notes
                 None,                          // lesson
@@ -241,6 +247,7 @@ fn run_agent_journal(
                 commands::predict::run(
                     backend,
                     "scorecard",
+                    None,
                     None,
                     None,
                     None,
@@ -729,6 +736,7 @@ fn dispatch_predictions(
                 agent.as_deref(),              // source_agent
                 None,                          // target_date
                 None,                          // resolution_criteria
+                None,                          // lessons_applied
                 None,                          // outcome
                 None,                          // notes
                 None,                          // lesson
@@ -756,6 +764,7 @@ fn dispatch_predictions(
             None,               // source_agent
             None,               // target_date
             None,               // resolution_criteria
+            None,               // lessons_applied
             None,               // outcome
             None,               // notes
             None,               // lesson
@@ -782,6 +791,7 @@ fn dispatch_predictions(
             None,                          // source_agent
             None,                          // target_date
             None,                          // resolution_criteria
+            None,                          // lessons_applied
             None,                          // outcome
             None,                          // notes
             None,                          // lesson
@@ -834,6 +844,7 @@ fn dispatch_predictions(
             source_agent,
             target_date,
             resolution_criteria,
+            lessons,
             json: j,
         }) => commands::predict::run(
             backend,
@@ -847,6 +858,7 @@ fn dispatch_predictions(
             source_agent.as_deref(),
             target_date.as_deref(),
             resolution_criteria.as_deref(),
+            lessons.as_deref(),
             None,
             None,
             None,
@@ -2378,6 +2390,11 @@ fn run_cli(cli: Cli) -> Result<()> {
             } => {
                 commands::calibration::run(&backend, threshold, window_days, json)
             }
+            cli::AnalyticsCommand::Lessons { command } => match command {
+                cli::AnalyticsLessonsCommand::Applied { since, json } => {
+                    commands::lessons_applied::run(&backend, &since, json)
+                }
+            },
             cli::AnalyticsCommand::DebateScore { command } => match command {
                 cli::AnalyticsDebateScoreCommand::Add {
                     debate_id,

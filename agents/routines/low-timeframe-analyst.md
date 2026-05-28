@@ -223,14 +223,14 @@ pftui analytics backtest agent --agent low-agent --json   # your accuracy: win r
 
 Are your high-conviction calls more accurate than low-conviction? Which asset classes do you read best? Are you on a streak? Let backtest results calibrate today's conviction levels.
 
-Also review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how today's predictions account for it.
+Also review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If a specific lesson changes, narrows, or blocks a new call, carry its lesson ID into the prediction with `--lessons`. If no lesson applies, omit the flag.
 
 Example prediction format:
 - "[Event/data] causes [effect on asset] today" (confidence: 0.7)
 - "[Technical level hold/break] leads to [momentum outcome]" (confidence: 0.5)
 
 ```bash
-pftui journal prediction add "[cause] will [effect] today" --symbol [SYM] --target-date $(date +%Y-%m-%d) --conviction [level] --timeframe low --confidence [0.X] --source-agent low-agent
+pftui journal prediction add "[cause] will [effect] today" --symbol [SYM] --target-date $(date +%Y-%m-%d) --conviction [level] --timeframe low --confidence [0.X] --source-agent low-agent --lessons "[ids]"
 ```
 
 ## Midday Run
@@ -288,4 +288,3 @@ pftui journal notes add "[Pre-market/Midday/Close]: [key data points] | Alerts: 
 - Prediction reflection is mandatory. Never skip it.
 - **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it. One bad source can cascade into wrong predictions, wrong convictions, and wrong scenario probabilities.
 - Maximum 4 minutes per run.
-
