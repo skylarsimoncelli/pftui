@@ -18,8 +18,10 @@ use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::db::scenarios;
 use crate::db::transactions::list_transactions_backend;
+use crate::db::user_predictions;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 use crate::report::charts::drift_bar::DriftBarInput;
+use crate::report::charts::open_predictions_table::{OpenPredictionRow, OpenPredictionsTableInput};
 use crate::report::charts::prob_bar::ProbBarInput;
 use crate::report::charts::stacked_bar::{StackedBarInput, StackedBarSegment};
 use crate::report::palette;
@@ -80,6 +82,7 @@ fn emit_chart(
         ReportChartFormat::Svg => ChartOutputFormat::Svg,
         ReportChartFormat::Png => ChartOutputFormat::Png,
         ReportChartFormat::Ascii => ChartOutputFormat::Ascii,
+        ReportChartFormat::Html => ChartOutputFormat::Html,
     };
     let (bytes, text_content) = render_chart(&input, output_format)?;
 
@@ -91,7 +94,11 @@ fn emit_chart(
 
     if json_output {
         let text = match output_format {
-            ChartOutputFormat::Svg | ChartOutputFormat::Ascii if out.is_none() => text_content,
+            ChartOutputFormat::Svg | ChartOutputFormat::Ascii | ChartOutputFormat::Html
+                if out.is_none() =>
+            {
+                text_content
+            }
             _ => None,
         };
         let content_base64 = if output_format == ChartOutputFormat::Png && out.is_none() {
@@ -174,6 +181,9 @@ fn chart_input_from_db(
         ChartKind::WhatChanged => {
             bail!("what-changed-strip does not have a canonical --from-db source; use --from-json")
         }
+        ChartKind::OpenPredictions => Ok(ChartInput::OpenPredictions(
+            open_predictions_table_from_backend(backend, query)?,
+        )),
     }
 }
 
@@ -181,17 +191,30 @@ fn render_chart(
     input: &ChartInput,
     format: ChartOutputFormat,
 ) -> Result<(Vec<u8>, Option<String>)> {
+    if !registry::supported_formats(input).contains(&report_format_name(format)) {
+        bail!(
+            "{} does not support {} output; supported formats: {}",
+            registry::chart_name(input),
+            report_format_name(format),
+            registry::supported_formats(input).join(", ")
+        );
+    }
+
     match format {
         ChartOutputFormat::Svg => {
-            let svg = registry::render_svg(input);
+            let svg = registry::render_svg(input)?;
             Ok((svg.as_bytes().to_vec(), Some(svg)))
         }
         ChartOutputFormat::Ascii => {
             let ascii = registry::render_ascii(input);
             Ok((ascii.as_bytes().to_vec(), Some(ascii)))
         }
+        ChartOutputFormat::Html => {
+            let html = registry::render_html(input)?;
+            Ok((html.as_bytes().to_vec(), Some(html)))
+        }
         ChartOutputFormat::Png => {
-            let svg = registry::render_svg(input);
+            let svg = registry::render_svg(input)?;
             Ok((svg_to_png_bytes(&svg)?, None))
         }
     }
@@ -218,7 +241,76 @@ fn report_format_name(format: ChartOutputFormat) -> &'static str {
         ChartOutputFormat::Svg => "svg",
         ChartOutputFormat::Png => "png",
         ChartOutputFormat::Ascii => "ascii",
+        ChartOutputFormat::Html => "html",
     }
+}
+
+fn open_predictions_table_from_backend(
+    backend: &BackendConnection,
+    query: &str,
+) -> Result<OpenPredictionsTableInput> {
+    let limit = open_predictions_limit(query)?;
+    let today = Utc::now().date_naive();
+    let mut predictions =
+        user_predictions::list_predictions_backend(backend, Some("pending"), None, None, None)?
+            .into_iter()
+            .filter_map(|prediction| {
+                let target_date = prediction
+                    .target_date
+                    .as_deref()
+                    .and_then(|raw| NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok())?;
+                Some(OpenPredictionRow {
+                    id: Some(prediction.id),
+                    claim: prediction.claim,
+                    asset: prediction.symbol.unwrap_or_else(|| "\u{2014}".to_string()),
+                    days_remaining: (target_date - today).num_days(),
+                    confidence: prediction.confidence,
+                    direction: None,
+                })
+            })
+            .collect::<Vec<_>>();
+
+    predictions.sort_by(|a, b| {
+        a.days_remaining
+            .cmp(&b.days_remaining)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    predictions.truncate(limit);
+
+    if predictions.is_empty() {
+        bail!("no pending predictions with parseable target_date available for open-predictions-table")
+    }
+
+    Ok(OpenPredictionsTableInput {
+        predictions,
+        width: None,
+    })
+}
+
+fn open_predictions_limit(query: &str) -> Result<usize> {
+    let normalized = query.trim().to_ascii_lowercase();
+    if normalized.is_empty()
+        || matches!(
+            normalized.as_str(),
+            "pending" | "open" | "user-predictions" | "predictions"
+        )
+    {
+        return Ok(10);
+    }
+    if let Some(raw) = normalized.strip_prefix("limit=") {
+        return parse_open_predictions_limit(raw);
+    }
+    parse_open_predictions_limit(&normalized)
+}
+
+fn parse_open_predictions_limit(raw: &str) -> Result<usize> {
+    let limit = raw.parse::<usize>().with_context(|| {
+        format!("open-predictions-table --from-db expects pending/open or a limit, got '{raw}'")
+    })?;
+    if limit == 0 {
+        bail!("open-predictions-table limit must be greater than zero");
+    }
+    Ok(limit)
 }
 
 fn portfolio_positions_backend(
@@ -513,6 +605,47 @@ mod tests {
         assert_eq!(input.target_pct, 40.0);
         assert_eq!(input.actual_pct, 50.0);
         assert_eq!(input.band_pct, 5.0);
+    }
+
+    #[test]
+    fn report_open_predictions_table_uses_synthetic_pending_predictions() {
+        let backend = backend();
+        let target_date = (Utc::now().date_naive() + Duration::days(2))
+            .format("%Y-%m-%d")
+            .to_string();
+        user_predictions::add_prediction_backend(
+            &backend,
+            "BTC closes above support",
+            Some("BTC"),
+            Some("medium"),
+            Some("low"),
+            Some(0.65),
+            Some("test-agent"),
+            Some(&target_date),
+            None,
+            &[],
+        )
+        .unwrap();
+        user_predictions::add_prediction_backend(
+            &backend,
+            "No target date should not render",
+            Some("ETH"),
+            Some("medium"),
+            Some("low"),
+            Some(0.45),
+            Some("test-agent"),
+            None,
+            None,
+            &[],
+        )
+        .unwrap();
+
+        let input = open_predictions_table_from_backend(&backend, "pending").unwrap();
+
+        assert_eq!(input.predictions.len(), 1);
+        assert_eq!(input.predictions[0].asset, "BTC");
+        assert_eq!(input.predictions[0].days_remaining, 2);
+        assert_eq!(input.predictions[0].confidence, Some(0.65));
     }
 
     #[test]

@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::charts::drift_bar::{self, DriftBarInput};
+use super::charts::open_predictions_table::{self, OpenPredictionsTableInput};
 use super::charts::prob_bar::{self, ProbBarInput};
 use super::charts::stacked_bar::{self, StackedBarInput};
 use super::charts::what_changed_strip::{self, WhatChangedStripInput};
@@ -13,6 +14,7 @@ pub enum ChartKind {
     Probability,
     Drift,
     WhatChanged,
+    OpenPredictions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -20,6 +22,7 @@ pub enum ChartOutputFormat {
     Svg,
     Png,
     Ascii,
+    Html,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,6 +43,8 @@ pub enum ChartInput {
     Drift(DriftBarInput),
     #[serde(rename = "what-changed-strip")]
     WhatChanged(WhatChangedStripInput),
+    #[serde(rename = "open-predictions-table")]
+    OpenPredictions(OpenPredictionsTableInput),
 }
 
 pub const CHARTS: &[ChartDefinition] = &[
@@ -63,6 +68,11 @@ pub const CHARTS: &[ChartDefinition] = &[
         description: "Since-last-report delta pill strip",
         formats: &["svg", "png", "ascii"],
     },
+    ChartDefinition {
+        name: "open-predictions-table",
+        description: "Open prediction due-date table",
+        formats: &["html", "ascii"],
+    },
 ];
 
 pub fn kind_from_name(name: &str) -> Result<ChartKind> {
@@ -75,6 +85,11 @@ pub fn kind_from_name(name: &str) -> Result<ChartKind> {
         "what-changed-strip" | "what_changed_strip" | "what-changed" | "changes" => {
             Ok(ChartKind::WhatChanged)
         }
+        "open-predictions-table"
+        | "open_predictions_table"
+        | "open-predictions"
+        | "predictions-table"
+        | "predictions" => Ok(ChartKind::OpenPredictions),
         other => bail!(
             "unknown report chart '{}'. Available charts: {}",
             other,
@@ -91,15 +106,32 @@ pub fn parse_input(kind: ChartKind, value: Value) -> Result<ChartInput> {
         ChartKind::WhatChanged => {
             ChartInput::WhatChanged(WhatChangedStripInput::from_value(value)?)
         }
+        ChartKind::OpenPredictions => {
+            ChartInput::OpenPredictions(OpenPredictionsTableInput::from_value(value)?)
+        }
     })
 }
 
-pub fn render_svg(input: &ChartInput) -> String {
+pub fn render_svg(input: &ChartInput) -> Result<String> {
     match input {
-        ChartInput::Stacked(input) => stacked_bar::render_svg(input),
-        ChartInput::Probability(input) => prob_bar::render_svg(input),
-        ChartInput::Drift(input) => drift_bar::render_svg(input),
-        ChartInput::WhatChanged(input) => what_changed_strip::render_svg(input),
+        ChartInput::Stacked(input) => Ok(stacked_bar::render_svg(input)),
+        ChartInput::Probability(input) => Ok(prob_bar::render_svg(input)),
+        ChartInput::Drift(input) => Ok(drift_bar::render_svg(input)),
+        ChartInput::WhatChanged(input) => Ok(what_changed_strip::render_svg(input)),
+        ChartInput::OpenPredictions(_) => {
+            bail!("open-predictions-table is HTML-native; use --format html or --format ascii")
+        }
+    }
+}
+
+pub fn render_html(input: &ChartInput) -> Result<String> {
+    match input {
+        ChartInput::OpenPredictions(input) => Ok(open_predictions_table::render_html(input)),
+        _ => bail!(
+            "{} does not support HTML output; supported formats: {}",
+            chart_name(input),
+            supported_formats(input).join(", ")
+        ),
     }
 }
 
@@ -109,6 +141,7 @@ pub fn render_ascii(input: &ChartInput) -> String {
         ChartInput::Probability(input) => prob_bar::render_ascii(input),
         ChartInput::Drift(input) => drift_bar::render_ascii(input),
         ChartInput::WhatChanged(input) => what_changed_strip::render_ascii(input),
+        ChartInput::OpenPredictions(input) => open_predictions_table::render_ascii(input),
     }
 }
 
@@ -118,6 +151,17 @@ pub fn chart_name(input: &ChartInput) -> &'static str {
         ChartInput::Probability(_) => "prob-bar",
         ChartInput::Drift(_) => "drift-bar",
         ChartInput::WhatChanged(_) => "what-changed-strip",
+        ChartInput::OpenPredictions(_) => "open-predictions-table",
+    }
+}
+
+pub fn supported_formats(input: &ChartInput) -> &'static [&'static str] {
+    match input {
+        ChartInput::Stacked(_) => &["svg", "png", "ascii"],
+        ChartInput::Probability(_) => &["svg", "png", "ascii"],
+        ChartInput::Drift(_) => &["svg", "png", "ascii"],
+        ChartInput::WhatChanged(_) => &["svg", "png", "ascii"],
+        ChartInput::OpenPredictions(_) => &["html", "ascii"],
     }
 }
 
@@ -126,6 +170,7 @@ pub fn content_type(format: ChartOutputFormat) -> &'static str {
         ChartOutputFormat::Svg => "image/svg+xml",
         ChartOutputFormat::Png => "image/png",
         ChartOutputFormat::Ascii => "text/plain",
+        ChartOutputFormat::Html => "text/html; charset=utf-8",
     }
 }
 
@@ -147,6 +192,10 @@ mod tests {
         assert_eq!(
             kind_from_name("what_changed_strip").unwrap(),
             ChartKind::WhatChanged
+        );
+        assert_eq!(
+            kind_from_name("open_predictions_table").unwrap(),
+            ChartKind::OpenPredictions
         );
     }
 }
