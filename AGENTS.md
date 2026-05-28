@@ -61,6 +61,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui report chart prob-bar --from-json scenario.json [--format svg\|png\|ascii] [--json]` | Render a probability bar from JSON `{ "name": "...", "current": 88, "prior_7d": 80, "color": "bear" }` |
 | `pftui report chart drift-bar --from-db BTC [--out drift.svg] [--format svg\|png\|ascii] [--json]` | Native allocation drift bar using allocation targets plus current portfolio allocation |
 | `pftui report chart drift-bar --from-json drift.json [--format svg\|png\|ascii] [--json]` | Render a drift bar from JSON `{ "symbol": "BTC", "target_pct": 25.0, "actual_pct": 31.5, "band_pct": 2.0 }` |
+| `pftui report chart what-changed-strip --from-json deltas.json [--format svg\|png\|ascii] [--json]` | Render a since-last-report delta strip from JSON `{ "deltas": [{"label": "BTC", "delta_str": "+3.2%", "direction": "bull"}] }` or a bare delta array |
 
 ### Portfolio State
 

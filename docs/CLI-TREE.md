@@ -139,7 +139,8 @@ pftui
 │   └── chart
 │       ├── stacked-bar
 │       ├── prob-bar
-│       └── drift-bar
+│       ├── drift-bar
+│       └── what-changed-strip
 └── system
     ├── config
     ├── db-info
