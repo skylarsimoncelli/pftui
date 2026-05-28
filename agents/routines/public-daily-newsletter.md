@@ -58,6 +58,7 @@ pftui analytics narrative --json
 pftui analytics catalysts --json --window week
 pftui analytics opportunities --json
 pftui analytics narrative-divergence --json
+pftui analytics news-silence --json
 ```
 
 ### Macro and Structural Data
@@ -67,6 +68,7 @@ pftui data sentiment --json
 pftui data cot --json
 pftui data fedwatch --json
 pftui data news --hours 24 --json
+pftui analytics news-silence --json
 pftui data predictions --json
 pftui data etf-flows --json
 pftui data calendar --json
@@ -75,7 +77,7 @@ pftui analytics macro cycles list --json
 pftui analytics power-flow list --days 7 --json
 pftui analytics power-flow balance --json
 ```
-News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
+News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. Use `analytics news-silence` to identify topics that are unusually quiet or saturated versus their weekday tier-1/2 baseline. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 ### Structural Framework
 ```bash
@@ -155,6 +157,9 @@ Oil vs structural ceilings. Narrative vs money divergences.]
 Evidence for your assessment.]
 
 ## Macro Regime
+
+### News Volume vs Baseline
+[Use `pftui analytics news-silence --json`. Highlight the most-silent and most-saturated topics when present, with observed count versus weekday median. Treat silence as evidence only when the topic should be active given catalysts or scenario stress; otherwise say the baseline is normal or insufficient.]
 
 ### Economic Data
 [Key releases, surprises, trends. Fed expectations. Inflation trajectory.
@@ -243,6 +248,7 @@ Report the 5-8 most relevant contracts with their current probabilities. Focus o
 - Recession probability
 - Any contracts that diverge significantly from our scenario probabilities
 - Any scenarios where `analytics narrative-divergence` says headlines and market pricing disagree
+- Any topics where `analytics news-silence` says tier-1/2 coverage is silent or saturated versus baseline
 
 Frame prediction market data as "the crowd's money is where its mouth is" — these
 are the most honest signals available because people have skin in the game.]

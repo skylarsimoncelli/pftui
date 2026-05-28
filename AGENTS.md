@@ -161,6 +161,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics narrative --json` | Structured analytical memory: recap, scenario/conviction/trend shifts, scorecard, surprises, lessons, catalyst outcomes |
 | `pftui analytics calibration --json [--window-days 90]` | Scenario-vs-market divergences plus realised prediction hit-rate calibration by layer and conviction band |
 | `pftui analytics narrative-divergence --json [--hours 24]` | Active scenario narrative-vs-money scores from topic news pressure versus mapped prediction-market movement |
+| `pftui analytics news-silence --json [--window-days 90]` | Tier-1/2 topic article volume versus rolling weekday baselines, including silent/saturated status changes |
 | `pftui analytics lessons applied --since 24h --json` | Lessons referenced by this run's predictions, top guards, and strongest historical analog |
 | `pftui analytics news-sources accuracy --json [--domain bloomberg.com] [--topic fed]` | Per-source hit-rate ledger for predictions derived from news articles |
 | `pftui analytics news-sources rank --topic iran --json` | Rank news sources for a topic using trailing source-attributed prediction outcomes |
@@ -212,6 +213,7 @@ The active backend database is the single source of truth. All interfaces (TUI, 
 ├── news_source_accuracy           # Per-domain/topic prediction outcome counts for article-derived calls
 ├── news_source_accuracy_events    # One scored prediction → source-domain outcome event for trailing windows
 ├── narrative_money_history        # Scenario news-pressure vs prediction-market movement history
+├── news_silence_baselines         # Rolling weekday topic-volume baselines and silent/saturated regimes
 ├── rss_feed_health                # Per-feed RSS status, failure counters, and disable state
 ├── sentiment_cache                # Fear & Greed indices
 ├── prediction_cache               # Polymarket odds
@@ -301,13 +303,14 @@ pftui data refresh
 BRIEF=$(pftui portfolio brief --json)
 MOVERS=$(pftui analytics movers --json --threshold 3)
 NEWS=$(pftui data news --json --limit 10)
+NEWS_SILENCE=$(pftui analytics news-silence --json)
 MACRO=$(pftui data dashboard macro --json)
 PREDICTIONS=$(pftui data predictions --json --limit 5)
 SENTIMENT=$(pftui data sentiment --json)
 # Analyse all of the above, then compose and deliver your brief
 ```
 
-News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; brief scenario payloads include `narrative_vs_money` labels from `pftui analytics narrative-divergence --json`. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in news reasoning, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. Use `bound_markets` as the immediate money-check for the article's topic; if a relevant article has an empty or unavailable binding, update it with `pftui data news topics set <topic> --primary-market-id <contract_id> --json` after inspecting `pftui data predictions markets --json`. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
+News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; brief scenario payloads include `narrative_vs_money` labels from `pftui analytics narrative-divergence --json`. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in news reasoning, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. Use `bound_markets` as the immediate money-check for the article's topic; if a relevant article has an empty or unavailable binding, update it with `pftui data news topics set <topic> --primary-market-id <contract_id> --json` after inspecting `pftui data predictions markets --json`. Use `pftui analytics news-silence --json` to surface negative-space signals: topics marked `silent` are unusually quiet versus the weekday baseline, and `saturated` topics have unusually high tier-1/2 coverage. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 ### Alert Monitoring
 

@@ -373,6 +373,24 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_narrative_money_history_recorded
             ON narrative_money_history(recorded_at);
 
+        CREATE TABLE IF NOT EXISTS news_silence_baselines (
+            topic TEXT NOT NULL,
+            day_of_week INTEGER NOT NULL CHECK(day_of_week BETWEEN 1 AND 7),
+            samples_json TEXT NOT NULL DEFAULT '[]',
+            median_count REAL NOT NULL DEFAULT 0.0,
+            p30_count REAL NOT NULL DEFAULT 0.0,
+            p80_count REAL NOT NULL DEFAULT 0.0,
+            observed_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'insufficient'
+                CHECK(status IN ('insufficient','normal','silent','saturated')),
+            previous_status TEXT,
+            changed_at TEXT,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY(topic, day_of_week)
+        );
+        CREATE INDEX IF NOT EXISTS idx_news_silence_baselines_status
+            ON news_silence_baselines(status, updated_at);
+
         CREATE TABLE IF NOT EXISTS rss_feed_health (
             feed_id TEXT PRIMARY KEY,
             last_success_at TEXT,
