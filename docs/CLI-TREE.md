@@ -86,6 +86,9 @@ pftui
 │   │   ├── heatmap
 │   │   └── global
 │   ├── news
+│   │   └── feeds
+│   │       ├── list
+│   │       └── reset
 │   ├── sentiment
 │   ├── fear-greed
 │   ├── calendar

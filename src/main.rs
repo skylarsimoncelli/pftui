@@ -1044,6 +1044,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             },
             cli::DataCommand::News {
+                command,
                 source,
                 search,
                 hours,
@@ -1051,17 +1052,27 @@ fn run_cli(cli: Cli) -> Result<()> {
                 limit,
                 with_sentiment,
                 json,
-            } => commands::news::run(
-                &backend,
-                &config,
-                source.as_deref(),
-                search.as_deref(),
-                hours,
-                breaking,
-                limit,
-                with_sentiment,
-                json,
-            ),
+            } => match command {
+                Some(cli::DataNewsCommand::Feeds { command }) => match command {
+                    cli::DataNewsFeedsCommand::List { json } => {
+                        commands::news::run_feeds_list(&backend, &config, json)
+                    }
+                    cli::DataNewsFeedsCommand::Reset { feed_id, json } => {
+                        commands::news::run_feeds_reset(&backend, &feed_id, json)
+                    }
+                },
+                None => commands::news::run(
+                    &backend,
+                    &config,
+                    source.as_deref(),
+                    search.as_deref(),
+                    hours,
+                    breaking,
+                    limit,
+                    with_sentiment,
+                    json,
+                ),
+            },
             cli::DataCommand::Sentiment {
                 symbol,
                 history,

@@ -7,6 +7,7 @@ use crate::config::load_config;
 use crate::data::cot;
 use crate::db::backend::BackendConnection;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, news_cache};
+use crate::db::rss_feed_health::{self, RssFeedHealthView};
 use crate::db::{onchain_cache, predictions_cache, price_cache, sentiment_cache, worldbank_cache};
 
 /// Freshness thresholds in seconds
@@ -607,8 +608,13 @@ fn check_onchain(conn: &Connection) -> Result<DataSourceStatus> {
     })
 }
 
+#[allow(dead_code)]
 pub fn run(conn: &Connection, json: bool) -> Result<()> {
     let config = load_config()?;
+    let news_feeds = rss_feed_health::health_for_feeds(
+        &crate::data::rss::configured_feeds(&config),
+        &rss_feed_health::list_feed_health(conn).unwrap_or_default(),
+    );
 
     let sources = vec![
         check_prices(conn)?,
@@ -624,19 +630,30 @@ pub fn run(conn: &Connection, json: bool) -> Result<()> {
     ];
 
     if json {
-        print_json(&config, &sources)?;
+        print_json(&config, &sources, &news_feeds)?;
     } else {
-        print_table(&config, &sources);
+        print_table(&config, &sources, &news_feeds);
     }
 
     Ok(())
 }
 
 pub fn run_backend(backend: &BackendConnection, json: bool) -> Result<()> {
-    match backend {
-        BackendConnection::Sqlite { conn } => run(conn, json),
-        BackendConnection::Postgres { pool } => run_postgres(pool, json),
+    let config = load_config()?;
+    let sources = source_statuses_backend(backend)?;
+    let news_feeds = rss_feed_health::health_for_feeds_backend(
+        backend,
+        &crate::data::rss::configured_feeds(&config),
+    )
+    .unwrap_or_default();
+
+    if json {
+        print_json(&config, &sources, &news_feeds)?;
+    } else {
+        print_table(&config, &sources, &news_feeds);
     }
+
+    Ok(())
 }
 
 pub fn source_statuses_backend(backend: &BackendConnection) -> Result<Vec<DataSourceStatus>> {
@@ -726,6 +743,7 @@ pub fn stale_refresh_sources_backend(backend: &BackendConnection) -> Result<Vec<
         .collect())
 }
 
+#[allow(dead_code)]
 fn run_postgres(pool: &PgPool, json: bool) -> Result<()> {
     let config = load_config()?;
 
@@ -797,9 +815,9 @@ fn run_postgres(pool: &PgPool, json: bool) -> Result<()> {
     ];
 
     if json {
-        print_json(&config, &sources)?;
+        print_json(&config, &sources, &[])?;
     } else {
-        print_table(&config, &sources);
+        print_table(&config, &sources, &[]);
     }
 
     Ok(())
@@ -888,7 +906,11 @@ fn is_stale_timestamp(raw: &str, max_age_secs: i64) -> bool {
     true
 }
 
-fn print_json(config: &crate::config::Config, sources: &[DataSourceStatus]) -> Result<()> {
+fn print_json(
+    config: &crate::config::Config,
+    sources: &[DataSourceStatus],
+    news_feeds: &[RssFeedHealthView],
+) -> Result<()> {
     use serde_json::json;
 
     let brave_configured = config
@@ -914,13 +936,18 @@ fn print_json(config: &crate::config::Config, sources: &[DataSourceStatus]) -> R
         "brave_api_key_configured": brave_configured,
         "daemon": daemon_status,
         "sources": sources_json,
+        "news_feeds": news_feeds,
     });
 
     println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
 }
 
-fn print_table(config: &crate::config::Config, sources: &[DataSourceStatus]) {
+fn print_table(
+    config: &crate::config::Config,
+    sources: &[DataSourceStatus],
+    news_feeds: &[RssFeedHealthView],
+) {
     if let Ok(daemon_status) = daemon::read_status() {
         if daemon_status.running {
             let heartbeat = daemon_status
@@ -974,6 +1001,25 @@ fn print_table(config: &crate::config::Config, sources: &[DataSourceStatus]) {
             source.status.symbol(),
             source.status.name()
         );
+    }
+
+    let unhealthy: Vec<_> = news_feeds
+        .iter()
+        .filter(|feed| feed.status != "active")
+        .collect();
+    if !unhealthy.is_empty() {
+        println!();
+        println!("RSS feed health:");
+        for feed in unhealthy {
+            let reason = feed
+                .last_failure_reason
+                .as_deref()
+                .unwrap_or("no failure reason recorded");
+            println!(
+                "  {}: {} ({} consecutive failures; {})",
+                feed.feed_name, feed.status, feed.consecutive_failures, reason
+            );
+        }
     }
 }
 

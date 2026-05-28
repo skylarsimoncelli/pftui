@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: track RSS feed health
+
+- What: RSS refreshes now persist per-feed success/failure health, warn on degraded or disabled feeds, skip feeds after 20 consecutive failures, expose `news_feeds` in `data status --json`, and add `pftui data news feeds list/reset`.
+- Why: one broken feed could silently reduce news coverage while downstream agents still saw a generic healthy news cache.
+
 ### 2026-05-28 — feat: preview transaction allocation impact
 
 - What: `pftui portfolio transaction add` and `transaction remove` now support `--dry-run` and `--json`, and both paths report post-change allocation, drift versus target, and paired cash delta without requiring a separate status call.

@@ -31,7 +31,9 @@ use crate::db::technical_snapshots;
 use crate::db::timeframe_signals;
 use crate::db::transactions::{get_unique_symbols_backend, list_transactions_backend};
 use crate::db::watchlist::get_watchlist_symbols_backend;
-use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
+use crate::db::{
+    bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache, rss_feed_health,
+};
 use crate::db::prediction_contracts;
 use crate::db::{
     economic_cache, macro_events, onchain_cache, predictions_cache, sentiment_cache,
@@ -1073,6 +1075,19 @@ fn run_pipeline(
     } else {
         Vec::new()
     };
+    let configured_rss_feeds = if rss_refresh {
+        rss::configured_feeds(config)
+    } else {
+        Vec::new()
+    };
+    let disabled_feed_ids = if rss_refresh {
+        rss_feed_health::disabled_feed_ids_backend(backend).unwrap_or_default()
+    } else {
+        HashSet::new()
+    };
+    let (rss_feeds_to_fetch, rss_disabled_feeds): (Vec<_>, Vec<_>) = configured_rss_feeds
+        .into_iter()
+        .partition(|feed| !disabled_feed_ids.contains(&feed.feed_id()));
 
     // Capture FedWatch previous snapshot for validation
     let fedwatch_previous = if fedwatch_due {
@@ -1262,8 +1277,16 @@ fn run_pipeline(
                 return None;
             }
             let start = Instant::now();
-            let feeds = rss::default_feeds();
-            Some((rss::fetch_all_feeds_detailed(&feeds).await, start.elapsed()))
+            let mut report = rss::fetch_all_feeds_detailed(&rss_feeds_to_fetch).await;
+            report.skipped = rss_disabled_feeds
+                .iter()
+                .map(|feed| rss::FeedSkipped {
+                    feed_name: feed.name.clone(),
+                    feed_url: feed.url.clone(),
+                    reason: "disabled after repeated failures".to_string(),
+                })
+                .collect();
+            Some((report, start.elapsed()))
         };
 
         let brave_news_fut = async {
@@ -2630,6 +2653,67 @@ type BraveNewsData = Option<(
     Duration,
 )>;
 
+fn warn_unhealthy_rss_feeds(backend: &BackendConnection, verbose: bool) {
+    if !verbose {
+        return;
+    }
+    let Ok(rows) = rss_feed_health::list_feed_health_backend(backend) else {
+        return;
+    };
+    let degraded: Vec<_> = rows
+        .iter()
+        .filter(|row| row.status == "degraded")
+        .collect();
+    let disabled: Vec<_> = rows
+        .iter()
+        .filter(|row| row.status == "disabled")
+        .collect();
+
+    if !degraded.is_empty() {
+        warn_ln!(
+            verbose,
+            "⚠ {} RSS feed{} degraded: {}",
+            degraded.len(),
+            if degraded.len() == 1 { "" } else { "s" },
+            degraded
+                .iter()
+                .map(|row| feed_health_label(row))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+    if !disabled.is_empty() {
+        warn_ln!(
+            verbose,
+            "⚠ {} RSS feed{} disabled: {}",
+            disabled.len(),
+            if disabled.len() == 1 { "" } else { "s" },
+            disabled
+                .iter()
+                .map(|row| feed_health_label(row))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+}
+
+fn feed_health_label(row: &rss_feed_health::RssFeedHealth) -> String {
+    let last = row
+        .last_failure_at
+        .as_deref()
+        .map(|value| format!("; last failure {value}"))
+        .unwrap_or_default();
+    let reason = row
+        .last_failure_reason
+        .as_deref()
+        .map(|value| format!("; {value}"))
+        .unwrap_or_default();
+    format!(
+        "{} ({} consecutive failures{}{})",
+        row.feed_id, row.consecutive_failures, last, reason
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn store_news_result(
     backend: &BackendConnection,
@@ -2646,6 +2730,8 @@ fn store_news_result(
     let mut brave_query_count = 0usize;
     let mut news_elapsed = Duration::ZERO;
     let mut rss_feed_errors: Vec<String> = Vec::new();
+    let mut rss_feeds_attempted = 0usize;
+    let mut rss_feeds_disabled = 0usize;
     let mut brave_query_errors = 0usize;
 
     if let Some((brave_results, elapsed)) = brave_news_data {
@@ -2687,6 +2773,29 @@ fn store_news_result(
         if elapsed > news_elapsed {
             news_elapsed = elapsed;
         }
+        rss_feeds_attempted = report.attempted;
+        rss_feeds_disabled = report.skipped.len();
+        for skipped in &report.skipped {
+            warn_ln!(
+                verbose,
+                "RSS feed disabled, skipping ({}): {}",
+                skipped.feed_name,
+                skipped.reason
+            );
+        }
+        for success in &report.successes {
+            if let Err(err) = rss_feed_health::record_feed_success_backend(
+                backend,
+                &success.feed_name,
+            ) {
+                warn_ln!(
+                    verbose,
+                    "RSS feed health update failed ({}): {}",
+                    success.feed_name,
+                    err
+                );
+            }
+        }
         for err in &report.errors {
             warn_ln!(
                 verbose,
@@ -2694,8 +2803,19 @@ fn store_news_result(
                 err.feed_name,
                 err.error
             );
+            if let Err(update_err) =
+                rss_feed_health::record_feed_failure_backend(backend, &err.feed_name, &err.error)
+            {
+                warn_ln!(
+                    verbose,
+                    "RSS feed health update failed ({}): {}",
+                    err.feed_name,
+                    update_err
+                );
+            }
             rss_feed_errors.push(format!("{} ({})", err.feed_name, err.feed_url));
         }
+        warn_unhealthy_rss_feeds(backend, verbose);
         for item in &report.items {
             let category_str = match item.category {
                 rss::NewsCategory::Macro => "macro",
@@ -2724,16 +2844,22 @@ fn store_news_result(
     }
 
     if brave_refresh || rss_refresh {
-        let total_attempted = brave_query_count + rss_feed_errors.len();
+        let total_attempted = brave_query_count + rss_feeds_attempted;
         let total_failed = brave_query_errors + rss_feed_errors.len();
-        let status = if inserted == 0 && total_failed > 0 {
+        let only_disabled_rss =
+            rss_refresh && !brave_refresh && rss_feeds_attempted == 0 && rss_feeds_disabled > 0;
+        let status = if only_disabled_rss {
+            SourceStatus::Skipped
+        } else if inserted == 0 && total_failed > 0 {
             SourceStatus::Failed
         } else if total_failed > 0 || inserted == 0 {
             SourceStatus::PartialSuccess
         } else {
             SourceStatus::Ok
         };
-        let error = if total_failed > 0 {
+        let error = if only_disabled_rss {
+            Some("all configured RSS feeds are disabled".to_string())
+        } else if total_failed > 0 {
             Some(format!(
                 "news ingest degraded: {} feed/query failures, {} article(s) inserted",
                 total_failed, inserted
@@ -2743,11 +2869,15 @@ fn store_news_result(
         } else {
             None
         };
-        let detail = if !rss_feed_errors.is_empty() {
-            Some(format!(
-                "rss feed failures: {}",
-                rss_feed_errors.join(" | ")
-            ))
+        let detail = if !rss_feed_errors.is_empty() || rss_feeds_disabled > 0 {
+            let mut parts = Vec::new();
+            if !rss_feed_errors.is_empty() {
+                parts.push(format!("rss feed failures: {}", rss_feed_errors.join(" | ")));
+            }
+            if rss_feeds_disabled > 0 {
+                parts.push(format!("rss feeds disabled: {}", rss_feeds_disabled));
+            }
+            Some(parts.join("; "))
         } else {
             None
         };
@@ -2795,6 +2925,9 @@ fn store_news_result(
                 inserted,
                 rss_feed_errors.len()
             );
+            if rss_feeds_disabled > 0 {
+                warn_ln!(verbose, "{} RSS feed(s) disabled and skipped", rss_feeds_disabled);
+            }
         }
         dag_result.add(SourceResult {
             name: "news".to_string(),
@@ -5018,6 +5151,8 @@ mod tests {
                         feed_url: "https://feeds.bloomberg.com/commodities/news.rss".to_string(),
                         error: "404 Not Found".to_string(),
                     }],
+                    attempted: 1,
+                    ..rss::FeedFetchReport::default()
                 },
                 Duration::from_secs(1),
             )),
@@ -5033,6 +5168,49 @@ mod tests {
             .error
             .as_deref()
             .is_some_and(|msg| msg.contains("news ingest degraded")));
+
+        let feed_health = rss_feed_health::list_feed_health_backend(&backend).unwrap();
+        assert_eq!(feed_health.len(), 1);
+        assert_eq!(feed_health[0].feed_id, "Bloomberg Commodities");
+        assert_eq!(feed_health[0].consecutive_failures, 1);
+        assert_eq!(feed_health[0].total_failures, 1);
+    }
+
+    #[test]
+    fn store_news_result_skips_when_all_rss_feeds_disabled() {
+        let backend = crate::db::backend::BackendConnection::Sqlite {
+            conn: crate::db::open_in_memory(),
+        };
+        let mut dag_result = RefreshResult::new();
+
+        store_news_result(
+            &backend,
+            false,
+            true,
+            false,
+            true,
+            Some((
+                rss::FeedFetchReport {
+                    attempted: 0,
+                    skipped: vec![rss::FeedSkipped {
+                        feed_name: "Bloomberg Commodities".to_string(),
+                        feed_url: "https://feeds.bloomberg.com/commodities/news.rss".to_string(),
+                        reason: "disabled after repeated failures".to_string(),
+                    }],
+                    ..rss::FeedFetchReport::default()
+                },
+                Duration::from_secs(1),
+            )),
+            None,
+            &mut dag_result,
+        );
+
+        assert_eq!(dag_result.sources.len(), 1);
+        assert_eq!(dag_result.sources[0].status, SourceStatus::Skipped);
+        assert_eq!(
+            dag_result.sources[0].error.as_deref(),
+            Some("all configured RSS feeds are disabled")
+        );
     }
 
     #[test]
