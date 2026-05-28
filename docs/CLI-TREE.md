@@ -4,7 +4,7 @@ Canonical `pftui` command tree after F42. This document must match `--help` outp
 
 ## Rules
 
-- Only five top-level domains are supported: `agent`, `analytics`, `data`, `portfolio`, `system`.
+- Only six top-level domains are supported: `agent`, `analytics`, `data`, `portfolio`, `report`, `system`.
 - Commands navigate. Flags parameterize.
 - If an operation has multiple actions, actions are subcommands, not positional strings.
 - Removed paths are removed. There are no compatibility aliases.
@@ -135,6 +135,10 @@ pftui
 │       ├── add
 │       ├── remove
 │       └── list
+├── report
+│   └── chart
+│       ├── stacked-bar
+│       └── prob-bar
 └── system
     ├── config
     ├── db-info

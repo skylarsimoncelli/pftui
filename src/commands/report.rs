@@ -1,0 +1,448 @@
+use std::collections::HashMap;
+use std::fs;
+use std::io::{self, Write};
+use std::path::Path;
+
+use anyhow::{bail, Context, Result};
+use base64::{engine::general_purpose, Engine as _};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+use serde::Serialize;
+use serde_json::Value;
+
+use crate::cli::ReportChartFormat;
+use crate::config::{Config, PortfolioMode};
+use crate::db::allocations::list_allocations_backend;
+use crate::db::backend::BackendConnection;
+use crate::db::price_cache::get_all_cached_prices_backend;
+use crate::db::scenarios;
+use crate::db::transactions::list_transactions_backend;
+use crate::models::position::{compute_positions, compute_positions_from_allocations};
+use crate::report::charts::prob_bar::ProbBarInput;
+use crate::report::charts::stacked_bar::{StackedBarInput, StackedBarSegment};
+use crate::report::palette;
+use crate::report::registry::{self, ChartInput, ChartKind, ChartOutputFormat};
+
+#[derive(Debug, Serialize)]
+struct ReportChartOutput {
+    chart: &'static str,
+    format: &'static str,
+    content_type: &'static str,
+    output: Option<String>,
+    bytes: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_base64: Option<String>,
+}
+
+pub struct ReportChartOptions<'a> {
+    pub chart_name: &'a str,
+    pub from_db: Option<&'a str>,
+    pub from_json: Option<&'a Path>,
+    pub out: Option<&'a Path>,
+    pub format: ReportChartFormat,
+    pub json_output: bool,
+}
+
+pub fn run_chart(
+    backend: &BackendConnection,
+    config: &Config,
+    options: ReportChartOptions<'_>,
+) -> Result<()> {
+    let kind = registry::kind_from_name(options.chart_name)?;
+    let input = load_chart_input(backend, config, kind, options.from_db, options.from_json)?;
+    emit_chart(input, options.out, options.format, options.json_output)
+}
+
+pub fn run_chart_without_db(options: ReportChartOptions<'_>) -> Result<()> {
+    let kind = registry::kind_from_name(options.chart_name)?;
+    let path = options
+        .from_json
+        .context("report chart requires --from-json when --from-db is absent")?;
+    let raw =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let value: Value = serde_json::from_str(&raw)
+        .with_context(|| format!("failed to parse JSON from {}", path.display()))?;
+    let input = registry::parse_input(kind, value)?;
+    emit_chart(input, options.out, options.format, options.json_output)
+}
+
+fn emit_chart(
+    input: ChartInput,
+    out: Option<&Path>,
+    format: ReportChartFormat,
+    json_output: bool,
+) -> Result<()> {
+    let output_format = match format {
+        ReportChartFormat::Svg => ChartOutputFormat::Svg,
+        ReportChartFormat::Png => ChartOutputFormat::Png,
+        ReportChartFormat::Ascii => ChartOutputFormat::Ascii,
+    };
+    let (bytes, text_content) = render_chart(&input, output_format)?;
+
+    if let Some(path) = out {
+        fs::write(path, &bytes).with_context(|| format!("failed to write {}", path.display()))?;
+    } else if !json_output {
+        io::stdout().write_all(&bytes)?;
+    }
+
+    if json_output {
+        let text = match output_format {
+            ChartOutputFormat::Svg | ChartOutputFormat::Ascii if out.is_none() => text_content,
+            _ => None,
+        };
+        let content_base64 = if output_format == ChartOutputFormat::Png && out.is_none() {
+            Some(general_purpose::STANDARD.encode(&bytes))
+        } else {
+            None
+        };
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&ReportChartOutput {
+                chart: registry::chart_name(&input),
+                format: report_format_name(output_format),
+                content_type: registry::content_type(output_format),
+                output: out.map(|path| path.display().to_string()),
+                bytes: bytes.len(),
+                content: text,
+                content_base64,
+            })?
+        );
+    } else if let Some(path) = out {
+        println!(
+            "Wrote {} chart to {}",
+            report_format_name(output_format),
+            path.display()
+        );
+    }
+
+    Ok(())
+}
+
+fn load_chart_input(
+    backend: &BackendConnection,
+    config: &Config,
+    kind: ChartKind,
+    from_db: Option<&str>,
+    from_json: Option<&Path>,
+) -> Result<ChartInput> {
+    match (from_db, from_json) {
+        (Some(_), Some(_)) => bail!("use either --from-db or --from-json, not both"),
+        (None, None) => bail!("report chart requires --from-db or --from-json input"),
+        (None, Some(path)) => {
+            let raw = fs::read_to_string(path)
+                .with_context(|| format!("failed to read {}", path.display()))?;
+            let value: Value = serde_json::from_str(&raw)
+                .with_context(|| format!("failed to parse JSON from {}", path.display()))?;
+            registry::parse_input(kind, value)
+        }
+        (Some(query), None) => chart_input_from_db(backend, config, kind, query),
+    }
+}
+
+fn chart_input_from_db(
+    backend: &BackendConnection,
+    config: &Config,
+    kind: ChartKind,
+    query: &str,
+) -> Result<ChartInput> {
+    match kind {
+        ChartKind::StackedBar => {
+            let normalized = query.trim().to_ascii_lowercase();
+            if !matches!(
+                normalized.as_str(),
+                "portfolio" | "portfolio-status" | "status" | "allocation" | "allocations"
+            ) {
+                bail!(
+                    "stacked-bar --from-db expects portfolio/status/allocation, got '{}'",
+                    query
+                );
+            }
+            Ok(ChartInput::StackedBar(stacked_bar_from_portfolio_backend(
+                backend, config,
+            )?))
+        }
+        ChartKind::ProbBar => Ok(ChartInput::ProbBar(prob_bar_from_scenario_backend(
+            backend, query,
+        )?)),
+    }
+}
+
+fn render_chart(
+    input: &ChartInput,
+    format: ChartOutputFormat,
+) -> Result<(Vec<u8>, Option<String>)> {
+    match format {
+        ChartOutputFormat::Svg => {
+            let svg = registry::render_svg(input);
+            Ok((svg.as_bytes().to_vec(), Some(svg)))
+        }
+        ChartOutputFormat::Ascii => {
+            let ascii = registry::render_ascii(input);
+            Ok((ascii.as_bytes().to_vec(), Some(ascii)))
+        }
+        ChartOutputFormat::Png => {
+            let svg = registry::render_svg(input);
+            Ok((svg_to_png_bytes(&svg)?, None))
+        }
+    }
+}
+
+fn svg_to_png_bytes(svg: &str) -> Result<Vec<u8>> {
+    let mut options = resvg::usvg::Options::default();
+    options.fontdb_mut().load_system_fonts();
+    let tree = resvg::usvg::Tree::from_data(svg.as_bytes(), &options)
+        .context("failed to parse generated SVG for PNG rendering")?;
+    let pixmap_size = tree.size().to_int_size();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(pixmap_size.width(), pixmap_size.height())
+        .context("failed to allocate PNG pixmap")?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
+    Ok(pixmap.encode_png()?)
+}
+
+fn report_format_name(format: ChartOutputFormat) -> &'static str {
+    match format {
+        ChartOutputFormat::Svg => "svg",
+        ChartOutputFormat::Png => "png",
+        ChartOutputFormat::Ascii => "ascii",
+    }
+}
+
+fn stacked_bar_from_portfolio_backend(
+    backend: &BackendConnection,
+    config: &Config,
+) -> Result<StackedBarInput> {
+    let cached = get_all_cached_prices_backend(backend)?;
+    let mut prices: HashMap<String, Decimal> = cached
+        .into_iter()
+        .map(|quote| (quote.symbol, quote.price))
+        .collect();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
+
+    let positions = match config.portfolio_mode {
+        PortfolioMode::Full => {
+            let transactions = list_transactions_backend(backend)?;
+            for tx in &transactions {
+                if tx.category == crate::models::asset::AssetCategory::Cash {
+                    prices.insert(tx.symbol.clone(), Decimal::ONE);
+                }
+            }
+            compute_positions(&transactions, &prices, &fx_rates)
+        }
+        PortfolioMode::Percentage => {
+            let allocations = list_allocations_backend(backend)?;
+            compute_positions_from_allocations(&allocations, &prices, &fx_rates)
+        }
+    };
+
+    let mut segments = positions
+        .into_iter()
+        .filter_map(|position| {
+            let allocation = position.allocation_pct?;
+            if allocation <= dec!(0) {
+                return None;
+            }
+            Some(StackedBarSegment {
+                label: position.symbol.clone(),
+                value: decimal_to_f64_2(allocation),
+                color: palette::asset_color(&position.symbol, position.category).to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    segments.sort_by(|a, b| {
+        b.value
+            .partial_cmp(&a.value)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    if segments.is_empty() {
+        bail!("no portfolio allocation data available for stacked-bar chart");
+    }
+
+    Ok(StackedBarInput {
+        segments,
+        width: None,
+        height: None,
+    })
+}
+
+fn prob_bar_from_scenario_backend(
+    backend: &BackendConnection,
+    scenario_name: &str,
+) -> Result<ProbBarInput> {
+    let scenario_name = scenario_name.trim();
+    if scenario_name.is_empty() {
+        bail!("prob-bar --from-db expects a scenario name");
+    }
+    let scenario = scenarios::get_scenario_by_name_backend(backend, scenario_name)?
+        .with_context(|| format!("scenario '{}' not found", scenario_name))?;
+    let history = scenarios::get_history_backend(backend, scenario.id, None)?;
+    let prior_7d = prior_probability_7d(&history, scenario.probability);
+
+    Ok(ProbBarInput {
+        name: scenario.name,
+        current: scenario.probability,
+        prior_7d,
+        color: scenario_color(scenario_name),
+        max_pct: None,
+        width: None,
+        height: None,
+    })
+}
+
+fn prior_probability_7d(history: &[scenarios::ScenarioHistoryEntry], current: f64) -> f64 {
+    let cutoff = Utc::now().naive_utc() - Duration::days(7);
+    history
+        .iter()
+        .find(|entry| parse_history_timestamp(&entry.recorded_at).is_some_and(|ts| ts <= cutoff))
+        .map(|entry| entry.probability)
+        .unwrap_or(current)
+}
+
+fn parse_history_timestamp(raw: &str) -> Option<NaiveDateTime> {
+    DateTime::parse_from_rfc3339(raw)
+        .map(|dt| dt.naive_utc())
+        .ok()
+        .or_else(|| NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S").ok())
+        .or_else(|| NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f").ok())
+        .or_else(|| {
+            NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+                .ok()
+                .and_then(|date| date.and_hms_opt(0, 0, 0))
+        })
+}
+
+fn scenario_color(name: &str) -> String {
+    let normalized = name.to_ascii_lowercase();
+    if normalized.contains("recession") || normalized.contains("war") {
+        "amber".to_string()
+    } else if normalized.contains("inflation") {
+        "bear".to_string()
+    } else if normalized.contains("risk-on") || normalized.contains("growth") {
+        "bull".to_string()
+    } else {
+        "cyan".to_string()
+    }
+}
+
+fn decimal_to_f64_2(value: Decimal) -> f64 {
+    value.round_dp(2).to_string().parse::<f64>().unwrap_or(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::backend::BackendConnection;
+    use crate::db::price_cache::upsert_price;
+    use crate::db::transactions::insert_transaction;
+    use crate::models::asset::AssetCategory;
+    use crate::models::price::PriceQuote;
+    use crate::models::transaction::{NewTransaction, TxType};
+    use rust_decimal_macros::dec;
+
+    fn backend() -> BackendConnection {
+        BackendConnection::Sqlite {
+            conn: crate::db::open_in_memory(),
+        }
+    }
+
+    #[test]
+    fn report_portfolio_stacked_bar_uses_synthetic_db_allocations() {
+        let backend = backend();
+        let config = Config::default();
+        let conn = backend.sqlite();
+
+        insert_transaction(
+            conn,
+            &NewTransaction {
+                symbol: "USD".to_string(),
+                category: AssetCategory::Cash,
+                tx_type: TxType::Buy,
+                quantity: dec!(50_000),
+                price_per: dec!(1),
+                currency: "USD".to_string(),
+                date: "2026-01-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        insert_transaction(
+            conn,
+            &NewTransaction {
+                symbol: "BTC".to_string(),
+                category: AssetCategory::Crypto,
+                tx_type: TxType::Buy,
+                quantity: dec!(1),
+                price_per: dec!(50_000),
+                currency: "USD".to_string(),
+                date: "2026-01-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        upsert_price(
+            conn,
+            &PriceQuote {
+                symbol: "BTC".to_string(),
+                price: dec!(50_000),
+                currency: "USD".to_string(),
+                source: "test".to_string(),
+                fetched_at: "2026-01-01T00:00:00Z".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: None,
+            },
+        )
+        .unwrap();
+
+        let input = stacked_bar_from_portfolio_backend(&backend, &config).unwrap();
+        assert_eq!(input.segments.len(), 2);
+        assert_eq!(input.segments[0].value, 50.0);
+        assert_eq!(input.segments[1].value, 50.0);
+        assert!(input
+            .segments
+            .iter()
+            .any(|s| s.color == palette::DARK.crypto));
+    }
+
+    #[test]
+    fn prior_probability_uses_latest_history_at_or_before_seven_day_cutoff() {
+        let old = (Utc::now() - Duration::days(8)).to_rfc3339();
+        let recent = (Utc::now() - Duration::days(2)).to_rfc3339();
+        let history = vec![
+            scenarios::ScenarioHistoryEntry {
+                id: 2,
+                scenario_id: 1,
+                probability: 90.0,
+                driver: None,
+                recorded_at: recent,
+            },
+            scenarios::ScenarioHistoryEntry {
+                id: 1,
+                scenario_id: 1,
+                probability: 72.0,
+                driver: None,
+                recorded_at: old,
+            },
+        ];
+        assert_eq!(prior_probability_7d(&history, 88.0), 72.0);
+    }
+
+    #[test]
+    fn svg_to_png_produces_png_bytes() {
+        let png = svg_to_png_bytes(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/report/snapshots/prob_bar.svg"
+        )))
+        .unwrap();
+        assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    }
+}

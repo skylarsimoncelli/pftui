@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: scaffold native report charts
+
+- What: Added the new top-level `pftui report chart` namespace with native `stacked-bar` and `prob-bar` renderers, SVG/PNG/ASCII output, JSON metadata mode, a chart registry, report palette/theme primitives, and Python-parity golden snapshots.
+- Why: Daily report visualizations now have a Rust-owned foundation instead of depending exclusively on `pftui-operator/charts.py`, so future chart ports can plug into pftui and be covered by `cargo test`.
+
 ### 2026-05-28 — feat: calibrate LOW predictions by sample size
 
 - What: `pftui journal prediction add` now enforces a soft 5-per-hour cap for LOW analyst predictions unless `--override-cap` is used, and `pftui analytics calibration --by-layer --json` returns strict per-layer hit rates with sample counts, 1σ standard error, low-sample flags, and conviction-bin breakdowns.

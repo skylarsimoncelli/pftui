@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Subcommand)]
@@ -1304,6 +1306,46 @@ pub enum PortfolioOpportunityCommand {
         #[arg(long)]
         since: Option<String>,
 
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum ReportChartFormat {
+    Svg,
+    Png,
+    Ascii,
+}
+
+#[derive(Subcommand)]
+pub enum ReportCommand {
+    /// Render report chart primitives from JSON or canonical database queries
+    #[command(
+        name = "chart",
+        after_help = "Available charts:\n  stacked-bar  Portfolio allocation stacked bar\n  prob-bar     Scenario probability bar with 7-day ghost and delta\n\nExamples:\n  pftui report chart stacked-bar --from-db portfolio --out allocation.svg\n  pftui report chart prob-bar --from-db \"Inflation Spike\" --format svg\n  pftui report chart stacked-bar --from-json segments.json --format png --out allocation.png\n  pftui report chart prob-bar --from-json scenario.json --json"
+    )]
+    Chart {
+        /// Chart name: stacked-bar or prob-bar
+        chart_name: String,
+
+        /// Render from a canonical DB query. stacked-bar accepts portfolio; prob-bar accepts a scenario name.
+        #[arg(long = "from-db", value_name = "QUERY")]
+        from_db: Option<String>,
+
+        /// Render from a JSON file matching the chart input schema
+        #[arg(long = "from-json", value_name = "FILE")]
+        from_json: Option<PathBuf>,
+
+        /// Write rendered output to a file instead of stdout
+        #[arg(long, value_name = "FILE")]
+        out: Option<PathBuf>,
+
+        /// Output format
+        #[arg(long, value_enum, default_value = "svg")]
+        format: ReportChartFormat,
+
+        /// Output command metadata as JSON
         #[arg(long)]
         json: bool,
     },
@@ -4505,6 +4547,12 @@ pub enum Command {
         command: Option<PortfolioCommand>,
     },
 
+    /// Report generation and chart-rendering primitives
+    Report {
+        #[command(subcommand)]
+        command: ReportCommand,
+    },
+
     /// Multi-timeframe analytics engine views (includes scenario, situation, signals, synthesis)
     #[command(name = "analytics", after_help = "Key subcommands:\n  alerts     Alert rules: add, list, check, ack, seed-defaults (also: data alerts)\n  scenario   Macro scenario tracking: probabilities, triggers, history (alias: scenarios)\n  situation  Situation Room: active situations, regime, branches, indicators\n  signals    Technical and cross-timeframe signals\n  synthesis  Cross-timeframe alignment and divergence analysis")]
     Analytics {
@@ -4612,6 +4660,7 @@ mod tests {
             "data",
             "journal",
             "portfolio",
+            "report",
             "system",
         ] {
             assert!(
@@ -4626,6 +4675,78 @@ mod tests {
             );
         }
         Ok(())
+    }
+
+    #[test]
+    fn parses_report_chart_from_db() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "report",
+            "chart",
+            "stacked-bar",
+            "--from-db",
+            "portfolio",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Report {
+                command:
+                    ReportCommand::Chart {
+                        chart_name,
+                        from_db,
+                        from_json,
+                        format,
+                        json,
+                        ..
+                    },
+            }) => {
+                assert_eq!(chart_name, "stacked-bar");
+                assert_eq!(from_db.as_deref(), Some("portfolio"));
+                assert!(from_json.is_none());
+                assert_eq!(format, ReportChartFormat::Svg);
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_report_chart_from_json_out_png() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "report",
+            "chart",
+            "prob-bar",
+            "--from-json",
+            "scenario.json",
+            "--format",
+            "png",
+            "--out",
+            "scenario.png",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Report {
+                command:
+                    ReportCommand::Chart {
+                        chart_name,
+                        from_db,
+                        from_json,
+                        out,
+                        format,
+                        json,
+                    },
+            }) => {
+                assert_eq!(chart_name, "prob-bar");
+                assert!(from_db.is_none());
+                assert_eq!(from_json.as_deref(), Some(std::path::Path::new("scenario.json")));
+                assert_eq!(out.as_deref(), Some(std::path::Path::new("scenario.png")));
+                assert_eq!(format, ReportChartFormat::Png);
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
     }
 
     #[test]
