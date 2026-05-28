@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — fix: guard destructive set-cash replacements
+
+- What: `pftui portfolio set-cash` now previews discarded cash rows, supports `--dry-run` and `--json`, and refuses to replace more than one existing transaction unless `--confirm` is passed.
+- Why: setting cash silently deleted transaction history for that currency, which was too risky for real-money workflows and agent-driven operations.
+
 ### 2026-05-28 — feat: auto-pair transaction cash legs
 
 - What: `pftui portfolio transaction add` now inserts a paired cash debit/credit for non-cash buy/sell transactions by default, with `--cash-currency` and `--no-auto-cash` controls. Transactions persist `paired_tx_id`, `transaction remove` removes paired legs unless `--unpaired` is passed, `transaction list --paired` surfaces pair IDs, and `set-cash` warns before discarding paired cash rows.
