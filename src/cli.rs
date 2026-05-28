@@ -1124,12 +1124,20 @@ pub enum PortfolioTargetCommand {
         /// Symbol to target
         symbol: Option<String>,
 
-        /// Target allocation percentage (e.g. "25", "10.5"). Accepts % suffix.
+        /// Target floor percentage (e.g. "22", "10.5"). Accepts % suffix.
+        #[arg(long)]
+        floor: Option<String>,
+
+        /// Target ceiling percentage (e.g. "30", "12.5"). Accepts % suffix.
+        #[arg(long)]
+        ceiling: Option<String>,
+
+        /// Legacy midpoint allocation percentage. Accepts % suffix.
         #[arg(long)]
         target: Option<String>,
 
-        /// Drift band percentage (default: 2%). Accepts % suffix.
-        #[arg(long)]
+        /// Legacy drift band percentage (default: 2%). Accepts % suffix.
+        #[arg(long, alias = "drift-band")]
         band: Option<String>,
     },
     /// List current target allocations

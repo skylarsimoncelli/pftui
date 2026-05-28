@@ -40,7 +40,7 @@ F42 removes the old paths. Only the new canonical paths are supported.
 | `pftui agent message ack ...` | `pftui agent message ack ...` |
 | `pftui agent message ack-all ...` | `pftui agent message ack-all ...` |
 | `pftui agent message purge ...` | `pftui agent message purge ...` |
-| `pftui portfolio target set --symbol BTC --target 20` | `pftui portfolio target set BTC --target 20` |
+| `pftui portfolio target set --symbol BTC --target 20` | `pftui portfolio target set BTC --floor 18 --ceiling 22` |
 | `pftui portfolio target remove --symbol BTC` | `pftui portfolio target remove BTC` |
 | `pftui portfolio opportunity add "EVENT" ...` | `pftui portfolio opportunity add "EVENT" ...` |
 | `pftui portfolio opportunity list ...` | `pftui portfolio opportunity list ...` |

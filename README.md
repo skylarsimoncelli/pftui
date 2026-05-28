@@ -164,7 +164,7 @@ pftui portfolio transaction remove 42
 pftui portfolio set-cash USD 50000
 pftui portfolio watchlist add TSLA --target 300
 pftui portfolio watchlist remove TSLA
-pftui portfolio target set AAPL --target 15  # Target allocation %
+pftui portfolio target set AAPL --floor 12 --ceiling 18  # Acceptable allocation range
 pftui portfolio rebalance --json             # Suggested trades to hit targets
 pftui analytics alerts add "BTC above 100000"
 pftui system config list --json           # List all config fields

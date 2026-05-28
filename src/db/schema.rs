@@ -161,6 +161,8 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             symbol TEXT PRIMARY KEY,
             target_pct TEXT NOT NULL,
             drift_band_pct TEXT NOT NULL,
+            target_floor_pct TEXT NOT NULL,
+            target_ceiling_pct TEXT NOT NULL,
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -1214,6 +1216,50 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_scm_scenario ON scenario_contract_mappings(scenario_id);
         CREATE INDEX IF NOT EXISTS idx_scm_contract ON scenario_contract_mappings(contract_id);",
+    )?;
+
+    let allocation_targets_has_floor: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('allocation_targets') \
+             WHERE name = 'target_floor_pct'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !allocation_targets_has_floor {
+        conn.execute_batch(
+            "ALTER TABLE allocation_targets ADD COLUMN target_floor_pct TEXT NOT NULL DEFAULT '0'",
+        )?;
+    }
+
+    let allocation_targets_has_ceiling: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('allocation_targets') \
+             WHERE name = 'target_ceiling_pct'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !allocation_targets_has_ceiling {
+        conn.execute_batch(
+            "ALTER TABLE allocation_targets ADD COLUMN target_ceiling_pct TEXT NOT NULL DEFAULT '0'",
+        )?;
+    }
+
+    conn.execute_batch(
+        "UPDATE allocation_targets
+         SET target_floor_pct = CAST(
+                CAST(COALESCE(NULLIF(target_pct, ''), '0') AS REAL)
+              - CAST(COALESCE(NULLIF(drift_band_pct, ''), '0') AS REAL)
+              AS TEXT)
+         WHERE target_floor_pct = '0' OR target_floor_pct = '';
+
+         UPDATE allocation_targets
+         SET target_ceiling_pct = CAST(
+                CAST(COALESCE(NULLIF(target_pct, ''), '0') AS REAL)
+              + CAST(COALESCE(NULLIF(drift_band_pct, ''), '0') AS REAL)
+              AS TEXT)
+         WHERE target_ceiling_pct = '0' OR target_ceiling_pct = '';",
     )?;
 
     // Migrate PPI series from PPIACO (All Commodities) to PPIFIS (Final Demand).

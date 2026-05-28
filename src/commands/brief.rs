@@ -905,38 +905,26 @@ fn get_alerts_json_backend(backend: &BackendConnection) -> Vec<serde_json::Value
 }
 
 fn get_drift_json_backend(backend: &BackendConnection) -> Result<serde_json::Value> {
-    let allocs = crate::db::allocations::list_allocations_backend(backend)?;
-    if allocs.is_empty() {
-        anyhow::bail!("No allocations (not in percentage mode)");
+    let targets = crate::db::allocation_targets::list_targets_backend(backend)?;
+    if targets.is_empty() {
+        anyhow::bail!("No allocation targets");
     }
     let cached = crate::db::price_cache::get_all_cached_prices_backend(backend)?;
     let prices: HashMap<String, Decimal> =
         cached.into_iter().map(|q| (q.symbol, q.price)).collect();
     let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
-    let positions = compute_positions_from_allocations(&allocs, &prices, &fx_rates);
-    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
-    if total_value <= dec!(0) {
-        anyhow::bail!("No priced positions");
-    }
-
-    let mut drift_items = Vec::new();
-    for pos in positions {
-        if let Some(current_value) = pos.current_value {
-            let current_pct = (current_value / total_value) * dec!(100);
-            if let Some(alloc) = allocs.iter().find(|a| a.symbol == pos.symbol) {
-                let target_pct = alloc.allocation_pct;
-                let drift = current_pct - target_pct;
-                if drift.abs() > dec!(1.0) {
-                    drift_items.push(serde_json::json!({
-                        "symbol": pos.symbol,
-                        "target_pct": target_pct.to_string(),
-                        "current_pct": current_pct.round_dp(2).to_string(),
-                        "drift": drift.round_dp(2).to_string(),
-                    }));
-                }
-            }
+    let txs = crate::db::transactions::list_transactions_backend(backend)?;
+    let positions = if txs.is_empty() {
+        let allocs = crate::db::allocations::list_allocations_backend(backend)?;
+        if allocs.is_empty() {
+            anyhow::bail!("No portfolio positions");
         }
-    }
+        compute_positions_from_allocations(&allocs, &prices, &fx_rates)
+    } else {
+        compute_positions(&txs, &prices, &fx_rates)
+    };
+
+    let drift_items = drift_items_from_targets(positions, targets);
     Ok(serde_json::json!({ "items": drift_items, "has_drift": !drift_items.is_empty() }))
 }
 
@@ -1302,13 +1290,12 @@ fn get_alerts_json(conn: &Connection) -> Vec<serde_json::Value> {
 }
 
 fn get_drift_json(conn: &Connection) -> Result<serde_json::Value> {
-    // Simplified drift data - just return whether drift exists
     use crate::db::allocations::list_allocations;
     use crate::db::price_cache::get_all_cached_prices;
 
-    let allocs = list_allocations(conn)?;
-    if allocs.is_empty() {
-        anyhow::bail!("No allocations (not in percentage mode)");
+    let targets = crate::db::allocation_targets::list_targets(conn)?;
+    if targets.is_empty() {
+        anyhow::bail!("No allocation targets");
     }
 
     let cached = get_all_cached_prices(conn)?;
@@ -1316,36 +1303,59 @@ fn get_drift_json(conn: &Connection) -> Result<serde_json::Value> {
         cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
     let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
-    let positions = compute_positions_from_allocations(&allocs, &prices, &fx_rates);
-    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
-
-    if total_value <= dec!(0) {
-        anyhow::bail!("No priced positions");
-    }
-
-    let mut drift_items = Vec::new();
-    for pos in positions {
-        if let Some(current_value) = pos.current_value {
-            let current_pct = (current_value / total_value) * dec!(100);
-            if let Some(alloc) = allocs.iter().find(|a| a.symbol == pos.symbol) {
-                let target_pct = alloc.allocation_pct;
-                let drift = current_pct - target_pct;
-                if drift.abs() > dec!(1.0) {
-                    drift_items.push(serde_json::json!({
-                        "symbol": pos.symbol,
-                        "target_pct": target_pct.to_string(),
-                        "current_pct": current_pct.round_dp(2).to_string(),
-                        "drift": drift.round_dp(2).to_string(),
-                    }));
-                }
-            }
+    let txs = list_transactions(conn)?;
+    let positions = if txs.is_empty() {
+        let allocs = list_allocations(conn)?;
+        if allocs.is_empty() {
+            anyhow::bail!("No portfolio positions");
         }
-    }
+        compute_positions_from_allocations(&allocs, &prices, &fx_rates)
+    } else {
+        compute_positions(&txs, &prices, &fx_rates)
+    };
+
+    let drift_items = drift_items_from_targets(positions, targets);
 
     Ok(serde_json::json!({
         "items": drift_items,
         "has_drift": !drift_items.is_empty(),
     }))
+}
+
+fn drift_items_from_targets(
+    positions: Vec<Position>,
+    targets: Vec<crate::db::allocation_targets::AllocationTarget>,
+) -> Vec<serde_json::Value> {
+    let target_map: HashMap<_, _> = targets
+        .into_iter()
+        .map(|target| (target.symbol.clone(), target))
+        .collect();
+    let mut drift_items = Vec::new();
+
+    for pos in positions {
+        let Some(current_pct) = pos.allocation_pct else {
+            continue;
+        };
+        let Some(target) = target_map.get(&pos.symbol) else {
+            continue;
+        };
+        let band_position = target.band_position(current_pct);
+        if band_position == crate::db::allocation_targets::BandPosition::InBand {
+            continue;
+        }
+        let drift = target.drift_from_actual(current_pct);
+        drift_items.push(serde_json::json!({
+            "symbol": pos.symbol,
+            "target_pct": target.target_pct.to_string(),
+            "target_floor_pct": target.target_floor_pct.to_string(),
+            "target_ceiling_pct": target.target_ceiling_pct.to_string(),
+            "current_pct": current_pct.round_dp(2).to_string(),
+            "drift": drift.round_dp(2).to_string(),
+            "band_position": band_position.as_str(),
+        }));
+    }
+
+    drift_items
 }
 
 fn get_regime_json(conn: &Connection) -> Result<serde_json::Value> {
