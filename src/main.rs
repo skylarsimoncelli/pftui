@@ -1731,9 +1731,22 @@ fn run_cli(cli: Cli) -> Result<()> {
                     cached_only,
                 ),
             },
-            Some(cli::PortfolioCommand::SetCash { symbol, amount }) => {
-                commands::set_cash::run(&backend, &symbol, &amount)
-            }
+            Some(cli::PortfolioCommand::SetCash {
+                symbol,
+                amount,
+                confirm,
+                dry_run,
+                json,
+            }) => commands::set_cash::run(
+                &backend,
+                &symbol,
+                &amount,
+                commands::set_cash::SetCashOptions {
+                    confirm,
+                    dry_run,
+                    json,
+                },
+            ),
             Some(cli::PortfolioCommand::Transaction { command }) => match command {
                 cli::PortfolioTransactionCommand::Add {
                     symbol,

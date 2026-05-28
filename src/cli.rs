@@ -1402,12 +1402,24 @@ pub enum PortfolioCommand {
         json: bool,
     },
     /// Set a cash position to an exact amount (replaces existing transactions for that currency)
-    #[command(name = "set-cash")]
+    #[command(
+        name = "set-cash",
+        after_help = "Destructive: this replaces every existing transaction for the currency with one new cash row.\nIf more than one row would be discarded, pass --confirm to apply the replace.\nUse --dry-run to preview the discarded rows without mutating the database.\n\nExamples:\n  pftui portfolio set-cash USD 45000 --dry-run\n  pftui portfolio set-cash USD 45000 --confirm\n  pftui portfolio set-cash USD 0 --confirm --json"
+    )]
     SetCash {
         /// Currency symbol (e.g. USD, GBP, EUR)
         symbol: String,
         /// Amount to set (e.g. 45000, 12500.50). Use 0 to clear.
         amount: String,
+        /// Apply replacement when more than one existing transaction would be discarded
+        #[arg(long)]
+        confirm: bool,
+        /// Preview discarded transactions without mutating the database
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Manage transactions
     Transaction {
@@ -4419,6 +4431,40 @@ mod tests {
                 command: Some(PortfolioCommand::Status { json }),
             }) => assert!(!json),
             _ => panic!("expected portfolio status command"),
+        }
+    }
+
+    #[test]
+    fn parses_portfolio_set_cash_safety_flags() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "set-cash",
+            "USD",
+            "45000",
+            "--confirm",
+            "--dry-run",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command:
+                    Some(PortfolioCommand::SetCash {
+                        symbol,
+                        amount,
+                        confirm,
+                        dry_run,
+                        json,
+                    }),
+            }) => {
+                assert_eq!(symbol, "USD");
+                assert_eq!(amount, "45000");
+                assert!(confirm);
+                assert!(dry_run);
+                assert!(json);
+            }
+            _ => panic!("expected portfolio set-cash command"),
         }
     }
 
