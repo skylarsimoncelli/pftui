@@ -160,6 +160,8 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
                 symbol TEXT PRIMARY KEY,
                 target_pct NUMERIC NOT NULL,
                 drift_band_pct NUMERIC NOT NULL,
+                target_floor_pct NUMERIC NOT NULL,
+                target_ceiling_pct NUMERIC NOT NULL,
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
         )
@@ -733,6 +735,36 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query("INSERT INTO pftui_migrations (version) VALUES (3) ON CONFLICT DO NOTHING")
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "ALTER TABLE allocation_targets ADD COLUMN IF NOT EXISTS target_floor_pct NUMERIC",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE allocation_targets ADD COLUMN IF NOT EXISTS target_ceiling_pct NUMERIC",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "UPDATE allocation_targets
+             SET target_floor_pct = target_pct - drift_band_pct
+             WHERE target_floor_pct IS NULL",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "UPDATE allocation_targets
+             SET target_ceiling_pct = target_pct + drift_band_pct
+             WHERE target_ceiling_pct IS NULL",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("ALTER TABLE allocation_targets ALTER COLUMN target_floor_pct SET NOT NULL")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE allocation_targets ALTER COLUMN target_ceiling_pct SET NOT NULL")
             .execute(pool)
             .await?;
         sqlx::query("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS condition TEXT")

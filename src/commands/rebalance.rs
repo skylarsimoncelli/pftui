@@ -4,6 +4,7 @@ use rust_decimal_macros::dec;
 use std::collections::HashMap;
 
 use crate::db;
+use crate::db::allocation_targets::{AllocationTarget, BandPosition};
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::models::position::compute_positions;
@@ -15,7 +16,7 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
         if json {
             println!("{{\"error\": \"No allocation targets set\"}}");
         } else {
-            println!("No allocation targets set. Use `pftui target set <symbol> --target <pct>` to set targets.");
+            println!("No allocation targets set. Use `pftui portfolio target set <symbol> --floor <pct> --ceiling <pct>` to set targets.");
         }
         return Ok(());
     }
@@ -49,22 +50,19 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    let target_map: HashMap<String, (Decimal, Decimal)> = targets
-        .into_iter()
-        .map(|t| (t.symbol.clone(), (t.target_pct, t.drift_band_pct)))
-        .collect();
+    let target_map: HashMap<String, AllocationTarget> =
+        targets.into_iter().map(|t| (t.symbol.clone(), t)).collect();
 
     let mut rebalance_actions: Vec<RebalanceAction> = Vec::new();
 
     for pos in positions {
-        if let Some((target_pct, drift_band)) = target_map.get(&pos.symbol) {
+        if let Some(target) = target_map.get(&pos.symbol) {
             let actual_pct = pos.allocation_pct.unwrap_or_default();
-            let drift = actual_pct - target_pct;
-            let abs_drift = drift.abs();
+            let band_position = target.band_position(actual_pct);
 
-            if abs_drift > *drift_band {
-                // Outside drift band — compute suggested trade
-                let target_value = total_value * target_pct / dec!(100);
+            if let Some(rebalance_pct) = target.rebalance_pct_for_actual(actual_pct) {
+                // Only trade to the nearest violated edge of the acceptable band.
+                let target_value = total_value * rebalance_pct / dec!(100);
                 let current_value = pos.current_value.unwrap_or_default();
                 let diff_value = target_value - current_value;
                 let action_type = if diff_value > Decimal::ZERO {
@@ -79,9 +77,13 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
                     target_value,
                     diff_value: diff_value.abs(),
                     action: action_type.to_string(),
-                    target_pct: *target_pct,
+                    target_pct: rebalance_pct,
+                    target_midpoint_pct: target.target_pct,
+                    target_floor_pct: target.target_floor_pct,
+                    target_ceiling_pct: target.target_ceiling_pct,
                     actual_pct,
-                    drift,
+                    drift: target.drift_from_actual(actual_pct),
+                    band_position,
                 });
             }
         }
@@ -94,7 +96,7 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&rebalance_actions)?);
     } else {
         if rebalance_actions.is_empty() {
-            println!("✓ Portfolio is balanced. All positions within drift bands.");
+            println!("✓ Portfolio is balanced. All positions within target ranges.");
             return Ok(());
         }
 
@@ -135,6 +137,10 @@ struct RebalanceAction {
     diff_value: Decimal,
     action: String,
     target_pct: Decimal,
+    target_midpoint_pct: Decimal,
+    target_floor_pct: Decimal,
+    target_ceiling_pct: Decimal,
     actual_pct: Decimal,
     drift: Decimal,
+    band_position: BandPosition,
 }

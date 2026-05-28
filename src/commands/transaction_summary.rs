@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 
-use crate::db::allocation_targets::get_target_backend;
+use crate::db::allocation_targets::{get_target_backend, BandPosition};
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::db::transactions::list_transactions_backend;
@@ -21,6 +21,10 @@ pub struct TransactionChangeSummary {
     pub prev_drift_pp: Option<f64>,
     pub new_drift_pp: Option<f64>,
     pub target_pct: Option<f64>,
+    pub target_floor_pct: Option<f64>,
+    pub target_ceiling_pct: Option<f64>,
+    pub prev_band_position: Option<BandPosition>,
+    pub new_band_position: Option<BandPosition>,
     pub cash_delta: Option<f64>,
     pub cash_currency: Option<String>,
 }
@@ -128,17 +132,19 @@ pub fn print_summary(label: &str, summary: &TransactionChangeSummary) {
     );
 
     match (
-        summary.target_pct,
+        summary.target_floor_pct,
+        summary.target_ceiling_pct,
         summary.prev_drift_pp,
         summary.new_drift_pp,
     ) {
-        (Some(target), Some(prev), Some(new)) => println!(
-            "  Drift vs target {}: {} -> {}",
-            fmt_pct(target),
+        (Some(floor), Some(ceiling), Some(prev), Some(new)) => println!(
+            "  Drift vs target range {}-{}: {} -> {}",
+            fmt_unsigned_pct(floor),
+            fmt_unsigned_pct(ceiling),
             fmt_pct(prev),
             fmt_pct(new)
         ),
-        _ => println!("  Drift vs target: N/A"),
+        _ => println!("  Drift vs target range: N/A"),
     }
 
     if let Some(cash_delta) = summary.cash_delta {
@@ -171,11 +177,20 @@ fn allocation_summary(
     let after_positions = compute_positions(after, &prices, &fx_rates);
 
     let target = get_target_backend(backend, focus_symbol)?;
-    let target_pct = target.as_ref().map(|target| target.target_pct);
     let prev_alloc = allocation_pct(&before_positions, focus_symbol);
     let new_alloc = allocation_pct(&after_positions, focus_symbol);
-    let prev_drift = target_pct.and_then(|target| prev_alloc.map(|alloc| alloc - target));
-    let new_drift = target_pct.and_then(|target| new_alloc.map(|alloc| alloc - target));
+    let prev_drift = target
+        .as_ref()
+        .and_then(|target| prev_alloc.map(|alloc| target.drift_from_actual(alloc)));
+    let new_drift = target
+        .as_ref()
+        .and_then(|target| new_alloc.map(|alloc| target.drift_from_actual(alloc)));
+    let prev_band_position = target
+        .as_ref()
+        .and_then(|target| prev_alloc.map(|alloc| target.band_position(alloc)));
+    let new_band_position = target
+        .as_ref()
+        .and_then(|target| new_alloc.map(|alloc| target.band_position(alloc)));
 
     Ok(TransactionChangeSummary {
         symbol: focus_symbol.to_string(),
@@ -183,7 +198,17 @@ fn allocation_summary(
         new_alloc_pct: new_alloc.map(|value| decimal_to_f64(value, 2)),
         prev_drift_pp: prev_drift.map(|value| decimal_to_f64(value, 2)),
         new_drift_pp: new_drift.map(|value| decimal_to_f64(value, 2)),
-        target_pct: target_pct.map(|value| decimal_to_f64(value, 2)),
+        target_pct: target
+            .as_ref()
+            .map(|target| decimal_to_f64(target.target_pct, 2)),
+        target_floor_pct: target
+            .as_ref()
+            .map(|target| decimal_to_f64(target.target_floor_pct, 2)),
+        target_ceiling_pct: target
+            .as_ref()
+            .map(|target| decimal_to_f64(target.target_ceiling_pct, 2)),
+        prev_band_position,
+        new_band_position,
         cash_delta: cash_delta.map(|value| decimal_to_f64(value, 2)),
         cash_currency,
     })
@@ -257,6 +282,10 @@ fn fmt_pct(value: f64) -> String {
     } else {
         format!("{value:+.2}%")
     }
+}
+
+fn fmt_unsigned_pct(value: f64) -> String {
+    format!("{value:.2}%")
 }
 
 fn fmt_signed_number(value: f64) -> String {
@@ -344,9 +373,13 @@ mod tests {
         assert_eq!(summary.symbol, "GC=F");
         assert_eq!(summary.prev_alloc_pct, Some(0.0));
         assert_eq!(summary.new_alloc_pct, Some(50.0));
-        assert_eq!(summary.prev_drift_pp, Some(-50.0));
+        assert_eq!(summary.prev_drift_pp, Some(-48.0));
         assert_eq!(summary.new_drift_pp, Some(0.0));
         assert_eq!(summary.target_pct, Some(50.0));
+        assert_eq!(summary.target_floor_pct, Some(48.0));
+        assert_eq!(summary.target_ceiling_pct, Some(52.0));
+        assert_eq!(summary.prev_band_position, Some(BandPosition::BelowFloor));
+        assert_eq!(summary.new_band_position, Some(BandPosition::InBand));
         assert_eq!(summary.cash_delta, Some(-1000.0));
         assert_eq!(summary.cash_currency.as_deref(), Some("USD"));
     }

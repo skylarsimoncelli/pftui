@@ -450,7 +450,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &mut App) {
     ];
 
     if app.show_drift_columns {
-        header_cells.push(Cell::from("Target"));
+        header_cells.push(Cell::from("Range"));
         header_cells.push(Cell::from("Drift"));
         header_cells.push(Cell::from("Status"));
     }
@@ -659,10 +659,10 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &mut App) {
             use rust_decimal::Decimal;
             if let Some(target) = app.allocation_targets.get(&pos.symbol) {
                 let actual_pct = pos.allocation_pct.unwrap_or(dec!(0));
-                let target_pct = target.target_pct;
-                let drift = actual_pct - target_pct;
-                let abs_drift = drift.abs();
-                let over_band = abs_drift > target.drift_band_pct;
+                let drift = target.drift_from_actual(actual_pct);
+                let band_position = target.band_position(actual_pct);
+                let over_band =
+                    band_position != crate::db::allocation_targets::BandPosition::InBand;
 
                 let drift_color = if over_band {
                     if drift > Decimal::ZERO {
@@ -675,10 +675,10 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 };
 
                 let status_char = if over_band {
-                    if drift > Decimal::ZERO {
-                        "▲"
-                    } else {
-                        "▼"
+                    match band_position {
+                        crate::db::allocation_targets::BandPosition::AboveCeiling => "▲",
+                        crate::db::allocation_targets::BandPosition::BelowFloor => "▼",
+                        crate::db::allocation_targets::BandPosition::InBand => "✓",
                     }
                 } else {
                     "✓"
@@ -686,8 +686,11 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 let status_color = if over_band { drift_color } else { t.gain_green };
 
                 row_cells.push(
-                    Cell::from(format!("{:.1}%", target_pct))
-                        .style(Style::default().fg(t.text_secondary)),
+                    Cell::from(format!(
+                        "{:.1}-{:.1}%",
+                        target.target_floor_pct, target.target_ceiling_pct
+                    ))
+                    .style(Style::default().fg(t.text_secondary)),
                 );
                 row_cells.push(
                     Cell::from(format!("{:+.1}%", drift)).style(Style::default().fg(drift_color)),
@@ -718,7 +721,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &mut App) {
             Constraint::Length(8),  // P&L (gain bar)
             Constraint::Length(10), // Value (position value)
             Constraint::Length(7),  // Alloc%
-            Constraint::Length(7),  // Target
+            Constraint::Length(11), // Range
             Constraint::Length(7),  // Drift
             Constraint::Length(6),  // Status
             Constraint::Length(6),  // RSI

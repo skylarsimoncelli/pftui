@@ -59,7 +59,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui portfolio value --json` | Total value with category breakdown and daily change |
 | `pftui portfolio summary --json` | Detailed position-level data — price, quantity, cost basis, gain/loss, allocation % |
 | `pftui portfolio performance --json` | Returns: 1D, MTD, QTD, YTD, since inception |
-| `pftui portfolio drift --json` | Current vs target allocation with drift % and rebalance suggestions |
+| `pftui portfolio drift --json` | Current allocation vs target floor/ceiling ranges, with edge-relative drift and rebalance suggestions |
 | `pftui portfolio drawdown --json` | Current drawdown from trailing 90-day high, MTD/YTD max drawdowns, and latest position contribution breakdown |
 | `pftui portfolio history --date YYYY-MM-DD --json` | Historical portfolio snapshot for any past date |
 | `pftui system export json` | Full portfolio export (positions + transactions) |
@@ -93,7 +93,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui portfolio set-cash CURRENCY AMOUNT [--confirm] [--dry-run] [--json]` | Replace cash transactions with an exact cash position; requires `--confirm` when more than one row would be discarded |
 | `pftui portfolio watchlist add SYMBOL [--target PRICE]` | Add to watchlist |
 | `pftui portfolio watchlist remove SYMBOL` | Remove from watchlist |
-| `pftui portfolio target set SYMBOL --target PCT` | Set target allocation % |
+| `pftui portfolio target set SYMBOL --floor PCT --ceiling PCT` | Set acceptable allocation range; legacy `--target PCT --band PCT` is still accepted |
 | `pftui portfolio target remove SYMBOL` | Remove target |
 | `pftui portfolio rebalance --json` | Suggested trades to reach targets |
 | `pftui portfolio broker add BROKER --api-key KEY [--secret SECRET]` | Connect a broker (trading212, ibkr, binance, kraken, coinbase, crypto-com) |
@@ -192,7 +192,7 @@ The active backend database is the single source of truth. All interfaces (TUI, 
 ├── technical_snapshots            # Persisted per-symbol technical state from refresh
 ├── watchlist                      # Tracked symbols with optional targets
 ├── alerts                         # Price/allocation alerts
-├── targets                        # Target allocation percentages
+├── targets                        # Target allocation floor/ceiling ranges
 ├── journal_entries                # Trade journal + notes
 ├── calendar_events                # Economic calendar
 ├── news_cache                     # RSS feed articles (48h retention)

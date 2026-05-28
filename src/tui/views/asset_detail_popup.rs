@@ -607,13 +607,15 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 ]));
             }
 
-            // Show drift band if target is set
+            // Show target range if target is set
             if let Some(target) = app.allocation_targets.get(symbol) {
                 use rust_decimal::Decimal;
                 let actual_pct = pos.allocation_pct.unwrap_or(dec!(0));
-                let drift = actual_pct - target.target_pct;
+                let drift = target.drift_from_actual(actual_pct);
                 let abs_drift = drift.abs();
-                let over_band = abs_drift > target.drift_band_pct;
+                let band_position = target.band_position(actual_pct);
+                let over_band =
+                    band_position != crate::db::allocation_targets::BandPosition::InBand;
 
                 let drift_color = if over_band {
                     if drift > Decimal::ZERO {
@@ -626,19 +628,28 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 };
 
                 let status_text = if over_band {
-                    if drift > Decimal::ZERO {
-                        format!("OVERWEIGHT (+{:.1}%)", abs_drift)
-                    } else {
-                        format!("UNDERWEIGHT (-{:.1}%)", abs_drift)
+                    match band_position {
+                        crate::db::allocation_targets::BandPosition::AboveCeiling => {
+                            format!("ABOVE RANGE (+{:.1}%)", abs_drift)
+                        }
+                        crate::db::allocation_targets::BandPosition::BelowFloor => {
+                            format!("BELOW RANGE (-{:.1}%)", abs_drift)
+                        }
+                        crate::db::allocation_targets::BandPosition::InBand => {
+                            "IN RANGE".to_string()
+                        }
                     }
                 } else {
                     "IN RANGE".to_string()
                 };
 
                 lines.push(Line::from(vec![
-                    Span::styled("  Target      ", Style::default().fg(t.text_secondary)),
+                    Span::styled("  Target range", Style::default().fg(t.text_secondary)),
                     Span::styled(
-                        format!("{:.1}% ± {:.1}%", target.target_pct, target.drift_band_pct),
+                        format!(
+                            "  {:.1}%-{:.1}%",
+                            target.target_floor_pct, target.target_ceiling_pct
+                        ),
                         Style::default().fg(t.text_primary),
                     ),
                 ]));

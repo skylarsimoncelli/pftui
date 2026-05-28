@@ -1421,16 +1421,22 @@ fn run_cli(cli: Cli) -> Result<()> {
             Some(cli::PortfolioCommand::Target { command }) => match command {
                 cli::PortfolioTargetCommand::Set {
                     symbol,
+                    floor,
+                    ceiling,
                     target,
                     band,
                 } => {
                     let sym = symbol
                         .as_ref()
                         .ok_or_else(|| anyhow::anyhow!("--symbol required for 'set'"))?;
-                    let tgt = target
-                        .as_ref()
-                        .ok_or_else(|| anyhow::anyhow!("--target required for 'set'"))?;
-                    commands::target::run(&backend, sym, tgt, band.as_deref())
+                    commands::target::run(
+                        &backend,
+                        sym,
+                        floor.as_deref(),
+                        ceiling.as_deref(),
+                        target.as_deref(),
+                        band.as_deref(),
+                    )
                 }
                 cli::PortfolioTargetCommand::List { json } => {
                     commands::target::list(&backend, json)

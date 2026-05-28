@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: model allocation targets as ranges
+
+- What: allocation targets now store floor/ceiling percentages, `portfolio target set` accepts `--floor/--ceiling` while translating legacy `--target/--band`, and drift/rebalance/brief/TUI views report zero drift inside the acceptable range with `band_position` outside it.
+- Why: operators treat allocation bands as acceptable holding ranges, not symmetric tolerance around a preferred point, so in-band positions should not trigger rebalance pressure.
+
 ### 2026-05-28 — feat: track RSS feed health
 
 - What: RSS refreshes now persist per-feed success/failure health, warn on degraded or disabled feeds, skip feeds after 20 consecutive failures, expose `news_feeds` in `data status --json`, and add `pftui data news feeds list/reset`.
