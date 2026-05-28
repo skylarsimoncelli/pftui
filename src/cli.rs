@@ -3751,6 +3751,9 @@ pub enum AnalyticsCommand {
         /// Divergence threshold in percentage points (default: 15)
         #[arg(long, default_value = "15")]
         threshold: f64,
+        /// Trailing window for realised prediction accuracy calibration
+        #[arg(long, default_value = "90")]
+        window_days: i64,
         #[arg(long)]
         json: bool,
     },
@@ -5277,12 +5280,18 @@ mod tests {
             Cli::try_parse_from(["pftui", "analytics", "calibration", "--json"]).unwrap();
 
         let Some(Command::Analytics {
-            command: AnalyticsCommand::Calibration { threshold, json },
+            command:
+                AnalyticsCommand::Calibration {
+                    threshold,
+                    window_days,
+                    json,
+                },
         }) = cli.command
         else {
             panic!("expected analytics calibration command");
         };
         assert!((threshold - 15.0).abs() < f64::EPSILON);
+        assert_eq!(window_days, 90);
         assert!(json);
     }
 
@@ -5294,17 +5303,25 @@ mod tests {
             "calibration",
             "--threshold",
             "10",
+            "--window-days",
+            "30",
             "--json",
         ])
         .unwrap();
 
         let Some(Command::Analytics {
-            command: AnalyticsCommand::Calibration { threshold, json },
+            command:
+                AnalyticsCommand::Calibration {
+                    threshold,
+                    window_days,
+                    json,
+                },
         }) = cli.command
         else {
             panic!("expected analytics calibration command");
         };
         assert!((threshold - 10.0).abs() < f64::EPSILON);
+        assert_eq!(window_days, 30);
         assert!(json);
     }
 

@@ -2371,8 +2371,12 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::AnalyticsCommand::ImpactEstimate { json } => {
                 commands::impact_estimate::run(&backend, json)
             }
-            cli::AnalyticsCommand::Calibration { threshold, json } => {
-                commands::calibration::run(&backend, threshold, json)
+            cli::AnalyticsCommand::Calibration {
+                threshold,
+                window_days,
+                json,
+            } => {
+                commands::calibration::run(&backend, threshold, window_days, json)
             }
             cli::AnalyticsCommand::DebateScore { command } => match command {
                 cli::AnalyticsDebateScoreCommand::Add {

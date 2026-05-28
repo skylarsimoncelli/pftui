@@ -153,6 +153,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics digest --agent-filter low-agent --json` | Role-aware summary payload for agent handoffs |
 | `pftui analytics recap --date yesterday --json` | Chronological event recap for a given day |
 | `pftui analytics narrative --json` | Structured analytical memory: recap, scenario/conviction/trend shifts, scorecard, surprises, lessons, catalyst outcomes |
+| `pftui analytics calibration --json [--window-days 90]` | Scenario-vs-market divergences plus realised prediction hit-rate calibration by layer and conviction band |
 | `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |
 | `pftui analytics signals --json` | Show all signals (cross-timeframe + per-symbol technical) |
 | `pftui analytics signals --source technical --json` | Per-symbol technical signals: RSI overbought/oversold, MACD cross, SMA 200 reclaim/break, BB squeeze, volume expansion, 52W extremes |
