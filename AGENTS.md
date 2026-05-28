@@ -60,6 +60,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui portfolio summary --json` | Detailed position-level data — price, quantity, cost basis, gain/loss, allocation % |
 | `pftui portfolio performance --json` | Returns: 1D, MTD, QTD, YTD, since inception |
 | `pftui portfolio drift --json` | Current vs target allocation with drift % and rebalance suggestions |
+| `pftui portfolio drawdown --json` | Current drawdown from trailing 90-day high, MTD/YTD max drawdowns, and latest position contribution breakdown |
 | `pftui portfolio history --date YYYY-MM-DD --json` | Historical portfolio snapshot for any past date |
 | `pftui system export json` | Full portfolio export (positions + transactions) |
 | `pftui portfolio transaction list` | List all transactions with IDs |

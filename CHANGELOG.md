@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: add portfolio drawdown tracking
+
+- What: `portfolio status --json` now includes a drawdown summary, terminal status and `portfolio brief` render a top-line drawdown readout, and `pftui portfolio drawdown [--json]` reports the last 90 days of daily drawdown plus latest position contribution data.
+- Why: daily portfolio decisions needed local-high, MTD, and YTD drawdown context without hand-computing it from snapshots during stressed sessions.
+
 ### 2026-05-28 — fix: guard destructive set-cash replacements
 
 - What: `pftui portfolio set-cash` now previews discarded cash rows, supports `--dry-run` and `--json`, and refuses to replace more than one existing transaction unless `--confirm` is passed.
