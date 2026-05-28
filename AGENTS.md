@@ -126,7 +126,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui journal scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
 | `pftui journal scenario signal add "SIGNAL" --scenario "NAME"` | Attach a tracked signal to a scenario |
 | `pftui journal scenario history "NAME" --limit N --json` | Show scenario probability history |
-| `pftui journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent] [--topic fed] [--source-article-id 123] [--lessons 218,240]` | Add a prediction call for later scoring, optionally recording lesson IDs and news-source attribution |
+| `pftui journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent] [--topic fed] [--source-article-id 123] [--lessons 218,240] [--override-cap]` | Add a prediction call for later scoring, optionally recording lesson IDs and news-source attribution. LOW analyst calls are capped at 5/hour unless `--override-cap` is passed |
 | `pftui journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
 | `pftui journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
 | `pftui journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
@@ -159,7 +159,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics digest --agent-filter low-agent --json` | Role-aware summary payload for agent handoffs |
 | `pftui analytics recap --date yesterday --json` | Chronological event recap for a given day |
 | `pftui analytics narrative --json` | Structured analytical memory: recap, scenario/conviction/trend shifts, scorecard, surprises, lessons, catalyst outcomes |
-| `pftui analytics calibration --json [--window-days 90]` | Scenario-vs-market divergences plus realised prediction hit-rate calibration by layer and conviction band |
+| `pftui analytics calibration --by-layer --json [--window-days 90]` | Scenario-vs-market divergences plus realised prediction calibration by layer, sample size, 1σ uncertainty, and conviction band |
 | `pftui analytics narrative-divergence --json [--hours 24]` | Active scenario narrative-vs-money scores from topic news pressure versus mapped prediction-market movement |
 | `pftui analytics news-silence --json [--window-days 90]` | Tier-1/2 topic article volume versus rolling weekday baselines, including silent/saturated status changes |
 | `pftui analytics lessons applied --since 24h --json` | Lessons referenced by this run's predictions, top guards, and strongest historical analog |

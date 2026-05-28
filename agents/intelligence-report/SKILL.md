@@ -46,9 +46,8 @@ psql -h 127.0.0.1 -U pftui -d pftui -t -c \
 psql -h 127.0.0.1 -U pftui -d pftui -t -c \
   "SELECT id, claim, timeframe, confidence, source_agent FROM user_predictions WHERE outcome IS NULL ORDER BY created_at DESC;"
 
-# Recent scored predictions (accuracy calibration)
-psql -h 127.0.0.1 -U pftui -d pftui -t -c \
-  "SELECT claim, outcome, timeframe, lesson FROM user_predictions WHERE outcome IS NOT NULL ORDER BY scored_at DESC LIMIT 20;"
+# Recent scored predictions and per-layer calibration
+pftui analytics calibration --by-layer --json
 
 # Structural cycles
 psql -h 127.0.0.1 -U pftui -d pftui -t -c \
@@ -314,7 +313,7 @@ The generator produces dark-themed PDFs matching pftui.com branding:
 - **Predictions must be falsifiable and time-bound.** No "could go either way" hedging.
 - **Challenge the system's existing view.** If all timeframe layers agree, walk the reader through why that matters: distinct lenses converging is a strong signal, but it also means no layer is providing a natural contrarian check. Use this to motivate the bear case section, not to undermine the bull case. Frame it as rigorous methodology ("the bull case needs to survive the bear case before it earns conviction"), not self-doubt. Do not fabricate pftui features or claim the system "flags" something it doesn't.
 - **Source verification is critical.** Every specific number (holdings, flows, prices, percentages) MUST be verified against a primary or authoritative source via web search before inclusion. Do not rely on training data for figures that change over time (e.g. corporate BTC holdings, ETF AUM, reserve levels). A single wrong number destroys the credibility of the entire report.
-- **Calibrate confidence** using the system's recent prediction accuracy.
+- **Calibrate confidence** using the system's recent per-layer prediction accuracy. Any report-visible calibration rate must show sample size and 1σ uncertainty adjacent to the rate, e.g. `LOW: 44.5% strict (137 scored, σ ±4.2pp)`. Mark cells with `n < 10` as `[low sample]` and do not make accuracy claims from them.
 - **Include the disclaimer** at the bottom of every report.
 - **Historical parallels** add depth. When a pattern has played out before, cite it with specific dates, outcomes, and similarity to the current situation.
 - **Cross-asset interdependencies** are essential in newsletter mode. The value is in showing how themes connect, not just listing them.

@@ -9,6 +9,14 @@ use crate::db::backend::BackendConnection;
 use crate::db::news_source_accuracy;
 use crate::db::query;
 
+const LOW_ANALYST_AGENT_ALIASES: &[&str] = &[
+    "analyst-low",
+    "low-agent",
+    "low-analyst",
+    "low-timeframe",
+    "low-timeframe-analyst",
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPrediction {
     pub id: i64,
@@ -208,6 +216,13 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
+pub fn is_low_analyst_agent(agent: &str) -> bool {
+    let normalized = agent.trim().to_ascii_lowercase();
+    LOW_ANALYST_AGENT_ALIASES
+        .iter()
+        .any(|alias| normalized == *alias)
+}
+
 #[allow(clippy::too_many_arguments)]
 /// Normalize a symbol string: treat empty, "null", "NULL", "none", "NONE", "MACRO"
 /// as None (NULL in DB) so macro predictions without an asset symbol are first-class.
@@ -380,6 +395,26 @@ pub fn list_predictions(
         items.push(row?);
     }
     Ok(items)
+}
+
+pub fn count_recent_low_analyst_predictions(conn: &Connection) -> Result<usize> {
+    ensure_prediction_columns(conn)?;
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*)
+         FROM user_predictions
+         WHERE lower(COALESCE(timeframe, '')) = 'low'
+           AND lower(COALESCE(source_agent, '')) IN (
+                'analyst-low',
+                'low-agent',
+                'low-analyst',
+                'low-timeframe',
+                'low-timeframe-analyst'
+           )
+           AND datetime(created_at) >= datetime('now', '-1 hour')",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(count as usize)
 }
 
 fn get_prediction(conn: &Connection, id: i64) -> Result<Option<UserPrediction>> {
@@ -626,6 +661,20 @@ pub fn list_predictions_backend(
         |pool| {
             ensure_prediction_columns_postgres(pool)?;
             list_predictions_postgres(pool, outcome_filter, symbol, timeframe_filter, limit)
+        },
+    )
+}
+
+pub fn count_recent_low_analyst_predictions_backend(backend: &BackendConnection) -> Result<usize> {
+    query::dispatch(
+        backend,
+        |conn| {
+            ensure_prediction_columns(conn)?;
+            count_recent_low_analyst_predictions(conn)
+        },
+        |pool| {
+            ensure_prediction_columns_postgres(pool)?;
+            count_recent_low_analyst_predictions_postgres(pool)
         },
     )
 }
@@ -933,6 +982,27 @@ fn list_predictions_postgres(
         rows.truncate(n);
     }
     Ok(rows.into_iter().map(from_pg_row).collect())
+}
+
+fn count_recent_low_analyst_predictions_postgres(pool: &PgPool) -> Result<usize> {
+    let count: i64 = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar(
+            "SELECT COUNT(*)::BIGINT
+             FROM user_predictions
+             WHERE lower(COALESCE(timeframe, '')) = 'low'
+               AND lower(COALESCE(source_agent, '')) IN (
+                    'analyst-low',
+                    'low-agent',
+                    'low-analyst',
+                    'low-timeframe',
+                    'low-timeframe-analyst'
+               )
+               AND created_at >= NOW() - INTERVAL '1 hour'",
+        )
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(count as usize)
 }
 
 #[allow(dead_code)]

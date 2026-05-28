@@ -81,7 +81,7 @@ pftui data cot --json                     # COT percentile ranks + extreme flags
 pftui data onchain --json                 # BTC exchange reserves, MVRV
 pftui data consensus list --json          # standing analyst targets for context
 pftui analytics scenario list --json      # scenario probabilities for framing
-pftui analytics calibration --json        # scenario vs prediction market divergences
+pftui analytics calibration --by-layer --json # scenario vs prediction market divergences and per-layer calibration
 pftui analytics narrative-divergence --json # narrative pressure vs prediction-market movement
 pftui analytics news-silence --json       # topic volume versus weekday baseline
 ```
@@ -164,8 +164,11 @@ item. No unexplained jargon.]
 
 ## Prediction Scorecard
 
-[Yesterday's results with genuine self-reflection. What you got right and why your
-reasoning worked. What you got wrong and what you missed. Overall hit rate.]
+[Yesterday's results with genuine self-reflection. Show per-layer strict calibration
+cells from `analytics calibration --by-layer --json`, not only an aggregate. Format
+each layer as `LOW: 44.5% strict (137 scored, σ ±4.2pp)` and append `[low sample]`
+when `n < 10`; do not make accuracy claims from low-sample cells. Then state what you
+got right, why the reasoning worked, what you got wrong, and what you missed.]
 
 ## Today's Watch
 

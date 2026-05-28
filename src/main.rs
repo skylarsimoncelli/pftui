@@ -121,6 +121,7 @@ fn run_agent_journal(
                 target_date,
                 resolution_criteria,
                 lessons,
+                override_cap,
                 json,
             } => {
                 let text = claim.or(value).ok_or_else(|| {
@@ -152,6 +153,7 @@ fn run_agent_journal(
                     false,
                     topic.as_deref(),
                     source_article_id,
+                    override_cap,
                     json,
                 )
             }
@@ -183,6 +185,7 @@ fn run_agent_journal(
                 false,
                 None,
                 None,
+                false,
                 json,
             ),
             cli::JournalPredictionCommand::Score {
@@ -219,6 +222,7 @@ fn run_agent_journal(
                     false,
                     None,
                     None,
+                    false,
                     json,
                 )
             }
@@ -251,6 +255,7 @@ fn run_agent_journal(
                 false,                         // lesson_coverage
                 None,                          // topic
                 None,                          // source_article_id
+                false,                         // override_cap
                 json,
             ),
             cli::JournalPredictionCommand::Scorecard { date, limit, lesson_coverage, json } => {
@@ -276,6 +281,7 @@ fn run_agent_journal(
                     lesson_coverage,
                     None,
                     None,
+                    false,
                     json,
                 )
             }
@@ -758,6 +764,7 @@ fn dispatch_predictions(
                 false,                         // lesson_coverage
                 None,                          // topic
                 None,                          // source_article_id
+                false,                         // override_cap
                 j || json,
             )
         }
@@ -788,6 +795,7 @@ fn dispatch_predictions(
             lesson_coverage,
             None,               // topic
             None,               // source_article_id
+            false,              // override_cap
             j || json,
         ),
         Some(cli::DataPredictionsCommand::Unanswered {
@@ -817,6 +825,7 @@ fn dispatch_predictions(
             false,                         // lesson_coverage
             None,                          // topic
             None,                          // source_article_id
+            false,                         // override_cap
             j || json,
         ),
         Some(cli::DataPredictionsCommand::Map {
@@ -865,6 +874,7 @@ fn dispatch_predictions(
             target_date,
             resolution_criteria,
             lessons,
+            override_cap,
             json: j,
         }) => commands::predict::run(
             backend,
@@ -888,6 +898,7 @@ fn dispatch_predictions(
             false,
             topic.as_deref(),
             source_article_id,
+            override_cap,
             j || json,
         ),
     }
@@ -2452,9 +2463,10 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::AnalyticsCommand::Calibration {
                 threshold,
                 window_days,
+                by_layer,
                 json,
             } => {
-                commands::calibration::run(&backend, threshold, window_days, json)
+                commands::calibration::run(&backend, threshold, window_days, by_layer, json)
             }
             cli::AnalyticsCommand::NarrativeDivergence {
                 hours,
