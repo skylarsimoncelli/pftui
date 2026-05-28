@@ -975,7 +975,7 @@ pub enum DataPredictionsCommand {
     },
     /// Add a personal prediction (convenience alias for `journal prediction add`)
     #[command(
-        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`.\n\nTimeframe accepts: low, medium, high, macro (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\nUse either `--source-agent` or the shorter alias `--agent`.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high --agent medium-agent\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
+        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`.\n\nTimeframe accepts: low, medium, high, macro (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\nUse either `--source-agent` or the shorter alias `--agent`.\nUse `--lessons` to record which structured lesson IDs informed the call.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD --lessons 218,240\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high --agent medium-agent\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
     )]
     Add {
         /// The prediction claim text
@@ -1009,6 +1009,10 @@ pub enum DataPredictionsCommand {
         /// Criteria for determining if the prediction was correct
         #[arg(long = "resolution-criteria")]
         resolution_criteria: Option<String>,
+
+        /// Comma-separated structured lesson IDs that informed this prediction
+        #[arg(long)]
+        lessons: Option<String>,
 
         /// Output as JSON
         #[arg(long)]
@@ -1923,6 +1927,9 @@ pub enum JournalPredictionCommand {
         target_date: Option<String>,
         #[arg(long = "resolution-criteria")]
         resolution_criteria: Option<String>,
+        /// Comma-separated structured lesson IDs that informed this prediction
+        #[arg(long)]
+        lessons: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -3757,6 +3764,11 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Aggregate lessons referenced by recent prediction writes
+    Lessons {
+        #[command(subcommand)]
+        command: AnalyticsLessonsCommand,
+    },
     /// Debate accuracy scoring: track which side (bull/bear) was right historically
     #[command(name = "debate-score", after_help = "Score resolved debates to track which side (bull/bear) was historically\ncorrect. Feeds into system accuracy tracking.\n\nWorkflow:\n  1. Debates are created and resolved via `agent debate`\n  2. Score resolved debates with `analytics debate-score add`\n  3. View accuracy stats with `analytics debate-score accuracy`\n  4. Find unscored debates with `analytics debate-score unscored`\n\nExamples:\n  pftui analytics debate-score add --debate-id 1 --winner bull --outcome \"BTC hit 185k\"\n  pftui analytics debate-score list --json\n  pftui analytics debate-score accuracy --topic BTC --json\n  pftui analytics debate-score unscored --json\n\nSee also: agent debate start, agent debate history, agent debate summary")]
     DebateScore {
@@ -4092,6 +4104,19 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
     Backtest {
         #[command(subcommand)]
         command: AnalyticsBacktestCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsLessonsCommand {
+    /// Lessons referenced by predictions created in a recent window
+    Applied {
+        /// Window to inspect: 24h, 7d, today, yesterday, or YYYY-MM-DD
+        #[arg(long, default_value = "24h")]
+        since: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -5322,6 +5347,30 @@ mod tests {
         };
         assert!((threshold - 10.0).abs() < f64::EPSILON);
         assert_eq!(window_days, 30);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_lessons_applied() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "lessons",
+            "applied",
+            "--since",
+            "24h",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Lessons { command },
+        }) = cli.command
+        else {
+            panic!("expected analytics lessons command");
+        };
+        let AnalyticsLessonsCommand::Applied { since, json } = command;
+        assert_eq!(since, "24h");
         assert!(json);
     }
 
@@ -7479,6 +7528,42 @@ mod tests {
     }
 
     #[test]
+    fn parse_prediction_add_lessons_flag() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "add",
+            "--claim",
+            "BTC decouples from SPY into close",
+            "--lessons",
+            "218,240",
+            "--json",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command:
+                        JournalPredictionCommand::Add {
+                            claim,
+                            lessons,
+                            json,
+                            ..
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction add command");
+        };
+
+        assert_eq!(claim.as_deref(), Some("BTC decouples from SPY into close"));
+        assert_eq!(lessons.as_deref(), Some("218,240"));
+        assert!(json);
+    }
+
+    #[test]
     fn parse_analytics_conviction_list_json() {
         let cli =
             Cli::try_parse_from(["pftui", "analytics", "conviction", "list", "--json"]).unwrap();
@@ -8183,6 +8268,8 @@ mod tests {
             "low-timeframe",
             "--target-date",
             "2026-06-30",
+            "--lessons",
+            "218,240",
             "--json",
         ])
         .unwrap();
@@ -8201,6 +8288,7 @@ mod tests {
                 confidence,
                 source_agent,
                 target_date,
+                lessons,
                 json,
                 ..
             }) => {
@@ -8211,6 +8299,7 @@ mod tests {
                 assert_eq!(confidence, Some(0.75));
                 assert_eq!(source_agent.as_deref(), Some("low-timeframe"));
                 assert_eq!(target_date.as_deref(), Some("2026-06-30"));
+                assert_eq!(lessons.as_deref(), Some("218,240"));
                 assert!(json);
             }
             _ => panic!("expected add subcommand"),

@@ -536,6 +536,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             outcome TEXT NOT NULL DEFAULT 'pending',
             score_notes TEXT,
             lesson TEXT,
+            lessons_applied TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             scored_at TEXT
         );
@@ -845,6 +846,18 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         > 0;
     if !has_resolution_criteria {
         conn.execute_batch("ALTER TABLE user_predictions ADD COLUMN resolution_criteria TEXT")?;
+    }
+
+    // Migration: add lessons_applied JSON text to user_predictions
+    let has_lessons_applied: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('user_predictions') WHERE name = 'lessons_applied'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_lessons_applied {
+        conn.execute_batch(
+            "ALTER TABLE user_predictions ADD COLUMN lessons_applied TEXT NOT NULL DEFAULT '[]'",
+        )?;
     }
 
     // Migration: add source_type column to news_cache (rss|brave)

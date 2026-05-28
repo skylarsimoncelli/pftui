@@ -202,7 +202,14 @@ gold purchases accelerated. The money is saying something different from the new
 worked. What we got wrong and what we missed. This is genuine self-reflection, not
 a scorecard. Explain what the system LEARNED from its mistakes. Example: "We predicted
 gold would hold $5K. It didn't. The error was underweighting DXY momentum. We've
-since recalibrated our dollar sensitivity model."]
+since recalibrated our dollar sensitivity model."
+
+Include a "lessons applied this run" paragraph from:
+```bash
+pftui analytics lessons applied --since 24h --json
+```
+State how many predictions were guarded by lesson IDs, list the most-referenced
+lessons in one line each, and name the strongest historical analog if present.]
 
 ### Prediction Market Intelligence
 [What are prediction markets saying about the key questions we're tracking?

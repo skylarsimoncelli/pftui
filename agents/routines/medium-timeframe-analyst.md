@@ -273,12 +273,12 @@ State how backtest results influence this cycle's predictions.
 
 ## Medium Predictions
 
-Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how this cycle's predictions account for it.
+Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If a specific lesson changes, narrows, or blocks a new call, carry its lesson ID into the prediction with `--lessons`. If no lesson applies, omit the flag.
 
 Make 3-5 cause-and-effect predictions for the next 1-4 weeks:
 
 ```bash
-pftui journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level] --timeframe medium --confidence [0.X] --source-agent medium-agent
+pftui journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level] --timeframe medium --confidence [0.X] --source-agent medium-agent --lessons "[ids]"
 ```
 
 ## Output to Evening Analyst
@@ -298,4 +298,3 @@ pftui agent message send "MEDIUM LAYER DIGEST [date]: ${DIGEST}" \
 - Prediction reflection is mandatory.
 - **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it. One bad source can cascade into wrong predictions, wrong convictions, and wrong scenario probabilities.
 - Maximum 8 minutes.
-

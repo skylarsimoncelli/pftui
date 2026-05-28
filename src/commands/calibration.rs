@@ -580,6 +580,7 @@ mod tests {
             outcome: outcome.to_string(),
             score_notes: None,
             lesson: None,
+            lessons_applied: Vec::new(),
             created_at: scored_at.to_string(),
             scored_at: Some(scored_at.to_string()),
         }

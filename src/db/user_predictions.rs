@@ -22,6 +22,7 @@ pub struct UserPrediction {
     pub outcome: String,
     pub score_notes: Option<String>,
     pub lesson: Option<String>,
+    pub lessons_applied: Vec<i64>,
     pub created_at: String,
     pub scored_at: Option<String>,
 }
@@ -67,10 +68,20 @@ impl UserPrediction {
             outcome: row.get(9)?,
             score_notes: row.get(10)?,
             lesson: row.get(11)?,
-            created_at: row.get(12)?,
-            scored_at: row.get(13)?,
+            lessons_applied: parse_lessons_applied(row.get(12)?),
+            created_at: row.get(13)?,
+            scored_at: row.get(14)?,
         })
     }
+}
+
+fn parse_lessons_applied(raw: Option<String>) -> Vec<i64> {
+    raw.and_then(|value| serde_json::from_str::<Vec<i64>>(&value).ok())
+        .unwrap_or_default()
+}
+
+fn lessons_applied_json(lesson_ids: &[i64]) -> String {
+    serde_json::to_string(lesson_ids).unwrap_or_else(|_| "[]".to_string())
 }
 
 fn ensure_prediction_columns(conn: &Connection) -> Result<()> {
@@ -80,6 +91,7 @@ fn ensure_prediction_columns(conn: &Connection) -> Result<()> {
         ("source_agent", "TEXT"),
         ("lesson", "TEXT"),
         ("resolution_criteria", "TEXT"),
+        ("lessons_applied", "TEXT NOT NULL DEFAULT '[]'"),
     ];
     for (col, ty) in required {
         let exists: bool = conn
@@ -113,6 +125,7 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
                 outcome TEXT NOT NULL DEFAULT 'pending',
                 score_notes TEXT,
                 lesson TEXT,
+                lessons_applied TEXT NOT NULL DEFAULT '[]',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 scored_at TIMESTAMPTZ
             )",
@@ -148,6 +161,11 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
         sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS lesson TEXT")
             .execute(pool)
             .await?;
+        sqlx::query(
+            "ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS lessons_applied TEXT NOT NULL DEFAULT '[]'",
+        )
+        .execute(pool)
+        .await?;
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())
@@ -165,6 +183,7 @@ fn normalize_symbol(s: Option<&str>) -> Option<&str> {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub fn add_prediction(
     conn: &Connection,
     claim: &str,
@@ -176,10 +195,38 @@ pub fn add_prediction(
     target_date: Option<&str>,
     resolution_criteria: Option<&str>,
 ) -> Result<i64> {
+    add_prediction_with_lessons(
+        conn,
+        claim,
+        symbol,
+        conviction,
+        timeframe,
+        confidence,
+        source_agent,
+        target_date,
+        resolution_criteria,
+        &[],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn add_prediction_with_lessons(
+    conn: &Connection,
+    claim: &str,
+    symbol: Option<&str>,
+    conviction: Option<&str>,
+    timeframe: Option<&str>,
+    confidence: Option<f64>,
+    source_agent: Option<&str>,
+    target_date: Option<&str>,
+    resolution_criteria: Option<&str>,
+    lessons_applied: &[i64],
+) -> Result<i64> {
     let symbol = normalize_symbol(symbol);
+    let lessons_applied = lessons_applied_json(lessons_applied);
     conn.execute(
-        "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, lessons_applied)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             claim,
             symbol,
@@ -188,7 +235,8 @@ pub fn add_prediction(
             confidence,
             source_agent,
             target_date,
-            resolution_criteria
+            resolution_criteria,
+            lessons_applied
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -202,7 +250,7 @@ pub fn list_predictions(
     limit: Option<usize>,
 ) -> Result<Vec<UserPrediction>> {
     let mut query = String::from(
-        "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, outcome, score_notes, lesson, created_at, scored_at
+        "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, outcome, score_notes, lesson, lessons_applied, created_at, scored_at
          FROM user_predictions",
     );
 
@@ -366,12 +414,13 @@ pub fn add_prediction_backend(
     source_agent: Option<&str>,
     target_date: Option<&str>,
     resolution_criteria: Option<&str>,
+    lessons_applied: &[i64],
 ) -> Result<i64> {
     query::dispatch(
         backend,
         |conn| {
             ensure_prediction_columns(conn)?;
-            add_prediction(
+            add_prediction_with_lessons(
                 conn,
                 claim,
                 symbol,
@@ -381,6 +430,7 @@ pub fn add_prediction_backend(
                 source_agent,
                 target_date,
                 resolution_criteria,
+                lessons_applied,
             )
         },
         |pool| {
@@ -395,6 +445,7 @@ pub fn add_prediction_backend(
                 source_agent,
                 target_date,
                 resolution_criteria,
+                lessons_applied,
             )
         },
     )
@@ -604,6 +655,7 @@ type PredictionRow = (
     String,
     Option<String>,
     Option<String>,
+    Option<String>,
     String,
     Option<String>,
 );
@@ -622,8 +674,9 @@ fn from_pg_row(r: PredictionRow) -> UserPrediction {
         outcome: r.9,
         score_notes: r.10,
         lesson: r.11,
-        created_at: r.12,
-        scored_at: r.13,
+        lessons_applied: parse_lessons_applied(r.12),
+        created_at: r.13,
+        scored_at: r.14,
     }
 }
 
@@ -639,12 +692,14 @@ fn add_prediction_postgres(
     source_agent: Option<&str>,
     target_date: Option<&str>,
     resolution_criteria: Option<&str>,
+    lessons_applied: &[i64],
 ) -> Result<i64> {
     let symbol = normalize_symbol(symbol);
+    let lessons_applied = lessons_applied_json(lessons_applied);
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
-            "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, lessons_applied)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING id",
         )
         .bind(claim)
@@ -655,6 +710,7 @@ fn add_prediction_postgres(
         .bind(source_agent)
         .bind(target_date)
         .bind(resolution_criteria)
+        .bind(lessons_applied)
         .fetch_one(pool)
         .await
     })?;
@@ -670,7 +726,7 @@ fn list_predictions_postgres(
 ) -> Result<Vec<UserPrediction>> {
     let mut rows: Vec<PredictionRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, outcome, score_notes, lesson, created_at::text, scored_at::text
+            "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, outcome, score_notes, lesson, lessons_applied, created_at::text, scored_at::text
              FROM user_predictions
              ORDER BY created_at DESC",
         )
@@ -715,4 +771,74 @@ fn score_prediction_postgres(
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db;
+
+    #[test]
+    fn lessons_applied_round_trips_as_json_ids() {
+        let conn = db::open_in_memory();
+
+        let id = add_prediction_with_lessons(
+            &conn,
+            "BTC holds support because Lesson 218 applies",
+            Some("BTC-USD"),
+            Some("high"),
+            Some("low"),
+            Some(0.72),
+            Some("low-agent"),
+            Some("2026-05-29"),
+            Some("Daily close above support"),
+            &[218, 240],
+        )
+        .unwrap();
+
+        let rows = list_predictions(&conn, None, None, None, None).unwrap();
+        let row = rows.into_iter().find(|row| row.id == id).unwrap();
+        assert_eq!(row.lessons_applied, vec![218, 240]);
+    }
+
+    #[test]
+    fn legacy_predictions_default_to_no_applied_lessons() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE user_predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                claim TEXT NOT NULL,
+                symbol TEXT,
+                conviction TEXT NOT NULL DEFAULT 'medium',
+                timeframe TEXT NOT NULL DEFAULT 'medium',
+                confidence REAL,
+                source_agent TEXT,
+                target_date TEXT,
+                resolution_criteria TEXT,
+                outcome TEXT NOT NULL DEFAULT 'pending',
+                score_notes TEXT,
+                lesson TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                scored_at TEXT
+            )",
+        )
+        .unwrap();
+
+        ensure_prediction_columns(&conn).unwrap();
+        add_prediction(
+            &conn,
+            "Legacy-compatible call",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let rows = list_predictions(&conn, None, None, None, None).unwrap();
+        assert_eq!(rows[0].lessons_applied, Vec::<i64>::new());
+    }
 }

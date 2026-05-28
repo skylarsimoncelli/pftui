@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: surface applied prediction lessons
+
+- What: predictions can now store `lessons_applied` IDs via `pftui journal prediction add --lessons`, and `pftui analytics lessons applied --since 24h --json` aggregates this run's guarded predictions, most-referenced lessons, and strongest wrong-call analog. Analyst routines and report instructions now tell agents to carry lesson IDs into new predictions and surface them in daily reports.
+- Why: the lesson book was influencing analyst prompts but daily reports could not show which specific past misses guarded the current prediction set.
+
 ### 2026-05-28 — feat: add prediction calibration rows for reports
 
 - What: `pftui analytics calibration --json` now includes trailing-window prediction accuracy rows by timeframe layer and conviction band, with predicted confidence, realised hit rate, sample counts, and miscalibration. The local report chart helper and report command now render those rows as calibration dot plots in public and private daily reports.

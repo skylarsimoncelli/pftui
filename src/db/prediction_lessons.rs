@@ -547,6 +547,7 @@ mod tests {
                 outcome TEXT NOT NULL DEFAULT 'pending',
                 score_notes TEXT,
                 lesson TEXT,
+                lessons_applied TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 scored_at TEXT
             )",

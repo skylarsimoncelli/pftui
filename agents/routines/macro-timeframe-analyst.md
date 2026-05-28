@@ -304,13 +304,13 @@ Use these insights to calibrate this cycle's predictions. State explicitly: "My 
 
 ## Predictions
 
-Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how this cycle's predictions account for it.
+Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If a specific lesson changes, narrows, or blocks a new call, carry its lesson ID into the prediction with `--lessons`. If no lesson applies, omit the flag.
 
 Make 1-2 MACRO predictions (6-24 month horizon) grounded in the frameworks:
 
 ```bash
 pftui journal prediction add "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
-  --target-date [YYYY-MM-DD] --conviction [level] --timeframe macro --confidence [0.X] --source macro-agent
+  --target-date [YYYY-MM-DD] --conviction [level] --timeframe macro --confidence [0.X] --source-agent macro-agent --lessons "[ids]"
 ```
 
 Score any MACRO predictions that accumulated enough evidence. For macro predictions, evidence direction matters more than binary resolution.
@@ -330,4 +330,3 @@ pftui agent message send "MACRO LAYER [date]: Dalio composite US [X.XX] (Δ[chan
 - Update STRUCTURAL.md only if the qualitative framework needs revision.
 - All quantitative outputs go to pftui database.
 - **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it.
-

@@ -74,6 +74,30 @@ fn validate_outcome(value: &str) -> Result<()> {
     }
 }
 
+fn parse_lessons_applied_arg(value: Option<&str>) -> Result<Vec<i64>> {
+    let Some(raw) = value else {
+        return Ok(Vec::new());
+    };
+    let mut ids = Vec::new();
+    for token in raw
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+    {
+        let token = token.trim_start_matches('#');
+        let id: i64 = token
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid lesson id '{}'. Use comma-separated numeric IDs, e.g. --lessons 218,240", token))?;
+        if id <= 0 {
+            bail!("invalid lesson id '{}'. Lesson IDs must be positive", token);
+        }
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    Ok(ids)
+}
+
 fn parse_date_filter(value: Option<&str>) -> Result<Option<NaiveDate>> {
     let Some(raw) = value else {
         return Ok(None);
@@ -152,6 +176,7 @@ pub fn run(
     source_agent: Option<&str>,
     target_date: Option<&str>,
     resolution_criteria: Option<&str>,
+    lessons_applied: Option<&str>,
     outcome: Option<&str>,
     notes: Option<&str>,
     lesson: Option<&str>,
@@ -176,6 +201,7 @@ pub fn run(
                     bail!("invalid confidence '{}'. Valid range: 0.0..=1.0", conf);
                 }
             }
+            let lessons_applied = parse_lessons_applied_arg(lessons_applied)?;
             let new_id = user_predictions::add_prediction_backend(
                 backend,
                 claim,
@@ -186,6 +212,7 @@ pub fn run(
                 source_agent,
                 target_date,
                 resolution_criteria,
+                &lessons_applied,
             )?;
 
             if json_output {
@@ -1945,6 +1972,7 @@ mod tests {
             Some("low-agent"),
             None,
             None,
+            &[],
         )
         .unwrap();
         crate::db::user_predictions::score_prediction_backend(&backend, 1, "wrong", None, None)
@@ -1960,6 +1988,7 @@ mod tests {
             Some("high-agent"),
             None,
             None,
+            &[],
         )
         .unwrap();
         crate::db::user_predictions::score_prediction_backend(&backend, 2, "wrong", None, None)
@@ -2129,6 +2158,7 @@ mod tests {
             outcome: "wrong".to_string(),
             score_notes: Some("BTC stayed rangebound".to_string()),
             lesson: None,
+            lessons_applied: Vec::new(),
             created_at: "2026-04-01T00:00:00Z".to_string(),
             scored_at: Some("2026-04-03T00:00:00Z".to_string()),
         }];
@@ -2167,6 +2197,7 @@ mod tests {
             outcome: "wrong".to_string(),
             score_notes: None,
             lesson: None,
+            lessons_applied: Vec::new(),
             created_at: scored_at.clone(),
             scored_at: Some(scored_at),
         };
@@ -2189,6 +2220,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         )
         .unwrap();
         crate::db::user_predictions::score_prediction_backend(&backend, 1, "wrong", None, None)
@@ -2203,6 +2235,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         )
         .unwrap();
         crate::db::user_predictions::score_prediction_backend(&backend, 2, "correct", None, None)
@@ -2246,6 +2279,7 @@ mod tests {
             Some("low-agent"),
             None,
             None,
+            &[],
         )
         .unwrap();
         crate::db::user_predictions::score_prediction_backend(&backend, 1, "wrong", None, None)
@@ -2260,6 +2294,7 @@ mod tests {
             Some("high-agent"),
             None,
             None,
+            &[],
         )
         .unwrap();
         crate::db::user_predictions::score_prediction_backend(&backend, 2, "wrong", None, None)
