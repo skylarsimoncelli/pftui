@@ -39,6 +39,7 @@ pub mod narrative_snapshots;
 #[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
 pub mod news_cache;
 pub mod news_source_accuracy;
+pub mod news_topic_markets;
 #[allow(dead_code)] // Infrastructure for F21.1+ consumers (on-chain panel, CLI)
 pub mod onchain_cache;
 pub mod opportunity_cost;

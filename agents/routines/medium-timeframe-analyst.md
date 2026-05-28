@@ -72,7 +72,7 @@ pftui data etf-flows --days 7 --json      # BTC ETF flow trend
 pftui data consensus list --json          # analyst calls (Goldman, JPM, etc.) — read before searching
 pftui analytics scenario list --json      # active scenarios with probabilities
 ```
-News JSON includes `id`, `source_tier`, and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
+News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 ## Web Research (for what pftui cannot provide)
 

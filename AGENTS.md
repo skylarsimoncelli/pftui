@@ -76,12 +76,15 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics movers --json [--threshold N] [--overnight]` | Significant daily/overnight moves (default >3%) |
 | `pftui data predictions --json [--limit N]` | Polymarket prediction market odds |
 | `pftui data sentiment --json` | Crypto + traditional Fear & Greed, COT positioning |
-| `pftui data news --json [--limit N] [--filter-independence independent,wire]` | Financial news from RSS and Brave-backed cache, including `source_tier` and `source_independence` |
+| `pftui data news --json [--limit N] [--filter-independence independent,wire]` | Financial news from RSS and Brave-backed cache, including `topic`, `bound_markets`, `source_tier`, and `source_independence` |
 | `pftui data news feeds list --json` | RSS feed health by feed, including status, failure counts, and last failure reason |
 | `pftui data news feeds reset FEED_ID [--json]` | Re-enable a degraded or disabled RSS feed after review |
 | `pftui data news sources list --json` | Source-domain tier mappings used by news ingest |
 | `pftui data news sources set DOMAIN --tier N [--notes TEXT] [--json]` | Set news source tier 1-4 |
 | `pftui data news sources remove DOMAIN [--json]` | Remove a custom news source tier mapping |
+| `pftui data news topics list --json` | News-topic to prediction-market bindings used for `bound_markets` |
+| `pftui data news topics set TOPIC --primary-market-id ID [--secondary-market-id ID] [--json]` | Bind a news topic such as `iran-hormuz` or `fed-policy` to current market contracts |
+| `pftui data news topics remove TOPIC [--json]` | Remove a news-topic market binding |
 | `pftui data supply --json` | COMEX gold/silver inventory |
 | `pftui data dashboard global --json` | World Bank macro data (GDP, debt, reserves) |
 | `pftui data status --json` | Data source freshness plus daemon health — includes `daemon` heartbeat and `news_feeds` RSS health |
@@ -202,8 +205,9 @@ The active backend database is the single source of truth. All interfaces (TUI, 
 ├── targets                        # Target allocation floor/ceiling ranges
 ├── journal_entries                # Trade journal + notes
 ├── calendar_events                # Economic calendar
-├── news_cache                     # RSS/Brave articles with source tier and independence metadata (48h retention)
+├── news_cache                     # RSS/Brave articles with topic, source tier, and independence metadata (48h retention)
 ├── news_source_tiers              # Domain-to-tier mapping used at ingest
+├── news_topic_markets             # News-topic to prediction-market contract bindings
 ├── news_source_accuracy           # Per-domain/topic prediction outcome counts for article-derived calls
 ├── news_source_accuracy_events    # One scored prediction → source-domain outcome event for trailing windows
 ├── rss_feed_health                # Per-feed RSS status, failure counters, and disable state
@@ -301,7 +305,7 @@ SENTIMENT=$(pftui data sentiment --json)
 # Analyse all of the above, then compose and deliver your brief
 ```
 
-News JSON includes `id`, `source_tier`, and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in news reasoning, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
+News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in news reasoning, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. Use `bound_markets` as the immediate money-check for the article's topic; if a relevant article has an empty or unavailable binding, update it with `pftui data news topics set <topic> --primary-market-id <contract_id> --json` after inspecting `pftui data predictions markets --json`. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
 ### Alert Monitoring
 

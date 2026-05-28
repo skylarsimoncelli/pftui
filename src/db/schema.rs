@@ -326,6 +326,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             description TEXT NOT NULL DEFAULT '',
             extra_snippets TEXT NOT NULL DEFAULT '[]',
             category TEXT NOT NULL,
+            topic TEXT NOT NULL DEFAULT 'other',
             published_at INTEGER NOT NULL,
             fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -334,6 +335,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_news_source_tier ON news_cache(source_tier);
         CREATE INDEX IF NOT EXISTS idx_news_source_independence ON news_cache(source_independence);
         CREATE INDEX IF NOT EXISTS idx_news_category ON news_cache(category);
+        CREATE INDEX IF NOT EXISTS idx_news_topic ON news_cache(topic);
         CREATE INDEX IF NOT EXISTS idx_news_published_at ON news_cache(published_at);
 
         CREATE TABLE IF NOT EXISTS news_source_tiers (
@@ -341,6 +343,19 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             tier INTEGER NOT NULL CHECK(tier BETWEEN 1 AND 4),
             notes TEXT,
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS news_topic_markets (
+            topic TEXT PRIMARY KEY,
+            primary_market_id TEXT NOT NULL,
+            secondary_market_id TEXT,
+            last_updated TEXT NOT NULL DEFAULT (datetime('now')),
+            notes TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS news_topic_market_seed_state (
+            id INTEGER PRIMARY KEY CHECK(id = 1),
+            seeded_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
         CREATE TABLE IF NOT EXISTS rss_feed_health (
@@ -973,6 +988,9 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             "ALTER TABLE news_cache ADD COLUMN extra_snippets TEXT NOT NULL DEFAULT '[]'",
         )?;
     }
+    crate::db::news_topic_markets::ensure_tables(conn)?;
+    crate::db::news_topic_markets::ensure_news_cache_topic_column(conn)?;
+    crate::db::news_topic_markets::backfill_news_cache_topics(conn)?;
 
     let has_agent_package_id: bool = conn
         .prepare(
