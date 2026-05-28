@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: port report what-changed strip
+
+- What: Added the native `what-changed-strip` report chart with Python-parity SVG output, ASCII/PNG support through the shared registry, JSON input mode, and agent docs.
+- Why: Daily report header deltas can now render through pftui's native report chart pipeline instead of the Python helper.
+
 ### 2026-05-28 — feat: port report drift bar
 
 - What: Added the native `drift-bar` report chart with Python-parity SVG output, ASCII/PNG support through the shared registry, JSON input mode, and DB input from allocation targets plus current portfolio allocation.

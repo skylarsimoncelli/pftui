@@ -171,6 +171,9 @@ fn chart_input_from_db(
         ChartKind::Drift => Ok(ChartInput::Drift(drift_bar_from_portfolio_backend(
             backend, config, query,
         )?)),
+        ChartKind::WhatChanged => {
+            bail!("what-changed-strip does not have a canonical --from-db source; use --from-json")
+        }
     }
 }
 
