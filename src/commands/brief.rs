@@ -91,6 +91,15 @@ struct ScenarioSummaryJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
     updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    narrative_vs_money: Option<NarrativeMoneySummaryJson>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct NarrativeMoneySummaryJson {
+    topic: String,
+    divergence_score: f64,
+    label: String,
 }
 
 /// Compact prediction-market calibration summary for the brief payload.
@@ -3193,16 +3202,25 @@ fn format_category(cat: &AssetCategory) -> &'static str {
 
 fn build_scenarios_json_sqlite(conn: &Connection) -> Vec<ScenarioSummaryJson> {
     let scenarios = crate::db::scenarios::list_scenarios(conn, Some("active")).unwrap_or_default();
-    scenarios_to_summary(scenarios)
+    let narrative = crate::commands::narrative_divergence::build_report_sqlite(conn, 24, 2.0)
+        .map(narrative_money_summary_map)
+        .unwrap_or_default();
+    scenarios_to_summary(scenarios, &narrative)
 }
 
 fn build_scenarios_json_backend(backend: &BackendConnection) -> Vec<ScenarioSummaryJson> {
     let scenarios =
         crate::db::scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
-    scenarios_to_summary(scenarios)
+    let narrative = crate::commands::narrative_divergence::build_report_backend(backend, 24, 2.0)
+        .map(narrative_money_summary_map)
+        .unwrap_or_default();
+    scenarios_to_summary(scenarios, &narrative)
 }
 
-fn scenarios_to_summary(scenarios: Vec<Scenario>) -> Vec<ScenarioSummaryJson> {
+fn scenarios_to_summary(
+    scenarios: Vec<Scenario>,
+    narrative_by_scenario: &std::collections::HashMap<i64, NarrativeMoneySummaryJson>,
+) -> Vec<ScenarioSummaryJson> {
     let mut out: Vec<ScenarioSummaryJson> = scenarios
         .into_iter()
         .map(|s| ScenarioSummaryJson {
@@ -3211,6 +3229,7 @@ fn scenarios_to_summary(scenarios: Vec<Scenario>) -> Vec<ScenarioSummaryJson> {
             phase: s.phase,
             description: s.description,
             updated_at: s.updated_at,
+            narrative_vs_money: narrative_by_scenario.get(&s.id).cloned(),
         })
         .collect();
     // Sort by probability descending for quick scanning
@@ -3220,6 +3239,25 @@ fn scenarios_to_summary(scenarios: Vec<Scenario>) -> Vec<ScenarioSummaryJson> {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     out
+}
+
+fn narrative_money_summary_map(
+    report: crate::commands::narrative_divergence::NarrativeDivergenceReport,
+) -> std::collections::HashMap<i64, NarrativeMoneySummaryJson> {
+    report
+        .entries
+        .into_iter()
+        .map(|entry| {
+            (
+                entry.scenario_id,
+                NarrativeMoneySummaryJson {
+                    topic: entry.topic,
+                    divergence_score: entry.divergence_score,
+                    label: entry.label,
+                },
+            )
+        })
+        .collect()
 }
 
 fn build_calibration_json_backend(backend: &BackendConnection) -> Option<CalibrationSummaryJson> {
@@ -4675,7 +4713,7 @@ mod tests {
                 resolution_notes: None,
             },
         ];
-        let result = scenarios_to_summary(scenarios);
+        let result = scenarios_to_summary(scenarios, &std::collections::HashMap::new());
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].name, "High Prob");
         assert_eq!(result[0].probability, 90.0);
@@ -4685,7 +4723,7 @@ mod tests {
 
     #[test]
     fn scenarios_to_summary_empty() {
-        let result = scenarios_to_summary(vec![]);
+        let result = scenarios_to_summary(vec![], &std::collections::HashMap::new());
         assert!(result.is_empty());
     }
 
@@ -4697,6 +4735,7 @@ mod tests {
             phase: "hypothesis".to_string(),
             description: Some("A test scenario".to_string()),
             updated_at: "2026-04-02".to_string(),
+            narrative_vs_money: None,
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"probability\":42.0"));

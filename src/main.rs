@@ -2456,6 +2456,11 @@ fn run_cli(cli: Cli) -> Result<()> {
             } => {
                 commands::calibration::run(&backend, threshold, window_days, json)
             }
+            cli::AnalyticsCommand::NarrativeDivergence {
+                hours,
+                threshold,
+                json,
+            } => commands::narrative_divergence::run(&backend, hours, threshold, json),
             cli::AnalyticsCommand::Lessons { command } => match command {
                 cli::AnalyticsLessonsCommand::Applied { since, json } => {
                     commands::lessons_applied::run(&backend, &since, json)

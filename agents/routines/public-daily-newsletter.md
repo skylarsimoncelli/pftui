@@ -57,6 +57,7 @@ pftui analytics synthesis --json
 pftui analytics narrative --json
 pftui analytics catalysts --json --window week
 pftui analytics opportunities --json
+pftui analytics narrative-divergence --json
 ```
 
 ### Macro and Structural Data
@@ -137,6 +138,7 @@ Apply first principles: follow the money, not the narrative.]
 
 [For each active scenario, present:]
 - Current probability and direction of change
+- Narrative vs Money label (`→ aligned`, `↑ narrative leading`, or `↓ money leading`)
 - Key evidence for and against
 - What would confirm or invalidate this week
 - Cross-scenario dependencies
@@ -240,6 +242,7 @@ Report the 5-8 most relevant contracts with their current probabilities. Focus o
 - Fed rate path (what does real money say about cuts/hikes this year?)
 - Recession probability
 - Any contracts that diverge significantly from our scenario probabilities
+- Any scenarios where `analytics narrative-divergence` says headlines and market pricing disagree
 
 Frame prediction market data as "the crowd's money is where its mouth is" — these
 are the most honest signals available because people have skin in the game.]

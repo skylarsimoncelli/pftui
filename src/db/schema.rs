@@ -358,6 +358,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             seeded_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS narrative_money_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+            news_volume REAL NOT NULL,
+            news_sentiment REAL NOT NULL,
+            market_price REAL,
+            market_delta_24h REAL,
+            divergence_score REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_narrative_money_history_scenario
+            ON narrative_money_history(scenario_id, recorded_at);
+        CREATE INDEX IF NOT EXISTS idx_narrative_money_history_recorded
+            ON narrative_money_history(recorded_at);
+
         CREATE TABLE IF NOT EXISTS rss_feed_health (
             feed_id TEXT PRIMARY KEY,
             last_success_at TEXT,

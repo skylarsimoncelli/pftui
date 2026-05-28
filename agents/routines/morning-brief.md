@@ -82,6 +82,7 @@ pftui data onchain --json                 # BTC exchange reserves, MVRV
 pftui data consensus list --json          # standing analyst targets for context
 pftui analytics scenario list --json      # scenario probabilities for framing
 pftui analytics calibration --json        # scenario vs prediction market divergences
+pftui analytics narrative-divergence --json # narrative pressure vs prediction-market movement
 ```
 News JSON includes `id`, `topic`, `bound_markets`, `source_tier`, and `source_independence`; use `bound_markets` as the immediate prediction-market money check for each headline. Weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2, then refine with `pftui analytics news-sources rank --topic <topic> --json` when source-history data exists. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events. When a prediction is derived from one article, pass `--topic <fed|inflation|geopolitics|commodities|crypto|equities|other>` and `--source-article-id <id>` so pftui can score that source later.
 
@@ -134,6 +135,10 @@ overnight, and what it means. If no active situations, state that clearly.]
 scenario probabilities and Polymarket consensus. For each divergence: scenario name,
 pftui estimate vs market price, magnitude of gap, and a one-sentence explanation of
 why the divergence exists or what it suggests. If no mappings exist, omit this section.]
+
+[If `analytics narrative-divergence` has non-aligned rows: add the top 1-2
+Narrative vs Money labels and explain whether headlines are leading pricing or pricing
+is moving without headline confirmation.]
 
 ## Cross-Timeframe Alignment
 

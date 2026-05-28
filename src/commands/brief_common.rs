@@ -4,7 +4,7 @@
 //! correlation breaks, alerts, and sentiment. This module extracts them
 //! to avoid duplication and provides the section-filtering infrastructure.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
@@ -20,7 +20,7 @@ use crate::db::news_cache::get_latest_news_backend;
 use crate::db::scenarios::list_scenarios_backend;
 
 use crate::commands::correlations::{compute_breaks_backend, interpret_break};
-use crate::commands::news_sentiment;
+use crate::commands::{narrative_divergence, news_sentiment};
 
 // ==================== Shared Brief Structures ====================
 
@@ -34,6 +34,15 @@ pub struct ScenarioSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub narrative_vs_money: Option<NarrativeMoneySummary>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct NarrativeMoneySummary {
+    pub topic: String,
+    pub divergence_score: f64,
+    pub label: String,
 }
 
 #[derive(Serialize)]
@@ -142,6 +151,25 @@ pub fn build_synthesis(backend: &BackendConnection) -> serde_json::Value {
 
 /// Build active scenarios sorted by probability desc.
 pub fn build_scenarios(backend: &BackendConnection) -> Vec<ScenarioSummary> {
+    let narrative_by_scenario: HashMap<i64, NarrativeMoneySummary> =
+        narrative_divergence::build_report_backend(backend, 24, 2.0)
+            .map(|report| {
+                report
+                    .entries
+                    .into_iter()
+                    .map(|entry| {
+                        (
+                            entry.scenario_id,
+                            NarrativeMoneySummary {
+                                topic: entry.topic,
+                                divergence_score: entry.divergence_score,
+                                label: entry.label,
+                            },
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
     match list_scenarios_backend(backend, Some("active")) {
         Ok(mut rows) => {
             rows.sort_by(|a, b| {
@@ -158,6 +186,7 @@ pub fn build_scenarios(backend: &BackendConnection) -> Vec<ScenarioSummary> {
                     status: s.status,
                     description: s.description,
                     updated_at: s.updated_at,
+                    narrative_vs_money: narrative_by_scenario.get(&s.id).cloned(),
                 })
                 .collect()
         }
@@ -316,7 +345,18 @@ pub fn print_scenarios(scenarios: &[ScenarioSummary]) {
         println!();
         println!("SCENARIOS:");
         for s in scenarios {
-            println!("  {:.0}% — {} [{}]", s.probability * 100.0, s.name, s.phase);
+            let narrative = s
+                .narrative_vs_money
+                .as_ref()
+                .map(|value| format!(" • {}", value.label))
+                .unwrap_or_default();
+            println!(
+                "  {:.0}% — {} [{}]{}",
+                s.probability * 100.0,
+                s.name,
+                s.phase,
+                narrative
+            );
         }
     }
 }
@@ -453,6 +493,7 @@ mod tests {
             status: "active".to_string(),
             description: Some("Test description".to_string()),
             updated_at: "2026-03-26".to_string(),
+            narrative_vs_money: None,
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("Test Scenario"));

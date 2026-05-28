@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: score narrative-vs-money divergence
+
+- What: active scenarios now get a `narrative_money_history` row and `pftui analytics narrative-divergence --json` score comparing tier/independence-weighted topic news pressure against mapped prediction-market movement. Brief scenario payloads include `narrative_vs_money`, and threshold crossings emit synthesis messages.
+- Why: the daily process needed a mechanical anti-headline signal for cases where narrative pressure and money positioning diverge.
+
 ### 2026-05-28 — feat: bind news topics to prediction markets
 
 - What: news ingest now classifies articles into durable topics, stores `news_topic_markets` mappings, exposes `pftui data news topics list|set|remove`, and adds `topic` plus `bound_markets` pricing to `pftui data news --json` and brief news payloads.
