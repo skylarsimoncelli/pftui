@@ -1,17 +1,22 @@
-//! `pftui analytics calibration` — compare scenario probabilities vs prediction market consensus.
+//! `pftui analytics calibration` — compare pftui probabilities vs realised signals.
 //!
 //! For each mapped scenario↔contract pair, shows the divergence between
 //! pftui's scenario probability (set by agents/user) and the prediction
 //! market's crowd-calibrated probability (from Polymarket contracts).
+//! It also reports recent prediction accuracy calibration by timeframe layer
+//! and conviction band for charting in daily reports.
 //!
 //! Flags divergences >15pp as significant. Designed for agent consumption:
 //! agents explain divergences between their estimates and market consensus.
 
 use anyhow::Result;
+use chrono::{Duration, Utc};
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 use crate::db::backend::BackendConnection;
 use crate::db::scenario_contract_mappings;
+use crate::db::user_predictions::{self, UserPrediction};
 
 // ── JSON output structs ────────────────────────────────────────────
 
@@ -27,6 +32,8 @@ struct CalibrationReport {
     entries: Vec<CalibrationEntry>,
     /// Summary statistics
     summary: CalibrationSummary,
+    /// Realised hit rate vs predicted confidence for recent user predictions
+    prediction_accuracy: PredictionAccuracyReport,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,21 +71,57 @@ struct CalibrationSummary {
     aligned: usize,
 }
 
+#[derive(Debug, Serialize)]
+struct PredictionAccuracyReport {
+    window_days: i64,
+    total_scored: usize,
+    scored_with_confidence: usize,
+    rows: Vec<PredictionAccuracyRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PredictionAccuracyRow {
+    layer: String,
+    band: String,
+    predicted_conf_mean: f64,
+    realised_hit_rate: f64,
+    n: usize,
+    correct: usize,
+    partial: usize,
+    wrong: usize,
+    /// realised_hit_rate - predicted_conf_mean, in percentage points
+    miscalibration_pp: f64,
+}
+
 // ── Core logic ─────────────────────────────────────────────────────
 
-pub fn run(backend: &BackendConnection, threshold: f64, json_output: bool) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    threshold: f64,
+    window_days: i64,
+    json_output: bool,
+) -> Result<()> {
     let mappings = scenario_contract_mappings::list_enriched_backend(backend)?;
+    let prediction_accuracy = build_prediction_accuracy_report(backend, window_days)?;
 
     if mappings.is_empty() {
         if json_output {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "total_mappings": 0,
-                    "significant_divergences": 0,
-                    "entries": [],
-                    "note": "No scenario↔contract mappings found. Use `data predictions map` to link contracts to scenarios."
-                }))?
+                serde_json::to_string_pretty(&CalibrationReport {
+                    total_mappings: 0,
+                    significant_divergences: 0,
+                    threshold_pp: threshold,
+                    entries: Vec::new(),
+                    summary: CalibrationSummary {
+                        mean_abs_divergence_pp: 0.0,
+                        median_abs_divergence_pp: 0.0,
+                        overestimates: 0,
+                        underestimates: 0,
+                        aligned: 0,
+                    },
+                    prediction_accuracy,
+                })?
             );
         } else {
             println!("No scenario↔contract mappings found.");
@@ -87,6 +130,8 @@ pub fn run(backend: &BackendConnection, threshold: f64, json_output: bool) -> Re
             println!("  pftui data predictions map --scenario \"US Recession 2026\" --search \"recession\"");
             println!();
             println!("See: pftui data predictions map --help");
+            println!();
+            print_prediction_accuracy(&prediction_accuracy);
         }
         return Ok(());
     }
@@ -101,10 +146,7 @@ pub fn run(backend: &BackendConnection, threshold: f64, json_output: bool) -> Re
             let significant = abs_div > threshold;
 
             let interpretation = if abs_div <= threshold {
-                format!(
-                    "Aligned — pftui and market agree within {:.0}pp",
-                    threshold
-                )
+                format!("Aligned — pftui and market agree within {:.0}pp", threshold)
             } else if divergence > 0.0 {
                 format!(
                     "pftui OVERESTIMATES by {:.1}pp — your estimate: {:.0}%, market: {:.0}%",
@@ -150,8 +192,14 @@ pub fn run(backend: &BackendConnection, threshold: f64, json_output: bool) -> Re
     };
     let median_abs = median(&abs_divs);
 
-    let overestimates = entries.iter().filter(|e| e.divergence_pp > threshold).count();
-    let underestimates = entries.iter().filter(|e| e.divergence_pp < -threshold).count();
+    let overestimates = entries
+        .iter()
+        .filter(|e| e.divergence_pp > threshold)
+        .count();
+    let underestimates = entries
+        .iter()
+        .filter(|e| e.divergence_pp < -threshold)
+        .count();
     let aligned = entries.iter().filter(|e| !e.significant).count();
 
     let summary = CalibrationSummary {
@@ -168,6 +216,7 @@ pub fn run(backend: &BackendConnection, threshold: f64, json_output: bool) -> Re
         threshold_pp: threshold,
         entries,
         summary,
+        prediction_accuracy,
     };
 
     if json_output {
@@ -191,7 +240,8 @@ fn print_text(report: &CalibrationReport) {
     println!();
 
     // Significant divergences first
-    let sig_entries: Vec<&CalibrationEntry> = report.entries.iter().filter(|e| e.significant).collect();
+    let sig_entries: Vec<&CalibrationEntry> =
+        report.entries.iter().filter(|e| e.significant).collect();
     if !sig_entries.is_empty() {
         println!("⚠️  SIGNIFICANT DIVERGENCES");
         println!("────────────────────────────────────────────────────────────────");
@@ -203,7 +253,9 @@ fn print_text(report: &CalibrationReport) {
             };
             println!(
                 "  {} {} ({}pp)",
-                arrow, entry.scenario_name, format_signed(entry.divergence_pp)
+                arrow,
+                entry.scenario_name,
+                format_signed(entry.divergence_pp)
             );
             println!(
                 "    Your estimate: {:.0}%  •  Market: {:.0}%",
@@ -249,6 +301,191 @@ fn print_text(report: &CalibrationReport) {
     );
     println!();
     println!("Lower divergence = better calibrated. Target: mean <10pp.");
+    println!();
+    print_prediction_accuracy(&report.prediction_accuracy);
+}
+
+fn build_prediction_accuracy_report(
+    backend: &BackendConnection,
+    window_days: i64,
+) -> Result<PredictionAccuracyReport> {
+    let predictions = user_predictions::list_predictions_backend(backend, None, None, None, None)?;
+    Ok(build_prediction_accuracy_from_predictions(
+        &predictions,
+        window_days,
+    ))
+}
+
+fn build_prediction_accuracy_from_predictions(
+    predictions: &[UserPrediction],
+    window_days: i64,
+) -> PredictionAccuracyReport {
+    let cutoff = (Utc::now().date_naive() - Duration::days(window_days))
+        .format("%Y-%m-%d")
+        .to_string();
+    let mut buckets: BTreeMap<(String, String), Vec<&UserPrediction>> = BTreeMap::new();
+    let mut total_scored = 0;
+    let mut scored_with_confidence = 0;
+
+    for prediction in predictions {
+        if !is_scored_outcome(&prediction.outcome) || !is_in_window(prediction, &cutoff) {
+            continue;
+        }
+        total_scored += 1;
+
+        let Some(confidence) = prediction.confidence else {
+            continue;
+        };
+        if !(0.0..=1.0).contains(&confidence) {
+            continue;
+        }
+        scored_with_confidence += 1;
+
+        let Some(layer) = prediction_layer(prediction) else {
+            continue;
+        };
+        let Some(band) = prediction_band(&prediction.conviction) else {
+            continue;
+        };
+        buckets.entry((layer, band)).or_default().push(prediction);
+    }
+
+    let mut rows: Vec<PredictionAccuracyRow> = buckets
+        .into_iter()
+        .map(|((layer, band), bucket)| {
+            let n = bucket.len();
+            let predicted_conf_mean =
+                bucket.iter().filter_map(|p| p.confidence).sum::<f64>() / n as f64;
+            let correct = bucket.iter().filter(|p| p.outcome == "correct").count();
+            let partial = bucket.iter().filter(|p| p.outcome == "partial").count();
+            let wrong = bucket.iter().filter(|p| p.outcome == "wrong").count();
+            let realised_hit_rate = (correct as f64 + 0.5 * partial as f64) / n as f64;
+            PredictionAccuracyRow {
+                layer,
+                band,
+                predicted_conf_mean: round4(predicted_conf_mean),
+                realised_hit_rate: round4(realised_hit_rate),
+                n,
+                correct,
+                partial,
+                wrong,
+                miscalibration_pp: round2((realised_hit_rate - predicted_conf_mean) * 100.0),
+            }
+        })
+        .collect();
+
+    rows.sort_by(|a, b| {
+        layer_order(&a.layer)
+            .cmp(&layer_order(&b.layer))
+            .then_with(|| band_order(&a.band).cmp(&band_order(&b.band)))
+    });
+
+    PredictionAccuracyReport {
+        window_days,
+        total_scored,
+        scored_with_confidence,
+        rows,
+    }
+}
+
+fn print_prediction_accuracy(report: &PredictionAccuracyReport) {
+    println!("Prediction Accuracy Calibration");
+    println!("────────────────────────────────────────────────────────────────");
+    println!(
+        "{} scored predictions in trailing {}d  •  {} with confidence",
+        report.total_scored, report.window_days, report.scored_with_confidence
+    );
+    if report.rows.is_empty() {
+        println!("No scored predictions with confidence by layer and conviction band.");
+        return;
+    }
+
+    for row in &report.rows {
+        let direction = if row.miscalibration_pp < -5.0 {
+            "overconfident"
+        } else if row.miscalibration_pp > 5.0 {
+            "underconfident"
+        } else {
+            "calibrated"
+        };
+        println!(
+            "  {:<6} {:<6} predicted {:.0}%  realised {:.0}%  n={:<2}  {} ({:+.0}pp)",
+            row.layer.to_uppercase(),
+            row.band.to_uppercase(),
+            row.predicted_conf_mean * 100.0,
+            row.realised_hit_rate * 100.0,
+            row.n,
+            direction,
+            row.miscalibration_pp
+        );
+    }
+}
+
+fn is_scored_outcome(outcome: &str) -> bool {
+    matches!(outcome, "correct" | "partial" | "wrong")
+}
+
+fn is_in_window(prediction: &UserPrediction, cutoff: &str) -> bool {
+    let ts = prediction
+        .scored_at
+        .as_deref()
+        .unwrap_or(prediction.created_at.as_str());
+    ts.get(..10).is_some_and(|date| date >= cutoff)
+}
+
+fn prediction_layer(prediction: &UserPrediction) -> Option<String> {
+    if let Some(timeframe) = prediction.timeframe.as_deref() {
+        if let Some(layer) = normalize_layer(timeframe) {
+            return Some(layer.to_string());
+        }
+    }
+    prediction
+        .source_agent
+        .as_deref()
+        .and_then(normalize_layer)
+        .map(str::to_string)
+}
+
+fn normalize_layer(value: &str) -> Option<&'static str> {
+    let v = value.trim().to_ascii_lowercase();
+    if v.contains("low") || v == "short" {
+        Some("low")
+    } else if v.contains("medium") || v == "med" {
+        Some("medium")
+    } else if v.contains("high") || v == "long" {
+        Some("high")
+    } else if v.contains("macro") {
+        Some("macro")
+    } else {
+        None
+    }
+}
+
+fn prediction_band(value: &str) -> Option<String> {
+    let v = value.trim().to_ascii_lowercase();
+    match v.as_str() {
+        "low" | "medium" | "high" => Some(v),
+        _ => None,
+    }
+}
+
+fn layer_order(layer: &str) -> u8 {
+    match layer {
+        "low" => 0,
+        "medium" => 1,
+        "high" => 2,
+        "macro" => 3,
+        _ => 4,
+    }
+}
+
+fn band_order(band: &str) -> u8 {
+    match band {
+        "low" => 0,
+        "medium" => 1,
+        "high" => 2,
+        _ => 3,
+    }
 }
 
 fn format_signed(v: f64) -> String {
@@ -269,6 +506,10 @@ fn truncate(s: &str, max_len: usize) -> String {
 
 fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
+}
+
+fn round4(v: f64) -> f64 {
+    (v * 10000.0).round() / 10000.0
 }
 
 fn median(values: &[f64]) -> f64 {
@@ -319,11 +560,36 @@ mod tests {
         .unwrap();
     }
 
+    fn prediction(
+        timeframe: &str,
+        conviction: &str,
+        confidence: Option<f64>,
+        outcome: &str,
+        scored_at: &str,
+    ) -> UserPrediction {
+        UserPrediction {
+            id: 1,
+            claim: "test prediction".to_string(),
+            symbol: None,
+            conviction: conviction.to_string(),
+            timeframe: Some(timeframe.to_string()),
+            confidence,
+            source_agent: None,
+            target_date: None,
+            resolution_criteria: None,
+            outcome: outcome.to_string(),
+            score_notes: None,
+            lesson: None,
+            created_at: scored_at.to_string(),
+            scored_at: Some(scored_at.to_string()),
+        }
+    }
+
     #[test]
     fn calibration_empty_mappings() {
         let backend = setup_test_db();
         // Should not panic with empty data
-        let result = run(&backend, 15.0, false);
+        let result = run(&backend, 15.0, 90, false);
         assert!(result.is_ok());
     }
 
@@ -333,11 +599,16 @@ mod tests {
 
         // Create a scenario at 40% and a contract at 0.22 (22%)
         let sid = insert_scenario(&backend, "US Recession 2026", 40.0);
-        insert_contract(&backend, "contract-abc", "Will there be a US recession in 2026?", 0.22);
+        insert_contract(
+            &backend,
+            "contract-abc",
+            "Will there be a US recession in 2026?",
+            0.22,
+        );
         scenario_contract_mappings::add_mapping(backend.sqlite(), sid, "contract-abc").unwrap();
 
         // Run calibration
-        let result = run(&backend, 15.0, false);
+        let result = run(&backend, 15.0, 90, false);
         assert!(result.is_ok());
     }
 
@@ -346,10 +617,15 @@ mod tests {
         let backend = setup_test_db();
 
         let sid = insert_scenario(&backend, "Fed Rate Cut", 65.0);
-        insert_contract(&backend, "contract-fed", "Will the Fed cut rates by June 2026?", 0.70);
+        insert_contract(
+            &backend,
+            "contract-fed",
+            "Will the Fed cut rates by June 2026?",
+            0.70,
+        );
         scenario_contract_mappings::add_mapping(backend.sqlite(), sid, "contract-fed").unwrap();
 
-        let result = run(&backend, 15.0, true);
+        let result = run(&backend, 15.0, 90, true);
         assert!(result.is_ok());
     }
 
@@ -359,7 +635,12 @@ mod tests {
 
         // Scenario: 38%, Market: 22% → divergence +16pp → significant
         let sid = insert_scenario(&backend, "Iran War", 38.0);
-        insert_contract(&backend, "contract-iran", "Will US attack Iran in 2026?", 0.22);
+        insert_contract(
+            &backend,
+            "contract-iran",
+            "Will US attack Iran in 2026?",
+            0.22,
+        );
         scenario_contract_mappings::add_mapping(backend.sqlite(), sid, "contract-iran").unwrap();
 
         let mappings = scenario_contract_mappings::list_enriched(backend.sqlite()).unwrap();
@@ -380,7 +661,12 @@ mod tests {
 
         // Scenario: 50%, Market: 48% → divergence +2pp → aligned
         let sid = insert_scenario(&backend, "BTC ATH 2026", 50.0);
-        insert_contract(&backend, "contract-btc", "Will BTC hit new ATH in 2026?", 0.48);
+        insert_contract(
+            &backend,
+            "contract-btc",
+            "Will BTC hit new ATH in 2026?",
+            0.48,
+        );
         scenario_contract_mappings::add_mapping(backend.sqlite(), sid, "contract-btc").unwrap();
 
         let mappings = scenario_contract_mappings::list_enriched(backend.sqlite()).unwrap();
@@ -466,7 +752,38 @@ mod tests {
         let m = &mappings[0];
         let div = (m.scenario_probability - m.contract_probability * 100.0).abs();
 
-        assert!(div > 5.0);  // significant at threshold=5
+        assert!(div > 5.0); // significant at threshold=5
         assert!(div < 15.0); // not significant at threshold=15
+    }
+
+    #[test]
+    fn prediction_accuracy_groups_by_layer_and_conviction_band() {
+        let today = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let rows = vec![
+            prediction("low", "high", Some(0.8), "correct", &today),
+            prediction("low", "high", Some(0.6), "wrong", &today),
+            prediction("low", "medium", Some(0.5), "partial", &today),
+            prediction("macro", "low", Some(0.25), "wrong", &today),
+            prediction("high", "high", None, "correct", &today),
+            prediction("low", "high", Some(0.9), "pending", &today),
+            prediction("low", "high", Some(0.9), "correct", "2020-01-01 00:00:00"),
+        ];
+
+        let report = build_prediction_accuracy_from_predictions(&rows, 90);
+        assert_eq!(report.total_scored, 5);
+        assert_eq!(report.scored_with_confidence, 4);
+        assert_eq!(report.rows.len(), 3);
+
+        let low_high = report
+            .rows
+            .iter()
+            .find(|row| row.layer == "low" && row.band == "high")
+            .unwrap();
+        assert_eq!(low_high.n, 2);
+        assert_eq!(low_high.correct, 1);
+        assert_eq!(low_high.wrong, 1);
+        assert_eq!(low_high.predicted_conf_mean, 0.7);
+        assert_eq!(low_high.realised_hit_rate, 0.5);
+        assert_eq!(low_high.miscalibration_pp, -20.0);
     }
 }

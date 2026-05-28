@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: add prediction calibration rows for reports
+
+- What: `pftui analytics calibration --json` now includes trailing-window prediction accuracy rows by timeframe layer and conviction band, with predicted confidence, realised hit rate, sample counts, and miscalibration. The local report chart helper and report command now render those rows as calibration dot plots in public and private daily reports.
+- Why: daily reports need a visual calibration check so systematic overconfidence or underconfidence is visible instead of buried in prose.
+
 ### 2026-05-28 — feat: model allocation targets as ranges
 
 - What: allocation targets now store floor/ceiling percentages, `portfolio target set` accepts `--floor/--ceiling` while translating legacy `--target/--band`, and drift/rebalance/brief/TUI views report zero drift inside the acceptable range with `band_position` outside it.

@@ -364,6 +364,7 @@ pftui analytics divergence --json                              # Cross-layer dis
 pftui analytics digest --from low-agent --json                 # Role-aware handoff payload
 pftui analytics recap --date yesterday --json                  # Chronological recap for a given day
 pftui analytics narrative --json                               # Structured analytical memory and recap state
+pftui analytics calibration --json                             # Scenario divergence plus prediction accuracy calibration
 pftui analytics gaps --json                                    # Freshness / missing-table checks
 pftui analytics signals --json                                 # All signals
 pftui analytics signals --source technical --json              # Technical signals only
