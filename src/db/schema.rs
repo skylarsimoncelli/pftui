@@ -326,6 +326,19 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_news_category ON news_cache(category);
         CREATE INDEX IF NOT EXISTS idx_news_published_at ON news_cache(published_at);
 
+        CREATE TABLE IF NOT EXISTS rss_feed_health (
+            feed_id TEXT PRIMARY KEY,
+            last_success_at TEXT,
+            last_failure_at TEXT,
+            last_failure_reason TEXT,
+            consecutive_failures INTEGER NOT NULL DEFAULT 0,
+            total_failures INTEGER NOT NULL DEFAULT 0,
+            total_successes INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK(status IN ('active', 'degraded', 'disabled'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_rss_feed_health_status ON rss_feed_health(status);
+
         CREATE TABLE IF NOT EXISTS onchain_cache (
             metric TEXT NOT NULL,
             date TEXT NOT NULL,

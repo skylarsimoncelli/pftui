@@ -9,6 +9,7 @@ use crate::commands::refresh::build_brave_news_queries;
 use crate::data::{brave, rss};
 use crate::db::backend::BackendConnection;
 use crate::db::news_cache::{get_latest_news_backend, NewsEntry};
+use crate::db::rss_feed_health;
 
 fn news_empty_diagnostics(backend: &BackendConnection) -> serde_json::Value {
     let rss_last_fetch =
@@ -158,6 +159,59 @@ pub fn run(
     Ok(())
 }
 
+pub fn run_feeds_list(backend: &BackendConnection, config: &Config, json: bool) -> Result<()> {
+    let feeds = rss::configured_feeds(config);
+    let health = rss_feed_health::health_for_feeds_backend(backend, &feeds)?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "feeds": health }))?
+        );
+    } else {
+        println!(
+            "{:<28} {:<11} {:<8} {:<8} Last Failure",
+            "Feed", "Status", "Failures", "Category"
+        );
+        println!("{}", "-".repeat(82));
+        for feed in health {
+            let last_failure = feed
+                .last_failure_reason
+                .as_deref()
+                .unwrap_or("")
+                .chars()
+                .take(40)
+                .collect::<String>();
+            println!(
+                "{:<28} {:<11} {:<8} {:<8} {}",
+                feed.feed_name,
+                feed.status,
+                feed.consecutive_failures,
+                feed.category,
+                last_failure
+            );
+        }
+    }
+
+    Ok(())
+}
+
+pub fn run_feeds_reset(backend: &BackendConnection, feed_id: &str, json: bool) -> Result<()> {
+    rss_feed_health::reset_feed_backend(backend, feed_id)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "status": "reset",
+                "feed_id": feed_id,
+            }))?
+        );
+    } else {
+        println!("Reset RSS feed health for {}", feed_id);
+    }
+    Ok(())
+}
+
 fn fetch_live_entries(
     backend: &BackendConnection,
     config: &Config,
@@ -170,7 +224,11 @@ fn fetch_live_entries(
         .enable_all()
         .build()?;
 
-    let rss_feeds = rss::default_feeds();
+    let disabled_feed_ids = rss_feed_health::disabled_feed_ids_backend(backend).unwrap_or_default();
+    let rss_feeds: Vec<_> = rss::configured_feeds(config)
+        .into_iter()
+        .filter(|feed| !disabled_feed_ids.contains(&feed.feed_id()))
+        .collect();
     let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim().to_string();
     let brave_queries = if brave_key.is_empty() {
         Vec::new()
@@ -195,6 +253,13 @@ fn fetch_live_entries(
 
     let mut entries = Vec::new();
     let fetched_at = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    for success in &rss_report.successes {
+        rss_feed_health::record_feed_success_backend(backend, &success.feed_name)?;
+    }
+    for err in &rss_report.errors {
+        rss_feed_health::record_feed_failure_backend(backend, &err.feed_name, &err.error)?;
+    }
 
     for item in rss_report.items {
         let entry = NewsEntry {
@@ -630,5 +695,28 @@ mod tests {
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].source, "Reuters");
         assert!(filtered[0].title.contains("Fed"));
+    }
+
+    #[test]
+    fn feeds_reset_reenables_a_disabled_feed() {
+        let backend = to_backend(crate::db::open_in_memory());
+        for _ in 0..rss_feed_health::DISABLED_THRESHOLD {
+            rss_feed_health::record_feed_failure_backend(
+                &backend,
+                "Bloomberg Commodities",
+                "parse error",
+            )
+            .unwrap();
+        }
+
+        run_feeds_reset(&backend, "Bloomberg Commodities", true).unwrap();
+
+        let health = rss_feed_health::list_feed_health_backend(&backend).unwrap();
+        let row = health
+            .iter()
+            .find(|row| row.feed_id == "Bloomberg Commodities")
+            .unwrap();
+        assert_eq!(row.status, "active");
+        assert_eq!(row.consecutive_failures, 0);
     }
 }

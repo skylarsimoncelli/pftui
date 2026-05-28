@@ -514,6 +514,27 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS rss_feed_health (
+                feed_id TEXT PRIMARY KEY,
+                last_success_at TIMESTAMPTZ,
+                last_failure_at TIMESTAMPTZ,
+                last_failure_reason TEXT,
+                consecutive_failures BIGINT NOT NULL DEFAULT 0,
+                total_failures BIGINT NOT NULL DEFAULT 0,
+                total_successes BIGINT NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active'
+                    CHECK(status IN ('active', 'degraded', 'disabled'))
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_rss_feed_health_status
+             ON rss_feed_health(status)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS scan_queries (
                 name TEXT PRIMARY KEY,
                 filter_expr TEXT NOT NULL,

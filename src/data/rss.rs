@@ -13,6 +13,8 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use crate::config::{Config, CustomNewsFeed};
+
 #[derive(Debug, Clone)]
 pub struct NewsItem {
     pub title: String,
@@ -31,10 +33,27 @@ pub struct FeedError {
     pub error: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct FeedSuccess {
+    pub feed_name: String,
+    pub feed_url: String,
+    pub item_count: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct FeedSkipped {
+    pub feed_name: String,
+    pub feed_url: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct FeedFetchReport {
+    pub attempted: usize,
     pub items: Vec<NewsItem>,
+    pub successes: Vec<FeedSuccess>,
     pub errors: Vec<FeedError>,
+    pub skipped: Vec<FeedSkipped>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,6 +75,16 @@ impl NewsCategory {
             Self::Markets => "markets",
         }
     }
+
+    pub fn from_config(value: &str) -> Self {
+        match value.trim().to_lowercase().as_str() {
+            "macro" | "economics" | "economy" => Self::Macro,
+            "crypto" => Self::Crypto,
+            "commodity" | "commodities" => Self::Commodities,
+            "geopolitics" | "politics" => Self::Geopolitics,
+            _ => Self::Markets,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +92,12 @@ pub struct RssFeed {
     pub name: String,
     pub url: String,
     pub category: NewsCategory,
+}
+
+impl RssFeed {
+    pub fn feed_id(&self) -> String {
+        self.name.clone()
+    }
 }
 
 /// Default feed list that ships with pftui.
@@ -94,6 +129,22 @@ pub fn default_feeds() -> Vec<RssFeed> {
             category: NewsCategory::Geopolitics,
         },
     ]
+}
+
+pub fn configured_feeds(config: &Config) -> Vec<RssFeed> {
+    if config.custom_news_feeds.is_empty() {
+        return default_feeds();
+    }
+
+    config.custom_news_feeds.iter().map(custom_feed).collect()
+}
+
+fn custom_feed(feed: &CustomNewsFeed) -> RssFeed {
+    RssFeed {
+        name: feed.name.clone(),
+        url: feed.url.clone(),
+        category: NewsCategory::from_config(&feed.category),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -212,8 +263,10 @@ pub async fn fetch_all_feeds_detailed(feeds: &[RssFeed]) -> FeedFetchReport {
     for feed in feeds {
         let feed = feed.clone();
         handles.push(tokio::spawn(async move {
+            let feed_name = feed.name.clone();
+            let feed_url = feed.url.clone();
             match fetch_feed(&feed).await {
-                Ok(items) => Ok(items),
+                Ok(items) => Ok((feed_name, feed_url, items)),
                 Err(err) => Err(FeedError {
                     feed_name: feed.name,
                     feed_url: feed.url,
@@ -223,10 +276,20 @@ pub async fn fetch_all_feeds_detailed(feeds: &[RssFeed]) -> FeedFetchReport {
         }));
     }
 
-    let mut report = FeedFetchReport::default();
+    let mut report = FeedFetchReport {
+        attempted: feeds.len(),
+        ..FeedFetchReport::default()
+    };
     for handle in handles {
         match handle.await {
-            Ok(Ok(items)) => report.items.extend(items),
+            Ok(Ok((feed_name, feed_url, items))) => {
+                report.successes.push(FeedSuccess {
+                    feed_name,
+                    feed_url,
+                    item_count: items.len(),
+                });
+                report.items.extend(items);
+            }
             Ok(Err(err)) => report.errors.push(err),
             Err(join_err) => report.errors.push(FeedError {
                 feed_name: "unknown".to_string(),
@@ -237,11 +300,15 @@ pub async fn fetch_all_feeds_detailed(feeds: &[RssFeed]) -> FeedFetchReport {
     }
 
     // Sort by timestamp descending (newest first)
-    report.items.sort_by_key(|b| std::cmp::Reverse(b.published_at));
+    report
+        .items
+        .sort_by_key(|b| std::cmp::Reverse(b.published_at));
 
     // Deduplicate by URL (keep first occurrence = newest)
     let mut seen_urls = std::collections::HashSet::new();
-    report.items.retain(|item| seen_urls.insert(item.url.clone()));
+    report
+        .items
+        .retain(|item| seen_urls.insert(item.url.clone()));
 
     report
 }
@@ -273,6 +340,23 @@ mod tests {
         assert!(feeds.iter().any(|f| f.name == "Bloomberg Markets"));
         assert!(feeds.iter().any(|f| f.name == "Bloomberg Crypto"));
         assert!(feeds.iter().any(|f| f.category == NewsCategory::Crypto));
+    }
+
+    #[test]
+    fn configured_feeds_prefers_custom_feeds() {
+        let config = Config {
+            custom_news_feeds: vec![CustomNewsFeed {
+                name: "Custom Macro".to_string(),
+                url: "https://example.com/rss.xml".to_string(),
+                category: "macro".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let feeds = configured_feeds(&config);
+        assert_eq!(feeds.len(), 1);
+        assert_eq!(feeds[0].name, "Custom Macro");
+        assert_eq!(feeds[0].category, NewsCategory::Macro);
     }
 
     #[test]

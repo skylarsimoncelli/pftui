@@ -76,10 +76,12 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics movers --json [--threshold N] [--overnight]` | Significant daily/overnight moves (default >3%) |
 | `pftui data predictions --json [--limit N]` | Polymarket prediction market odds |
 | `pftui data sentiment --json` | Crypto + traditional Fear & Greed, COT positioning |
-| `pftui data news --json [--limit N]` | Financial news from RSS feeds |
+| `pftui data news --json [--limit N]` | Financial news from RSS and Brave-backed cache |
+| `pftui data news feeds list --json` | RSS feed health by feed, including status, failure counts, and last failure reason |
+| `pftui data news feeds reset FEED_ID [--json]` | Re-enable a degraded or disabled RSS feed after review |
 | `pftui data supply --json` | COMEX gold/silver inventory |
 | `pftui data dashboard global --json` | World Bank macro data (GDP, debt, reserves) |
-| `pftui data status --json` | Data source freshness plus daemon health — last update time per source + `daemon` heartbeat |
+| `pftui data status --json` | Data source freshness plus daemon health — includes `daemon` heartbeat and `news_feeds` RSS health |
 
 ### Portfolio Management
 
@@ -194,6 +196,7 @@ The active backend database is the single source of truth. All interfaces (TUI, 
 ├── journal_entries                # Trade journal + notes
 ├── calendar_events                # Economic calendar
 ├── news_cache                     # RSS feed articles (48h retention)
+├── rss_feed_health                # Per-feed RSS status, failure counters, and disable state
 ├── sentiment_cache                # Fear & Greed indices
 ├── prediction_cache               # Polymarket odds
 ├── cot_cache                      # CFTC COT positioning

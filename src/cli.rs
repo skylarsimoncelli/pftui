@@ -411,6 +411,9 @@ pub enum DataCommand {
     },
     /// Show latest financial news from RSS feeds
     News {
+        #[command(subcommand)]
+        command: Option<DataNewsCommand>,
+
         /// Filter by source (e.g. "Reuters", "CoinDesk", "ZeroHedge")
         #[arg(long)]
         source: Option<String>,
@@ -650,6 +653,33 @@ pub enum DataCommand {
     Alerts {
         #[command(subcommand)]
         command: Option<DataAlertsRedirect>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DataNewsCommand {
+    /// Inspect or reset RSS feed health
+    Feeds {
+        #[command(subcommand)]
+        command: DataNewsFeedsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DataNewsFeedsCommand {
+    /// List RSS feed health
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Reset a disabled/degraded RSS feed back to active
+    Reset {
+        /// Feed ID, usually the feed name shown by `feeds list`
+        feed_id: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -8411,6 +8441,57 @@ mod tests {
         };
         assert!(breaking);
         assert!(with_sentiment);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_feeds_list_json() {
+        let cli = Cli::try_parse_from([
+            "pftui", "data", "news", "feeds", "list", "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            command: Some(DataNewsCommand::Feeds { command }),
+            ..
+        } = command
+        else {
+            panic!("expected news feeds command");
+        };
+        let DataNewsFeedsCommand::List { json } = command else {
+            panic!("expected news feeds list");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_feeds_reset_json() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "news",
+            "feeds",
+            "reset",
+            "Bloomberg Commodities",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            command: Some(DataNewsCommand::Feeds { command }),
+            ..
+        } = command
+        else {
+            panic!("expected news feeds command");
+        };
+        let DataNewsFeedsCommand::Reset { feed_id, json } = command else {
+            panic!("expected news feeds reset");
+        };
+        assert_eq!(feed_id, "Bloomberg Commodities");
         assert!(json);
     }
 
