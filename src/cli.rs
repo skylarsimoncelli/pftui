@@ -430,6 +430,10 @@ pub enum DataCommand {
         #[arg(long, alias = "today")]
         breaking: bool,
 
+        /// Comma-separated independence classes: independent,wire,restatement,rumor,unknown
+        #[arg(long = "filter-independence")]
+        filter_independence: Option<String>,
+
         /// Maximum number of articles to show (default: 20)
         #[arg(long, default_value = "20")]
         limit: usize,
@@ -8574,6 +8578,8 @@ mod tests {
             "data",
             "news",
             "--breaking",
+            "--filter-independence",
+            "independent,wire",
             "--with-sentiment",
             "--json",
         ])
@@ -8583,6 +8589,7 @@ mod tests {
         };
         let DataCommand::News {
             breaking,
+            filter_independence,
             with_sentiment,
             json,
             ..
@@ -8591,6 +8598,7 @@ mod tests {
             panic!("expected News");
         };
         assert!(breaking);
+        assert_eq!(filter_independence.as_deref(), Some("independent,wire"));
         assert!(with_sentiment);
         assert!(json);
     }

@@ -54,7 +54,7 @@ pftui analytics views portfolio-matrix --json
 pftui journal conviction list --json
 pftui journal prediction list --limit 15 --json
 ```
-News JSON includes `source_tier`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional.
+News JSON includes `source_tier` and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events.
 
 Read today's public report as your base:
 ```bash

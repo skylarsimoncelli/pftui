@@ -74,7 +74,7 @@ pftui analytics macro cycles list --json
 pftui analytics power-flow list --days 7 --json
 pftui analytics power-flow balance --json
 ```
-News JSON includes `source_tier`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional.
+News JSON includes `source_tier` and `source_independence`; weight tier-1 sources at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2 in your news reasoning. Treat `source_tier_inferred` as provisional. Treat `restatement` and `rumor` articles as positioning data about the speaker/source, not as independent confirmation of events.
 
 ### Structural Framework
 ```bash
@@ -347,7 +347,7 @@ Previous reports cited CPI at 7.0% when actual was 2.4%. This kind of error is u
 ### 4c: Cross-check news claims
 For any claim about a specific event (e.g. "Iran rejected ceasefire", "OECD forecast X%"),
 verify it actually happened via `web_search`. Do not cite events you cannot verify.
-When weighing the news bundle, use `source_tier` before narrative salience: tier-1 at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2.
+When weighing the news bundle, use `source_tier` before narrative salience: tier-1 at 1.0, tier-2 at 0.7, tier-3 at 0.4, tier-4 at 0.2. Use `source_independence` to separate event confirmation from positioning; `restatement` and `rumor` are not independent confirmation.
 
 ### 4d: Fix ALL errors in the markdown
 If you find ANY inaccuracy, fix it in the markdown source file NOW. Do not proceed

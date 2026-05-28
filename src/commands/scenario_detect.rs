@@ -572,6 +572,7 @@ mod tests {
             source_domain: "example.com".to_string(),
             source_tier: 3,
             source_tier_inferred: true,
+            source_independence: crate::db::news_cache::NewsSourceIndependence::Independent,
             description: "Markets rally on easing hopes.".to_string(),
             extra_snippets: Vec::new(),
             category: "macro".to_string(),

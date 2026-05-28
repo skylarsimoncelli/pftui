@@ -8,7 +8,9 @@ use crate::commands::news_sentiment;
 use crate::commands::refresh::build_brave_news_queries;
 use crate::data::{brave, rss};
 use crate::db::backend::BackendConnection;
-use crate::db::news_cache::{get_latest_news_backend, NewsEntry};
+use crate::db::news_cache::{
+    get_latest_news_filtered_backend, parse_news_source_independence_filter, NewsEntry,
+};
 use crate::db::rss_feed_health;
 
 fn news_empty_diagnostics(backend: &BackendConnection) -> serde_json::Value {
@@ -53,12 +55,25 @@ pub fn run(
     search: Option<&str>,
     hours: Option<i64>,
     breaking: bool,
+    filter_independence: Option<&str>,
     limit: usize,
     with_sentiment: bool,
     json: bool,
 ) -> Result<()> {
+    let independence_filter = filter_independence
+        .map(parse_news_source_independence_filter)
+        .transpose()?;
+
     let entries = if breaking {
-        match fetch_live_entries(backend, config, source, search, hours, limit) {
+        match fetch_live_entries(
+            backend,
+            config,
+            source,
+            search,
+            hours,
+            independence_filter.as_deref(),
+            limit,
+        ) {
             Ok(entries) => entries,
             Err(err) => {
                 if json {
@@ -81,7 +96,15 @@ pub fn run(
             }
         }
     } else {
-        match get_latest_news_backend(backend, limit, source, None, search, hours) {
+        match get_latest_news_filtered_backend(
+            backend,
+            limit,
+            source,
+            None,
+            search,
+            hours,
+            independence_filter.as_deref(),
+        ) {
             Ok(entries) => entries,
             Err(err) => {
                 if json {
@@ -280,6 +303,7 @@ fn fetch_live_entries(
     source: Option<&str>,
     search: Option<&str>,
     hours: Option<i64>,
+    independence_filter: Option<&[crate::db::news_cache::NewsSourceIndependence]>,
     limit: usize,
 ) -> Result<Vec<NewsEntry>> {
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -326,6 +350,12 @@ fn fetch_live_entries(
     for item in rss_report.items {
         let classification =
             crate::db::news_cache::classify_news_source_backend(backend, &item.url, &item.source)?;
+        let independence = crate::db::news_cache::classify_news_source_independence(
+            &item.title,
+            &item.source,
+            item.description.as_deref(),
+            &[],
+        );
         let entry = NewsEntry {
             id: 0,
             title: item.title,
@@ -336,7 +366,8 @@ fn fetch_live_entries(
             source_domain: classification.domain,
             source_tier: classification.tier,
             source_tier_inferred: classification.inferred,
-            description: String::new(),
+            source_independence: independence,
+            description: item.description.unwrap_or_default(),
             extra_snippets: Vec::new(),
             category: item.category.as_str().to_string(),
             published_at: item.published_at,
@@ -350,6 +381,12 @@ fn fetch_live_entries(
         let source = item.source.unwrap_or_else(|| "Brave".to_string());
         let classification =
             crate::db::news_cache::classify_news_source_backend(backend, &item.url, &source)?;
+        let independence = crate::db::news_cache::classify_news_source_independence(
+            &item.title,
+            &source,
+            Some(&item.description),
+            &item.extra_snippets,
+        );
         let entry = NewsEntry {
             id: 0,
             title: item.title,
@@ -360,6 +397,7 @@ fn fetch_live_entries(
             source_domain: classification.domain,
             source_tier: classification.tier,
             source_tier_inferred: classification.inferred,
+            source_independence: independence,
             description: item.description,
             extra_snippets: item.extra_snippets,
             category: "markets".to_string(),
@@ -370,7 +408,14 @@ fn fetch_live_entries(
         entries.push(entry);
     }
 
-    Ok(filter_entries(entries, source, search, hours, limit))
+    Ok(filter_entries(
+        entries,
+        source,
+        search,
+        hours,
+        independence_filter,
+        limit,
+    ))
 }
 
 fn cache_live_entry(backend: &BackendConnection, entry: &NewsEntry) -> Result<()> {
@@ -393,6 +438,7 @@ fn filter_entries(
     source: Option<&str>,
     search: Option<&str>,
     hours: Option<i64>,
+    independence_filter: Option<&[crate::db::news_cache::NewsSourceIndependence]>,
     limit: usize,
 ) -> Vec<NewsEntry> {
     let source = source.map(str::to_lowercase);
@@ -414,6 +460,11 @@ fn filter_entries(
             })
         })
         .filter(|entry| cutoff.is_none_or(|min_ts| entry.published_at >= min_ts))
+        .filter(|entry| {
+            independence_filter.is_none_or(|values| {
+                values.contains(&entry.source_independence)
+            })
+        })
         .filter(|entry| seen_urls.insert(entry.url.clone()))
         .collect();
 
@@ -505,6 +556,7 @@ fn news_entry_json(entry: &NewsEntry) -> serde_json::Value {
         "source_domain": entry.source_domain,
         "source_tier": entry.source_tier,
         "source_tier_inferred": entry.source_tier_inferred,
+        "source_independence": entry.source_independence.as_str(),
         "description": entry.description,
         "extra_snippets": entry.extra_snippets,
         "category": entry.category,
@@ -543,6 +595,7 @@ fn print_json_with_sentiment(entries: &[NewsEntry]) -> Result<()> {
                 "source_domain": s.entry.source_domain,
                 "source_tier": s.entry.source_tier,
                 "source_tier_inferred": s.entry.source_tier_inferred,
+                "source_independence": s.entry.source_independence.as_str(),
                 "description": s.entry.description,
                 "extra_snippets": s.entry.extra_snippets,
                 "category": s.entry.category,
@@ -570,7 +623,7 @@ fn print_json_with_sentiment(entries: &[NewsEntry]) -> Result<()> {
 mod tests {
     use super::*;
     use crate::db::backend::BackendConnection;
-    use crate::db::news_cache::insert_news;
+    use crate::db::news_cache::{insert_news, NewsSourceIndependence};
 
     fn to_backend(conn: rusqlite::Connection) -> BackendConnection {
         BackendConnection::Sqlite { conn }
@@ -608,6 +661,7 @@ mod tests {
                 source_domain: "example.com".to_string(),
                 source_tier: 3,
                 source_tier_inferred: true,
+                source_independence: NewsSourceIndependence::Independent,
                 description: "A test article".to_string(),
                 extra_snippets: vec!["snippet1".to_string()],
                 category: "markets".to_string(),
@@ -624,6 +678,7 @@ mod tests {
                 source_domain: "example.com".to_string(),
                 source_tier: 3,
                 source_tier_inferred: true,
+                source_independence: NewsSourceIndependence::Independent,
                 description: "".to_string(),
                 extra_snippets: vec![],
                 category: "crypto".to_string(),
@@ -648,6 +703,7 @@ mod tests {
             source_domain: "reuters.com".to_string(),
             source_tier: 1,
             source_tier_inferred: false,
+            source_independence: NewsSourceIndependence::Wire,
             description: String::new(),
             extra_snippets: vec![],
             category: "macro".to_string(),
@@ -659,6 +715,7 @@ mod tests {
         assert_eq!(payload["source_domain"], "reuters.com");
         assert_eq!(payload["source_tier"], 1);
         assert_eq!(payload["source_tier_inferred"], false);
+        assert_eq!(payload["source_independence"], "wire");
     }
 
     #[test]
@@ -667,7 +724,7 @@ mod tests {
         let backend = to_backend(conn);
 
         // JSON mode with empty cache should return Ok (exit 0), not error
-        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, 20, false, true);
+        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, None, 20, false, true);
         assert!(result.is_ok(), "JSON mode should not fail on empty cache");
     }
 
@@ -691,7 +748,7 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let backend = to_backend(conn);
 
-        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, 20, false, false);
+        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, None, 20, false, false);
         assert!(result.is_ok(), "Text mode should not fail on empty cache");
     }
 
@@ -710,7 +767,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, 20, false, true);
+        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, None, 20, false, true);
         assert!(result.is_ok(), "JSON mode should succeed with entries");
     }
 
@@ -729,7 +786,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, 20, false, false);
+        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, None, 20, false, false);
         assert!(result.is_ok(), "Text mode should succeed with entries");
     }
 
@@ -748,7 +805,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, 20, true, true);
+        let result = run(&backend, &crate::config::Config::default(), None, None, None, false, None, 20, true, true);
         assert!(
             result.is_ok(),
             "JSON mode with sentiment should succeed with entries"
@@ -769,6 +826,7 @@ mod tests {
                 source_domain: "example.com".to_string(),
                 source_tier: 3,
                 source_tier_inferred: true,
+                source_independence: NewsSourceIndependence::Wire,
                 description: "Fresh macro update".to_string(),
                 extra_snippets: Vec::new(),
                 category: "macro".to_string(),
@@ -785,6 +843,7 @@ mod tests {
                 source_domain: "example.com".to_string(),
                 source_tier: 3,
                 source_tier_inferred: true,
+                source_independence: NewsSourceIndependence::Wire,
                 description: "Duplicate URL".to_string(),
                 extra_snippets: Vec::new(),
                 category: "macro".to_string(),
@@ -801,6 +860,7 @@ mod tests {
                 source_domain: "example.com".to_string(),
                 source_tier: 3,
                 source_tier_inferred: true,
+                source_independence: NewsSourceIndependence::Independent,
                 description: "Crypto move".to_string(),
                 extra_snippets: Vec::new(),
                 category: "crypto".to_string(),
@@ -809,10 +869,28 @@ mod tests {
             },
         ];
 
-        let filtered = filter_entries(entries, Some("Reuters"), Some("fed"), Some(1), 10);
+        let filtered = filter_entries(
+            entries.clone(),
+            Some("Reuters"),
+            Some("fed"),
+            Some(1),
+            None,
+            10,
+        );
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].source, "Reuters");
         assert!(filtered[0].title.contains("Fed"));
+
+        let wire_only = filter_entries(
+            entries,
+            None,
+            None,
+            None,
+            Some(&[NewsSourceIndependence::Wire]),
+            10,
+        );
+        assert_eq!(wire_only.len(), 1);
+        assert_eq!(wire_only[0].source_independence, NewsSourceIndependence::Wire);
     }
 
     #[test]

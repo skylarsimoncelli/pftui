@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: tag news source independence
+
+- What: news ingest now classifies each cached article as `independent`, `wire`, `restatement`, `rumor`, or `unknown`, stores `source_independence`, exposes it in `pftui data news --json`, sentiment/brief payloads, and adds `pftui data news --filter-independence independent,wire`.
+- Why: agents need to distinguish independently reported events from official-positioning restatements and anonymous-source rumor flow before weighting news against money-flow signals.
+
 ### 2026-05-28 — feat: classify news source tiers at ingest
 
 - What: news ingest now records `source_domain`, `source_tier`, and `source_tier_inferred`, seeds a `news_source_tiers` reference table, backfills existing cached articles, and exposes `pftui data news sources list/set/remove`. `pftui data news --json` and analyst routines now surface tier-weighted news reasoning.
