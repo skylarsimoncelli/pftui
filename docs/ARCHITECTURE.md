@@ -88,6 +88,14 @@ table/column shape to exercise the migration. When a release is cut, refresh the
 fixture to the previous released schema so CI keeps testing last-release to
 current migrations.
 
+`pftui system schema verify` opens the SQLite database before normal startup
+migrations, compares it against a freshly migrated in-memory schema, and exits
+non-zero on missing/extra/mismatched tables, columns, or missing indexes.
+`pftui system schema repair --dry-run` prints safe repair SQL for missing
+tables, columns, and indexes; `--confirm` applies that plan. Destructive drift
+such as extra columns, extra tables, or type/default mismatches is reported but
+not auto-repaired.
+
 ### Models
 `models/position.rs` (Position, compute_positions) · `models/transaction.rs` (Transaction, TxType) · `models/asset.rs` (AssetCategory, PriceProvider) · `models/asset_names.rs` (130+ symbols, infer_category, search) · `models/price.rs` (PriceQuote, HistoryRecord)
 

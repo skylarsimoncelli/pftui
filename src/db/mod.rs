@@ -28,6 +28,7 @@ pub mod dividends;
 pub mod economic_cache;
 #[allow(dead_code)] // Infrastructure for F28.1+ consumers (Brave economy fetcher)
 pub mod economic_data;
+pub mod error;
 pub mod fedwatch_cache;
 pub mod futures_cache;
 pub mod fx_cache;
@@ -92,7 +93,7 @@ pub fn open_db(path: &std::path::Path) -> Result<Connection> {
     }
     let conn = Connection::open(path)?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-    schema::run_migrations(&conn)?;
+    schema::run_migrations(&conn).map_err(error::with_schema_repair_hint)?;
     Ok(conn)
 }
 
