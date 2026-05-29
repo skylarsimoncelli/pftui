@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — docs: audit post-review TODO completions
+
+- What: Added the PR #739 completion audit, removed the stale `portfolio set-cash` safety follow-up, and filed a focused calibration visualization follow-up.
+- Why: Reconciles shipped behavior against the original TODO contracts before more automation builds on those features.
+
 ### 2026-05-29 — docs: update high and macro analyst substrate use
 
 - What: Updated HIGH and MACRO analyst routines to consume source tiers, source independence, narrative-vs-money divergence, news-silence baselines, source-history rankings, layer calibration, and applied lessons.
