@@ -10,6 +10,7 @@ use super::charts::mismatch_card::{self, MismatchCardInput};
 use super::charts::open_predictions_table::{self, OpenPredictionsTableInput};
 use super::charts::outlook_arrows::{self, OutlookArrowsInput};
 use super::charts::prob_bar::{self, ProbBarInput};
+use super::charts::regime_quadrant::{self, RegimeQuadrantInput};
 use super::charts::stacked_bar::{self, StackedBarInput};
 use super::charts::what_changed_strip::{self, WhatChangedStripInput};
 
@@ -25,6 +26,7 @@ pub enum ChartKind {
     ConvictionGrid,
     MismatchCard,
     DecisionCard,
+    RegimeQuadrant,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -65,6 +67,8 @@ pub enum ChartInput {
     MismatchCard(MismatchCardInput),
     #[serde(rename = "decision-card")]
     DecisionCard(DecisionCardInput),
+    #[serde(rename = "regime-quadrant")]
+    RegimeQuadrant(RegimeQuadrantInput),
 }
 
 pub const CHARTS: &[ChartDefinition] = &[
@@ -118,6 +122,11 @@ pub const CHARTS: &[ChartDefinition] = &[
         description: "Operator decision question card",
         formats: &["html", "ascii"],
     },
+    ChartDefinition {
+        name: "regime-quadrant",
+        description: "Growth-vs-inflation macro regime quadrant",
+        formats: &["svg", "png", "ascii"],
+    },
 ];
 
 pub fn kind_from_name(name: &str) -> Result<ChartKind> {
@@ -147,6 +156,9 @@ pub fn kind_from_name(name: &str) -> Result<ChartKind> {
         }
         "decision-card" | "decision_card" | "decision" | "question-card" | "question" => {
             Ok(ChartKind::DecisionCard)
+        }
+        "regime-quadrant" | "regime_quadrant" | "regime" | "macro-regime" | "quadrant" => {
+            Ok(ChartKind::RegimeQuadrant)
         }
         other => bail!(
             "unknown report chart '{}'. Available charts: {}",
@@ -178,6 +190,9 @@ pub fn parse_input(kind: ChartKind, value: Value) -> Result<ChartInput> {
         }
         ChartKind::MismatchCard => ChartInput::MismatchCard(MismatchCardInput::from_value(value)?),
         ChartKind::DecisionCard => ChartInput::DecisionCard(DecisionCardInput::from_value(value)?),
+        ChartKind::RegimeQuadrant => {
+            ChartInput::RegimeQuadrant(RegimeQuadrantInput::from_value(value)?)
+        }
     })
 }
 
@@ -199,6 +214,7 @@ pub fn render_svg(input: &ChartInput) -> Result<String> {
         ChartInput::DecisionCard(_) => {
             bail!("decision-card is HTML-native; use --format html or --format ascii")
         }
+        ChartInput::RegimeQuadrant(input) => Ok(regime_quadrant::render_svg(input)),
     }
 }
 
@@ -227,6 +243,7 @@ pub fn render_ascii(input: &ChartInput) -> String {
         ChartInput::ConvictionGrid(input) => conviction_grid::render_ascii(input),
         ChartInput::MismatchCard(input) => mismatch_card::render_ascii(input),
         ChartInput::DecisionCard(input) => decision_card::render_ascii(input),
+        ChartInput::RegimeQuadrant(input) => regime_quadrant::render_ascii(input),
     }
 }
 
@@ -242,6 +259,7 @@ pub fn chart_name(input: &ChartInput) -> &'static str {
         ChartInput::ConvictionGrid(_) => "conviction-grid",
         ChartInput::MismatchCard(_) => "mismatch-card",
         ChartInput::DecisionCard(_) => "decision-card",
+        ChartInput::RegimeQuadrant(_) => "regime-quadrant",
     }
 }
 
@@ -257,6 +275,7 @@ pub fn supported_formats(input: &ChartInput) -> &'static [&'static str] {
         ChartInput::ConvictionGrid(_) => &["svg", "png", "ascii"],
         ChartInput::MismatchCard(_) => &["html", "ascii"],
         ChartInput::DecisionCard(_) => &["html", "ascii"],
+        ChartInput::RegimeQuadrant(_) => &["svg", "png", "ascii"],
     }
 }
 
@@ -311,6 +330,10 @@ mod tests {
         assert_eq!(
             kind_from_name("decision_card").unwrap(),
             ChartKind::DecisionCard
+        );
+        assert_eq!(
+            kind_from_name("regime_quadrant").unwrap(),
+            ChartKind::RegimeQuadrant
         );
     }
 }

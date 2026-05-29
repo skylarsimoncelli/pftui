@@ -146,7 +146,8 @@ pftui
 │       ├── factor-exposure
 │       ├── conviction-grid
 │       ├── mismatch-card
-│       └── decision-card
+│       ├── decision-card
+│       └── regime-quadrant
 └── system
     ├── config
     ├── db-info
