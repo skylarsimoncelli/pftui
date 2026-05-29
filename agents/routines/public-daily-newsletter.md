@@ -46,6 +46,7 @@ pftui journal notes list --limit 50 --json
 pftui journal prediction list --limit 30 --json
 pftui journal prediction stats --json
 pftui analytics calibration --by-layer --json
+pftui report chart calibration-reliability --from-db 90d --format svg --out /tmp/pftui-calibration-reliability.svg
 pftui journal conviction list --json
 pftui journal scenario list --json
 ```
@@ -221,8 +222,10 @@ pftui analytics news-sources rank --topic geopolitics --json
 Do not publish only an aggregate hit rate. Render per-layer cells with sample size and
 uncertainty adjacent to the rate, e.g. `LOW: 44.5% strict (137 scored, σ ±4.2pp)`.
 If `low_sample` is true or `n < 10`, append `[low sample]` and do not claim that layer
-is accurate or best. Then explain what we got right, what reasoning worked, what we
-got wrong, and what the system learned. This is genuine self-reflection, not a scorecard.
+is accurate or best. Include the `calibration-reliability` chart alongside this section
+so the operator can see overconfidence/underconfidence by layer and conviction band.
+Then explain what we got right, what reasoning worked, what we got wrong, and what the
+system learned. This is genuine self-reflection, not a scorecard.
 Example: "We predicted gold would hold $5K. It didn't. The error was underweighting
 DXY momentum. We've since recalibrated our dollar sensitivity model."
 

@@ -1324,13 +1324,13 @@ pub enum ReportCommand {
     /// Render report chart primitives from JSON or canonical database queries
     #[command(
         name = "chart",
-        after_help = "Available charts:\n  stacked-bar               Portfolio allocation stacked bar\n  prob-bar                  Scenario probability bar with 7-day ghost and delta\n  drift-bar                 Allocation drift bar with target tick and tolerance band\n  what-changed-strip        Since-last-report delta pill strip\n  open-predictions-table    Open prediction due-date table (HTML-native)\n  outlook-arrows            Days/weeks/months direction and conviction arrows\n  factor-exposure           Portfolio exposure bars by scenario factor\n  conviction-grid           Multi-timeframe analyst conviction grid\n  mismatch-card             Skylar-vs-analyst view mismatch card (HTML-native)\n  decision-card             Operator decision question card (HTML-native)\n  regime-quadrant           Growth-vs-inflation macro regime quadrant\n  conviction-trajectory     Per-asset analyst conviction sparkline\n  analyst-convergence-card  Per-asset analyst convergence evidence card (HTML-native)\n\nExamples:\n  pftui report chart stacked-bar --from-db portfolio --out allocation.svg\n  pftui report chart prob-bar --from-db \"Inflation Spike\" --format svg\n  pftui report chart drift-bar --from-db BTC --format svg\n  pftui report chart what-changed-strip --from-json deltas.json --json\n  pftui report chart open-predictions-table --from-db pending --format html --json\n  pftui report chart outlook-arrows --from-db BTC --json\n  pftui report chart factor-exposure --from-json factors.json --json\n  pftui report chart conviction-grid --from-db all --json\n  pftui report chart mismatch-card --from-json mismatch.json --format html --json\n  pftui report chart decision-card --from-json decision.json --format html --json\n  pftui report chart regime-quadrant --from-json regime.json --json\n  pftui report chart conviction-trajectory --from-db BTC --json\n  pftui report chart analyst-convergence-card --from-db \"Gold 30d\" --format html --json\n  pftui report chart stacked-bar --from-json segments.json --format png --out allocation.png\n  pftui report chart prob-bar --from-json scenario.json --json"
+        after_help = "Available charts:\n  stacked-bar               Portfolio allocation stacked bar\n  prob-bar                  Scenario probability bar with 7-day ghost and delta\n  drift-bar                 Allocation drift bar with target tick and tolerance band\n  what-changed-strip        Since-last-report delta pill strip\n  open-predictions-table    Open prediction due-date table (HTML-native)\n  outlook-arrows            Days/weeks/months direction and conviction arrows\n  factor-exposure           Portfolio exposure bars by scenario factor\n  conviction-grid           Multi-timeframe analyst conviction grid\n  mismatch-card             Skylar-vs-analyst view mismatch card (HTML-native)\n  decision-card             Operator decision question card (HTML-native)\n  regime-quadrant           Growth-vs-inflation macro regime quadrant\n  conviction-trajectory     Per-asset analyst conviction sparkline\n  analyst-convergence-card  Per-asset analyst convergence evidence card (HTML-native)\n  calibration-reliability   Prediction reliability by layer and conviction band\n\nExamples:\n  pftui report chart stacked-bar --from-db portfolio --out allocation.svg\n  pftui report chart prob-bar --from-db \"Inflation Spike\" --format svg\n  pftui report chart drift-bar --from-db BTC --format svg\n  pftui report chart what-changed-strip --from-json deltas.json --json\n  pftui report chart open-predictions-table --from-db pending --format html --json\n  pftui report chart outlook-arrows --from-db BTC --json\n  pftui report chart factor-exposure --from-json factors.json --json\n  pftui report chart conviction-grid --from-db all --json\n  pftui report chart mismatch-card --from-json mismatch.json --format html --json\n  pftui report chart decision-card --from-json decision.json --format html --json\n  pftui report chart regime-quadrant --from-json regime.json --json\n  pftui report chart conviction-trajectory --from-db BTC --json\n  pftui report chart analyst-convergence-card --from-db \"Gold 30d\" --format html --json\n  pftui report chart calibration-reliability --from-db 90d --json\n  pftui report chart stacked-bar --from-json segments.json --format png --out allocation.png\n  pftui report chart prob-bar --from-json scenario.json --json"
     )]
     Chart {
-        /// Chart name: stacked-bar, prob-bar, drift-bar, what-changed-strip, open-predictions-table, outlook-arrows, factor-exposure, conviction-grid, mismatch-card, decision-card, regime-quadrant, conviction-trajectory, or analyst-convergence-card
+        /// Chart name: stacked-bar, prob-bar, drift-bar, what-changed-strip, open-predictions-table, outlook-arrows, factor-exposure, conviction-grid, mismatch-card, decision-card, regime-quadrant, conviction-trajectory, analyst-convergence-card, or calibration-reliability
         chart_name: String,
 
-        /// Render from a canonical DB query. stacked-bar accepts portfolio; prob-bar accepts a scenario name; drift-bar, outlook-arrows, conviction-grid, conviction-trajectory, and analyst-convergence-card accept a symbol; conviction-grid also accepts all/views; conviction-trajectory accepts an optional window token like "BTC 30d"; analyst-convergence-card accepts an optional since token like "Gold 30d"; open-predictions-table accepts pending/open or a limit. factor-exposure, mismatch-card, decision-card, and regime-quadrant are JSON-only.
+        /// Render from a canonical DB query. stacked-bar accepts portfolio; prob-bar accepts a scenario name; drift-bar, outlook-arrows, conviction-grid, conviction-trajectory, and analyst-convergence-card accept a symbol; conviction-grid also accepts all/views; conviction-trajectory accepts an optional window token like "BTC 30d"; analyst-convergence-card accepts an optional since token like "Gold 30d"; calibration-reliability accepts a window token like "90d"; open-predictions-table accepts pending/open or a limit. factor-exposure, mismatch-card, decision-card, and regime-quadrant are JSON-only.
         #[arg(long = "from-db", value_name = "QUERY")]
         from_db: Option<String>,
 
@@ -5152,6 +5152,40 @@ mod tests {
                 assert_eq!(from_db.as_deref(), Some("Gold 30d"));
                 assert!(from_json.is_none());
                 assert_eq!(format, ReportChartFormat::Html);
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_report_calibration_reliability_from_db() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "report",
+            "chart",
+            "calibration-reliability",
+            "--from-db",
+            "90d",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Report {
+                command:
+                    ReportCommand::Chart {
+                        chart_name,
+                        from_db,
+                        from_json,
+                        format,
+                        json,
+                        ..
+                    },
+            }) => {
+                assert_eq!(chart_name, "calibration-reliability");
+                assert_eq!(from_db.as_deref(), Some("90d"));
+                assert!(from_json.is_none());
+                assert_eq!(format, ReportChartFormat::Svg);
                 assert!(json);
             }
             _ => panic!("unexpected parse result"),
