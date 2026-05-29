@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — feat: port report decision card
+
+- What: Added the native `decision-card` report chart with Python-parity HTML output, ASCII support, JSON input mode, CLI docs, and registry wiring.
+- Why: Daily reports can now render operator question cards directly from pftui instead of the Python `decision_card` helper.
+
 ### 2026-05-29 — feat: port report mismatch card
 
 - What: Added the native `mismatch-card` report chart with Python-parity HTML output, ASCII support, JSON input mode, CLI docs, and registry wiring.

@@ -1,4 +1,5 @@
 pub mod conviction_grid;
+pub mod decision_card;
 pub mod drift_bar;
 pub mod factor_exposure;
 pub mod mismatch_card;
