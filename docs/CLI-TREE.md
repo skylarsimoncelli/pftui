@@ -149,6 +149,7 @@ pftui
 │       ├── decision-card
 │       ├── regime-quadrant
 │       ├── conviction-trajectory
+│       ├── calibration-reliability
 │       └── analyst-convergence-card
 └── system
     ├── config

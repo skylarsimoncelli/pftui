@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -23,6 +23,9 @@ use crate::db::user_predictions;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 use crate::report::charts::analyst_convergence_card::{
     AnalystConvergenceCardInput, AnalystConvergenceView,
+};
+use crate::report::charts::calibration_reliability::{
+    CalibrationReliabilityBin, CalibrationReliabilityInput, CalibrationReliabilityLayer,
 };
 use crate::report::charts::conviction_grid::{ConvictionGridInput, ConvictionGridRow};
 use crate::report::charts::conviction_trajectory::{
@@ -217,6 +220,9 @@ fn chart_input_from_db(
         ChartKind::AnalystConvergenceCard => Ok(ChartInput::AnalystConvergenceCard(
             analyst_convergence_card_from_backend(backend, query)?,
         )),
+        ChartKind::CalibrationReliability => Ok(ChartInput::CalibrationReliability(
+            calibration_reliability_from_predictions_backend(backend, query)?,
+        )),
     }
 }
 
@@ -344,6 +350,248 @@ fn parse_open_predictions_limit(raw: &str) -> Result<usize> {
         bail!("open-predictions-table limit must be greater than zero");
     }
     Ok(limit)
+}
+
+fn calibration_reliability_from_predictions_backend(
+    backend: &BackendConnection,
+    query: &str,
+) -> Result<CalibrationReliabilityInput> {
+    let window_days = parse_calibration_window_days(query)?;
+    let predictions = user_predictions::list_predictions_backend(backend, None, None, None, None)?;
+    let input = calibration_reliability_from_predictions(&predictions, window_days);
+    if input.rows.is_empty() {
+        bail!("no scored layer predictions available for calibration-reliability")
+    }
+    Ok(input)
+}
+
+fn parse_calibration_window_days(query: &str) -> Result<i64> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
+        return Ok(90);
+    }
+    let normalized = trimmed
+        .trim_start_matches("--window-days")
+        .trim_start_matches("window-days")
+        .trim_start_matches("--window")
+        .trim_start_matches("window")
+        .trim_start_matches('=')
+        .trim();
+    let days = normalized
+        .trim_end_matches("days")
+        .trim_end_matches('d')
+        .trim()
+        .parse::<i64>()
+        .with_context(|| {
+            format!("calibration-reliability --from-db expects a window like 90d, got '{query}'")
+        })?;
+    Ok(days.max(1))
+}
+
+fn calibration_reliability_from_predictions(
+    predictions: &[user_predictions::UserPrediction],
+    window_days: i64,
+) -> CalibrationReliabilityInput {
+    let cutoff = (Utc::now().date_naive() - Duration::days(window_days))
+        .format("%Y-%m-%d")
+        .to_string();
+    let mut buckets: BTreeMap<String, Vec<&user_predictions::UserPrediction>> = BTreeMap::new();
+
+    for prediction in predictions {
+        if !is_scored_prediction(&prediction.outcome) || !prediction_in_window(prediction, &cutoff)
+        {
+            continue;
+        }
+        let Some(layer) = prediction_layer(prediction) else {
+            continue;
+        };
+        buckets
+            .entry(layer.to_string())
+            .or_default()
+            .push(prediction);
+    }
+
+    let mut rows = buckets
+        .into_iter()
+        .map(|(layer, bucket)| build_calibration_layer(layer, &bucket))
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|row| layer_sort_key(&row.layer));
+
+    CalibrationReliabilityInput {
+        window_days: Some(window_days),
+        rows,
+        width: None,
+        height: None,
+    }
+}
+
+fn build_calibration_layer(
+    layer: String,
+    bucket: &[&user_predictions::UserPrediction],
+) -> CalibrationReliabilityLayer {
+    let stats = calibration_stats(bucket.iter().copied());
+    let mut bin_buckets: BTreeMap<String, Vec<&user_predictions::UserPrediction>> = BTreeMap::new();
+    for prediction in bucket {
+        if let Some(band) = prediction_band(&prediction.conviction) {
+            bin_buckets
+                .entry(band.to_string())
+                .or_default()
+                .push(*prediction);
+        }
+    }
+    let mut bin_breakdown = bin_buckets
+        .into_iter()
+        .map(|(band, bucket)| {
+            let stats = calibration_stats(bucket.iter().copied());
+            CalibrationReliabilityBin {
+                band,
+                strict_hit_rate: Some(stats.strict_hit_rate),
+                strict_hit_rate_pct: Some(stats.strict_hit_rate_pct),
+                n: stats.n,
+                sigma: Some(stats.sigma),
+                sigma_pp: Some(stats.sigma_pp),
+                low_sample: stats.low_sample,
+                correct: stats.correct,
+                partial: stats.partial,
+                wrong: stats.wrong,
+            }
+        })
+        .collect::<Vec<_>>();
+    bin_breakdown.sort_by_key(|bin| band_sort_key(&bin.band));
+
+    CalibrationReliabilityLayer {
+        layer,
+        strict_hit_rate: Some(stats.strict_hit_rate),
+        strict_hit_rate_pct: Some(stats.strict_hit_rate_pct),
+        n: stats.n,
+        sigma: Some(stats.sigma),
+        sigma_pp: Some(stats.sigma_pp),
+        low_sample: stats.low_sample,
+        correct: stats.correct,
+        partial: stats.partial,
+        wrong: stats.wrong,
+        bin_breakdown,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CalibrationStats {
+    n: usize,
+    strict_hit_rate: f64,
+    strict_hit_rate_pct: f64,
+    sigma: f64,
+    sigma_pp: f64,
+    low_sample: bool,
+    correct: usize,
+    partial: usize,
+    wrong: usize,
+}
+
+fn calibration_stats<'a>(
+    predictions: impl Iterator<Item = &'a user_predictions::UserPrediction>,
+) -> CalibrationStats {
+    let bucket = predictions.collect::<Vec<_>>();
+    let n = bucket.len();
+    let correct = bucket.iter().filter(|p| p.outcome == "correct").count();
+    let partial = bucket.iter().filter(|p| p.outcome == "partial").count();
+    let wrong = bucket.iter().filter(|p| p.outcome == "wrong").count();
+    let strict_hit_rate = if n == 0 {
+        0.0
+    } else {
+        correct as f64 / n as f64
+    };
+    let sigma = if n == 0 {
+        0.0
+    } else {
+        (strict_hit_rate * (1.0 - strict_hit_rate) / n as f64).sqrt()
+    };
+    CalibrationStats {
+        n,
+        strict_hit_rate: round4(strict_hit_rate),
+        strict_hit_rate_pct: round2(strict_hit_rate * 100.0),
+        sigma: round4(sigma),
+        sigma_pp: round2(sigma * 100.0),
+        low_sample: n < 10,
+        correct,
+        partial,
+        wrong,
+    }
+}
+
+fn is_scored_prediction(outcome: &str) -> bool {
+    matches!(outcome, "correct" | "partial" | "wrong")
+}
+
+fn prediction_in_window(prediction: &user_predictions::UserPrediction, cutoff: &str) -> bool {
+    let ts = prediction
+        .scored_at
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .unwrap_or(prediction.created_at.as_str());
+    ts.get(..10).is_some_and(|date| date >= cutoff)
+}
+
+fn prediction_layer(prediction: &user_predictions::UserPrediction) -> Option<&'static str> {
+    if let Some(timeframe) = prediction.timeframe.as_deref() {
+        if let Some(layer) = normalize_prediction_layer(timeframe) {
+            return Some(layer);
+        }
+    }
+    prediction
+        .source_agent
+        .as_deref()
+        .and_then(normalize_prediction_layer)
+}
+
+fn normalize_prediction_layer(value: &str) -> Option<&'static str> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized.contains("low") || normalized == "short" {
+        Some("low")
+    } else if normalized.contains("medium") || normalized == "med" {
+        Some("medium")
+    } else if normalized.contains("high") || normalized == "long" {
+        Some("high")
+    } else if normalized.contains("macro") {
+        Some("macro")
+    } else {
+        None
+    }
+}
+
+fn prediction_band(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "low" => Some("low"),
+        "medium" => Some("medium"),
+        "high" => Some("high"),
+        _ => None,
+    }
+}
+
+fn layer_sort_key(layer: &str) -> u8 {
+    match layer {
+        "low" => 0,
+        "medium" => 1,
+        "high" => 2,
+        "macro" => 3,
+        _ => 4,
+    }
+}
+
+fn band_sort_key(band: &str) -> u8 {
+    match band {
+        "low" => 0,
+        "medium" => 1,
+        "high" => 2,
+        _ => 3,
+    }
+}
+
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
+}
+
+fn round4(value: f64) -> f64 {
+    (value * 10000.0).round() / 10000.0
 }
 
 fn outlook_arrows_from_analyst_views_backend(
@@ -1057,6 +1305,48 @@ mod tests {
         assert_eq!(input.predictions[0].asset, "BTC");
         assert_eq!(input.predictions[0].days_remaining, 2);
         assert_eq!(input.predictions[0].confidence, Some(0.65));
+    }
+
+    #[test]
+    fn report_calibration_reliability_uses_synthetic_scored_predictions() {
+        let backend = backend();
+        seed_scored_prediction(&backend, "low", "high", "correct");
+        seed_scored_prediction(&backend, "low", "high", "wrong");
+        seed_scored_prediction(&backend, "macro", "low", "wrong");
+
+        let input = calibration_reliability_from_predictions_backend(&backend, "90d").unwrap();
+
+        assert_eq!(input.window_days, Some(90));
+        assert_eq!(input.rows.len(), 2);
+        let low = input.rows.iter().find(|row| row.layer == "low").unwrap();
+        assert_eq!(low.n, 2);
+        assert_eq!(low.strict_hit_rate_pct, Some(50.0));
+        assert!(low.low_sample);
+        assert_eq!(low.bin_breakdown[0].band, "high");
+    }
+
+    fn seed_scored_prediction(
+        backend: &BackendConnection,
+        layer: &str,
+        conviction: &str,
+        outcome: &str,
+    ) {
+        let id = user_predictions::add_prediction_backend_with_details(
+            backend,
+            &format!("{layer} {conviction} prediction"),
+            Some("BTC"),
+            Some(conviction),
+            Some(layer),
+            Some(0.6),
+            Some(&format!("analyst-{layer}")),
+            None,
+            None,
+            &[],
+            Some("crypto"),
+            None,
+        )
+        .unwrap();
+        user_predictions::score_prediction_backend(backend, id, outcome, None, None).unwrap();
     }
 
     #[test]

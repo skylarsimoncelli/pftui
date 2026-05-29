@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — feat: add calibration reliability report chart
+
+- What: Added the native `calibration-reliability` report chart with SVG/PNG/ASCII output, JSON input from `analytics calibration --by-layer`, DB input from scored `user_predictions`, CLI docs, routine wiring, and golden coverage.
+- Why: Daily reports now show calibration shape visually by layer and conviction band instead of burying overconfidence/underconfidence in text-only scorecard cells.
+
 ### 2026-05-29 — test: add CLI and routine command smoke coverage
 
 - What: Added integration tests that recursively verify every CLI subcommand renders `--help` and that literal `pftui` commands in analyst routine bash blocks still parse.

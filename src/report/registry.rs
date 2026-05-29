@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::charts::analyst_convergence_card::{self, AnalystConvergenceCardInput};
+use super::charts::calibration_reliability::{self, CalibrationReliabilityInput};
 use super::charts::conviction_grid::{self, ConvictionGridInput};
 use super::charts::conviction_trajectory::{self, ConvictionTrajectoryInput};
 use super::charts::decision_card::{self, DecisionCardInput};
@@ -31,6 +32,7 @@ pub enum ChartKind {
     RegimeQuadrant,
     ConvictionTrajectory,
     AnalystConvergenceCard,
+    CalibrationReliability,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -77,6 +79,8 @@ pub enum ChartInput {
     ConvictionTrajectory(ConvictionTrajectoryInput),
     #[serde(rename = "analyst-convergence-card")]
     AnalystConvergenceCard(AnalystConvergenceCardInput),
+    #[serde(rename = "calibration-reliability")]
+    CalibrationReliability(CalibrationReliabilityInput),
 }
 
 pub const CHARTS: &[ChartDefinition] = &[
@@ -145,6 +149,11 @@ pub const CHARTS: &[ChartDefinition] = &[
         description: "Per-asset analyst convergence evidence card",
         formats: &["html", "ascii"],
     },
+    ChartDefinition {
+        name: "calibration-reliability",
+        description: "Prediction calibration reliability chart by layer and conviction band",
+        formats: &["svg", "png", "ascii"],
+    },
 ];
 
 pub fn kind_from_name(name: &str) -> Result<ChartKind> {
@@ -189,6 +198,11 @@ pub fn kind_from_name(name: &str) -> Result<ChartKind> {
         | "convergence_card"
         | "analyst-convergence"
         | "convergence" => Ok(ChartKind::AnalystConvergenceCard),
+        "calibration-reliability"
+        | "calibration_reliability"
+        | "reliability"
+        | "calibration-chart"
+        | "calibration" => Ok(ChartKind::CalibrationReliability),
         other => bail!(
             "unknown report chart '{}'. Available charts: {}",
             other,
@@ -228,6 +242,9 @@ pub fn parse_input(kind: ChartKind, value: Value) -> Result<ChartInput> {
         ChartKind::AnalystConvergenceCard => {
             ChartInput::AnalystConvergenceCard(AnalystConvergenceCardInput::from_value(value)?)
         }
+        ChartKind::CalibrationReliability => {
+            ChartInput::CalibrationReliability(CalibrationReliabilityInput::from_value(value)?)
+        }
     })
 }
 
@@ -254,6 +271,7 @@ pub fn render_svg(input: &ChartInput) -> Result<String> {
         ChartInput::AnalystConvergenceCard(_) => {
             bail!("analyst-convergence-card is HTML-native; use --format html or --format ascii")
         }
+        ChartInput::CalibrationReliability(input) => Ok(calibration_reliability::render_svg(input)),
     }
 }
 
@@ -288,6 +306,7 @@ pub fn render_ascii(input: &ChartInput) -> String {
         ChartInput::RegimeQuadrant(input) => regime_quadrant::render_ascii(input),
         ChartInput::ConvictionTrajectory(input) => conviction_trajectory::render_ascii(input),
         ChartInput::AnalystConvergenceCard(input) => analyst_convergence_card::render_ascii(input),
+        ChartInput::CalibrationReliability(input) => calibration_reliability::render_ascii(input),
     }
 }
 
@@ -306,6 +325,7 @@ pub fn chart_name(input: &ChartInput) -> &'static str {
         ChartInput::RegimeQuadrant(_) => "regime-quadrant",
         ChartInput::ConvictionTrajectory(_) => "conviction-trajectory",
         ChartInput::AnalystConvergenceCard(_) => "analyst-convergence-card",
+        ChartInput::CalibrationReliability(_) => "calibration-reliability",
     }
 }
 
@@ -324,6 +344,7 @@ pub fn supported_formats(input: &ChartInput) -> &'static [&'static str] {
         ChartInput::RegimeQuadrant(_) => &["svg", "png", "ascii"],
         ChartInput::ConvictionTrajectory(_) => &["svg", "png", "ascii"],
         ChartInput::AnalystConvergenceCard(_) => &["html", "ascii"],
+        ChartInput::CalibrationReliability(_) => &["svg", "png", "ascii"],
     }
 }
 
@@ -390,6 +411,10 @@ mod tests {
         assert_eq!(
             kind_from_name("analyst_convergence_card").unwrap(),
             ChartKind::AnalystConvergenceCard
+        );
+        assert_eq!(
+            kind_from_name("calibration_reliability").unwrap(),
+            ChartKind::CalibrationReliability
         );
     }
 }
