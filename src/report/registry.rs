@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use serde::Serialize;
 use serde_json::Value;
 
+use super::charts::analyst_convergence_card::{self, AnalystConvergenceCardInput};
 use super::charts::conviction_grid::{self, ConvictionGridInput};
 use super::charts::conviction_trajectory::{self, ConvictionTrajectoryInput};
 use super::charts::decision_card::{self, DecisionCardInput};
@@ -29,6 +30,7 @@ pub enum ChartKind {
     DecisionCard,
     RegimeQuadrant,
     ConvictionTrajectory,
+    AnalystConvergenceCard,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -73,6 +75,8 @@ pub enum ChartInput {
     RegimeQuadrant(RegimeQuadrantInput),
     #[serde(rename = "conviction-trajectory")]
     ConvictionTrajectory(ConvictionTrajectoryInput),
+    #[serde(rename = "analyst-convergence-card")]
+    AnalystConvergenceCard(AnalystConvergenceCardInput),
 }
 
 pub const CHARTS: &[ChartDefinition] = &[
@@ -136,6 +140,11 @@ pub const CHARTS: &[ChartDefinition] = &[
         description: "Per-asset analyst conviction sparkline",
         formats: &["svg", "png", "ascii"],
     },
+    ChartDefinition {
+        name: "analyst-convergence-card",
+        description: "Per-asset analyst convergence evidence card",
+        formats: &["html", "ascii"],
+    },
 ];
 
 pub fn kind_from_name(name: &str) -> Result<ChartKind> {
@@ -174,6 +183,12 @@ pub fn kind_from_name(name: &str) -> Result<ChartKind> {
         | "trajectory"
         | "conviction-sparkline"
         | "sparkline" => Ok(ChartKind::ConvictionTrajectory),
+        "analyst-convergence-card"
+        | "analyst_convergence_card"
+        | "convergence-card"
+        | "convergence_card"
+        | "analyst-convergence"
+        | "convergence" => Ok(ChartKind::AnalystConvergenceCard),
         other => bail!(
             "unknown report chart '{}'. Available charts: {}",
             other,
@@ -210,6 +225,9 @@ pub fn parse_input(kind: ChartKind, value: Value) -> Result<ChartInput> {
         ChartKind::ConvictionTrajectory => {
             ChartInput::ConvictionTrajectory(ConvictionTrajectoryInput::from_value(value)?)
         }
+        ChartKind::AnalystConvergenceCard => {
+            ChartInput::AnalystConvergenceCard(AnalystConvergenceCardInput::from_value(value)?)
+        }
     })
 }
 
@@ -233,6 +251,9 @@ pub fn render_svg(input: &ChartInput) -> Result<String> {
         }
         ChartInput::RegimeQuadrant(input) => Ok(regime_quadrant::render_svg(input)),
         ChartInput::ConvictionTrajectory(input) => Ok(conviction_trajectory::render_svg(input)),
+        ChartInput::AnalystConvergenceCard(_) => {
+            bail!("analyst-convergence-card is HTML-native; use --format html or --format ascii")
+        }
     }
 }
 
@@ -241,6 +262,9 @@ pub fn render_html(input: &ChartInput) -> Result<String> {
         ChartInput::OpenPredictions(input) => Ok(open_predictions_table::render_html(input)),
         ChartInput::MismatchCard(input) => Ok(mismatch_card::render_html(input)),
         ChartInput::DecisionCard(input) => Ok(decision_card::render_html(input)),
+        ChartInput::AnalystConvergenceCard(input) => {
+            Ok(analyst_convergence_card::render_html(input))
+        }
         _ => bail!(
             "{} does not support HTML output; supported formats: {}",
             chart_name(input),
@@ -263,6 +287,7 @@ pub fn render_ascii(input: &ChartInput) -> String {
         ChartInput::DecisionCard(input) => decision_card::render_ascii(input),
         ChartInput::RegimeQuadrant(input) => regime_quadrant::render_ascii(input),
         ChartInput::ConvictionTrajectory(input) => conviction_trajectory::render_ascii(input),
+        ChartInput::AnalystConvergenceCard(input) => analyst_convergence_card::render_ascii(input),
     }
 }
 
@@ -280,6 +305,7 @@ pub fn chart_name(input: &ChartInput) -> &'static str {
         ChartInput::DecisionCard(_) => "decision-card",
         ChartInput::RegimeQuadrant(_) => "regime-quadrant",
         ChartInput::ConvictionTrajectory(_) => "conviction-trajectory",
+        ChartInput::AnalystConvergenceCard(_) => "analyst-convergence-card",
     }
 }
 
@@ -297,6 +323,7 @@ pub fn supported_formats(input: &ChartInput) -> &'static [&'static str] {
         ChartInput::DecisionCard(_) => &["html", "ascii"],
         ChartInput::RegimeQuadrant(_) => &["svg", "png", "ascii"],
         ChartInput::ConvictionTrajectory(_) => &["svg", "png", "ascii"],
+        ChartInput::AnalystConvergenceCard(_) => &["html", "ascii"],
     }
 }
 
@@ -359,6 +386,10 @@ mod tests {
         assert_eq!(
             kind_from_name("conviction_trajectory").unwrap(),
             ChartKind::ConvictionTrajectory
+        );
+        assert_eq!(
+            kind_from_name("analyst_convergence_card").unwrap(),
+            ChartKind::AnalystConvergenceCard
         );
     }
 }

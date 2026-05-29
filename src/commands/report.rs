@@ -21,6 +21,9 @@ use crate::db::scenarios;
 use crate::db::transactions::list_transactions_backend;
 use crate::db::user_predictions;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
+use crate::report::charts::analyst_convergence_card::{
+    AnalystConvergenceCardInput, AnalystConvergenceView,
+};
 use crate::report::charts::conviction_grid::{ConvictionGridInput, ConvictionGridRow};
 use crate::report::charts::conviction_trajectory::{
     ConvictionLayerSeries, ConvictionTrajectoryInput, ConvictionTrajectoryPoint,
@@ -210,6 +213,9 @@ fn chart_input_from_db(
         }
         ChartKind::ConvictionTrajectory => Ok(ChartInput::ConvictionTrajectory(
             conviction_trajectory_from_analyst_view_history_backend(backend, query)?,
+        )),
+        ChartKind::AnalystConvergenceCard => Ok(ChartInput::AnalystConvergenceCard(
+            analyst_convergence_card_from_backend(backend, query)?,
         )),
     }
 }
@@ -512,6 +518,130 @@ fn conviction_trajectory_from_analyst_view_history_backend(
         width: None,
         height: None,
     })
+}
+
+fn analyst_convergence_card_from_backend(
+    backend: &BackendConnection,
+    query: &str,
+) -> Result<AnalystConvergenceCardInput> {
+    let parsed = parse_analyst_convergence_card_db_query(query)?;
+    let report =
+        analyst_views::convergence_report_backend(backend, &parsed.asset, parsed.since.as_deref())?;
+    if report.views.is_empty() {
+        bail!("no analyst convergence views found for '{}'", parsed.asset);
+    }
+
+    let mut views = report
+        .views
+        .iter()
+        .map(analyst_convergence_view_from_report)
+        .collect::<Vec<_>>();
+    views.sort_by(|a, b| {
+        analyst_layer_order(&a.analyst)
+            .cmp(&analyst_layer_order(&b.analyst))
+            .then_with(|| a.analyst.cmp(&b.analyst))
+    });
+
+    Ok(AnalystConvergenceCardInput {
+        asset: report.asset,
+        views,
+        user_target: None,
+        current_alloc: None,
+        analyst_range: None,
+        summary: report.summary,
+        width: None,
+    })
+}
+
+fn analyst_convergence_view_from_report(
+    view: &analyst_views::ConvergenceView,
+) -> AnalystConvergenceView {
+    let analyst = view.analyst.trim();
+    let analyst = if analyst.to_ascii_lowercase().starts_with("analyst-") {
+        analyst.to_string()
+    } else {
+        format!("analyst-{analyst}")
+    };
+
+    AnalystConvergenceView {
+        analyst,
+        conviction: view.conviction,
+        reasoning_summary: view.reasoning_summary.clone(),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AnalystConvergenceCardDbQuery {
+    asset: String,
+    since: Option<String>,
+}
+
+fn parse_analyst_convergence_card_db_query(query: &str) -> Result<AnalystConvergenceCardDbQuery> {
+    let mut parts = query.split_whitespace();
+    let asset = parts
+        .next()
+        .map(str::trim)
+        .filter(|asset| !asset.is_empty())
+        .context("analyst-convergence-card --from-db expects an asset symbol")?
+        .to_ascii_uppercase();
+    let mut since_token = Some("30d".to_string());
+
+    while let Some(part) = parts.next() {
+        let part = part.trim();
+        let normalized = part.to_ascii_lowercase();
+        let value = if matches!(normalized.as_str(), "since" | "--since") {
+            parts
+                .next()
+                .context("analyst-convergence-card --from-db since requires a value like 30d")?
+        } else if let Some(value) = strip_case_insensitive_prefix(part, "since=") {
+            value
+        } else if let Some(value) = strip_case_insensitive_prefix(part, "--since=") {
+            value
+        } else {
+            part
+        };
+
+        if value.eq_ignore_ascii_case("all") {
+            since_token = None;
+        } else {
+            since_token = Some(value.to_string());
+        }
+    }
+
+    let since = since_token
+        .map(|value| {
+            analyst_views::parse_since(&value).with_context(|| {
+                format!(
+                    "invalid analyst-convergence-card since '{}'; use 30d, 2w, YYYY-MM-DD, or all",
+                    value
+                )
+            })
+        })
+        .transpose()?;
+
+    Ok(AnalystConvergenceCardDbQuery { asset, since })
+}
+
+fn strip_case_insensitive_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+    value
+        .get(..prefix.len())
+        .filter(|head| head.eq_ignore_ascii_case(prefix))
+        .and_then(|_| value.get(prefix.len()..))
+}
+
+fn analyst_layer_order(analyst: &str) -> usize {
+    match analyst
+        .trim()
+        .trim_start_matches("analyst-")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "low" => 0,
+        "medium" | "med" => 1,
+        "high" => 2,
+        "macro" => 3,
+        _ => 4,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1095,6 +1225,78 @@ mod tests {
     }
 
     #[test]
+    fn report_analyst_convergence_card_uses_synthetic_convergence_views() {
+        let backend = backend();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "low",
+            "BTC",
+            "bull",
+            3,
+            "Near-term support",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "medium",
+            "BTC",
+            "bull",
+            3,
+            "Trend improving",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "high",
+            "BTC",
+            "bull",
+            4,
+            "Structural case",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "macro",
+            "BTC",
+            "bull",
+            3,
+            "Macro tailwind",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let input = analyst_convergence_card_from_backend(&backend, "btc 30d").unwrap();
+
+        assert_eq!(input.asset, "BTC");
+        assert_eq!(input.summary, "strong-convergent-bull");
+        assert_eq!(
+            input
+                .views
+                .iter()
+                .map(|view| view.analyst.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "analyst-low",
+                "analyst-medium",
+                "analyst-high",
+                "analyst-macro"
+            ]
+        );
+        assert_eq!(input.views[2].conviction, 4);
+    }
+
+    #[test]
     fn parse_conviction_trajectory_db_query_accepts_window_forms() {
         assert_eq!(
             parse_conviction_trajectory_db_query("btc").unwrap(),
@@ -1115,6 +1317,26 @@ mod tests {
             ConvictionTrajectoryDbQuery {
                 asset: "ETH".to_string(),
                 window_days: 7
+            }
+        );
+    }
+
+    #[test]
+    fn parse_analyst_convergence_card_db_query_accepts_since_forms() {
+        let default = parse_analyst_convergence_card_db_query("btc").unwrap();
+        assert_eq!(default.asset, "BTC");
+        assert!(default.since.is_some());
+
+        let window = parse_analyst_convergence_card_db_query("Gold --since 14d").unwrap();
+        assert_eq!(window.asset, "GOLD");
+        assert!(window.since.is_some());
+
+        let all = parse_analyst_convergence_card_db_query("ETH since=all").unwrap();
+        assert_eq!(
+            all,
+            AnalystConvergenceCardDbQuery {
+                asset: "ETH".to_string(),
+                since: None
             }
         );
     }

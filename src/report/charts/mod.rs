@@ -1,3 +1,4 @@
+pub mod analyst_convergence_card;
 pub mod conviction_grid;
 pub mod conviction_trajectory;
 pub mod decision_card;

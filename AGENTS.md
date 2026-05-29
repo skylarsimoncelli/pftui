@@ -74,6 +74,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui report chart regime-quadrant --from-json regime.json [--format svg\|png\|ascii] [--json]` | Render the growth-vs-inflation macro regime quadrant from JSON `{ "growth": -0.55, "inflation": 0.7, "trail": [[-0.2, 0.4], [-0.3, 0.5]] }` |
 | `pftui report chart conviction-trajectory --from-db BTC [--format svg\|png\|ascii] [--json]` | Native per-asset analyst conviction sparkline from `analyst_view_history`; append a window token like `BTC 14d` to override the default 30 days |
 | `pftui report chart conviction-trajectory --from-json trajectory.json [--format svg\|png\|ascii] [--json]` | Render a conviction trajectory from JSON `{ "symbol": "Gold", "layer_series": { "LOW": [["d1", 4], ["d2", 3]], "MED": [["d1", 2]] } }` |
+| `pftui report chart analyst-convergence-card --from-db "Gold 30d" --format html [--json]` | Native HTML evidence card from `analyst_view_history` convergence reports; append `all` for an unbounded window |
+| `pftui report chart analyst-convergence-card --from-json convergence.json --format html [--json]` | Render the HTML-native convergence card from JSON `{ "asset": "Gold", "views": [{"analyst": "analyst-low", "conviction": 3, "reasoning_summary": "..."}], "summary": "strong-convergent-bull" }` |
 
 ### Portfolio State
 
