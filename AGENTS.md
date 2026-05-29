@@ -71,6 +71,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui report chart conviction-grid --from-json rows.json [--format svg\|png\|ascii] [--json]` | Render a conviction grid from JSON `{ "rows": [{"symbol": "BTC", "low": 1, "medium": 1, "high": 3, "macro": 2}] }` or a bare row array |
 | `pftui report chart mismatch-card --from-json mismatch.json --format html [--json]` | Render the HTML-native Skylar-vs-analyst mismatch card from JSON `{ "asset": "BTC", "skylar_view": "...", "analyst_summary": "convergent-bull", "analyst_avg_conviction": 1.75 }` |
 | `pftui report chart decision-card --from-json decision.json --format html [--json]` | Render the HTML-native operator question card from JSON `{ "question": "...", "context_lines": ["..."], "recommendation": "...", "response_format": ["yes", "no"], "urgency": "high" }` |
+| `pftui report chart regime-quadrant --from-json regime.json [--format svg\|png\|ascii] [--json]` | Render the growth-vs-inflation macro regime quadrant from JSON `{ "growth": -0.55, "inflation": 0.7, "trail": [[-0.2, 0.4], [-0.3, 0.5]] }` |
 
 ### Portfolio State
 

@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — feat: port report regime quadrant
+
+- What: Added the native `regime-quadrant` report chart with Python-parity SVG output, ASCII/PNG support, JSON input mode, CLI docs, and registry wiring.
+- Why: Daily reports can now render growth-vs-inflation regime quadrants directly from pftui instead of the Python `regime_quadrant` helper.
+
 ### 2026-05-29 — feat: port report decision card
 
 - What: Added the native `decision-card` report chart with Python-parity HTML output, ASCII support, JSON input mode, CLI docs, and registry wiring.
