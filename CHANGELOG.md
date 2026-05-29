@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — test: add prior-release schema migration smoke
+
+- What: Added a synthetic frozen SQLite fixture, an integration test that migrates it through `system db-info`, representative cached-only CLI smoke coverage, and CI/docs for the fixture contract.
+- Why: Fresh-DB CI missed prior-release schema regressions; the suite now exercises last-release-style databases before schema changes merge.
+
 ### 2026-05-29 — feat: port report analyst convergence card
 
 - What: Added the native `analyst-convergence-card` report chart with Python-parity HTML output, ASCII support, JSON input mode, DB input from convergence reports over `analyst_view_history`, CLI docs, and registry wiring.

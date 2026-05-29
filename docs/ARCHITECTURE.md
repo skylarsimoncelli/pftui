@@ -78,6 +78,16 @@ Use `read --offset N --limit M` to read specific line ranges instead of full fil
 ### Data Layer
 `db/schema.rs` (migrations) · `db/transactions.rs` (CRUD) · `db/price_cache.rs` (spot cache) · `db/price_history.rs` (daily history, merge) · `db/technical_snapshots.rs` (persisted technical state) · `db/technical_levels.rs` (market structure levels: support, resistance, MA, swing, range) · `db/technical_signals.rs` (precomputed per-symbol signals: RSI, MACD cross, SMA reclaim, BB squeeze, volume, 52W) · `db/allocations.rs` (% mode) · `db/watchlist.rs` · `db/situation_snapshots.rs` (persisted situation baselines for delta analysis) · `db/narrative_snapshots.rs` (structured recap and analytical memory) · `db/power_flows.rs` (Dixon Power Flow Tracker: FIC/MIC/TIC power shift events, balance aggregation) · `db/prediction_lessons.rs` (structured lessons from wrong predictions: miss type, root cause, signal misread) · `db/news_topic_markets.rs` (news-topic classifier and topic→prediction-market bindings) · `db/news_source_accuracy.rs` (per-source/topic hit-rate ledger for news-derived predictions) · `db/narrative_money.rs` (scenario news-pressure vs prediction-market movement history) · `db/news_silence.rs` (rolling weekday topic-volume baselines and silent/saturated regimes) · `db/debates.rs` (adversarial debate mechanism: debates + debate_rounds tables, bull/bear structured argumentation) · `db/analyst_views.rs` (F57: per-analyst per-asset structured views with direction, conviction, reasoning, evidence, blind_spots)
 
+### Prior-release Schema Contract
+`tests/fixtures/db/v0.27.0.sqlite` is a synthetic prior-release SQLite fixture.
+`cargo test --test prior_release_schema` copies it into an isolated pftui data
+directory, forces `db/schema.rs` migrations through `system db-info`, then smokes
+representative CLI commands against the migrated database. Any PR that adds an
+`ALTER TABLE` migration must consider whether this fixture needs a new old-state
+table/column shape to exercise the migration. When a release is cut, refresh the
+fixture to the previous released schema so CI keeps testing last-release to
+current migrations.
+
 ### Models
 `models/position.rs` (Position, compute_positions) · `models/transaction.rs` (Transaction, TxType) · `models/asset.rs` (AssetCategory, PriceProvider) · `models/asset_names.rs` (130+ symbols, infer_category, search) · `models/price.rs` (PriceQuote, HistoryRecord)
 
