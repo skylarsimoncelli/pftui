@@ -145,7 +145,8 @@ pftui
 │       ├── outlook-arrows
 │       ├── factor-exposure
 │       ├── conviction-grid
-│       └── mismatch-card
+│       ├── mismatch-card
+│       └── decision-card
 └── system
     ├── config
     ├── db-info

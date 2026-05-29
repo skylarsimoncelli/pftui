@@ -199,6 +199,9 @@ fn chart_input_from_db(
         ChartKind::MismatchCard => {
             bail!("mismatch-card does not have a canonical --from-db source; use --from-json")
         }
+        ChartKind::DecisionCard => {
+            bail!("decision-card does not have a canonical --from-db source; use --from-json")
+        }
     }
 }
 

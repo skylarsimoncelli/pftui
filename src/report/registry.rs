@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::charts::conviction_grid::{self, ConvictionGridInput};
+use super::charts::decision_card::{self, DecisionCardInput};
 use super::charts::drift_bar::{self, DriftBarInput};
 use super::charts::factor_exposure::{self, FactorExposureInput};
 use super::charts::mismatch_card::{self, MismatchCardInput};
@@ -23,6 +24,7 @@ pub enum ChartKind {
     FactorExposure,
     ConvictionGrid,
     MismatchCard,
+    DecisionCard,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -61,6 +63,8 @@ pub enum ChartInput {
     ConvictionGrid(ConvictionGridInput),
     #[serde(rename = "mismatch-card")]
     MismatchCard(MismatchCardInput),
+    #[serde(rename = "decision-card")]
+    DecisionCard(DecisionCardInput),
 }
 
 pub const CHARTS: &[ChartDefinition] = &[
@@ -109,6 +113,11 @@ pub const CHARTS: &[ChartDefinition] = &[
         description: "Skylar-vs-analyst view mismatch card",
         formats: &["html", "ascii"],
     },
+    ChartDefinition {
+        name: "decision-card",
+        description: "Operator decision question card",
+        formats: &["html", "ascii"],
+    },
 ];
 
 pub fn kind_from_name(name: &str) -> Result<ChartKind> {
@@ -135,6 +144,9 @@ pub fn kind_from_name(name: &str) -> Result<ChartKind> {
         }
         "mismatch-card" | "mismatch_card" | "mismatch" | "view-mismatch" => {
             Ok(ChartKind::MismatchCard)
+        }
+        "decision-card" | "decision_card" | "decision" | "question-card" | "question" => {
+            Ok(ChartKind::DecisionCard)
         }
         other => bail!(
             "unknown report chart '{}'. Available charts: {}",
@@ -165,6 +177,7 @@ pub fn parse_input(kind: ChartKind, value: Value) -> Result<ChartInput> {
             ChartInput::ConvictionGrid(ConvictionGridInput::from_value(value)?)
         }
         ChartKind::MismatchCard => ChartInput::MismatchCard(MismatchCardInput::from_value(value)?),
+        ChartKind::DecisionCard => ChartInput::DecisionCard(DecisionCardInput::from_value(value)?),
     })
 }
 
@@ -183,6 +196,9 @@ pub fn render_svg(input: &ChartInput) -> Result<String> {
         ChartInput::MismatchCard(_) => {
             bail!("mismatch-card is HTML-native; use --format html or --format ascii")
         }
+        ChartInput::DecisionCard(_) => {
+            bail!("decision-card is HTML-native; use --format html or --format ascii")
+        }
     }
 }
 
@@ -190,6 +206,7 @@ pub fn render_html(input: &ChartInput) -> Result<String> {
     match input {
         ChartInput::OpenPredictions(input) => Ok(open_predictions_table::render_html(input)),
         ChartInput::MismatchCard(input) => Ok(mismatch_card::render_html(input)),
+        ChartInput::DecisionCard(input) => Ok(decision_card::render_html(input)),
         _ => bail!(
             "{} does not support HTML output; supported formats: {}",
             chart_name(input),
@@ -209,6 +226,7 @@ pub fn render_ascii(input: &ChartInput) -> String {
         ChartInput::FactorExposure(input) => factor_exposure::render_ascii(input),
         ChartInput::ConvictionGrid(input) => conviction_grid::render_ascii(input),
         ChartInput::MismatchCard(input) => mismatch_card::render_ascii(input),
+        ChartInput::DecisionCard(input) => decision_card::render_ascii(input),
     }
 }
 
@@ -223,6 +241,7 @@ pub fn chart_name(input: &ChartInput) -> &'static str {
         ChartInput::FactorExposure(_) => "factor-exposure",
         ChartInput::ConvictionGrid(_) => "conviction-grid",
         ChartInput::MismatchCard(_) => "mismatch-card",
+        ChartInput::DecisionCard(_) => "decision-card",
     }
 }
 
@@ -237,6 +256,7 @@ pub fn supported_formats(input: &ChartInput) -> &'static [&'static str] {
         ChartInput::FactorExposure(_) => &["svg", "png", "ascii"],
         ChartInput::ConvictionGrid(_) => &["svg", "png", "ascii"],
         ChartInput::MismatchCard(_) => &["html", "ascii"],
+        ChartInput::DecisionCard(_) => &["html", "ascii"],
     }
 }
 
@@ -287,6 +307,10 @@ mod tests {
         assert_eq!(
             kind_from_name("mismatch_card").unwrap(),
             ChartKind::MismatchCard
+        );
+        assert_eq!(
+            kind_from_name("decision_card").unwrap(),
+            ChartKind::DecisionCard
         );
     }
 }
