@@ -331,12 +331,12 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_news_source ON news_cache(source);
-        CREATE INDEX IF NOT EXISTS idx_news_source_domain ON news_cache(source_domain);
-        CREATE INDEX IF NOT EXISTS idx_news_source_tier ON news_cache(source_tier);
-        CREATE INDEX IF NOT EXISTS idx_news_source_independence ON news_cache(source_independence);
         CREATE INDEX IF NOT EXISTS idx_news_category ON news_cache(category);
-        CREATE INDEX IF NOT EXISTS idx_news_topic ON news_cache(topic);
         CREATE INDEX IF NOT EXISTS idx_news_published_at ON news_cache(published_at);
+        -- Indexes for source_domain, source_tier, source_independence, and topic
+        -- are created by ensure_source_tier_schema / ensure_news_cache_topic_column
+        -- AFTER the ALTER TABLE migrations that add the columns. Creating them in
+        -- this initial batch races the migrations and fails on pre-existing DBs.
 
         CREATE TABLE IF NOT EXISTS news_source_tiers (
             domain TEXT PRIMARY KEY,
@@ -608,9 +608,9 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_user_predictions_outcome ON user_predictions(outcome);
         CREATE INDEX IF NOT EXISTS idx_user_predictions_symbol ON user_predictions(symbol);
-        CREATE INDEX IF NOT EXISTS idx_user_predictions_topic ON user_predictions(topic);
-        CREATE INDEX IF NOT EXISTS idx_user_predictions_source_article
-            ON user_predictions(source_article_id);
+        -- Indexes for `topic` and `source_article_id` are re-created at line ~982
+        -- AFTER the ALTER TABLE migrations that add the columns. Creating them in
+        -- this initial batch races the migrations and fails on pre-existing DBs.
 
         CREATE TABLE IF NOT EXISTS news_source_accuracy (
             source_domain TEXT NOT NULL,
