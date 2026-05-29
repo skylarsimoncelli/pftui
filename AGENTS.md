@@ -72,6 +72,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui report chart mismatch-card --from-json mismatch.json --format html [--json]` | Render the HTML-native Skylar-vs-analyst mismatch card from JSON `{ "asset": "BTC", "skylar_view": "...", "analyst_summary": "convergent-bull", "analyst_avg_conviction": 1.75 }` |
 | `pftui report chart decision-card --from-json decision.json --format html [--json]` | Render the HTML-native operator question card from JSON `{ "question": "...", "context_lines": ["..."], "recommendation": "...", "response_format": ["yes", "no"], "urgency": "high" }` |
 | `pftui report chart regime-quadrant --from-json regime.json [--format svg\|png\|ascii] [--json]` | Render the growth-vs-inflation macro regime quadrant from JSON `{ "growth": -0.55, "inflation": 0.7, "trail": [[-0.2, 0.4], [-0.3, 0.5]] }` |
+| `pftui report chart conviction-trajectory --from-db BTC [--format svg\|png\|ascii] [--json]` | Native per-asset analyst conviction sparkline from `analyst_view_history`; append a window token like `BTC 14d` to override the default 30 days |
+| `pftui report chart conviction-trajectory --from-json trajectory.json [--format svg\|png\|ascii] [--json]` | Render a conviction trajectory from JSON `{ "symbol": "Gold", "layer_series": { "LOW": [["d1", 4], ["d2", 3]], "MED": [["d1", 2]] } }` |
 
 ### Portfolio State
 
