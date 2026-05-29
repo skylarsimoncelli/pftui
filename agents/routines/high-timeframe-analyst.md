@@ -34,7 +34,7 @@ pftui analytics news-silence --json
 pftui analytics calibration --by-layer --json
 pftui analytics lessons applied --since 30d --json
 pftui analytics trends list --json
-pftui analytics trends evidence-list --json
+pftui analytics trends evidence list --json
 pftui journal conviction list --json
 pftui journal prediction list --json
 pftui journal prediction lessons --json

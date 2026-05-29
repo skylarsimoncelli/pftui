@@ -122,10 +122,11 @@ pftui analytics macro metrics US --json   # current scores + composite
 pftui analytics macro metrics China --json
 ```
 
-Update with evidence:
+Record the evidence trail for any determinant update:
 ```bash
-pftui analytics macro metrics set US --metric "[determinant]" --score [1-10] --rank [1-5] \
-  --trend [rising|stable|declining] --description "[evidence-based assessment with source]"
+pftui analytics macro log add --date $(date +%Y-%m-%d) \
+  --development "US [determinant] score review" \
+  --cycle-impact "[evidence-based assessment with source]"
 ```
 
 **Priority: fill missing China metrics.** China is missing competitiveness, trade, economic output, reserve currency, and governance. Research and populate these.
@@ -149,7 +150,7 @@ Key questions every run:
 
 If the evidence warrants a stage change:
 ```bash
-pftui analytics macro cycles update "Dalio Big Cycle - US Empire" --stage "[stage]" \
+pftui analytics macro cycles update "Dalio Big Cycle - US Empire" --phase "[stage]" \
   --evidence "[what changed and why this constitutes a stage transition]"
 ```
 
@@ -181,7 +182,7 @@ Every run, assess:
 
 Update the cycle:
 ```bash
-pftui analytics macro cycles update "Strauss-Howe Fourth Turning" --stage "[phase]" \
+pftui analytics macro cycles update "Strauss-Howe Fourth Turning" --phase "[phase]" \
   --evidence "[crisis arc markers and evidence]"
 ```
 
@@ -205,11 +206,12 @@ Check and update parallels:
 pftui analytics macro parallels --json
 ```
 
-Add new parallels when warranted:
+Record new parallels when warranted:
 ```bash
-pftui analytics macro parallels add --period "[dates]" \
-  --event "[historical event] → [current parallel]" \
-  --similarity [1-10] --outcome "[what happened then]"
+pftui analytics macro log add --date $(date +%Y-%m-%d) \
+  --development "[historical event] -> [current parallel]" \
+  --cycle-impact "[dates]; similarity [1-10]" \
+  --outcome-shift "[what happened then]"
 ```
 
 ## Lens 3: Transnational Power Analysis
@@ -252,7 +254,7 @@ Include national-transnational power synthesis in the weekly macro output to the
 
 Update outcome probabilities based on both lenses:
 ```bash
-pftui analytics macro outcomes update "[name]" --probability [X] \
+pftui journal scenario update "[name]" --probability [X] \
   --notes "[Which lens provided the evidence. Source quality. Narrative/money status. What shifted and why.]"
 ```
 
@@ -261,9 +263,9 @@ pftui analytics macro outcomes update "[name]" --probability [X] \
 Add a structured log entry synthesizing both lenses:
 ```bash
 pftui analytics macro log add --date $(date +%Y-%m-%d) \
-  --driver "[most important structural development this week]" \
-  --impact "[how it affects the macro picture across both frameworks]" \
-  --notes "[Dalio lens: X. Fourth Turning lens: Y. Constraint on lower timeframes: Z.]"
+  --development "[most important structural development this week]" \
+  --cycle-impact "[how it affects the macro picture across both frameworks]" \
+  --outcome-shift "[Dalio lens: X. Fourth Turning lens: Y. Constraint on lower timeframes: Z.]"
 ```
 
 ## Write Structured Views

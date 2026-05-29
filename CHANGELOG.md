@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — test: add CLI and routine command smoke coverage
+
+- What: Added integration tests that recursively verify every CLI subcommand renders `--help` and that literal `pftui` commands in analyst routine bash blocks still parse.
+- Why: Routine docs are agent copy-paste contracts; stale command examples and broken help paths should fail in CI instead of during a report run.
+
 ### 2026-05-29 — feat: add schema verify and repair commands
 
 - What: Added `pftui system schema verify` and `repair` for SQLite drift checks, safe missing-table/column/index repair plans, and friendlier migration errors when startup hits a missing column.
