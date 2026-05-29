@@ -67,6 +67,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui report chart outlook-arrows --from-db BTC [--format svg\|png\|ascii] [--json]` | Native horizon outlook arrows using current LOW/MEDIUM/HIGH `analyst_views` as days/weeks/months |
 | `pftui report chart outlook-arrows --from-json outlook.json [--format svg\|png\|ascii] [--json]` | Render outlook arrows from JSON `{ "days": ["flat", "medium"], "weeks": ["up", "medium"], "months": ["up_strong", "high"] }` |
 | `pftui report chart factor-exposure --from-json factors.json [--format svg\|png\|ascii] [--json]` | Render factor exposure bars from JSON `{ "factors": [{"name": "Inflation Spike", "exposure_pct": 51.0, "direction": "bull", "prob_pct": 88.0}] }` or a bare factor array |
+| `pftui report chart conviction-grid --from-db all [--format svg\|png\|ascii] [--json]` | Native multi-timeframe conviction grid from current LOW/MEDIUM/HIGH/MACRO `analyst_views`; pass a symbol instead of `all` for one asset |
+| `pftui report chart conviction-grid --from-json rows.json [--format svg\|png\|ascii] [--json]` | Render a conviction grid from JSON `{ "rows": [{"symbol": "BTC", "low": 1, "medium": 1, "high": 3, "macro": 2}] }` or a bare row array |
 
 ### Portfolio State
 

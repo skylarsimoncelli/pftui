@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use serde::Serialize;
 use serde_json::Value;
 
+use super::charts::conviction_grid::{self, ConvictionGridInput};
 use super::charts::drift_bar::{self, DriftBarInput};
 use super::charts::factor_exposure::{self, FactorExposureInput};
 use super::charts::open_predictions_table::{self, OpenPredictionsTableInput};
@@ -19,6 +20,7 @@ pub enum ChartKind {
     OpenPredictions,
     OutlookArrows,
     FactorExposure,
+    ConvictionGrid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -53,6 +55,8 @@ pub enum ChartInput {
     OutlookArrows(OutlookArrowsInput),
     #[serde(rename = "factor-exposure")]
     FactorExposure(FactorExposureInput),
+    #[serde(rename = "conviction-grid")]
+    ConvictionGrid(ConvictionGridInput),
 }
 
 pub const CHARTS: &[ChartDefinition] = &[
@@ -91,6 +95,11 @@ pub const CHARTS: &[ChartDefinition] = &[
         description: "Portfolio exposure bars by scenario factor",
         formats: &["svg", "png", "ascii"],
     },
+    ChartDefinition {
+        name: "conviction-grid",
+        description: "Multi-timeframe analyst conviction grid",
+        formats: &["svg", "png", "ascii"],
+    },
 ];
 
 pub fn kind_from_name(name: &str) -> Result<ChartKind> {
@@ -111,6 +120,9 @@ pub fn kind_from_name(name: &str) -> Result<ChartKind> {
         "outlook-arrows" | "outlook_arrows" | "outlook" | "arrows" => Ok(ChartKind::OutlookArrows),
         "factor-exposure" | "factor_exposure" | "factor" | "exposure" | "factors" => {
             Ok(ChartKind::FactorExposure)
+        }
+        "conviction-grid" | "conviction_grid" | "convictions" | "conviction" | "grid" => {
+            Ok(ChartKind::ConvictionGrid)
         }
         other => bail!(
             "unknown report chart '{}'. Available charts: {}",
@@ -137,6 +149,9 @@ pub fn parse_input(kind: ChartKind, value: Value) -> Result<ChartInput> {
         ChartKind::FactorExposure => {
             ChartInput::FactorExposure(FactorExposureInput::from_value(value)?)
         }
+        ChartKind::ConvictionGrid => {
+            ChartInput::ConvictionGrid(ConvictionGridInput::from_value(value)?)
+        }
     })
 }
 
@@ -151,6 +166,7 @@ pub fn render_svg(input: &ChartInput) -> Result<String> {
         }
         ChartInput::OutlookArrows(input) => Ok(outlook_arrows::render_svg(input)),
         ChartInput::FactorExposure(input) => Ok(factor_exposure::render_svg(input)),
+        ChartInput::ConvictionGrid(input) => Ok(conviction_grid::render_svg(input)),
     }
 }
 
@@ -174,6 +190,7 @@ pub fn render_ascii(input: &ChartInput) -> String {
         ChartInput::OpenPredictions(input) => open_predictions_table::render_ascii(input),
         ChartInput::OutlookArrows(input) => outlook_arrows::render_ascii(input),
         ChartInput::FactorExposure(input) => factor_exposure::render_ascii(input),
+        ChartInput::ConvictionGrid(input) => conviction_grid::render_ascii(input),
     }
 }
 
@@ -186,6 +203,7 @@ pub fn chart_name(input: &ChartInput) -> &'static str {
         ChartInput::OpenPredictions(_) => "open-predictions-table",
         ChartInput::OutlookArrows(_) => "outlook-arrows",
         ChartInput::FactorExposure(_) => "factor-exposure",
+        ChartInput::ConvictionGrid(_) => "conviction-grid",
     }
 }
 
@@ -198,6 +216,7 @@ pub fn supported_formats(input: &ChartInput) -> &'static [&'static str] {
         ChartInput::OpenPredictions(_) => &["html", "ascii"],
         ChartInput::OutlookArrows(_) => &["svg", "png", "ascii"],
         ChartInput::FactorExposure(_) => &["svg", "png", "ascii"],
+        ChartInput::ConvictionGrid(_) => &["svg", "png", "ascii"],
     }
 }
 
@@ -240,6 +259,10 @@ mod tests {
         assert_eq!(
             kind_from_name("factor_exposure").unwrap(),
             ChartKind::FactorExposure
+        );
+        assert_eq!(
+            kind_from_name("conviction_grid").unwrap(),
+            ChartKind::ConvictionGrid
         );
     }
 }

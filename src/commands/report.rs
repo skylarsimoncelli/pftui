@@ -21,6 +21,7 @@ use crate::db::scenarios;
 use crate::db::transactions::list_transactions_backend;
 use crate::db::user_predictions;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
+use crate::report::charts::conviction_grid::{ConvictionGridInput, ConvictionGridRow};
 use crate::report::charts::drift_bar::DriftBarInput;
 use crate::report::charts::open_predictions_table::{OpenPredictionRow, OpenPredictionsTableInput};
 use crate::report::charts::outlook_arrows::{OutlookArrowsInput, OutlookPoint};
@@ -192,6 +193,9 @@ fn chart_input_from_db(
         ChartKind::FactorExposure => {
             bail!("factor-exposure does not have a canonical --from-db source; use --from-json")
         }
+        ChartKind::ConvictionGrid => Ok(ChartInput::ConvictionGrid(
+            conviction_grid_from_analyst_views_backend(backend, query)?,
+        )),
     }
 }
 
@@ -377,6 +381,60 @@ fn outlook_point_from_view(view: &analyst_views::AnalystView) -> OutlookPoint {
         direction: direction.to_string(),
         conviction: conviction.to_string(),
     }
+}
+
+fn conviction_grid_from_analyst_views_backend(
+    backend: &BackendConnection,
+    query: &str,
+) -> Result<ConvictionGridInput> {
+    let normalized = query.trim().to_ascii_lowercase();
+    let rows = if normalized.is_empty()
+        || matches!(
+            normalized.as_str(),
+            "all" | "views" | "analyst-views" | "analyst_views" | "matrix"
+        ) {
+        analyst_views::get_view_matrix_backend(backend)?
+    } else {
+        let views = analyst_views::list_views_backend(backend, None, Some(query.trim()), None)?;
+        if views.is_empty() {
+            bail!("no analyst views found for '{}'", query.trim());
+        }
+        let asset = views
+            .first()
+            .map(|view| view.asset.clone())
+            .unwrap_or_else(|| query.trim().to_ascii_uppercase());
+        vec![analyst_views::AssetViewMatrix { asset, views }]
+    };
+
+    let rows = rows
+        .into_iter()
+        .map(|row| {
+            let mut grid_row = ConvictionGridRow {
+                symbol: row.asset,
+                low: None,
+                medium: None,
+                high: None,
+                macro_score: None,
+                summary: None,
+            };
+            for view in row.views {
+                match view.analyst.trim().to_ascii_lowercase().as_str() {
+                    "low" => grid_row.low = Some(view.conviction),
+                    "medium" => grid_row.medium = Some(view.conviction),
+                    "high" => grid_row.high = Some(view.conviction),
+                    "macro" => grid_row.macro_score = Some(view.conviction),
+                    _ => {}
+                }
+            }
+            grid_row
+        })
+        .collect::<Vec<_>>();
+
+    if rows.is_empty() {
+        bail!("no analyst views available for conviction-grid");
+    }
+
+    Ok(ConvictionGridInput { rows, width: None })
 }
 
 fn portfolio_positions_backend(
@@ -762,6 +820,68 @@ mod tests {
         assert_eq!(input.weeks.conviction, "medium");
         assert_eq!(input.months.direction, "up_strong");
         assert_eq!(input.months.conviction, "high");
+    }
+
+    #[test]
+    fn report_conviction_grid_uses_synthetic_analyst_views() {
+        let backend = backend();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "low",
+            "BTC",
+            "bull",
+            1,
+            "Near-term support",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "medium",
+            "BTC",
+            "bull",
+            2,
+            "Trend improving",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "high",
+            "BTC",
+            "bull",
+            4,
+            "Structural case",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "macro",
+            "BTC",
+            "bull",
+            3,
+            "Macro tailwind",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let input = conviction_grid_from_analyst_views_backend(&backend, "btc").unwrap();
+
+        assert_eq!(input.rows.len(), 1);
+        assert_eq!(input.rows[0].symbol, "BTC");
+        assert_eq!(input.rows[0].low, Some(1));
+        assert_eq!(input.rows[0].medium, Some(2));
+        assert_eq!(input.rows[0].high, Some(4));
+        assert_eq!(input.rows[0].macro_score, Some(3));
     }
 
     #[test]
