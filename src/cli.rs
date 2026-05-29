@@ -1324,13 +1324,13 @@ pub enum ReportCommand {
     /// Render report chart primitives from JSON or canonical database queries
     #[command(
         name = "chart",
-        after_help = "Available charts:\n  stacked-bar             Portfolio allocation stacked bar\n  prob-bar                Scenario probability bar with 7-day ghost and delta\n  drift-bar               Allocation drift bar with target tick and tolerance band\n  what-changed-strip      Since-last-report delta pill strip\n  open-predictions-table  Open prediction due-date table (HTML-native)\n  outlook-arrows          Days/weeks/months direction and conviction arrows\n  factor-exposure         Portfolio exposure bars by scenario factor\n  conviction-grid         Multi-timeframe analyst conviction grid\n\nExamples:\n  pftui report chart stacked-bar --from-db portfolio --out allocation.svg\n  pftui report chart prob-bar --from-db \"Inflation Spike\" --format svg\n  pftui report chart drift-bar --from-db BTC --format svg\n  pftui report chart what-changed-strip --from-json deltas.json --json\n  pftui report chart open-predictions-table --from-db pending --format html --json\n  pftui report chart outlook-arrows --from-db BTC --json\n  pftui report chart factor-exposure --from-json factors.json --json\n  pftui report chart conviction-grid --from-db all --json\n  pftui report chart stacked-bar --from-json segments.json --format png --out allocation.png\n  pftui report chart prob-bar --from-json scenario.json --json"
+        after_help = "Available charts:\n  stacked-bar             Portfolio allocation stacked bar\n  prob-bar                Scenario probability bar with 7-day ghost and delta\n  drift-bar               Allocation drift bar with target tick and tolerance band\n  what-changed-strip      Since-last-report delta pill strip\n  open-predictions-table  Open prediction due-date table (HTML-native)\n  outlook-arrows          Days/weeks/months direction and conviction arrows\n  factor-exposure         Portfolio exposure bars by scenario factor\n  conviction-grid         Multi-timeframe analyst conviction grid\n  mismatch-card           Skylar-vs-analyst view mismatch card (HTML-native)\n\nExamples:\n  pftui report chart stacked-bar --from-db portfolio --out allocation.svg\n  pftui report chart prob-bar --from-db \"Inflation Spike\" --format svg\n  pftui report chart drift-bar --from-db BTC --format svg\n  pftui report chart what-changed-strip --from-json deltas.json --json\n  pftui report chart open-predictions-table --from-db pending --format html --json\n  pftui report chart outlook-arrows --from-db BTC --json\n  pftui report chart factor-exposure --from-json factors.json --json\n  pftui report chart conviction-grid --from-db all --json\n  pftui report chart mismatch-card --from-json mismatch.json --format html --json\n  pftui report chart stacked-bar --from-json segments.json --format png --out allocation.png\n  pftui report chart prob-bar --from-json scenario.json --json"
     )]
     Chart {
-        /// Chart name: stacked-bar, prob-bar, drift-bar, what-changed-strip, open-predictions-table, outlook-arrows, factor-exposure, or conviction-grid
+        /// Chart name: stacked-bar, prob-bar, drift-bar, what-changed-strip, open-predictions-table, outlook-arrows, factor-exposure, conviction-grid, or mismatch-card
         chart_name: String,
 
-        /// Render from a canonical DB query. stacked-bar accepts portfolio; prob-bar accepts a scenario name; drift-bar, outlook-arrows, and conviction-grid accept a symbol; conviction-grid also accepts all/views; open-predictions-table accepts pending/open or a limit. factor-exposure is JSON-only.
+        /// Render from a canonical DB query. stacked-bar accepts portfolio; prob-bar accepts a scenario name; drift-bar, outlook-arrows, and conviction-grid accept a symbol; conviction-grid also accepts all/views; open-predictions-table accepts pending/open or a limit. factor-exposure and mismatch-card are JSON-only.
         #[arg(long = "from-db", value_name = "QUERY")]
         from_db: Option<String>,
 
@@ -4949,6 +4949,42 @@ mod tests {
                 assert_eq!(from_db.as_deref(), Some("all"));
                 assert!(from_json.is_none());
                 assert_eq!(format, ReportChartFormat::Svg);
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_report_mismatch_card_from_json_html() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "report",
+            "chart",
+            "mismatch-card",
+            "--from-json",
+            "mismatch.json",
+            "--format",
+            "html",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Report {
+                command:
+                    ReportCommand::Chart {
+                        chart_name,
+                        from_db,
+                        from_json,
+                        format,
+                        json,
+                        ..
+                    },
+            }) => {
+                assert_eq!(chart_name, "mismatch-card");
+                assert!(from_db.is_none());
+                assert_eq!(from_json.unwrap(), PathBuf::from("mismatch.json"));
+                assert_eq!(format, ReportChartFormat::Html);
                 assert!(json);
             }
             _ => panic!("unexpected parse result"),

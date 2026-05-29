@@ -5,6 +5,7 @@ use serde_json::Value;
 use super::charts::conviction_grid::{self, ConvictionGridInput};
 use super::charts::drift_bar::{self, DriftBarInput};
 use super::charts::factor_exposure::{self, FactorExposureInput};
+use super::charts::mismatch_card::{self, MismatchCardInput};
 use super::charts::open_predictions_table::{self, OpenPredictionsTableInput};
 use super::charts::outlook_arrows::{self, OutlookArrowsInput};
 use super::charts::prob_bar::{self, ProbBarInput};
@@ -21,6 +22,7 @@ pub enum ChartKind {
     OutlookArrows,
     FactorExposure,
     ConvictionGrid,
+    MismatchCard,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -57,6 +59,8 @@ pub enum ChartInput {
     FactorExposure(FactorExposureInput),
     #[serde(rename = "conviction-grid")]
     ConvictionGrid(ConvictionGridInput),
+    #[serde(rename = "mismatch-card")]
+    MismatchCard(MismatchCardInput),
 }
 
 pub const CHARTS: &[ChartDefinition] = &[
@@ -100,6 +104,11 @@ pub const CHARTS: &[ChartDefinition] = &[
         description: "Multi-timeframe analyst conviction grid",
         formats: &["svg", "png", "ascii"],
     },
+    ChartDefinition {
+        name: "mismatch-card",
+        description: "Skylar-vs-analyst view mismatch card",
+        formats: &["html", "ascii"],
+    },
 ];
 
 pub fn kind_from_name(name: &str) -> Result<ChartKind> {
@@ -123,6 +132,9 @@ pub fn kind_from_name(name: &str) -> Result<ChartKind> {
         }
         "conviction-grid" | "conviction_grid" | "convictions" | "conviction" | "grid" => {
             Ok(ChartKind::ConvictionGrid)
+        }
+        "mismatch-card" | "mismatch_card" | "mismatch" | "view-mismatch" => {
+            Ok(ChartKind::MismatchCard)
         }
         other => bail!(
             "unknown report chart '{}'. Available charts: {}",
@@ -152,6 +164,7 @@ pub fn parse_input(kind: ChartKind, value: Value) -> Result<ChartInput> {
         ChartKind::ConvictionGrid => {
             ChartInput::ConvictionGrid(ConvictionGridInput::from_value(value)?)
         }
+        ChartKind::MismatchCard => ChartInput::MismatchCard(MismatchCardInput::from_value(value)?),
     })
 }
 
@@ -167,12 +180,16 @@ pub fn render_svg(input: &ChartInput) -> Result<String> {
         ChartInput::OutlookArrows(input) => Ok(outlook_arrows::render_svg(input)),
         ChartInput::FactorExposure(input) => Ok(factor_exposure::render_svg(input)),
         ChartInput::ConvictionGrid(input) => Ok(conviction_grid::render_svg(input)),
+        ChartInput::MismatchCard(_) => {
+            bail!("mismatch-card is HTML-native; use --format html or --format ascii")
+        }
     }
 }
 
 pub fn render_html(input: &ChartInput) -> Result<String> {
     match input {
         ChartInput::OpenPredictions(input) => Ok(open_predictions_table::render_html(input)),
+        ChartInput::MismatchCard(input) => Ok(mismatch_card::render_html(input)),
         _ => bail!(
             "{} does not support HTML output; supported formats: {}",
             chart_name(input),
@@ -191,6 +208,7 @@ pub fn render_ascii(input: &ChartInput) -> String {
         ChartInput::OutlookArrows(input) => outlook_arrows::render_ascii(input),
         ChartInput::FactorExposure(input) => factor_exposure::render_ascii(input),
         ChartInput::ConvictionGrid(input) => conviction_grid::render_ascii(input),
+        ChartInput::MismatchCard(input) => mismatch_card::render_ascii(input),
     }
 }
 
@@ -204,6 +222,7 @@ pub fn chart_name(input: &ChartInput) -> &'static str {
         ChartInput::OutlookArrows(_) => "outlook-arrows",
         ChartInput::FactorExposure(_) => "factor-exposure",
         ChartInput::ConvictionGrid(_) => "conviction-grid",
+        ChartInput::MismatchCard(_) => "mismatch-card",
     }
 }
 
@@ -217,6 +236,7 @@ pub fn supported_formats(input: &ChartInput) -> &'static [&'static str] {
         ChartInput::OutlookArrows(_) => &["svg", "png", "ascii"],
         ChartInput::FactorExposure(_) => &["svg", "png", "ascii"],
         ChartInput::ConvictionGrid(_) => &["svg", "png", "ascii"],
+        ChartInput::MismatchCard(_) => &["html", "ascii"],
     }
 }
 
@@ -263,6 +283,10 @@ mod tests {
         assert_eq!(
             kind_from_name("conviction_grid").unwrap(),
             ChartKind::ConvictionGrid
+        );
+        assert_eq!(
+            kind_from_name("mismatch_card").unwrap(),
+            ChartKind::MismatchCard
         );
     }
 }

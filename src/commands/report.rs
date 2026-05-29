@@ -196,6 +196,9 @@ fn chart_input_from_db(
         ChartKind::ConvictionGrid => Ok(ChartInput::ConvictionGrid(
             conviction_grid_from_analyst_views_backend(backend, query)?,
         )),
+        ChartKind::MismatchCard => {
+            bail!("mismatch-card does not have a canonical --from-db source; use --from-json")
+        }
     }
 }
 

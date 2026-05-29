@@ -69,6 +69,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui report chart factor-exposure --from-json factors.json [--format svg\|png\|ascii] [--json]` | Render factor exposure bars from JSON `{ "factors": [{"name": "Inflation Spike", "exposure_pct": 51.0, "direction": "bull", "prob_pct": 88.0}] }` or a bare factor array |
 | `pftui report chart conviction-grid --from-db all [--format svg\|png\|ascii] [--json]` | Native multi-timeframe conviction grid from current LOW/MEDIUM/HIGH/MACRO `analyst_views`; pass a symbol instead of `all` for one asset |
 | `pftui report chart conviction-grid --from-json rows.json [--format svg\|png\|ascii] [--json]` | Render a conviction grid from JSON `{ "rows": [{"symbol": "BTC", "low": 1, "medium": 1, "high": 3, "macro": 2}] }` or a bare row array |
+| `pftui report chart mismatch-card --from-json mismatch.json --format html [--json]` | Render the HTML-native Skylar-vs-analyst mismatch card from JSON `{ "asset": "BTC", "skylar_view": "...", "analyst_summary": "convergent-bull", "analyst_avg_conviction": 1.75 }` |
 
 ### Portfolio State
 
