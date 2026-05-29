@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — feat: port report mismatch card
+
+- What: Added the native `mismatch-card` report chart with Python-parity HTML output, ASCII support, JSON input mode, CLI docs, and registry wiring.
+- Why: Daily reports can now render the Skylar-vs-analyst mismatch card directly from pftui instead of the Python `mismatch_card` helper.
+
 ### 2026-05-28 — feat: port report conviction grid
 
 - What: Added the native `conviction-grid` report chart with Python-parity SVG output, ASCII/PNG support, JSON input mode, and DB input from current `analyst_views`.

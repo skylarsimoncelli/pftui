@@ -144,7 +144,8 @@ pftui
 │       ├── open-predictions-table
 │       ├── outlook-arrows
 │       ├── factor-exposure
-│       └── conviction-grid
+│       ├── conviction-grid
+│       └── mismatch-card
 └── system
     ├── config
     ├── db-info

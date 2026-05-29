@@ -1,6 +1,7 @@
 pub mod conviction_grid;
 pub mod drift_bar;
 pub mod factor_exposure;
+pub mod mismatch_card;
 pub mod open_predictions_table;
 pub mod outlook_arrows;
 pub mod prob_bar;
