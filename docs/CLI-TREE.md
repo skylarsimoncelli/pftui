@@ -148,7 +148,8 @@ pftui
 │       ├── mismatch-card
 │       ├── decision-card
 │       ├── regime-quadrant
-│       └── conviction-trajectory
+│       ├── conviction-trajectory
+│       └── analyst-convergence-card
 └── system
     ├── config
     ├── db-info

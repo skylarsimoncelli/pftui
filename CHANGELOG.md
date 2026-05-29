@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — feat: port report analyst convergence card
+
+- What: Added the native `analyst-convergence-card` report chart with Python-parity HTML output, ASCII support, JSON input mode, DB input from convergence reports over `analyst_view_history`, CLI docs, and registry wiring.
+- Why: Daily reports can now render per-asset analyst convergence evidence cards directly from pftui instead of the Python `analyst_convergence_card` helper.
+
 ### 2026-05-29 — feat: port report conviction trajectory
 
 - What: Added the native `conviction-trajectory` report chart with Python-parity SVG output, ASCII/PNG support, JSON input mode, DB input from `analyst_view_history`, CLI docs, and registry wiring.

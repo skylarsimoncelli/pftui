@@ -6,12 +6,6 @@
 
 ## P2 - Coverage And Agent Consumption
 
-### `pftui report` — port remaining chart helpers from `pftui-operator/charts.py`
-**Source:** Skylar (May 28). Depends on the scaffolding item above being landed first.
-**Why:** Once the `pftui report` scaffold exists, the remaining chart helpers in `~/pftui-operator/charts.py` should be ported one-by-one so the entire daily-report visualization set is available natively. The remaining list (from current charts.py): `analyst_convergence_card`. Each is a self-contained SVG-rendering function with a documented signature; porting is mechanical given the scaffold's primitives and registry pattern.
-**Scope:** Port each helper as a separate `src/report/charts/<name>.rs` module, registered in `src/report/registry.rs`, with: (1) signature matching the Python helper as closely as Rust allows (use structs with named fields rather than positional args for clarity); (2) SVG output byte-identical to Python output for matching input (golden-file snapshot test per chart); (3) JSON-input mode (`--from-json`) for each — the input schema documented in a doc-comment at the top of each chart module; (4) DB-input mode (`--from-db`) for charts where the data source is canonical; (5) AGENTS.md updated with each new chart command. Order of porting (by complexity, simplest first): `analyst_convergence_card`. Files: `src/report/charts/<name>.rs` (new per chart), `src/report/registry.rs` (extend), `tests/report/snapshots/`, `AGENTS.md`. Each chart: 4–8 hours including snapshot tests.
-**Effort:** 1 week total (1 chart × ~5 hours average).
-
 ### `pftui report build daily` — native end-to-end daily report generation
 **Source:** Skylar (May 28). Depends on both `pftui report` scaffold and the chart-helper-port items above.
 **Why:** Once chart rendering is native, the next layer up is the report ASSEMBLY — pulling data, ordering sections, inlining charts, and writing the markdown that feeds the PDF renderer. Today that work lives in the Claude `/pftui-report` skill orchestration plus the ad-hoc Python build script generated per run. Making it a native `pftui report build daily` command means: (1) anyone (not just Claude) can build a daily report from a populated DB; (2) the assembly logic gets `cargo test` coverage; (3) the Claude skill becomes much thinner — it spawns analysts, then calls `pftui report build daily`, then PRs the output. (4) Removes the Python build script entirely from the steady-state pipeline. This does NOT yet replace `gen-report.py` (markdown → PDF) — that is a separate, harder migration.
