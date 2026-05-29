@@ -147,7 +147,8 @@ pftui
 │       ├── conviction-grid
 │       ├── mismatch-card
 │       ├── decision-card
-│       └── regime-quadrant
+│       ├── regime-quadrant
+│       └── conviction-trajectory
 └── system
     ├── config
     ├── db-info

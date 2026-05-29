@@ -22,6 +22,9 @@ use crate::db::transactions::list_transactions_backend;
 use crate::db::user_predictions;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 use crate::report::charts::conviction_grid::{ConvictionGridInput, ConvictionGridRow};
+use crate::report::charts::conviction_trajectory::{
+    ConvictionLayerSeries, ConvictionTrajectoryInput, ConvictionTrajectoryPoint,
+};
 use crate::report::charts::drift_bar::DriftBarInput;
 use crate::report::charts::open_predictions_table::{OpenPredictionRow, OpenPredictionsTableInput};
 use crate::report::charts::outlook_arrows::{OutlookArrowsInput, OutlookPoint};
@@ -205,6 +208,9 @@ fn chart_input_from_db(
         ChartKind::RegimeQuadrant => {
             bail!("regime-quadrant does not have a canonical --from-db source; use --from-json")
         }
+        ChartKind::ConvictionTrajectory => Ok(ChartInput::ConvictionTrajectory(
+            conviction_trajectory_from_analyst_view_history_backend(backend, query)?,
+        )),
     }
 }
 
@@ -446,6 +452,138 @@ fn conviction_grid_from_analyst_views_backend(
     Ok(ConvictionGridInput { rows, width: None })
 }
 
+fn conviction_trajectory_from_analyst_view_history_backend(
+    backend: &BackendConnection,
+    query: &str,
+) -> Result<ConvictionTrajectoryInput> {
+    let parsed = parse_conviction_trajectory_db_query(query)?;
+    let history = analyst_views::get_view_history_backend(backend, &parsed.asset, None, None)?;
+    if history.is_empty() {
+        bail!("no analyst view history found for '{}'", parsed.asset);
+    }
+
+    let cutoff = Utc::now().naive_utc() - Duration::days(parsed.window_days);
+    let mut layers = ["low", "medium", "high", "macro"]
+        .into_iter()
+        .map(|analyst| (analyst, Vec::<ConvictionTrajectoryPoint>::new()))
+        .collect::<Vec<_>>();
+
+    for entry in history.iter().rev() {
+        if parse_history_timestamp(&entry.recorded_at).is_some_and(|ts| ts < cutoff) {
+            continue;
+        }
+        let Some((_, series)) = layers
+            .iter_mut()
+            .find(|(analyst, _)| entry.analyst.trim().eq_ignore_ascii_case(analyst))
+        else {
+            continue;
+        };
+        series.push(ConvictionTrajectoryPoint(
+            trajectory_point_label(&entry.recorded_at),
+            entry.conviction,
+        ));
+    }
+
+    let layer_series = layers
+        .into_iter()
+        .filter_map(|(analyst, series)| {
+            if series.is_empty() {
+                None
+            } else {
+                Some(ConvictionLayerSeries {
+                    layer: trajectory_layer_label(analyst).to_string(),
+                    series,
+                })
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if layer_series.is_empty() {
+        bail!(
+            "no analyst view history found for '{}' in the last {}d",
+            parsed.asset,
+            parsed.window_days
+        );
+    }
+
+    Ok(ConvictionTrajectoryInput {
+        symbol: parsed.asset,
+        layer_series,
+        width: None,
+        height: None,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ConvictionTrajectoryDbQuery {
+    asset: String,
+    window_days: i64,
+}
+
+fn parse_conviction_trajectory_db_query(query: &str) -> Result<ConvictionTrajectoryDbQuery> {
+    let mut parts = query.split_whitespace();
+    let asset = parts
+        .next()
+        .map(str::trim)
+        .filter(|asset| !asset.is_empty())
+        .context("conviction-trajectory --from-db expects an asset symbol")?
+        .to_ascii_uppercase();
+    let mut window_days = 30_i64;
+
+    while let Some(part) = parts.next() {
+        let part = part.trim();
+        let value = if matches!(part, "window" | "--window") {
+            parts
+                .next()
+                .context("conviction-trajectory --from-db window requires a value like 30d")?
+        } else if let Some(value) = part.strip_prefix("window=") {
+            value
+        } else if let Some(value) = part.strip_prefix("--window=") {
+            value
+        } else {
+            part
+        };
+        window_days = parse_window_days(value).with_context(|| {
+            format!(
+                "invalid conviction-trajectory window '{}'; use a value like 30d",
+                value
+            )
+        })?;
+    }
+
+    Ok(ConvictionTrajectoryDbQuery { asset, window_days })
+}
+
+fn parse_window_days(value: &str) -> Result<i64> {
+    let normalized = value.trim().to_ascii_lowercase();
+    let days = normalized
+        .strip_suffix("days")
+        .or_else(|| normalized.strip_suffix("day"))
+        .or_else(|| normalized.strip_suffix('d'))
+        .unwrap_or(&normalized);
+    let parsed = days.parse::<i64>()?;
+    if parsed <= 0 {
+        bail!("window must be positive");
+    }
+    Ok(parsed)
+}
+
+fn trajectory_layer_label(analyst: &str) -> &'static str {
+    match analyst {
+        "low" => "LOW",
+        "medium" => "MED",
+        "high" => "HIGH",
+        "macro" => "MACRO",
+        _ => "OTHER",
+    }
+}
+
+fn trajectory_point_label(recorded_at: &str) -> String {
+    parse_history_timestamp(recorded_at)
+        .map(|ts| ts.date().format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| recorded_at.to_string())
+}
+
 fn portfolio_positions_backend(
     backend: &BackendConnection,
     config: &Config,
@@ -578,6 +716,16 @@ fn parse_history_timestamp(raw: &str) -> Option<NaiveDateTime> {
     DateTime::parse_from_rfc3339(raw)
         .map(|dt| dt.naive_utc())
         .ok()
+        .or_else(|| {
+            DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f%#z")
+                .map(|dt| dt.naive_utc())
+                .ok()
+        })
+        .or_else(|| {
+            DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%#z")
+                .map(|dt| dt.naive_utc())
+                .ok()
+        })
         .or_else(|| NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S").ok())
         .or_else(|| NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f").ok())
         .or_else(|| {
@@ -891,6 +1039,84 @@ mod tests {
         assert_eq!(input.rows[0].medium, Some(2));
         assert_eq!(input.rows[0].high, Some(4));
         assert_eq!(input.rows[0].macro_score, Some(3));
+    }
+
+    #[test]
+    fn report_conviction_trajectory_uses_synthetic_analyst_view_history() {
+        let backend = backend();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "low",
+            "BTC",
+            "bull",
+            1,
+            "Initial near-term view",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "low",
+            "BTC",
+            "bull",
+            3,
+            "Near-term improving",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        analyst_views::upsert_view_backend(
+            &backend,
+            "medium",
+            "BTC",
+            "bear",
+            -2,
+            "Medium-term caution",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let input =
+            conviction_trajectory_from_analyst_view_history_backend(&backend, "btc 30d").unwrap();
+
+        assert_eq!(input.symbol, "BTC");
+        assert_eq!(input.layer_series.len(), 2);
+        assert_eq!(input.layer_series[0].layer, "LOW");
+        assert_eq!(input.layer_series[0].series.len(), 2);
+        assert_eq!(input.layer_series[0].series[0].1, 1);
+        assert_eq!(input.layer_series[0].series[1].1, 3);
+        assert_eq!(input.layer_series[1].layer, "MED");
+        assert_eq!(input.layer_series[1].series[0].1, -2);
+    }
+
+    #[test]
+    fn parse_conviction_trajectory_db_query_accepts_window_forms() {
+        assert_eq!(
+            parse_conviction_trajectory_db_query("btc").unwrap(),
+            ConvictionTrajectoryDbQuery {
+                asset: "BTC".to_string(),
+                window_days: 30
+            }
+        );
+        assert_eq!(
+            parse_conviction_trajectory_db_query("Gold --window 14d").unwrap(),
+            ConvictionTrajectoryDbQuery {
+                asset: "GOLD".to_string(),
+                window_days: 14
+            }
+        );
+        assert_eq!(
+            parse_conviction_trajectory_db_query("ETH window=7days").unwrap(),
+            ConvictionTrajectoryDbQuery {
+                asset: "ETH".to_string(),
+                window_days: 7
+            }
+        );
     }
 
     #[test]

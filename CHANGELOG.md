@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — feat: port report conviction trajectory
+
+- What: Added the native `conviction-trajectory` report chart with Python-parity SVG output, ASCII/PNG support, JSON input mode, DB input from `analyst_view_history`, CLI docs, and registry wiring.
+- Why: Daily reports can now render per-asset analyst conviction sparklines directly from pftui instead of the Python `conviction_trajectory` helper.
+
 ### 2026-05-29 — feat: port report regime quadrant
 
 - What: Added the native `regime-quadrant` report chart with Python-parity SVG output, ASCII/PNG support, JSON input mode, CLI docs, and registry wiring.

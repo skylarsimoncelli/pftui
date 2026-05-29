@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::charts::conviction_grid::{self, ConvictionGridInput};
+use super::charts::conviction_trajectory::{self, ConvictionTrajectoryInput};
 use super::charts::decision_card::{self, DecisionCardInput};
 use super::charts::drift_bar::{self, DriftBarInput};
 use super::charts::factor_exposure::{self, FactorExposureInput};
@@ -27,6 +28,7 @@ pub enum ChartKind {
     MismatchCard,
     DecisionCard,
     RegimeQuadrant,
+    ConvictionTrajectory,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -69,6 +71,8 @@ pub enum ChartInput {
     DecisionCard(DecisionCardInput),
     #[serde(rename = "regime-quadrant")]
     RegimeQuadrant(RegimeQuadrantInput),
+    #[serde(rename = "conviction-trajectory")]
+    ConvictionTrajectory(ConvictionTrajectoryInput),
 }
 
 pub const CHARTS: &[ChartDefinition] = &[
@@ -127,6 +131,11 @@ pub const CHARTS: &[ChartDefinition] = &[
         description: "Growth-vs-inflation macro regime quadrant",
         formats: &["svg", "png", "ascii"],
     },
+    ChartDefinition {
+        name: "conviction-trajectory",
+        description: "Per-asset analyst conviction sparkline",
+        formats: &["svg", "png", "ascii"],
+    },
 ];
 
 pub fn kind_from_name(name: &str) -> Result<ChartKind> {
@@ -160,6 +169,11 @@ pub fn kind_from_name(name: &str) -> Result<ChartKind> {
         "regime-quadrant" | "regime_quadrant" | "regime" | "macro-regime" | "quadrant" => {
             Ok(ChartKind::RegimeQuadrant)
         }
+        "conviction-trajectory"
+        | "conviction_trajectory"
+        | "trajectory"
+        | "conviction-sparkline"
+        | "sparkline" => Ok(ChartKind::ConvictionTrajectory),
         other => bail!(
             "unknown report chart '{}'. Available charts: {}",
             other,
@@ -193,6 +207,9 @@ pub fn parse_input(kind: ChartKind, value: Value) -> Result<ChartInput> {
         ChartKind::RegimeQuadrant => {
             ChartInput::RegimeQuadrant(RegimeQuadrantInput::from_value(value)?)
         }
+        ChartKind::ConvictionTrajectory => {
+            ChartInput::ConvictionTrajectory(ConvictionTrajectoryInput::from_value(value)?)
+        }
     })
 }
 
@@ -215,6 +232,7 @@ pub fn render_svg(input: &ChartInput) -> Result<String> {
             bail!("decision-card is HTML-native; use --format html or --format ascii")
         }
         ChartInput::RegimeQuadrant(input) => Ok(regime_quadrant::render_svg(input)),
+        ChartInput::ConvictionTrajectory(input) => Ok(conviction_trajectory::render_svg(input)),
     }
 }
 
@@ -244,6 +262,7 @@ pub fn render_ascii(input: &ChartInput) -> String {
         ChartInput::MismatchCard(input) => mismatch_card::render_ascii(input),
         ChartInput::DecisionCard(input) => decision_card::render_ascii(input),
         ChartInput::RegimeQuadrant(input) => regime_quadrant::render_ascii(input),
+        ChartInput::ConvictionTrajectory(input) => conviction_trajectory::render_ascii(input),
     }
 }
 
@@ -260,6 +279,7 @@ pub fn chart_name(input: &ChartInput) -> &'static str {
         ChartInput::MismatchCard(_) => "mismatch-card",
         ChartInput::DecisionCard(_) => "decision-card",
         ChartInput::RegimeQuadrant(_) => "regime-quadrant",
+        ChartInput::ConvictionTrajectory(_) => "conviction-trajectory",
     }
 }
 
@@ -276,6 +296,7 @@ pub fn supported_formats(input: &ChartInput) -> &'static [&'static str] {
         ChartInput::MismatchCard(_) => &["html", "ascii"],
         ChartInput::DecisionCard(_) => &["html", "ascii"],
         ChartInput::RegimeQuadrant(_) => &["svg", "png", "ascii"],
+        ChartInput::ConvictionTrajectory(_) => &["svg", "png", "ascii"],
     }
 }
 
@@ -334,6 +355,10 @@ mod tests {
         assert_eq!(
             kind_from_name("regime_quadrant").unwrap(),
             ChartKind::RegimeQuadrant
+        );
+        assert_eq!(
+            kind_from_name("conviction_trajectory").unwrap(),
+            ChartKind::ConvictionTrajectory
         );
     }
 }
