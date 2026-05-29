@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-28 — feat: port report conviction grid
+
+- What: Added the native `conviction-grid` report chart with Python-parity SVG output, ASCII/PNG support, JSON input mode, and DB input from current `analyst_views`.
+- Why: Daily reports can now render multi-timeframe analyst convergence grids directly from pftui instead of the Python `conviction_grid` helper.
+
 ### 2026-05-28 — feat: port report factor exposure
 
 - What: Added the native `factor-exposure` report chart with Python-parity SVG output, ASCII/PNG support, JSON input mode, and agent docs.

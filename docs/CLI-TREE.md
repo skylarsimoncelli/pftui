@@ -143,7 +143,8 @@ pftui
 │       ├── what-changed-strip
 │       ├── open-predictions-table
 │       ├── outlook-arrows
-│       └── factor-exposure
+│       ├── factor-exposure
+│       └── conviction-grid
 └── system
     ├── config
     ├── db-info

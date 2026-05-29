@@ -1,3 +1,4 @@
+pub mod conviction_grid;
 pub mod drift_bar;
 pub mod factor_exposure;
 pub mod open_predictions_table;
