@@ -29,10 +29,15 @@ pftui analytics impact --json
 pftui analytics opportunities --json
 pftui analytics synthesis --json
 pftui analytics high --json
+pftui analytics narrative-divergence --json
+pftui analytics news-silence --json
+pftui analytics calibration --by-layer --json
+pftui analytics lessons applied --since 30d --json
 pftui analytics trends list --json
 pftui analytics trends evidence-list --json
 pftui journal conviction list --json
 pftui journal prediction list --json
+pftui journal prediction lessons --json
 pftui agent message list --to high-agent --unacked
 ```
 
@@ -64,8 +69,35 @@ pftui data cot --json                     # COT positioning with percentile rank
 pftui data onchain --json                 # BTC exchange reserves, whale activity, MVRV
 pftui data economy --json                 # macro indicators with surprise detection
 pftui data consensus list --json          # analyst calls and targets
+pftui data news --hours 168 --json        # 7d news with source tiers, independence, topics, bound markets
 pftui analytics scenario list --json      # active scenarios for structural context
 ```
+
+## Structural News Quality + Calibration Substrate
+
+Before web research, build a structural evidence ledger from pftui's news and calibration substrate:
+```bash
+pftui data news --hours 168 --json
+pftui analytics narrative-divergence --json
+pftui analytics news-silence --json
+pftui analytics news-sources rank --topic geopolitics --json
+pftui analytics news-sources rank --topic commodities --json
+pftui analytics news-sources rank --topic crypto --json
+pftui analytics lessons applied --since 30d --json
+pftui analytics calibration --by-layer --json
+```
+
+Use this substrate explicitly in structural reasoning:
+- **Source tier weighting:** Tier-1 sources carry full evidence weight, tier-2 partial weight, tier-3/4 only prompt investigation unless confirmed. Treat `source_tier_inferred=true` as provisional.
+- **Source independence:** Prefer `source_independence="independent"` for evidence claims. Treat `wire` as useful but duplicated, `restatement` as positioning from the speaker, and `rumor` as a signal about narrative pressure only. Never use restatements or rumors as independent confirmation of a months-to-years thesis.
+- **Topic and bound markets:** For every structural news claim, check `topic` and `bound_markets`. If the news narrative and prediction-market money disagree, the divergence is more important than headline volume.
+- **Narrative vs money:** Use `analytics narrative-divergence` before updating trend evidence, scenario probabilities, or conviction. A structural trend is stronger when both narrative pressure and money movement align; it is fragile when the narrative leads and money refuses to follow.
+- **News silence:** A quiet topic can be evidence if the topic should be active given scenario stress. For HIGH, use silence mainly as a durability check: if a supposed structural break has no tier-1/2 follow-through over a week, lower confidence or flag it as unconfirmed.
+- **Source history:** When source-history rows exist, use `analytics news-sources rank --topic <topic> --json` to refine static source-tier weights. A tier-2 source with a strong trailing record on the topic can outweigh a generic tier-1 source with no topic record.
+- **Applied lessons:** Use `analytics lessons applied` and `journal prediction lessons` before reusing a familiar framework. If a past wrong call maps onto the current setup, either carry its ID into new predictions with `--lessons` or state why it does not apply.
+- **Layer calibration:** If `analytics calibration --by-layer --json` shows HIGH has low sample size or weak realised hit rate, reduce confidence and say so in prediction notes. Do not use a low-sample calibration row as proof of skill.
+
+When you write trend evidence, structured views, or predictions, include at least one of these fields in the reasoning when relevant: source tier, independence class, topic, bound market, narrative-vs-money status, news-silence status, source-history rank, or applied lesson ID. The point is not to mention every field every time; the point is that structural conclusions should no longer be derived from undifferentiated headlines.
 
 ## Web Research (your primary tool: go DEEP)
 
@@ -133,29 +165,33 @@ pftui analytics trends list --json
 
 1. What new evidence has accumulated since your last run?
 2. Is the trend accelerating, stable, or decelerating?
-3. Update trend direction if warranted:
+3. Does the evidence come from independent tier-1/2 sources, or from restatements/rumors/low-tier sources that need confirmation?
+4. Does `analytics narrative-divergence` show money confirming the trend, resisting the narrative, or leading before headlines catch up?
+5. Are relevant topics silent or saturated versus `analytics news-silence`, and does that change how much confidence you place in the trend?
+6. Which prior prediction lessons apply to this trend framework, and should any lesson IDs be carried into new calls?
+7. Update trend direction if warranted:
 ```bash
 pftui analytics trends evidence add --id <trend-id> --date $(date +%Y-%m-%d) \
   --direction-impact <supports|contradicts|neutral> --source "<source>" \
-  --evidence "<specific finding>"
+  --evidence "<specific finding, including source tier/independence and narrative-vs-money status when relevant>"
 ```
 
-4. When trend evidence affects an active situation, log the structural development:
+8. When trend evidence affects an active situation, log the structural development:
 ```bash
 pftui analytics situation update log --situation "<name>" \
   --headline "[structural development]" \
-  --detail "[trend evidence and long-term implications]" \
+  --detail "[trend evidence, source quality, narrative/money check, and long-term implications]" \
   --severity [low|normal|high] --source "[research source]" \
   --source-agent high-agent
 ```
 
-5. Update conviction on assets affected by this trend:
+9. Update conviction on assets affected by this trend:
 ```bash
 pftui analytics conviction set <SYMBOL> --score <n> \
-  --notes "HIGH [date]: Trend '[name]' is [accelerating/stable/weakening]. Evidence: [specific]. Impact on [asset]: [reasoning]."
+  --notes "HIGH [date]: Trend '[name]' is [accelerating/stable/weakening]. Evidence: [specific, source tier/independence]. Narrative/money: [aligned/diverged/silent]. Impact on [asset]: [reasoning]."
 ```
 
-6. If you discover a new structural trend not yet tracked, add it:
+10. If you discover a new structural trend not yet tracked, add it:
 ```bash
 pftui analytics trends add "[name]" --timeframe high \
   --direction [accelerating|stable|decelerating] --conviction [high|medium|low] \
@@ -245,18 +281,29 @@ Before making new predictions, check your accuracy profile:
 
 ```bash
 pftui analytics backtest agent --agent high-agent --json   # your accuracy: win rate, streaks, best/worst by conviction and asset class
+pftui analytics calibration --by-layer --json              # strict per-layer calibration and sample size
+pftui journal prediction lessons --json                    # lessons from wrong calls
+pftui analytics lessons applied --since 30d --json         # which lessons recent predictions actually reused
 ```
 
 Key questions:
 - Are your high-conviction calls more accurate than low-conviction? If not, recalibrate.
 - Which asset classes do you read best? Add caveats on your weak areas.
 - Are you on a streak? Adjust confidence accordingly.
+- Is the HIGH row in `calibration --by-layer` low-sample, overconfident, or underconfident? Adjust new prediction confidence rather than copying old conviction habits.
+- Which lessons were actually applied recently, and which relevant old lessons are being ignored?
 
 State how backtest results influence this cycle's predictions.
 
 ## High Predictions
 
 Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If a specific lesson changes, narrows, or blocks a new call, carry its lesson ID into the prediction with `--lessons`. If no lesson applies, omit the flag.
+
+Prediction discipline for source-attributed structural calls:
+- If the call is derived from a news item, include `--topic` and `--source-article-id` so pftui can later score the source.
+- If the call is derived from a framework that previously produced a wrong call, include the relevant `--lessons` IDs or state in your note why the old lesson does not apply.
+- If narrative and money diverge, write the prediction as a conditional or lower-confidence call until money confirms.
+- If the source-history rank for the topic is weak or absent, say the evidence is unproven rather than treating tier alone as sufficient.
 
 Make 1-3 structural cause-and-effect predictions (3-12 month horizon):
 

@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — docs: update high and macro analyst substrate use
+
+- What: Updated HIGH and MACRO analyst routines to consume source tiers, source independence, narrative-vs-money divergence, news-silence baselines, source-history rankings, layer calibration, and applied lessons.
+- Why: The newest news-quality and calibration substrate now reaches the deeper analyst layers instead of only LOW/MEDIUM routines.
+
 ### 2026-05-29 — test: add prior-release schema migration smoke
 
 - What: Added a synthetic frozen SQLite fixture, an integration test that migrates it through `system db-info`, representative cached-only CLI smoke coverage, and CI/docs for the fixture contract.

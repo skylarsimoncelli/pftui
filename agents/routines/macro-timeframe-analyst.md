@@ -36,11 +36,17 @@ pftui analytics macro cycles history list --json   # historical power metrics (D
 pftui analytics macro outcomes --json
 pftui analytics macro parallels --json
 pftui analytics macro log --limit 10 --json
+pftui analytics narrative-divergence --json
+pftui analytics news-silence --json
+pftui analytics calibration --by-layer --json
+pftui analytics lessons applied --since 90d --json
 pftui analytics high --json
 pftui journal prediction list --json
+pftui journal prediction lessons --json
 pftui data sovereign --json                        # CB gold reserves, govt BTC holdings
 pftui data economy --json                          # macro indicators with surprise detection
 pftui data cot --json                              # COT positioning extremes (structural signal)
+pftui data news --hours 168 --json                 # 7d news with source tiers, independence, topics, bound markets
 ```
 
 For each active situation, review indicator status and recent updates from other agents:
@@ -52,6 +58,32 @@ pftui analytics situation update list --situation "<name>" --limit 5 --json
 Use `situation` and `synthesis` to see how structural context is already flowing into the live stack before updating the deepest layer.
 
 Read STRUCTURAL.md for qualitative framework context.
+
+## Macro News Quality + Negative-Space Substrate
+
+Before updating any multi-year thesis, read the news-quality and calibration substrate:
+```bash
+pftui data news --hours 168 --json
+pftui analytics narrative-divergence --json
+pftui analytics news-silence --json
+pftui analytics news-sources rank --topic geopolitics --json
+pftui analytics news-sources rank --topic inflation --json
+pftui analytics news-sources rank --topic commodities --json
+pftui analytics news-sources rank --topic crypto --json
+pftui analytics calibration --by-layer --json
+pftui analytics lessons applied --since 90d --json
+pftui journal prediction lessons --json
+```
+
+Use this substrate differently from LOW/MEDIUM/HIGH:
+- **Source tier and independence:** MACRO claims require independent confirmation. Tier-1/2 independent reporting can support a thesis; wires can confirm event timing; restatements reveal institutional positioning; rumors only measure narrative pressure. Never let a restatement or rumor move a multi-year thesis by itself.
+- **Source-history weighting:** For geopolitical, inflation, commodities, and crypto claims, check `analytics news-sources rank --topic <topic> --json` when source-history rows exist. A source with topic-specific accuracy deserves more weight than a prestigious but generic source making an out-of-domain claim.
+- **Negative space:** MACRO cares most about what should be visible but is not. Use `analytics news-silence` to identify topics that are unusually quiet despite scenario stress, policy deadlines, war-risk escalation, reserve-currency stress, or commodity-market strain. Treat silence as evidence only when you can name why the topic should have tier-1/2 coverage.
+- **Narrative vs money:** Use `analytics narrative-divergence` before changing macro outcome probabilities or Dalio/Fourth Turning stage assessments. Multi-year theses strengthen when narrative pressure, prediction-market pricing, capital flows, and structural data all align; they weaken when headlines intensify while money refuses to move.
+- **Applied lessons:** Before reusing a familiar empire-cycle, de-dollarisation, Fourth Turning, or Bitcoin-capture framework, check `journal prediction lessons` and `analytics lessons applied`. If a prior wrong macro/high call maps to the current setup, carry that lesson ID into new predictions with `--lessons` or explicitly explain why the analogy breaks.
+- **Layer calibration:** MACRO has slow feedback and often low sample size. Use `analytics calibration --by-layer --json` to state sample-size limits, not to claim precision. If MACRO has no recent scored calls, write lower confidence and add shorter checkpoint predictions where possible.
+
+When the output digest mentions a structural development, include the evidence class: independent tier-1/2 confirmation, source-history support, narrative-vs-money alignment/divergence, or negative-space signal. This prevents the MACRO layer from turning headline volume into thesis drift.
 
 ## Step 0: Historical Context (do first)
 
@@ -110,6 +142,8 @@ Key questions every run:
 - Is the gap widening or closing? At what rate?
 - Which determinant has the fastest gap closure? That's the leading indicator.
 - What stage of Dalio's 6 stages is the US in? (Rise → Top → Decline → each with substages)
+- Do news-quality and source-history checks confirm the determinant shift, or is it mostly official restatement/narrative pressure?
+- Is a relevant topic silent despite a claimed determinant shift? If so, treat the change as provisional unless hard data confirms it.
 
 ### 1c. Update Cycle Stage
 
@@ -142,6 +176,8 @@ Every run, assess:
 - What are the crisis arc markers? (institutional legitimacy, generational power transfer, external conflict, internal polarization, fiscal stress)
 - Is the arc accelerating or decelerating?
 - What does the resolution pattern look like historically?
+- Are tier-1/2 independent sources confirming the phase markers, or are they mostly restatements and rumors?
+- Does `analytics news-silence` show missing coverage in a topic that should be loud at this phase?
 
 Update the cycle:
 ```bash
@@ -217,7 +253,7 @@ Include national-transnational power synthesis in the weekly macro output to the
 Update outcome probabilities based on both lenses:
 ```bash
 pftui analytics macro outcomes update "[name]" --probability [X] \
-  --notes "[Which lens provided the evidence. What shifted and why.]"
+  --notes "[Which lens provided the evidence. Source quality. Narrative/money status. What shifted and why.]"
 ```
 
 ## Weekly Log
@@ -291,6 +327,8 @@ Before making new predictions, run the backtest suite to understand your track r
 pftui analytics backtest agent --agent macro-agent --json   # your personal accuracy profile
 pftui analytics backtest report --json                       # system-wide accuracy by conviction, timeframe, asset class, agent
 pftui journal prediction lessons --json                      # structured lessons from past misses
+pftui analytics calibration --by-layer --json                # strict layer calibration with sample size
+pftui analytics lessons applied --since 90d --json           # whether recent calls reused relevant lessons
 ```
 
 Analyze your backtest profile:
@@ -299,12 +337,21 @@ Analyze your backtest profile:
 - **Streaks:** Are you on a losing streak? If so, reduce conviction on new predictions until the streak breaks. On a winning streak? Don't let it breed overconfidence — check if you're in a regime that flatters your framework.
 - **Best/worst trades:** What was your best call? What made it work? What was your worst? What structural signal did you miss?
 - **Cross-agent comparison:** How do you rank vs LOW/MEDIUM/HIGH agents? The system-wide report shows which timeframe is most reliable — if macro is lagging, identify why.
+- **Sample-size honesty:** If MACRO has few scored predictions, do not infer precision. Prefer lower-confidence thesis statements plus checkpoint predictions that can resolve sooner.
+- **Lesson reuse:** Which old macro/high miss maps onto this setup? Did recent predictions carry that lesson ID, or is the framework drifting back into an old error?
 
 Use these insights to calibrate this cycle's predictions. State explicitly: "My backtest shows [X pattern], so this cycle I am [adjusting Y]."
 
 ## Predictions
 
 Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If a specific lesson changes, narrows, or blocks a new call, carry its lesson ID into the prediction with `--lessons`. If no lesson applies, omit the flag.
+
+Prediction discipline for macro calls:
+- If a prediction is derived from a specific news item, include `--topic` and `--source-article-id` so source accuracy can be scored later.
+- If the call is framework-derived, include `--lessons` when prior wrong-call lessons apply.
+- If the evidence is mostly narrative pressure, official restatement, or rumor, either avoid the prediction or frame it as conditional with lower confidence.
+- If the thesis depends on silence, state why the topic should be covered and what future coverage would falsify the negative-space signal.
+- Where possible, pair long-horizon macro calls with shorter checkpoint predictions so the MACRO layer can accumulate calibration feedback.
 
 Make 1-2 MACRO predictions (6-24 month horizon) grounded in the frameworks:
 
@@ -322,6 +369,9 @@ Score any MACRO predictions that accumulated enough evidence. For macro predicti
 pftui agent message send "MACRO LAYER [date]: Dalio composite US [X.XX] (Δ[change]) vs China [X.XX] (gap [X.XX], [widening/closing]). Fastest closing determinant: [X]. Big Cycle stage: [stage]. Fourth Turning phase: [phase], arc [accelerating/stable/decelerating]. Key development: [what changed]. Parallel strengthening: [which]. Constraint on lower timeframes: [how macro picture limits daily/weekly analysis]." \
   --from macro-agent --to evening-analyst --priority normal --category feedback --layer macro
 ```
+
+In the message, include one compact evidence-quality sentence when relevant:
+`Evidence quality: [tier/independence/source-history]. Narrative/money: [aligned/diverged]. News silence: [topic silent/saturated/normal and why it matters]. Lessons: [ids used or none].`
 
 ## Rules
 
