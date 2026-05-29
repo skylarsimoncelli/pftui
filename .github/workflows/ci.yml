@@ -39,6 +39,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Prior-release schema migration smoke
+        run: cargo test --test prior_release_schema
+
       - name: Test
         run: cargo test
 

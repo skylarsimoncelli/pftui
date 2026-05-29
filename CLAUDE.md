@@ -134,6 +134,12 @@ Summary classifications: `insufficient-views`, `divergent`, `neutral-with-diverg
 - **Vim-native keybindings** — follow vim conventions: j/k navigate, gg/G jump, / search, Esc cancel
 - **`--json` on every CLI command** — agents need structured output
 
+## Schema Migration Contract
+
+- Prior-release SQLite compatibility is guarded by `cargo test --test prior_release_schema`.
+- Any PR adding an `ALTER TABLE` migration must check whether `tests/fixtures/db/v0.27.0.sqlite` needs an old-state table/column shape update.
+- Use only synthetic/demo data in schema fixtures. Never copy from a real local portfolio DB.
+
 ## Architecture Quick Reference
 
 **Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full file map with line ranges.**
