@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — docs: surface news-quality metadata in report command
+
+- What: Updated the local `/pftui-report` command to collect narrative-vs-money and news-silence analytics, require source-tier/source-independence metadata next to news bullets, add a Narrative vs Money scenario column, and document source-tier weighting in report methodology.
+- Why: News-quality substrate now reaches the generated daily report instead of remaining hidden in CLI-only analytics.
+
 ### 2026-05-29 — feat: add calibration reliability report chart
 
 - What: Added the native `calibration-reliability` report chart with SVG/PNG/ASCII output, JSON input from `analytics calibration --by-layer`, DB input from scored `user_predictions`, CLI docs, routine wiring, and golden coverage.
