@@ -90,6 +90,7 @@ pub mod scan;
 pub mod scenario;
 pub mod scenario_detect;
 pub mod scenario_suggest;
+pub mod schema;
 pub mod search;
 pub mod sector;
 pub mod sentiment;

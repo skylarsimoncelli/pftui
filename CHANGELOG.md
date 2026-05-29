@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-29 — feat: add schema verify and repair commands
+
+- What: Added `pftui system schema verify` and `repair` for SQLite drift checks, safe missing-table/column/index repair plans, and friendlier migration errors when startup hits a missing column.
+- Why: Schema drift should produce an actionable diagnosis and recovery path instead of an opaque SQLite error.
+
 ### 2026-05-29 — docs: audit post-review TODO completions
 
 - What: Added the PR #739 completion audit, removed the stale `portfolio set-cash` safety follow-up, and filed a focused calibration visualization follow-up.

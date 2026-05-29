@@ -1753,6 +1753,11 @@ pub enum SystemCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Verify or repair SQLite schema drift before normal startup migrations run
+    Schema {
+        #[command(subcommand)]
+        command: SchemaCommand,
+    },
     /// Run system diagnostics: test DB connection, API endpoints, and cache freshness
     Doctor {
         /// Output as JSON
@@ -1859,6 +1864,28 @@ pub enum SystemCommand {
         default_status: String,
 
         /// Output summary as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SchemaCommand {
+    /// Verify the database schema against a freshly migrated pftui schema
+    Verify {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Repair safe missing-table, missing-column, and missing-index drift
+    Repair {
+        /// Show planned SQL without mutating the database
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the planned schema repair statements
+        #[arg(long)]
+        confirm: bool,
+        /// Output as JSON
         #[arg(long)]
         json: bool,
     },
@@ -11887,6 +11914,53 @@ mod tests {
         assert_eq!(from.as_deref(), Some("2026-04-06"));
         assert_eq!(agent_filter.as_deref(), Some("low-agent"));
         assert_eq!(limit, Some(5));
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_system_schema_verify_json() -> Result<()> {
+        let cli = Cli::parse_from(["pftui", "system", "schema", "verify", "--json"]);
+        let Some(Command::System { command }) = cli.command else {
+            panic!("expected system");
+        };
+        let SystemCommand::Schema { command } = command else {
+            panic!("expected schema");
+        };
+        let SchemaCommand::Verify { json } = command else {
+            panic!("expected verify");
+        };
+        assert!(json);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_system_schema_repair_flags() -> Result<()> {
+        let cli = Cli::parse_from([
+            "pftui",
+            "system",
+            "schema",
+            "repair",
+            "--dry-run",
+            "--confirm",
+            "--json",
+        ]);
+        let Some(Command::System { command }) = cli.command else {
+            panic!("expected system");
+        };
+        let SystemCommand::Schema { command } = command else {
+            panic!("expected schema");
+        };
+        let SchemaCommand::Repair {
+            dry_run,
+            confirm,
+            json,
+        } = command
+        else {
+            panic!("expected repair");
+        };
+        assert!(dry_run);
+        assert!(confirm);
         assert!(json);
         Ok(())
     }

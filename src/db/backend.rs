@@ -88,6 +88,7 @@ pub fn open_from_config(config: &Config, sqlite_path: &Path) -> Result<BackendCo
             .context("Failed to connect to PostgreSQL using database_url")?;
             if !config.effective_postgres_read_only() {
                 crate::db::postgres_schema::run_migrations(&pool)
+                    .map_err(crate::db::error::with_schema_repair_hint)
                     .context("Failed to run PostgreSQL schema migrations")?;
             }
             let _ = sqlite_path; // retained for signature parity/callsites

@@ -139,6 +139,7 @@ Summary classifications: `insufficient-views`, `divergent`, `neutral-with-diverg
 - Prior-release SQLite compatibility is guarded by `cargo test --test prior_release_schema`.
 - Any PR adding an `ALTER TABLE` migration must check whether `tests/fixtures/db/v0.27.0.sqlite` needs an old-state table/column shape update.
 - Use only synthetic/demo data in schema fixtures. Never copy from a real local portfolio DB.
+- If startup reports a missing-column schema error, run `pftui system schema verify`, then `pftui system schema repair --dry-run`, then `pftui system schema repair --confirm` after reviewing the plan. The schema command opens SQLite before normal migrations so it can diagnose drift that would otherwise be auto-mutated or fail during startup.
 
 ## Architecture Quick Reference
 

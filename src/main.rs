@@ -21,7 +21,7 @@ use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser};
 
 use crate::cli::{Cli, Command};
-use crate::config::load_config_with_first_run_prompt;
+use crate::config::{load_config_with_first_run_prompt, DatabaseBackend};
 use crate::db::backend::open_from_config;
 use crate::db::default_db_path;
 
@@ -990,6 +990,25 @@ fn run_cli(cli: Cli) -> Result<()> {
         return commands::mirror::run(&config, &db_path, command);
     }
 
+    if let Some(Command::System {
+        command: cli::SystemCommand::Schema { ref command },
+    }) = cli.command
+    {
+        if config.database_backend != DatabaseBackend::Sqlite {
+            bail!("`pftui system schema` currently supports the SQLite backend only");
+        }
+        return match command {
+            cli::SchemaCommand::Verify { json } => {
+                commands::schema::run_verify_sqlite(&db_path, *json)
+            }
+            cli::SchemaCommand::Repair {
+                dry_run,
+                confirm,
+                json,
+            } => commands::schema::run_repair_sqlite(&db_path, *dry_run, *confirm, *json),
+        };
+    }
+
     let should_sync_mirror_on_startup = cli.command.is_none()
         || matches!(
             cli.command,
@@ -1378,6 +1397,9 @@ fn run_cli(cli: Cli) -> Result<()> {
             } => commands::config_cmd::run(&action, field.as_deref(), value.as_deref(), json),
             cli::SystemCommand::DbInfo { json } => {
                 commands::db_info::run(&backend, &db_path, config.database_url.as_deref(), json)
+            }
+            cli::SystemCommand::Schema { .. } => {
+                unreachable!("schema commands are handled before backend initialization")
             }
             cli::SystemCommand::Doctor { json } => {
                 let runtime = tokio::runtime::Runtime::new()?;

@@ -205,6 +205,9 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui system config list [--json]` | List all configuration fields |
 | `pftui system config get FIELD [--json]` | Get a specific config value |
 | `pftui system config set FIELD VALUE` | Set a config field (e.g., `brave_api_key`) |
+| `pftui system schema verify [--json]` | Check SQLite schema drift before startup migrations mutate the DB |
+| `pftui system schema repair --dry-run [--json]` | Preview safe missing-table/column/index repair SQL |
+| `pftui system schema repair --confirm [--json]` | Apply safe schema repairs after reviewing the dry-run plan |
 | `pftui system snapshot` | Render full TUI to stdout (for sharing or screenshots) |
 | `pftui system demo` | Launch with sample data (for testing, no real data) |
 | `pftui system daemon start [--interval N] [--json]` | Run the always-on daemon loop for refresh + analytics + alerts + cleanup |
