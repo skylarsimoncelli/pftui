@@ -70,6 +70,11 @@ cargo clippy                 # lint — no new warnings
 
 **Always run `cargo test` before committing.** All tests must pass. If you add or change logic, add or update tests. No commit should regress the test suite.
 
+CLI and routine documentation smoke coverage:
+- `cargo test --test cli_help_smoke` recursively invokes `--help` across the CLI tree. Any new command or subcommand must keep help rendering side-effect-free.
+- `cargo test --test analyst_routine_commands` parses fenced shell blocks in `agents/routines/*.md` and verifies literal `pftui` examples still parse. Run it locally after any routine doc change that touches CLI examples.
+- Routine examples are agent contracts. Prefer real, exposed command paths over aspirational syntax; if a workflow has no current CLI writer, document a current read or log command and file a TODO for the missing writer.
+
 ## Journal & Notes Authorship
 
 The `journal` and `daily_notes` tables both carry an `author TEXT NOT NULL DEFAULT 'system'` column. Every `pftui journal entry add` and `pftui journal notes add` invocation **must** pass `--author <name>` so writers can be filtered with SQL instead of grep-on-content. The corresponding `list` commands accept `--author <name>` as a filter.

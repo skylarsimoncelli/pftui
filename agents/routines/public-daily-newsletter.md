@@ -74,7 +74,7 @@ pftui data predictions --json
 pftui data etf-flows --json
 pftui data calendar --json
 pftui data onchain --json
-pftui analytics macro cycles list --json
+pftui analytics macro cycles current --json
 pftui analytics power-flow list --days 7 --json
 pftui analytics power-flow balance --json
 ```

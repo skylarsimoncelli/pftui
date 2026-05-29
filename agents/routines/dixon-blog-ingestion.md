@@ -105,8 +105,8 @@ Dixon often speaks in structural terms, not precise dates. Map as:
 pftui journal scenario list --json
 
 # Add signal to matching scenario
-pftui journal scenario signal "<scenario_name>" "<signal>" \
-  --direction <strengthens|weakens> \
+pftui journal scenario signal add "<signal>" \
+  --scenario "<scenario_name>" --status <strengthens|weakens> \
   --source "Dixon, <date>"
 ```
 
