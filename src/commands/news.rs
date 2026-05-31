@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use serde_json::json;
 
 use crate::config::Config;
@@ -256,6 +256,124 @@ pub fn run_sources_list(backend: &BackendConnection, json: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+pub fn run_sources_unclassified(
+    backend: &BackendConnection,
+    since: &str,
+    min_articles: i64,
+    json: bool,
+) -> Result<()> {
+    if min_articles <= 0 {
+        bail!("--min-articles must be positive");
+    }
+    let window_days = parse_source_window_days(since)?;
+    let domains = crate::db::news_cache::list_unclassified_news_sources_backend(
+        backend,
+        window_days,
+        min_articles,
+    )?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "window_days": window_days,
+                "min_articles": min_articles,
+                "domains": domains,
+            }))?
+        );
+    } else {
+        println!(
+            "Unclassified source domains over {}d (min articles: {})",
+            window_days, min_articles
+        );
+        println!(
+            "{:<36} {:>8} {:<20} {:<20}",
+            "Domain", "Articles", "First seen", "Last seen"
+        );
+        println!("{}", "-".repeat(90));
+        for domain in domains {
+            println!(
+                "{:<36} {:>8} {:<20} {:<20}",
+                domain.domain,
+                domain.article_count,
+                domain.first_seen_at.unwrap_or_default(),
+                domain.last_seen_at.unwrap_or_default()
+            );
+        }
+    }
+    Ok(())
+}
+
+pub fn run_sources_stats(backend: &BackendConnection, since: &str, json: bool) -> Result<()> {
+    let window_days = parse_source_window_days(since)?;
+    let stats = crate::db::news_cache::news_source_stats_backend(backend, window_days)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&json!({ "stats": stats }))?);
+    } else {
+        println!("News source stats over {}d", stats.window_days);
+        println!(
+            "Articles: {} | explicit: {} ({:.2}%) | inferred: {} ({:.2}%)",
+            stats.total_articles,
+            stats.explicit_articles,
+            stats.explicit_pct,
+            stats.inferred_articles,
+            stats.inferred_pct
+        );
+        println!();
+        println!("Top domains");
+        println!(
+            "{:<36} {:>8} {:<5} {:<9} {:<20}",
+            "Domain", "Articles", "Tier", "Inferred", "Last seen"
+        );
+        println!("{}", "-".repeat(88));
+        for domain in stats.top_domains {
+            println!(
+                "{:<36} {:>8} {:<5} {:<9} {:<20}",
+                domain.domain,
+                domain.article_count,
+                domain.source_tier,
+                domain.source_tier_inferred,
+                domain.last_seen_at.unwrap_or_default()
+            );
+        }
+        println!();
+        println!("Top unclassified");
+        println!(
+            "{:<36} {:>8} {:<20}",
+            "Domain", "Articles", "Last seen"
+        );
+        println!("{}", "-".repeat(68));
+        for domain in stats.top_unclassified {
+            println!(
+                "{:<36} {:>8} {:<20}",
+                domain.domain,
+                domain.article_count,
+                domain.last_seen_at.unwrap_or_default()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn parse_source_window_days(raw: &str) -> Result<i64> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(7);
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let value = lower
+        .strip_suffix("days")
+        .map(str::trim)
+        .or_else(|| lower.strip_suffix('d').map(str::trim))
+        .unwrap_or(&lower);
+    let days = value
+        .parse::<i64>()
+        .with_context(|| format!("invalid --since duration '{raw}'; expected a value like 7d"))?;
+    if days <= 0 {
+        bail!("--since must be a positive duration like 7d");
+    }
+    Ok(days)
 }
 
 pub fn run_sources_set(

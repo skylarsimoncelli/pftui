@@ -103,28 +103,145 @@ pub struct NewsSourceClassification {
     pub inferred: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct NewsSourceUnclassified {
+    pub domain: String,
+    pub article_count: i64,
+    pub first_seen_at: Option<String>,
+    pub last_seen_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct NewsSourceDomainStats {
+    pub domain: String,
+    pub article_count: i64,
+    pub source_tier: i64,
+    pub source_tier_inferred: bool,
+    pub first_seen_at: Option<String>,
+    pub last_seen_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct NewsSourceStats {
+    pub window_days: i64,
+    pub total_articles: i64,
+    pub explicit_articles: i64,
+    pub inferred_articles: i64,
+    pub explicit_pct: f64,
+    pub inferred_pct: f64,
+    pub top_domains: Vec<NewsSourceDomainStats>,
+    pub top_unclassified: Vec<NewsSourceUnclassified>,
+}
+
 const SOURCE_TIER_SEEDS: &[(&str, i64, &str)] = &[
     ("reuters.com", 1, "primary wire"),
+    ("uk.reuters.com", 1, "primary wire"),
+    ("www.reuters.com", 1, "primary wire"),
     ("bloomberg.com", 1, "primary wire"),
+    ("bnnbloomberg.ca", 1, "primary financial press"),
     ("apnews.com", 1, "primary wire"),
+    ("afp.com", 1, "primary wire"),
     ("ft.com", 1, "primary financial press"),
     ("wsj.com", 1, "primary financial press"),
+    ("barrons.com", 1, "primary financial press"),
+    ("morningstar.com", 1, "primary market data"),
+    ("spglobal.com", 1, "ratings and market data"),
+    ("fitchratings.com", 1, "ratings agency"),
+    ("moodys.com", 1, "ratings agency"),
+    ("bis.org", 1, "official institution"),
+    ("imf.org", 1, "official institution"),
+    ("worldbank.org", 1, "official institution"),
+    ("federalreserve.gov", 1, "official institution"),
+    ("ecb.europa.eu", 1, "official institution"),
+    ("bankofengland.co.uk", 1, "official institution"),
+    ("boj.or.jp", 1, "official institution"),
+    ("treasury.gov", 1, "official data"),
+    ("bea.gov", 1, "official data"),
+    ("bls.gov", 1, "official data"),
+    ("census.gov", 1, "official data"),
+    ("eia.gov", 1, "official data"),
+    ("cftc.gov", 1, "official data"),
+    ("sec.gov", 1, "official regulator"),
+    ("opec.org", 1, "official institution"),
+    ("iea.org", 1, "official institution"),
+    ("gold.org", 1, "industry data"),
+    ("lbma.org.uk", 1, "industry data"),
+    ("cmegroup.com", 1, "exchange data"),
+    ("nasdaq.com", 1, "exchange data"),
+    ("nyse.com", 1, "exchange data"),
     ("nytimes.com", 2, "major outlet"),
     ("cnbc.com", 2, "major outlet"),
     ("theguardian.com", 2, "major outlet"),
     ("economist.com", 2, "major outlet"),
+    ("bbc.com", 2, "major outlet"),
+    ("cnn.com", 2, "major outlet"),
+    ("npr.org", 2, "major outlet"),
+    ("axios.com", 2, "major outlet"),
+    ("politico.com", 2, "major outlet"),
+    ("washingtonpost.com", 2, "major outlet"),
+    ("latimes.com", 2, "major outlet"),
+    ("time.com", 2, "major outlet"),
+    ("fortune.com", 2, "business press"),
+    ("forbes.com", 2, "business press"),
+    ("businessinsider.com", 2, "business press"),
+    ("investopedia.com", 2, "financial education outlet"),
+    ("kiplinger.com", 2, "personal finance outlet"),
+    ("theinformation.com", 2, "business press"),
+    ("asia.nikkei.com", 2, "major outlet"),
+    ("scmp.com", 2, "major outlet"),
+    ("aljazeera.com", 2, "major outlet"),
+    ("dw.com", 2, "major outlet"),
+    ("france24.com", 2, "major outlet"),
+    ("rfi.fr", 2, "major outlet"),
     ("seekingalpha.com", 3, "aggregator"),
     ("marketwatch.com", 3, "aggregator"),
     ("finance.yahoo.com", 3, "aggregator"),
     ("yahoo.com", 3, "aggregator"),
+    ("investing.com", 3, "aggregator"),
+    ("benzinga.com", 3, "aggregator"),
+    ("zacks.com", 3, "aggregator"),
+    ("fool.com", 3, "aggregator"),
+    ("morningbrew.com", 3, "newsletter"),
+    ("oilprice.com", 3, "commodities outlet"),
+    ("kitco.com", 3, "commodities outlet"),
+    ("mining.com", 3, "commodities outlet"),
+    ("miningweekly.com", 3, "commodities outlet"),
+    ("metalsdaily.com", 3, "commodities outlet"),
     ("coindesk.com", 3, "crypto trade outlet"),
     ("cointelegraph.com", 3, "crypto trade outlet"),
     ("decrypt.co", 3, "crypto trade outlet"),
     ("theblock.co", 3, "crypto trade outlet"),
+    ("coinmarketcap.com", 3, "crypto data outlet"),
+    ("cryptoslate.com", 3, "crypto trade outlet"),
+    ("blockworks.co", 3, "crypto trade outlet"),
+    ("dlnews.com", 3, "crypto trade outlet"),
+    ("bitcoinmagazine.com", 3, "crypto trade outlet"),
+    ("ambcrypto.com", 3, "crypto trade outlet"),
+    ("coingape.com", 3, "crypto trade outlet"),
+    ("crypto.news", 3, "crypto trade outlet"),
+    ("forexlive.com", 3, "fx outlet"),
+    ("fxstreet.com", 3, "fx outlet"),
     ("zerohedge.com", 4, "blog/unverified"),
     ("substack.com", 4, "blog platform"),
     ("medium.com", 4, "blog platform"),
+    ("blogspot.com", 4, "blog platform"),
+    ("wordpress.com", 4, "blog platform"),
+    ("x.com", 4, "social platform"),
+    ("twitter.com", 4, "social platform"),
+    ("reddit.com", 4, "social platform"),
+    ("youtube.com", 4, "video platform"),
+    ("tiktok.com", 4, "social platform"),
+    ("facebook.com", 4, "social platform"),
+    ("linkedin.com", 4, "social platform"),
+    ("rumble.com", 4, "video platform"),
+    ("truthsocial.com", 4, "social platform"),
+    ("patreon.com", 4, "creator platform"),
+    ("mirror.xyz", 4, "web3 blog platform"),
 ];
+
+pub fn source_tier_seed_count() -> usize {
+    SOURCE_TIER_SEEDS.len()
+}
 
 fn strip_host_prefixes(host: &str) -> String {
     let mut value = host
@@ -625,6 +742,146 @@ pub fn list_news_source_tiers_backend(backend: &BackendConnection) -> Result<Vec
         list_news_source_tiers,
         list_news_source_tiers_postgres,
     )
+}
+
+pub fn list_unclassified_news_sources(
+    conn: &Connection,
+    window_days: i64,
+    min_articles: i64,
+) -> Result<Vec<NewsSourceUnclassified>> {
+    ensure_source_tier_tables(conn)?;
+    let window = format!("-{} days", window_days);
+    let mut stmt = conn.prepare(
+        "SELECT source_domain, COUNT(*) AS article_count, MIN(fetched_at), MAX(fetched_at)
+         FROM news_cache
+         WHERE source_tier_inferred = 1
+           AND COALESCE(source_domain, '') <> ''
+           AND datetime(fetched_at) >= datetime('now', ?1)
+         GROUP BY source_domain
+         HAVING COUNT(*) >= ?2
+         ORDER BY article_count DESC, source_domain ASC",
+    )?;
+    let rows = stmt.query_map(params![window, min_articles], |row| {
+        Ok(NewsSourceUnclassified {
+            domain: row.get(0)?,
+            article_count: row.get(1)?,
+            first_seen_at: row.get(2)?,
+            last_seen_at: row.get(3)?,
+        })
+    })?;
+
+    let mut domains = Vec::new();
+    for row in rows {
+        domains.push(row?);
+    }
+    Ok(domains)
+}
+
+pub fn list_unclassified_news_sources_backend(
+    backend: &BackendConnection,
+    window_days: i64,
+    min_articles: i64,
+) -> Result<Vec<NewsSourceUnclassified>> {
+    query::dispatch(
+        backend,
+        |conn| list_unclassified_news_sources(conn, window_days, min_articles),
+        |pool| list_unclassified_news_sources_postgres(pool, window_days, min_articles),
+    )
+}
+
+pub fn news_source_stats(conn: &Connection, window_days: i64) -> Result<NewsSourceStats> {
+    ensure_source_tier_tables(conn)?;
+    let window = format!("-{} days", window_days);
+    let (total_articles, explicit_articles, inferred_articles): (i64, i64, i64) = conn.query_row(
+        "SELECT COUNT(*),
+                COALESCE(SUM(CASE WHEN source_tier_inferred = 0 THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN source_tier_inferred = 1 THEN 1 ELSE 0 END), 0)
+         FROM news_cache
+         WHERE datetime(fetched_at) >= datetime('now', ?1)",
+        params![window],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+
+    let mut stmt = conn.prepare(
+        "SELECT source_domain, COUNT(*) AS article_count, MIN(source_tier),
+                MAX(CASE WHEN source_tier_inferred = 1 THEN 1 ELSE 0 END),
+                MIN(fetched_at), MAX(fetched_at)
+         FROM news_cache
+         WHERE COALESCE(source_domain, '') <> ''
+           AND datetime(fetched_at) >= datetime('now', ?1)
+         GROUP BY source_domain
+         ORDER BY article_count DESC, source_domain ASC
+         LIMIT 10",
+    )?;
+    let top_rows = stmt.query_map(params![window], |row| {
+        Ok(NewsSourceDomainStats {
+            domain: row.get(0)?,
+            article_count: row.get(1)?,
+            source_tier: row.get(2)?,
+            source_tier_inferred: row.get::<_, i64>(3)? != 0,
+            first_seen_at: row.get(4)?,
+            last_seen_at: row.get(5)?,
+        })
+    })?;
+    let mut top_domains = Vec::new();
+    for row in top_rows {
+        top_domains.push(row?);
+    }
+
+    let top_unclassified = list_unclassified_news_sources(conn, window_days, 1)?
+        .into_iter()
+        .take(10)
+        .collect();
+
+    Ok(build_news_source_stats(
+        window_days,
+        total_articles,
+        explicit_articles,
+        inferred_articles,
+        top_domains,
+        top_unclassified,
+    ))
+}
+
+pub fn news_source_stats_backend(
+    backend: &BackendConnection,
+    window_days: i64,
+) -> Result<NewsSourceStats> {
+    query::dispatch(
+        backend,
+        |conn| news_source_stats(conn, window_days),
+        |pool| news_source_stats_postgres(pool, window_days),
+    )
+}
+
+fn build_news_source_stats(
+    window_days: i64,
+    total_articles: i64,
+    explicit_articles: i64,
+    inferred_articles: i64,
+    top_domains: Vec<NewsSourceDomainStats>,
+    top_unclassified: Vec<NewsSourceUnclassified>,
+) -> NewsSourceStats {
+    let explicit_pct = percentage(explicit_articles, total_articles);
+    let inferred_pct = percentage(inferred_articles, total_articles);
+    NewsSourceStats {
+        window_days,
+        total_articles,
+        explicit_articles,
+        inferred_articles,
+        explicit_pct,
+        inferred_pct,
+        top_domains,
+        top_unclassified,
+    }
+}
+
+fn percentage(numerator: i64, denominator: i64) -> f64 {
+    if denominator == 0 {
+        0.0
+    } else {
+        ((numerator as f64 / denominator as f64) * 10_000.0).round() / 100.0
+    }
 }
 
 pub fn set_news_source_tier(
@@ -1245,6 +1502,113 @@ fn list_news_source_tiers_postgres(pool: &PgPool) -> Result<Vec<NewsSourceTier>>
         .collect()
 }
 
+fn list_unclassified_news_sources_postgres(
+    pool: &PgPool,
+    window_days: i64,
+    min_articles: i64,
+) -> Result<Vec<NewsSourceUnclassified>> {
+    ensure_tables_postgres(pool)?;
+    let window = format!("{} days", window_days);
+    let rows = crate::db::pg_runtime::block_on(async {
+        sqlx::query(
+            "SELECT source_domain, COUNT(*)::BIGINT AS article_count,
+                    MIN(fetched_at)::text, MAX(fetched_at)::text
+             FROM news_cache
+             WHERE source_tier_inferred = TRUE
+               AND COALESCE(source_domain, '') <> ''
+               AND fetched_at >= NOW() - ($1::TEXT)::INTERVAL
+             GROUP BY source_domain
+             HAVING COUNT(*) >= $2
+             ORDER BY article_count DESC, source_domain ASC",
+        )
+        .bind(window)
+        .bind(min_articles)
+        .fetch_all(pool)
+        .await
+    })?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(NewsSourceUnclassified {
+                domain: row.try_get(0)?,
+                article_count: row.try_get(1)?,
+                first_seen_at: row.try_get(2)?,
+                last_seen_at: row.try_get(3)?,
+            })
+        })
+        .collect()
+}
+
+fn news_source_stats_postgres(pool: &PgPool, window_days: i64) -> Result<NewsSourceStats> {
+    ensure_tables_postgres(pool)?;
+    let window = format!("{} days", window_days);
+    let (total_articles, explicit_articles, inferred_articles) = crate::db::pg_runtime::block_on(
+        async {
+            let counts = sqlx::query(
+                "SELECT COUNT(*)::BIGINT,
+                        COALESCE(SUM(CASE WHEN source_tier_inferred = FALSE THEN 1 ELSE 0 END), 0)::BIGINT,
+                        COALESCE(SUM(CASE WHEN source_tier_inferred = TRUE THEN 1 ELSE 0 END), 0)::BIGINT
+                 FROM news_cache
+                 WHERE fetched_at >= NOW() - ($1::TEXT)::INTERVAL",
+            )
+            .bind(&window)
+            .fetch_one(pool)
+            .await?;
+
+            Ok::<_, sqlx::Error>((
+                counts.try_get::<i64, _>(0)?,
+                counts.try_get::<i64, _>(1)?,
+                counts.try_get::<i64, _>(2)?,
+            ))
+        },
+    )?;
+
+    let top_rows = crate::db::pg_runtime::block_on(async {
+        sqlx::query(
+            "SELECT source_domain, COUNT(*)::BIGINT AS article_count,
+                    MIN(source_tier)::BIGINT,
+                    BOOL_OR(source_tier_inferred),
+                    MIN(fetched_at)::text, MAX(fetched_at)::text
+             FROM news_cache
+             WHERE COALESCE(source_domain, '') <> ''
+               AND fetched_at >= NOW() - ($1::TEXT)::INTERVAL
+             GROUP BY source_domain
+             ORDER BY article_count DESC, source_domain ASC
+             LIMIT 10",
+        )
+        .bind(&window)
+        .fetch_all(pool)
+        .await
+    })?;
+    let top_domains = top_rows
+        .into_iter()
+        .map(|row| {
+            Ok(NewsSourceDomainStats {
+                domain: row.try_get(0)?,
+                article_count: row.try_get(1)?,
+                source_tier: row.try_get(2)?,
+                source_tier_inferred: row.try_get(3)?,
+                first_seen_at: row.try_get(4)?,
+                last_seen_at: row.try_get(5)?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let top_unclassified = list_unclassified_news_sources_postgres(pool, window_days, 1)?
+        .into_iter()
+        .take(10)
+        .collect();
+
+    Ok(build_news_source_stats(
+        window_days,
+        total_articles,
+        explicit_articles,
+        inferred_articles,
+        top_domains,
+        top_unclassified,
+    ))
+}
+
 fn set_news_source_tier_postgres(
     pool: &PgPool,
     domain: &str,
@@ -1688,6 +2052,132 @@ mod tests {
         assert_eq!(classification.domain, "unknown.example");
         assert_eq!(classification.tier, 3);
         assert!(classification.inferred);
+    }
+
+    #[test]
+    fn source_tier_seed_list_has_minimum_domain_coverage() {
+        assert!(source_tier_seed_count() >= 75);
+    }
+
+    #[test]
+    fn source_tier_unclassified_returns_expected_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        insert_news(
+            &conn,
+            "Unknown one",
+            "https://unknown.example/one",
+            "Unknown",
+            "macro",
+            1709610000,
+        )
+        .unwrap();
+        insert_news(
+            &conn,
+            "Unknown two",
+            "https://unknown.example/two",
+            "Unknown",
+            "macro",
+            1709610001,
+        )
+        .unwrap();
+        insert_news(
+            &conn,
+            "Single unknown",
+            "https://single.example/one",
+            "Single",
+            "macro",
+            1709610002,
+        )
+        .unwrap();
+        insert_news(
+            &conn,
+            "Reuters explicit",
+            "https://www.reuters.com/markets/one",
+            "Reuters",
+            "macro",
+            1709610003,
+        )
+        .unwrap();
+        insert_news(
+            &conn,
+            "Old unknown",
+            "https://old.example/one",
+            "Old",
+            "macro",
+            1709610004,
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE news_cache SET fetched_at = datetime('now', '-14 days') WHERE source_domain = 'old.example'",
+            [],
+        )
+        .unwrap();
+
+        let rows = list_unclassified_news_sources(&conn, 7, 2).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].domain, "unknown.example");
+        assert_eq!(rows[0].article_count, 2);
+    }
+
+    #[test]
+    fn source_tier_stats_aggregates_explicit_and_inferred_sources() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        insert_news(
+            &conn,
+            "Unknown one",
+            "https://unknown.example/one",
+            "Unknown",
+            "macro",
+            1709610000,
+        )
+        .unwrap();
+        insert_news(
+            &conn,
+            "Unknown two",
+            "https://unknown.example/two",
+            "Unknown",
+            "macro",
+            1709610001,
+        )
+        .unwrap();
+        insert_news(
+            &conn,
+            "Reuters explicit",
+            "https://www.reuters.com/markets/two",
+            "Reuters",
+            "macro",
+            1709610002,
+        )
+        .unwrap();
+        insert_news(
+            &conn,
+            "Old unknown",
+            "https://old.example/two",
+            "Old",
+            "macro",
+            1709610003,
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE news_cache SET fetched_at = datetime('now', '-14 days') WHERE source_domain = 'old.example'",
+            [],
+        )
+        .unwrap();
+
+        let stats = news_source_stats(&conn, 7).unwrap();
+        assert_eq!(stats.total_articles, 3);
+        assert_eq!(stats.explicit_articles, 1);
+        assert_eq!(stats.inferred_articles, 2);
+        assert_eq!(stats.explicit_pct, 33.33);
+        assert_eq!(stats.inferred_pct, 66.67);
+        assert_eq!(stats.top_domains[0].domain, "unknown.example");
+        assert_eq!(stats.top_domains[0].article_count, 2);
+        assert!(stats.top_domains[0].source_tier_inferred);
+        assert_eq!(stats.top_unclassified[0].domain, "unknown.example");
     }
 
     #[test]
