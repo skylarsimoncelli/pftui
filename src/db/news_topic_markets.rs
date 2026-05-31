@@ -974,6 +974,50 @@ fn contract_snapshots_postgres(
 mod tests {
     use super::*;
     use crate::db::schema::run_migrations;
+    use std::collections::BTreeMap;
+
+    #[derive(Debug, Deserialize)]
+    struct TopicFixture {
+        title: String,
+        category: String,
+        description: Option<String>,
+        #[serde(default)]
+        extra_snippets: Vec<String>,
+        expected_topic: String,
+        source_domain: String,
+        source_tier: i64,
+    }
+
+    #[derive(Debug, Default)]
+    struct TopicMetrics {
+        true_positive: usize,
+        predicted: usize,
+        actual: usize,
+    }
+
+    fn canonical_topic(topic: &str) -> &str {
+        match topic {
+            "fed-policy" => "fed",
+            "oil-energy" => "commodities",
+            "iran-hormuz" | "geopolitics" => "geopolitics",
+            "crypto" => "crypto",
+            "equities" | "ai" => "equities",
+            "inflation" => "inflation",
+            _ => "other",
+        }
+    }
+
+    fn fixture_rows() -> Vec<TopicFixture> {
+        include_str!("../../tests/fixtures/news_topic_classifier/articles.jsonl")
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| !line.trim().is_empty())
+            .map(|(idx, line)| {
+                serde_json::from_str::<TopicFixture>(line)
+                    .unwrap_or_else(|err| panic!("invalid fixture line {}: {err}", idx + 1))
+            })
+            .collect()
+    }
 
     #[test]
     fn topic_classifier_matches_core_fixtures() {
@@ -1016,6 +1060,109 @@ mod tests {
                 &[]
             ),
             "geopolitics"
+        );
+    }
+
+    #[test]
+    fn topic_classifier_accuracy_floor_on_fixture_set() {
+        let fixtures = fixture_rows();
+        assert!(
+            fixtures.len() >= 100,
+            "expected at least 100 topic classifier fixtures, got {}",
+            fixtures.len()
+        );
+        assert!(
+            fixtures
+                .iter()
+                .map(|fixture| fixture.source_tier)
+                .collect::<HashSet<_>>()
+                .len()
+                >= 4,
+            "fixture set must cover all source tiers"
+        );
+        assert!(
+            fixtures
+                .iter()
+                .map(|fixture| fixture.source_domain.as_str())
+                .collect::<HashSet<_>>()
+                .len()
+                >= 25,
+            "fixture set must cover a broad domain mix"
+        );
+
+        let mut metrics: BTreeMap<String, TopicMetrics> = [
+            "fed",
+            "inflation",
+            "geopolitics",
+            "commodities",
+            "crypto",
+            "equities",
+            "other",
+        ]
+        .into_iter()
+        .map(|topic| (topic.to_string(), TopicMetrics::default()))
+        .collect();
+        let mut correct = 0usize;
+        let mut misses = Vec::new();
+
+        for fixture in &fixtures {
+            let predicted_raw = classify_news_topic(
+                &fixture.title,
+                &fixture.category,
+                fixture.description.as_deref(),
+                &fixture.extra_snippets,
+            );
+            let predicted = canonical_topic(&predicted_raw).to_string();
+            let actual = fixture.expected_topic.clone();
+            metrics.entry(actual.clone()).or_default().actual += 1;
+            metrics.entry(predicted.clone()).or_default().predicted += 1;
+            if predicted == actual {
+                correct += 1;
+                metrics.entry(actual).or_default().true_positive += 1;
+            } else {
+                misses.push(format!(
+                    "{} -> expected {}, predicted {} ({})",
+                    fixture.title, actual, predicted, predicted_raw
+                ));
+            }
+        }
+
+        let accuracy = correct as f64 / fixtures.len() as f64;
+        assert!(
+            accuracy >= 0.80,
+            "topic accuracy {accuracy:.2} below 0.80; misses:\n{}",
+            misses.join("\n")
+        );
+
+        let mut weak_topics = Vec::new();
+        for (topic, metric) in metrics {
+            if metric.actual == 0 {
+                weak_topics.push(format!("{topic}: no actual fixtures"));
+                continue;
+            }
+            let precision = if metric.predicted == 0 {
+                0.0
+            } else {
+                metric.true_positive as f64 / metric.predicted as f64
+            };
+            let recall = metric.true_positive as f64 / metric.actual as f64;
+            let f1 = if precision + recall == 0.0 {
+                0.0
+            } else {
+                2.0 * precision * recall / (precision + recall)
+            };
+            if precision < 0.70 {
+                weak_topics.push(format!(
+                    "{topic}: precision {precision:.2}, recall {recall:.2}, f1 {f1:.2}, tp {}, predicted {}, actual {}",
+                    metric.true_positive, metric.predicted, metric.actual
+                ));
+            }
+        }
+        assert!(
+            weak_topics.is_empty(),
+            "topic precision floor failed:\n{}\nmisses:\n{}",
+            weak_topics.join("\n"),
+            misses.join("\n")
         );
     }
 

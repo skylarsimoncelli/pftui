@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-31 — test: add news topic classifier accuracy floor
+
+- What: Added a 100+ row hand-labeled news topic fixture set, source-tier/domain coverage checks, classifier accuracy scoring, per-topic precision floors, and fixture-extension docs.
+- Why: News-topic binding now has a regression guard before downstream narrative-vs-money and prediction-market linkage depend on it.
+
 ### 2026-05-31 — feat: audit news source-tier coverage
 
 - What: Added `pftui data news sources unclassified` and `stats` with JSON output, expanded the source-tier seed list above 75 domains, and added fixture coverage for unclassified-domain worklists, aggregate source stats, and seed-list size.
