@@ -6,17 +6,142 @@
 
 ## P2 - Coverage And Agent Consumption
 
-### `pftui report build daily` --skill-side scaffolding (one-pass)
-**Source:** Claude review (May 29). The existing TODO `pftui report build daily — native end-to-end daily report generation` is sized at 2-3 weeks because it implements every section in one go. The autonomous bot has been most effective with focused 4-8 hour items, not multi-week ones. Breaking the work into incremental sub-tasks would let the bot make steady progress instead of waiting for a multi-week stretch.
-**Why:** The existing `build daily` item is correct in scope but too large to be picked up by the bot's natural workflow. A focused breakdown task (this item) produces a list of 6-8 smaller follow-up TODOs that the bot can pick off one by one. Each sub-item lands a single section assembler, the previous Claude-skill orchestration continues to fill the gap until all sections are native, and the overall migration happens incrementally rather than as a big-bang.
-**Scope:** (1) Read the existing `pftui report build daily` TODO entry and the Step 5a + Step 5b sections of `~/.claude/skills/pftui-report.md`. (2) Identify each top-level section the daily report comprises (current list: Executive Summary, Market Snapshot, Macro, Bitcoin, Gold, Equities, News & Catalysts, Scenario Dashboard, How We Analyse, Allocation Framework, Methodology for public; Bottom Line, Portfolio Snapshot, Macro Context, Per-Asset Convergence, Conviction Trajectory, Outlook by Horizon, Risk Concentration, Mismatch Surface, News & Catalysts, Upcoming Calendar, Open Predictions, Decisions Pending for private). (3) For each section, file a focused TODO `pftui report build daily — section <name>`: defines the function signature `pub fn render_<name>(ctx: &BuildContext) -> Result<String>`, the data sources it reads, the markdown output shape (paste a synthetic example), and the test cases. (4) Add a meta-TODO `pftui report build daily — assembler + dry-run` that wires the per-section functions into the top-level command and validates the output against a fixture. (5) After this breakdown lands, the autonomous bot can pick up section assemblers individually (each ~4-8 hours) without waiting for a multi-week stretch. (6) Update the original `build daily` TODO to point at the sub-items as its actual implementation plan. Files: `TODO.md` (replace the existing build-daily entry with the breakdown), no code changes. Tests: not applicable to the breakdown step itself.
-**Effort:** 2–3 hours.
-
-### `pftui report build daily` — native end-to-end daily report generation
+### `pftui report build daily` — umbrella tracker (do not pick directly)
 **Source:** Skylar (May 28). Depends on both `pftui report` scaffold and the chart-helper-port items above.
 **Why:** Once chart rendering is native, the next layer up is the report ASSEMBLY — pulling data, ordering sections, inlining charts, and writing the markdown that feeds the PDF renderer. Today that work lives in the Claude `/pftui-report` skill orchestration plus the ad-hoc Python build script generated per run. Making it a native `pftui report build daily` command means: (1) anyone (not just Claude) can build a daily report from a populated DB; (2) the assembly logic gets `cargo test` coverage; (3) the Claude skill becomes much thinner — it spawns analysts, then calls `pftui report build daily`, then PRs the output. (4) Removes the Python build script entirely from the steady-state pipeline. This does NOT yet replace `gen-report.py` (markdown → PDF) — that is a separate, harder migration.
-**Scope:** (1) `pftui report build daily [--mode public|private|both] [--date YYYY-MM-DD] [--out-dir <path>]` — produces markdown file(s) ready for `gen-report.py`. Default date is today, default mode is `both`, default out-dir is `~/pftui/reports/` for public + `/tmp/` for private. (2) The command pulls all data it needs from the DB (no JSON inputs required for the default path). Required inputs: held positions, convergence per asset, scenarios + history, prediction lessons, analyst writes since last run, news from `news_cache` (--hours 24), portfolio snapshots, conviction history. (3) Section assembly follows the spec already in the Claude skill (`~/.claude/skills/pftui-report.md` Step 5a Daily Intelligence Report structure for public, Step 5b for private — these are the source of truth for content shape). Each section is a function in `src/report/sections/<name>.rs` returning a markdown string. (4) Charts inlined via the registry from the scaffold item. (5) Public-mode output enforces the privacy guarantee — the assembler refuses to inline any personal-portfolio numbers in the public markdown (asserts no `transactions` table data, no held-symbol-in-personal-context, no allocation-pct-tied-to-user). The privacy-audit step in the skill becomes a redundant safety net rather than the primary guard. (6) Private-mode output includes the portfolio-first sections, mismatch surface, and decision cards. (7) Add `--dry-run` to preview which sections would render with what data, without writing output. Files: `src/commands/report.rs` (extend), `src/report/build/daily.rs` (new), `src/report/sections/*.rs` (new — one per section), `src/cli.rs`, the Claude skill (Step 5a + Step 5b sections become a single CLI call), `AGENTS.md`. Tests: section-by-section golden-file tests against a frozen DB fixture; assembler refuses to include personal data in public mode; `--dry-run` does not write.
-**Effort:** 2–3 weeks.
+**Scope:** Build the command incrementally through the focused section TODOs below, then finish with `pftui report build daily — assembler + dry-run`. Command contract: `pftui report build daily [--mode public|private|both] [--date YYYY-MM-DD] [--out-dir <path>]` produces markdown file(s) ready for `gen-report.py`; default date is today, default mode is `both`, default out-dir is `~/pftui/reports/` for public plus `/tmp/` for private. Shared implementation shape: `src/report/build/daily.rs` owns `BuildContext` and shared data loading; each section lives in `src/report/sections/<name>.rs` and exposes `pub fn render_<name>(ctx: &BuildContext) -> Result<String>`. Section output follows `/Users/skylar/.claude/commands/pftui-report.md` Step 5a and Step 5b because `~/.claude/skills/pftui-report.md` does not exist on this machine. Public-mode output must enforce the privacy guarantee before writing: no personal holdings, position sizes, cost basis, PnL figures, user allocation percentages, transactions, or first-person personal portfolio framing. Files across sub-items: `src/commands/report.rs`, `src/report/build/daily.rs`, `src/report/sections/*.rs`, `src/cli.rs`, the report command/skill, `AGENTS.md`. Tests across sub-items: section golden tests against synthetic fixtures, public privacy guard, and dry-run/no-write behavior.
+**Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
+**Effort:** Incremental; each section item is sized independently.
+
+### `pftui report build daily` — section public executive summary
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_executive_summary(ctx: &BuildContext) -> Result<String>`. Data: synthesis snapshot, regime classification, analyst writes/convergence, top scenario deltas, top news/catalysts. Output shape: `## Executive Summary` followed by 3-4 paragraphs, e.g. `pftui sees a defensive-liquidity regime: gold is firm, equities are fragile, and BTC is trading as high-beta liquidity.` Tests: golden output includes heading, 3-4 paragraphs, no personal-portfolio terms, graceful fallback when synthesis is sparse.
+**Effort:** 4-6 hours.
+
+### `pftui report build daily` — section public market snapshot
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_market_snapshot(ctx: &BuildContext) -> Result<String>`. Data: cached prices and history for BTC, GC=F, SI=F, CL=F, DXY, SPX/SPY, NDX/QQQ, VIX, 10Y yield, and notable watchlist symbols. Output shape: `## Market Snapshot` plus `| Asset | Price | Daily Chg | Weekly Chg | Signal |`. Tests: synthetic price fixture renders required rows, missing weekly history shows `n/a`, public output contains no held-position context.
+**Effort:** 4-6 hours.
+
+### `pftui report build daily` — section public macro
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_macro(ctx: &BuildContext) -> Result<String>`. Data: macro indicators, economic calendar, regime state, LOW/MEDIUM/HIGH/MACRO analyst views, news-silence rows relevant to macro topics. Output shape: `## Macro`, `### Current State`, `### Multi-Timeframe View`, `### What to Watch`, plus optional `News volume vs baseline:` callout. Tests: renders each subsection, includes stale/missing-data caveats, keeps claims sourceable and non-personal.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section public bitcoin
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_bitcoin(ctx: &BuildContext) -> Result<String>`. Data: BTC price/history, ETF flows when available, on-chain/exchange-reserve cache when available, BTC analyst views, BTC-related news and prediction-market signals. Output shape: `## Bitcoin` with Current State, Multi-Timeframe View, What to Watch. Tests: renders with BTC price only, conditionally includes ETF/on-chain blocks, never implies personal BTC ownership.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section public gold and precious metals
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_gold_precious_metals(ctx: &BuildContext) -> Result<String>`. Data: GC=F and SI=F price/history, supply/COT/COMEX data, sovereign holdings when available, real-yield context, gold/silver analyst views and news. Output shape: `## Gold (and Precious Metals)` with Current State, Multi-Timeframe View, What to Watch, and silver as a sub-asset. Tests: renders gold and silver together, degrades when COMEX/COT is stale, includes source-tier metadata for news.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section public equities
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_equities(ctx: &BuildContext) -> Result<String>`. Data: SPX/SPY, NDX/QQQ, sector ETF prices, breadth/earnings/news when available, equity analyst views. Output shape: `## Equities` with Current State, Multi-Timeframe View, What to Watch. Tests: renders broad-index and sector rows from fixture data, falls back when breadth/earnings data is absent, avoids unsupported market-cap claims.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section public news and catalysts
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_news_catalysts(ctx: &BuildContext) -> Result<String>`. Data: `news_cache` last 24h, source tiers, source independence, topic bindings, bound markets, economic calendar, news-silence analytics. Output shape: `## News & Catalysts`, 3-5 event blocks, and `### Tomorrow's Calendar`; each event includes `*Source: <domain> (Tier <N>, <independence-class>) | Topic: <topic> | Bound market: <market-or-none>*`. Tests: fixture ranks top events, every event includes metadata, inferred source tiers are worded provisionally.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section public scenario dashboard
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_scenario_dashboard(ctx: &BuildContext) -> Result<String>`. Data: active scenarios, `scenario_history` 7-day deltas, narrative-vs-money divergence, normalized scenario residual/overfill status. Output shape: `## Scenario Dashboard` table with Scenario, Probability, 7d Delta, Narrative vs Money, Key Driver, Confirmation, Invalidation; include `Other / Unmodelled` or a temporary data-quality footnote. Tests: probability deltas render, residual semantics match `docs/ANALYTICS-SPEC.md`, overfilled legacy data emits warning instead of overlap language.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section public how we analyse
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_how_we_analyse(ctx: &BuildContext) -> Result<String>`. Data: calibration rows, lessons applied in last 24h, prediction-market intelligence, active/new predictions, source-tier override summary. Output shape: `## How We Analyse` with prediction accountability prose, `{calibration_dot_plot(...)}` output from native chart registry, lessons-applied summary, and news-quality filter paragraph. Tests: calibration chart is included when data exists, low-sample rows are marked, source-tier command references stay parseable.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section public allocation framework
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_allocation_framework(ctx: &BuildContext) -> Result<String>`. Data: regime/scenario context and generic asset-class ranges only; do not read personal transactions or current allocations. Output shape: `## Allocation Framework` with Conservative/Balanced/Conviction-Driven generic frameworks across cash, BTC, gold/silver, equities, commodities, treasuries. Tests: renderer cannot access personal portfolio fields, output avoids imperative personal advice, each framework has all asset classes.
+**Effort:** 4-6 hours.
+
+### `pftui report build daily` — section public methodology
+**Source:** Scaffold breakdown from the report command Step 5a.
+**Scope:** Add `pub fn render_public_methodology(ctx: &BuildContext) -> Result<String>`. Data: static methodology/disclaimer template plus runtime metadata such as report date and data freshness summary. Output shape: `## Methodology` and disclaimer footer matching the public routine template. Tests: golden output is stable, includes disclaimer, contains no private symbols or personal framing.
+**Effort:** 3-5 hours.
+
+### `pftui report build daily` — section private bottom line
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_bottom_line(ctx: &BuildContext) -> Result<String>`. Data: private portfolio snapshot, daily PnL context, most material derived actions, binary catalysts, what-changed deltas. Output shape: `## Bottom Line`, 3-5 bullets, and native `{what_changed_strip(deltas)}`. Tests: bullets include regime/action/catalyst coverage, chart helper output is embedded, private-only content is never reused in public mode.
+**Effort:** 4-6 hours.
+
+### `pftui report build daily` — section private portfolio snapshot
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_portfolio_snapshot(ctx: &BuildContext) -> Result<String>`. Data: held positions, cached prices, allocation percentages, unrealized PnL, allocation targets, drift rows. Output shape: `## Portfolio Snapshot`, native `{stacked_bar(segments)}`, positions table, `### Drift vs Allocation Targets`, and native drift bars. Tests: synthetic holdings render deterministically, dust positions are handled, target drift bars match fixture values.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section private macro context
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_macro_context(ctx: &BuildContext) -> Result<String>`. Data: regime quadrant inputs, active scenarios and 7-day deltas, narrative-vs-money divergence, near-term catalysts. Output shape: `## Macro Context` with side-by-side native `{regime_quadrant(...)}` and `{prob_bar(...)}` output plus <=2 paragraphs. Tests: scenario bars use normalized semantics, narrative-vs-money divergence appears when material, output stays concise.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section private per-asset convergence
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_per_asset_convergence(ctx: &BuildContext) -> Result<String>`. Data: held assets above 1%, `analytics views convergence --asset`, user targets, current allocation, deterministic analyst range. Output shape: `## Per-Asset Convergence` followed by native `{analyst_convergence_card(...)}` per held asset. Tests: missing analyst layers surface `insufficient-views`, derived ranges follow the canonical formula exactly, card count matches held assets above threshold.
+**Effort:** 6-8 hours.
+
+### `pftui report build daily` — section private conviction trajectory
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_conviction_trajectory(ctx: &BuildContext) -> Result<String>`. Data: 30-day conviction or analyst-view history by held asset and layer. Output shape: `## Conviction Trajectory (30 days)` plus native `{conviction_trajectory(asset, layer_series)}` for each held position. Tests: sparse series render without panic, layers stay ordered LOW/MEDIUM/HIGH/MACRO, output includes every qualifying held asset.
+**Effort:** 4-6 hours.
+
+### `pftui report build daily` — section private outlook by horizon
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_outlook_by_horizon(ctx: &BuildContext) -> Result<String>`. Data: current LOW/MEDIUM/HIGH analyst views or derived convergence horizon fields for held assets. Output shape: `## Outlook by Horizon` table with native `{outlook_arrows(days, weeks, months)}` per held asset and 2-3 sentences interpreting cross-asset alignment. Tests: direction mapping is deterministic, missing horizon data renders neutral/unknown, table order follows portfolio materiality.
+**Effort:** 4-6 hours.
+
+### `pftui report build daily` — section private risk concentration
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_risk_concentration(ctx: &BuildContext) -> Result<String>`. Data: scenario exposures, current allocations, factor mapping, active scenario probabilities. Output shape: `## Risk Concentration`, native `{factor_exposure(factors)}`, and one paragraph on correlated exposure and hedge pressure. Tests: exposure percentages come from fixture allocations, high-probability scenario alignment is described, missing factor mapping emits a clear fallback.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section private mismatch surface
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_mismatch_surface(ctx: &BuildContext) -> Result<String>`. Data: recent journal entries by `author='skylar'`, held-asset convergence summaries, mismatch thresholds. Output shape: `## Mismatch Surface — Skylar's view vs analyst convergence` with native `{mismatch_card(...)}` for meaningful divergences or one aligned sentence. Tests: synthetic divergence creates a card, aligned fixture creates the one-sentence fallback, no public renderer can call this section.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section private news and catalysts
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_news_catalysts(ctx: &BuildContext) -> Result<String>`. Data: last-24h news, source metadata, held assets, active scenarios, news-silence analytics. Output shape: `## News & Catalysts`, 3-5 event blocks with What happened / Where the money moved / Who benefits / What it means and the required source metadata line. Tests: events connect to held assets or scenarios, metadata line is mandatory, insufficient-baseline silence rows are skipped.
+**Effort:** 5-7 hours.
+
+### `pftui report build daily` — section private upcoming calendar
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_upcoming_calendar(ctx: &BuildContext) -> Result<String>`. Data: economic calendar, earnings calendar when available, known political/geopolitical dates, held-asset relevance flags. Output shape: `## Upcoming Calendar` with compact per-day bullets for the next 3-7 days and bold items affecting held positions. Tests: dates sort ascending, held-asset relevance is bolded, empty calendar emits a concise no-known-catalysts line.
+**Effort:** 4-6 hours.
+
+### `pftui report build daily` — section private open predictions
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_open_predictions(ctx: &BuildContext) -> Result<String>`. Data: pending `user_predictions` resolving in the next 7 days, confidence/conviction/target dates, calibration context. Output shape: `## Open Predictions Resolving in Next 7 Days`, native `{open_predictions_table(predictions_from_db)}`, and one interpretation sentence. Tests: pending-window filter is correct, date ordering is stable, no-predictions fixture renders an explicit empty state.
+**Effort:** 4-6 hours.
+
+### `pftui report build daily` — section private lessons applied
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_lessons_applied(ctx: &BuildContext) -> Result<String>`. Data: `analytics lessons applied --since 24h`, prediction lessons, historical analog references. Output shape: `## Lessons Applied This Run` with guarded-prediction count, top referenced lessons, strongest analog, or an explicit accountability-gap sentence. Tests: zero-lessons fixture renders the gap, nonzero fixture lists lesson ids, output remains private-only when tied to operator decisions.
+**Effort:** 4-6 hours.
+
+### `pftui report build daily` — section private self-retrospective calibration
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_self_retrospective_calibration(ctx: &BuildContext) -> Result<String>`. Data: 90-day calibration rows by layer and conviction band, sample sizes, miscalibration deltas. Output shape: `## Self-Retrospective Calibration`, native `{calibration_dot_plot(...)}`, and 2-3 bullets naming largest over/underconfidence rows. Tests: chart renders from fixture rows, largest absolute miscalibration rows are selected, low-sample caveats appear.
+**Effort:** 4-6 hours.
+
+### `pftui report build daily` — section private decisions pending
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_decisions_pending(ctx: &BuildContext) -> Result<String>`. Data: derived ADD/TRIM/HOLD actions, allocation target drift, stale targets, mismatch cards, catalyst urgency. Output shape: `## Decisions Pending — Your Reply Requested` with native `{decision_card(...)}` questions ordered by urgency and gap size. Tests: recommendations derive from convergence formula, response tokens are short, no imperative trade action appears without evidence reference.
+**Effort:** 6-8 hours.
+
+### `pftui report build daily` — assembler + dry-run
+**Source:** Scaffold breakdown from the report command Step 5a/5b.
+**Scope:** Wire `pftui report build daily [--mode public|private|both] [--date YYYY-MM-DD] [--out-dir <path>] [--dry-run]` through `src/cli.rs` and `src/commands/report.rs`. Add `BuildContext` loading in `src/report/build/daily.rs`, call public/private section renderers in order, write markdown to the correct destinations, and update the report command/skill to call the native command for assembly. `--dry-run` prints the section plan, data availability summary, output paths, and privacy-audit status without writing files. Tests: public/private/both mode output paths, dry-run writes nothing, section ordering fixture, public privacy guard rejects private tokens, assembled markdown golden fixture is stable.
+**Effort:** 6-10 hours after section renderers exist.
 
 ### Migrate `/pftui-report` Claude skill to use native `pftui report` commands
 **Source:** Skylar (May 28). Depends on `pftui report build daily` (above) being landed.

@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-31 — docs: scaffold daily report build TODOs
+
+- What: Replaced the oversized native daily-report build TODO with section-by-section implementation TODOs, each naming its renderer signature, data sources, markdown shape, and tests.
+- Why: The daily report assembler can now land incrementally through focused PRs instead of requiring one multi-week implementation pass.
+
 ### 2026-05-31 — docs: decide scenario probability model
 
 - What: Documented scenario probabilities as a normalized scenario-set model, removed the separate decision TODO, and narrowed the remaining TODO to enforcement of the chosen residual model.
