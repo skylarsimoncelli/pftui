@@ -194,6 +194,7 @@ mod tests {
                 headline: "Fed speakers pushed back on early easing".to_string(),
                 market_read: Some("Rates stayed firm and equities lost momentum".to_string()),
             }],
+            ..BuildContext::default()
         };
 
         let rendered = render_public_executive_summary(&ctx).unwrap();

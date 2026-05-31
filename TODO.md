@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section public market snapshot
-**Source:** Scaffold breakdown from the report command Step 5a.
-**Scope:** Add `pub fn render_public_market_snapshot(ctx: &BuildContext) -> Result<String>`. Data: cached prices and history for BTC, GC=F, SI=F, CL=F, DXY, SPX/SPY, NDX/QQQ, VIX, 10Y yield, and notable watchlist symbols. Output shape: `## Market Snapshot` plus `| Asset | Price | Daily Chg | Weekly Chg | Signal |`. Tests: synthetic price fixture renders required rows, missing weekly history shows `n/a`, public output contains no held-position context.
-**Effort:** 4-6 hours.
-
 ### `pftui report build daily` — section public macro
 **Source:** Scaffold breakdown from the report command Step 5a.
 **Scope:** Add `pub fn render_public_macro(ctx: &BuildContext) -> Result<String>`. Data: macro indicators, economic calendar, regime state, LOW/MEDIUM/HIGH/MACRO analyst views, news-silence rows relevant to macro topics. Output shape: `## Macro`, `### Current State`, `### Multi-Timeframe View`, `### What to Watch`, plus optional `News volume vs baseline:` callout. Tests: renders each subsection, includes stale/missing-data caveats, keeps claims sourceable and non-personal.
