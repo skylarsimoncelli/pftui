@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-31 — feat: add public executive summary renderer
+
+- What: Added the initial daily-report `BuildContext` scaffold and a tested public executive-summary renderer with regime, analyst convergence, scenario delta, catalyst, sparse-data, and privacy-safety coverage.
+- Why: Native daily report assembly now has its first independently testable section renderer instead of depending entirely on skill-side markdown generation.
+
 ### 2026-05-31 — docs: scaffold daily report build TODOs
 
 - What: Replaced the oversized native daily-report build TODO with section-by-section implementation TODOs, each naming its renderer signature, data sources, markdown shape, and tests.
