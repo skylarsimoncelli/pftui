@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-31 — docs: decide scenario probability model
+
+- What: Documented scenario probabilities as a normalized scenario-set model, removed the separate decision TODO, and narrowed the remaining TODO to enforcement of the chosen residual model.
+- Why: Reports, agents, and expected-value consumers now have one stable interpretation for scenario probabilities instead of choosing between overlapping marginal and normalized readings.
+
 ### 2026-05-31 — test: add news topic classifier accuracy floor
 
 - What: Added a 100+ row hand-labeled news topic fixture set, source-tier/domain coverage checks, classifier accuracy scoring, per-topic precision floors, and fixture-extension docs.

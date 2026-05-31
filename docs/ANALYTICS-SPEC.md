@@ -229,6 +229,39 @@ Key change: **one new tab [6] Analytics** absorbs portfolio-level analysis. Ever
 
 ---
 
+### Scenario Probability Semantics
+
+**Decision:** pftui scenario probabilities use a normalized scenario-set model. Active scenarios in a set are mutually exclusive and collectively exhaustive after including an explicit `Other / Unmodelled` residual. A scenario probability is a percentage share of the current scenario set, not an independent marginal probability that can overlap with other scenarios.
+
+**Rationale:** Scenario probabilities feed reports, agent reasoning, calibration views, and expected-value calculations. A normalized set gives every downstream consumer one stable interpretation: the displayed probabilities sum to 100%, expected-value math can weight one outcome path at a time, and readers do not need to infer whether two scenarios overlap. More expressive joint-probability modeling can be added later if specific scenario intersections become decision-critical, but it should be explicit rather than inferred from marginal scenario rows.
+
+**How to read scenarios:** If the active modeled scenarios are:
+
+| Scenario | Probability |
+| --- | ---: |
+| Inflation Spike | 45% |
+| Hard Recession | 25% |
+| Soft Landing | 20% |
+| Other / Unmodelled | 10% |
+
+then the model says these four buckets exhaust the scenario set. `Other / Unmodelled` is the residual uncertainty bucket: events outside the named scenarios, misspecified framing, or outcomes too diffuse to model individually.
+
+If an overlapping outcome such as stagflation matters, model it as its own scenario and rebalance the set:
+
+| Scenario | Probability |
+| --- | ---: |
+| Inflation Without Recession | 30% |
+| Hard Recession Without Inflation Spike | 20% |
+| Stagflation | 15% |
+| Soft Landing | 25% |
+| Other / Unmodelled | 10% |
+
+Do not derive stagflation as `Inflation Spike probability * Hard Recession probability`; those rows are not independent draws. Likewise, sums above 100% are invalid under this model rather than evidence that scenarios overlap.
+
+**Downstream assumptions:** Report tables, CLI output, JSON consumers, and expected-value calculations should treat active scenario probabilities as one normalized set. Modeled scenario rows may sum to less than 100% before the residual is materialized; the residual is `100 - sum(modeled probabilities)`. Modeled scenario rows must not sum above 100%. Until enforcement lands in code, report generation should make any missing residual or overfilled set explicit instead of implying marginal overlap.
+
+---
+
 ### F5: Central Bank & Sovereign Holdings Tracker
 
 **What:** Track central bank gold purchases, sovereign BTC holdings, and institutional flows. The intelligence layer that makes pftui unique.
