@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-31 — feat: add public market snapshot renderer
+
+- What: Added a tested public market-snapshot renderer and shared context rows for cross-asset price, daily-change, weekly-change, and signal table output.
+- Why: Native daily report assembly now has a second independently testable public section with missing-history and privacy-safety coverage.
+
 ### 2026-05-31 — feat: add public executive summary renderer
 
 - What: Added the initial daily-report `BuildContext` scaffold and a tested public executive-summary renderer with regime, analyst convergence, scenario delta, catalyst, sparse-data, and privacy-safety coverage.

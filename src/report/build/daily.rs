@@ -7,6 +7,7 @@ pub struct BuildContext {
     pub analyst_convergence: Vec<AnalystConvergenceSummary>,
     pub scenario_deltas: Vec<ScenarioDeltaSummary>,
     pub news_catalysts: Vec<CatalystSummary>,
+    pub market_snapshot: Vec<MarketSnapshotRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,4 +39,13 @@ pub struct ScenarioDeltaSummary {
 pub struct CatalystSummary {
     pub headline: String,
     pub market_read: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MarketSnapshotRow {
+    pub asset: String,
+    pub price: Option<String>,
+    pub daily_change_pct: Option<f64>,
+    pub weekly_change_pct: Option<f64>,
+    pub signal: Option<String>,
 }
