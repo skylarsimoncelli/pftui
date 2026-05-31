@@ -1159,6 +1159,19 @@ fn run_cli(cli: Cli) -> Result<()> {
                     cli::DataNewsSourcesCommand::List { json } => {
                         commands::news::run_sources_list(&backend, json)
                     }
+                    cli::DataNewsSourcesCommand::Unclassified {
+                        since,
+                        min_articles,
+                        json,
+                    } => commands::news::run_sources_unclassified(
+                        &backend,
+                        &since,
+                        min_articles,
+                        json,
+                    ),
+                    cli::DataNewsSourcesCommand::Stats { since, json } => {
+                        commands::news::run_sources_stats(&backend, &since, json)
+                    }
                     cli::DataNewsSourcesCommand::Set {
                         domain,
                         tier,

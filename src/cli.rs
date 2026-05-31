@@ -707,6 +707,27 @@ pub enum DataNewsSourcesCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List inferred source domains that need explicit classification
+    Unclassified {
+        /// Lookback window, e.g. 7d
+        #[arg(long, default_value = "7d")]
+        since: String,
+        /// Minimum article count in the lookback window
+        #[arg(long = "min-articles", default_value_t = 1)]
+        min_articles: i64,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Summarize source tier coverage and top domains
+    Stats {
+        /// Lookback window, e.g. 7d
+        #[arg(long, default_value = "7d")]
+        since: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Set or update a source domain tier
     Set {
         /// Source domain, e.g. reuters.com
@@ -9605,6 +9626,74 @@ mod tests {
         let DataNewsSourcesCommand::List { json } = command else {
             panic!("expected news sources list");
         };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_sources_unclassified_json() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "news",
+            "sources",
+            "unclassified",
+            "--since",
+            "14d",
+            "--min-articles",
+            "3",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            command: Some(DataNewsCommand::Sources { command }),
+            ..
+        } = command
+        else {
+            panic!("expected news sources command");
+        };
+        let DataNewsSourcesCommand::Unclassified {
+            since,
+            min_articles,
+            json,
+        } = command
+        else {
+            panic!("expected news sources unclassified");
+        };
+        assert_eq!(since, "14d");
+        assert_eq!(min_articles, 3);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_sources_stats_json() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "news",
+            "sources",
+            "stats",
+            "--since",
+            "30d",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            command: Some(DataNewsCommand::Sources { command }),
+            ..
+        } = command
+        else {
+            panic!("expected news sources command");
+        };
+        let DataNewsSourcesCommand::Stats { since, json } = command else {
+            panic!("expected news sources stats");
+        };
+        assert_eq!(since, "30d");
         assert!(json);
     }
 

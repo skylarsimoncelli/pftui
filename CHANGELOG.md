@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-05-31 — feat: audit news source-tier coverage
+
+- What: Added `pftui data news sources unclassified` and `stats` with JSON output, expanded the source-tier seed list above 75 domains, and added fixture coverage for unclassified-domain worklists, aggregate source stats, and seed-list size.
+- Why: Operators and agents can now find high-volume inferred domains and track explicit-vs-inferred source coverage instead of letting unknown domains silently dilute news-quality signals.
+
 ### 2026-05-29 — docs: surface news-quality metadata in report command
 
 - What: Updated the local `/pftui-report` command to collect narrative-vs-money and news-silence analytics, require source-tier/source-independence metadata next to news bullets, add a Narrative vs Money scenario column, and document source-tier weighting in report methodology.
