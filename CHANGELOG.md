@@ -4,6 +4,10 @@
 
 - What: Added a tested private self-retrospective calibration renderer (`render_private_self_retrospective_calibration`) with native `{calibration_dot_plot(private_calibration)}` placeholder, 2-3 bullets surfacing the largest absolute miscalibration rows (predicted vs observed deltas, directional over/underconfident labels, sample sizes, low-sample caveats), an empty-state fallback when no 90-day rows are attached, and an explicit private-only marker. Adds a `private_calibration: Vec<CalibrationReliabilityRow>` field on `BuildContext`.
 - Why: Native daily report assembly can now render the private self-retrospective calibration section from synthetic context rows without skill-side markdown.
+### 2026-06-01 — feat: add private upcoming calendar section
+
+- What: New `render_private_upcoming_calendar` in `src/report/sections/private_upcoming_calendar.rs`. Merges the attached `economic_calendar` and `private_binary_catalysts` (the pipeline's slot for earnings releases and known political/geopolitical dates), sorts ISO dates ascending, groups by day, caps the surface to the next 7 distinct dates, and bolds bullets whose event text mentions any held-position ticker (word-boundary match). Empty input emits a single `No known catalysts in the next 7 days.` line. Wired into `src/report/sections/mod.rs` and covered by 7 unit tests (ascending sort, held-asset bolding, empty-state line, 7-day cap, binary-catalyst merge, word-boundary safety, private-mode boundary).
+- Why: Closes the private daily-report scaffold slot for forward-looking catalysts, giving the operator a compact per-day view of what's coming and which items intersect their own positions.
 
 ### 2026-06-01 — feat: add private decisions-pending renderer
 
