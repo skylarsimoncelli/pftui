@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add public macro section renderer
+
+- What: Added a tested public macro renderer with regime state, macro indicators, multi-timeframe analyst views, economic calendar watch rows, and macro news-volume callouts.
+- Why: Native daily report assembly now has sourceable macro-section coverage with explicit stale/missing-data caveats and public privacy safeguards.
+
 ### 2026-05-31 — feat: add public market snapshot renderer
 
 - What: Added a tested public market-snapshot renderer and shared context rows for cross-asset price, daily-change, weekly-change, and signal table output.

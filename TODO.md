@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section public macro
-**Source:** Scaffold breakdown from the report command Step 5a.
-**Scope:** Add `pub fn render_public_macro(ctx: &BuildContext) -> Result<String>`. Data: macro indicators, economic calendar, regime state, LOW/MEDIUM/HIGH/MACRO analyst views, news-silence rows relevant to macro topics. Output shape: `## Macro`, `### Current State`, `### Multi-Timeframe View`, `### What to Watch`, plus optional `News volume vs baseline:` callout. Tests: renders each subsection, includes stale/missing-data caveats, keeps claims sourceable and non-personal.
-**Effort:** 5-7 hours.
-
 ### `pftui report build daily` — section public bitcoin
 **Source:** Scaffold breakdown from the report command Step 5a.
 **Scope:** Add `pub fn render_public_bitcoin(ctx: &BuildContext) -> Result<String>`. Data: BTC price/history, ETF flows when available, on-chain/exchange-reserve cache when available, BTC analyst views, BTC-related news and prediction-market signals. Output shape: `## Bitcoin` with Current State, Multi-Timeframe View, What to Watch. Tests: renders with BTC price only, conditionally includes ETF/on-chain blocks, never implies personal BTC ownership.
