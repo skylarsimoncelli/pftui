@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add prediction autoscore from falsification rules
+
+- What: Added `pftui prediction autoscore` plus the existing `journal prediction auto-score` path for due `prediction_falsification_rules`, with confidence floors, dry-run, force overwrite control, structured JSON failures, price-history rule evaluation, and tests for scoring, missing data, and dry-run behavior.
+- Why: Auto-eligible predictions can now be scored mechanically when their evaluation window closes, keeping calibration current without requiring the evening analyst to manually resolve every price-based call.
+
 ### 2026-06-01 — feat: lesson half-life curation
 
 - What: Added `prediction_lessons.status` (`active|retired|superseded`) and `last_cited_at` columns, a schema-side `lesson_citations` table, and three new CLI commands — `pftui analytics lessons curate [--dry-run] [--retire-after-days 60] [--json]`, `pftui analytics lessons revive <id> [--json]`, and `pftui analytics lessons health [--json]`. `curate` retires lessons that are uncited (or never cited and created) longer than `--retire-after-days` and whose topic cluster has no recent wrong-scored predictions, journals the change to `agent_messages`, and exposes a dry-run mode. `pftui journal prediction lessons` now defaults to active lessons only; pass `--include-retired` to surface the full history.
