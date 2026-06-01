@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add public how we analyse renderer
+
+- What: Added a tested public methodology-of-analysis renderer with calibration chart placeholder, low-sample caveats, lessons-applied rows, prediction-market intelligence, and source-tier override command references.
+- Why: Native daily report assembly now explains accountability and source-quality filters instead of presenting analysis as unscored narrative.
+
 ### 2026-06-01 — feat: add public scenario dashboard renderer
 
 - What: Added a tested public scenario dashboard renderer with probability deltas, narrative-vs-money rows, driver/confirmation/invalidation columns, normalized residual handling, and overfilled-set warnings.

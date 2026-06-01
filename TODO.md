@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section public how we analyse
-**Source:** Scaffold breakdown from the report command Step 5a.
-**Scope:** Add `pub fn render_public_how_we_analyse(ctx: &BuildContext) -> Result<String>`. Data: calibration rows, lessons applied in last 24h, prediction-market intelligence, active/new predictions, source-tier override summary. Output shape: `## How We Analyse` with prediction accountability prose, `{calibration_dot_plot(...)}` output from native chart registry, lessons-applied summary, and news-quality filter paragraph. Tests: calibration chart is included when data exists, low-sample rows are marked, source-tier command references stay parseable.
-**Effort:** 5-7 hours.
-
 ### `pftui report build daily` — section public allocation framework
 **Source:** Scaffold breakdown from the report command Step 5a.
 **Scope:** Add `pub fn render_public_allocation_framework(ctx: &BuildContext) -> Result<String>`. Data: regime/scenario context and generic asset-class ranges only; do not read personal transactions or current allocations. Output shape: `## Allocation Framework` with Conservative/Balanced/Conviction-Driven generic frameworks across cash, BTC, gold/silver, equities, commodities, treasuries. Tests: renderer cannot access personal portfolio fields, output avoids imperative personal advice, each framework has all asset classes.
