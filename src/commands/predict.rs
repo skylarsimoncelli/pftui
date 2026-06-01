@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::db::backend::BackendConnection;
+use crate::db::prediction_falsification_rules::{self, PredictionFalsificationRule};
 use crate::db::prediction_lessons;
 use crate::db::price_cache::get_cached_price_backend;
 use crate::db::price_history::get_price_at_date_backend;
@@ -87,9 +88,12 @@ fn parse_lessons_applied_arg(value: Option<&str>) -> Result<Vec<i64>> {
         .filter(|token| !token.is_empty())
     {
         let token = token.trim_start_matches('#');
-        let id: i64 = token
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid lesson id '{}'. Use comma-separated numeric IDs, e.g. --lessons 218,240", token))?;
+        let id: i64 = token.parse().map_err(|_| {
+            anyhow::anyhow!(
+                "invalid lesson id '{}'. Use comma-separated numeric IDs, e.g. --lessons 218,240",
+                token
+            )
+        })?;
         if id <= 0 {
             bail!("invalid lesson id '{}'. Lesson IDs must be positive", token);
         }
@@ -790,6 +794,7 @@ pub fn run_score_batch(
 }
 
 /// Direction parsed from a prediction claim.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PriceDirection {
     Above,
@@ -797,6 +802,7 @@ enum PriceDirection {
 }
 
 /// A parsed price-direction prediction extracted from the claim text.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct ParsedPricePrediction {
     symbol: String,
@@ -805,6 +811,7 @@ struct ParsedPricePrediction {
 }
 
 /// Known symbol aliases for matching prediction claims to price_history/price_cache symbols.
+#[allow(dead_code)]
 fn resolve_symbol_alias(token: &str) -> Option<&'static str> {
     match token.to_uppercase().as_str() {
         "BTC" | "BITCOIN" => Some("BTC-USD"),
@@ -829,6 +836,7 @@ fn resolve_symbol_alias(token: &str) -> Option<&'static str> {
 ///   "TSLA above 250.50 by ..."
 ///   "BTC > $100,000 by ..."
 ///   "ETH >= 4000"
+#[allow(dead_code)]
 fn parse_price_prediction(
     claim: &str,
     prediction_symbol: Option<&str>,
@@ -963,6 +971,7 @@ fn parse_price_prediction(
 }
 
 /// Get the current price for a symbol. Tries price_cache first, then latest price_history.
+#[allow(dead_code)]
 fn get_current_price(backend: &BackendConnection, symbol: &str) -> Option<Decimal> {
     // Try price cache first (most recent)
     if let Ok(Some(quote)) = get_cached_price_backend(backend, symbol, "USD") {
@@ -982,146 +991,152 @@ fn get_current_price(backend: &BackendConnection, symbol: &str) -> Option<Decima
     None
 }
 
-/// Result of auto-scoring a single prediction.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutoScoreConfidenceFloor {
+    Medium,
+    High,
+}
+
+impl AutoScoreConfidenceFloor {
+    fn parse(value: &str) -> Result<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "medium" => Ok(Self::Medium),
+            "high" => Ok(Self::High),
+            other => bail!(
+                "invalid confidence floor '{}'. Expected medium or high",
+                other
+            ),
+        }
+    }
+
+    fn allows(self, confidence: &str) -> bool {
+        let rank = match confidence.trim().to_ascii_lowercase().as_str() {
+            "high" => 2,
+            "medium" => 1,
+            _ => 0,
+        };
+        match self {
+            Self::Medium => rank >= 1,
+            Self::High => rank >= 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct AutoScoreResult {
     id: i64,
+    rule_id: i64,
     claim: String,
     symbol: Option<String>,
-    parsed_symbol: String,
-    direction: String,
-    target_price: String,
-    actual_price: String,
+    rule_type: String,
+    eval_date_start: Option<String>,
+    eval_date_end: String,
+    threshold: String,
+    observed: String,
     outcome: String,
     note: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct AutoScoreFailure {
+    id: i64,
+    rule_id: i64,
+    rule_type: String,
+    reason: String,
+    detail: String,
+}
+
+#[derive(Debug, Clone)]
+struct RuleDecision {
+    outcome: &'static str,
+    observed: Decimal,
+    threshold: String,
+}
+
 /// Auto-score pending predictions whose target_date has passed.
-/// Only scores unambiguous price-direction predictions.
-pub fn run_auto_score(backend: &BackendConnection, dry_run: bool, json_output: bool) -> Result<()> {
+/// Uses structured falsification rules when present instead of reparsing claims.
+pub fn run_auto_score(
+    backend: &BackendConnection,
+    since: Option<&str>,
+    dry_run: bool,
+    confidence_floor: &str,
+    force: bool,
+    json_output: bool,
+) -> Result<()> {
     let today = Utc::now().date_naive();
     let today_str = today.format("%Y-%m-%d").to_string();
+    if let Some(since) = since {
+        NaiveDate::parse_from_str(since, "%Y-%m-%d")
+            .map_err(|_| anyhow::anyhow!("--since must be YYYY-MM-DD"))?;
+    }
+    let floor = AutoScoreConfidenceFloor::parse(confidence_floor)?;
 
-    // Fetch all pending predictions
-    let pending =
-        user_predictions::list_predictions_backend(backend, Some("pending"), None, None, None)?;
+    prediction_falsification_rules::ensure_table_backend(backend)?;
+    let rules = prediction_falsification_rules::list_due_auto_score_rules_backend(
+        backend, since, &today_str,
+    )?;
 
     let mut scoreable: Vec<AutoScoreResult> = Vec::new();
     let mut skipped: Vec<serde_json::Value> = Vec::new();
+    let mut failures: Vec<AutoScoreFailure> = Vec::new();
 
-    for pred in &pending {
-        // Check if target_date has passed
-        let target_date = match &pred.target_date {
-            Some(td) => {
-                let parsed = NaiveDate::parse_from_str(td, "%Y-%m-%d");
-                match parsed {
-                    Ok(d) if d <= today => d,
-                    Ok(_) => {
-                        // Target date is in the future — skip
-                        continue;
-                    }
-                    Err(_) => {
-                        // Can't parse target_date — skip
-                        skipped.push(json!({
-                            "id": pred.id,
-                            "reason": "unparseable target_date",
-                            "target_date": td,
-                        }));
-                        continue;
-                    }
-                }
+    for rule in &rules {
+        if !floor.allows(&rule.parse_confidence) {
+            skipped.push(json!({
+                "id": rule.prediction_id,
+                "rule_id": rule.id,
+                "reason": "below_confidence_floor",
+                "parse_confidence": rule.parse_confidence,
+                "confidence_floor": confidence_floor,
+            }));
+            continue;
+        }
+        if rule.current_outcome != "pending" && !force {
+            skipped.push(json!({
+                "id": rule.prediction_id,
+                "rule_id": rule.id,
+                "reason": "already_scored",
+                "outcome": rule.current_outcome,
+            }));
+            continue;
+        }
+
+        match evaluate_falsification_rule(backend, rule) {
+            Ok(decision) => {
+                let note = format!(
+                    "Auto-scored: rule_type={}, threshold={}, observed={}, decision={}",
+                    rule.rule_type, decision.threshold, decision.observed, decision.outcome
+                );
+                scoreable.push(AutoScoreResult {
+                    id: rule.prediction_id,
+                    rule_id: rule.id,
+                    claim: rule.claim.clone(),
+                    symbol: rule
+                        .symbol
+                        .clone()
+                        .or_else(|| rule.prediction_symbol.clone()),
+                    rule_type: rule.rule_type.clone(),
+                    eval_date_start: rule.eval_date_start.clone(),
+                    eval_date_end: rule.eval_date_end.clone(),
+                    threshold: decision.threshold,
+                    observed: decision.observed.to_string(),
+                    outcome: decision.outcome.to_string(),
+                    note,
+                });
             }
-            None => {
-                // No target_date — skip
+            Err(err) => {
+                failures.push(AutoScoreFailure {
+                    id: rule.prediction_id,
+                    rule_id: rule.id,
+                    rule_type: rule.rule_type.clone(),
+                    reason: "evaluation_failed".to_string(),
+                    detail: err.to_string(),
+                });
                 continue;
             }
-        };
-
-        // Try to parse a price-direction prediction from the claim
-        let parsed = match parse_price_prediction(&pred.claim, pred.symbol.as_deref()) {
-            Some(p) => p,
-            None => {
-                skipped.push(json!({
-                    "id": pred.id,
-                    "reason": "not a parseable price-direction prediction",
-                    "claim": pred.claim,
-                }));
-                continue;
-            }
-        };
-
-        // Get the price at the target date (or closest before it)
-        let price_at_date = get_price_at_date_backend(
-            backend,
-            &parsed.symbol,
-            &target_date.format("%Y-%m-%d").to_string(),
-        )
-        .ok()
-        .flatten();
-
-        // Also get current price as fallback for very recent dates
-        let current_price = get_current_price(backend, &parsed.symbol);
-
-        let actual_price = match price_at_date.or(current_price) {
-            Some(p) if p > Decimal::ZERO => p,
-            _ => {
-                skipped.push(json!({
-                    "id": pred.id,
-                    "reason": "no price data available",
-                    "symbol": parsed.symbol,
-                    "target_date": target_date.to_string(),
-                }));
-                continue;
-            }
-        };
-
-        // Determine outcome
-        let outcome = match parsed.direction {
-            PriceDirection::Above => {
-                if actual_price >= parsed.target_price {
-                    "correct"
-                } else {
-                    "wrong"
-                }
-            }
-            PriceDirection::Below => {
-                if actual_price <= parsed.target_price {
-                    "correct"
-                } else {
-                    "wrong"
-                }
-            }
-        };
-
-        let direction_str = match parsed.direction {
-            PriceDirection::Above => "above",
-            PriceDirection::Below => "below",
-        };
-
-        let note = format!(
-            "Auto-scored from market data: {} was {} at {} (target: {} {} by {})",
-            parsed.symbol,
-            actual_price,
-            today_str,
-            direction_str,
-            parsed.target_price,
-            target_date,
-        );
-
-        scoreable.push(AutoScoreResult {
-            id: pred.id,
-            claim: pred.claim.clone(),
-            symbol: pred.symbol.clone(),
-            parsed_symbol: parsed.symbol,
-            direction: direction_str.to_string(),
-            target_price: parsed.target_price.to_string(),
-            actual_price: actual_price.to_string(),
-            outcome: outcome.to_string(),
-            note,
-        });
+        }
     }
 
-    // Apply scores (unless dry_run)
     if !dry_run {
         for result in &scoreable {
             user_predictions::score_prediction_backend(
@@ -1137,17 +1152,24 @@ pub fn run_auto_score(backend: &BackendConnection, dry_run: bool, json_output: b
     if json_output {
         let payload = json!({
             "dry_run": dry_run,
+            "confidence_floor": confidence_floor,
+            "force": force,
             "scored": scoreable,
             "scored_count": scoreable.len(),
             "skipped": skipped,
             "skipped_count": skipped.len(),
-            "total_pending": pending.len(),
+            "failures": failures,
+            "failure_count": failures.len(),
+            "total_rules": rules.len(),
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else if scoreable.is_empty() {
         println!("No predictions eligible for auto-scoring.");
         if !skipped.is_empty() {
-            println!("  {} predictions skipped (no target_date, not parseable, or no price data)", skipped.len());
+            println!("  {} rule(s) skipped.", skipped.len());
+        }
+        if !failures.is_empty() {
+            println!("  {} rule(s) failed evaluation.", failures.len());
         }
     } else {
         let action = if dry_run {
@@ -1158,29 +1180,212 @@ pub fn run_auto_score(backend: &BackendConnection, dry_run: bool, json_output: b
         println!("{} {} prediction(s):", action, scoreable.len());
         for r in &scoreable {
             println!(
-                "  #{} [{}] {} → {} (actual: {}, target: {} {})",
+                "  #{} [{}] {} -> {} (observed: {}, threshold: {})",
                 r.id,
-                r.parsed_symbol,
+                r.rule_type,
                 if r.claim.len() > 50 {
                     format!("{}...", &r.claim[..47])
                 } else {
                     r.claim.clone()
                 },
                 r.outcome,
-                r.actual_price,
-                r.direction,
-                r.target_price,
+                r.observed,
+                r.threshold,
             );
         }
         if !skipped.is_empty() {
-            println!(
-                "  {} predictions skipped (not auto-scoreable)",
-                skipped.len()
-            );
+            println!("  {} rule(s) skipped.", skipped.len());
+        }
+        if !failures.is_empty() {
+            println!("  {} rule(s) failed evaluation.", failures.len());
         }
     }
 
     Ok(())
+}
+
+fn evaluate_falsification_rule(
+    backend: &BackendConnection,
+    rule: &PredictionFalsificationRule,
+) -> Result<RuleDecision> {
+    match rule.rule_type.as_str() {
+        "close-above" => evaluate_close_rule(backend, rule, true),
+        "close-below" => evaluate_close_rule(backend, rule, false),
+        "close-between" => evaluate_between_rule(backend, rule, false),
+        "stays-above" => evaluate_stays_rule(backend, rule, true),
+        "stays-below" => evaluate_stays_rule(backend, rule, false),
+        "stays-in-range" => evaluate_between_rule(backend, rule, true),
+        "prints-above" | "prints-below" | "prints-in-band" => {
+            bail!("missing_macro_cache_data: print rule evaluation is not available for this rule yet")
+        }
+        "correlation-above" | "correlation-below" => {
+            bail!("unsupported_data_source: correlation rule evaluation is not implemented")
+        }
+        other => bail!("unsupported_rule_type: {}", other),
+    }
+}
+
+fn evaluate_close_rule(
+    backend: &BackendConnection,
+    rule: &PredictionFalsificationRule,
+    above: bool,
+) -> Result<RuleDecision> {
+    let symbol = rule_symbol(rule)?;
+    let threshold = decimal_threshold(rule)?;
+    let observed =
+        get_price_at_date_backend(backend, &symbol, &rule.eval_date_end)?.ok_or_else(|| {
+            anyhow::anyhow!(
+                "missing_price_history: {} on or before {}",
+                symbol,
+                rule.eval_date_end
+            )
+        })?;
+    let correct = if above {
+        observed >= threshold
+    } else {
+        observed <= threshold
+    };
+    Ok(RuleDecision {
+        outcome: if correct { "correct" } else { "wrong" },
+        observed,
+        threshold: threshold.to_string(),
+    })
+}
+
+fn evaluate_stays_rule(
+    backend: &BackendConnection,
+    rule: &PredictionFalsificationRule,
+    above: bool,
+) -> Result<RuleDecision> {
+    let symbol = rule_symbol(rule)?;
+    let threshold = decimal_threshold(rule)?;
+    let start = rule
+        .eval_date_start
+        .as_deref()
+        .unwrap_or(&rule.eval_date_end);
+    let prices = price_history_range_backend(backend, &symbol, start, &rule.eval_date_end)?;
+    if prices.is_empty() {
+        bail!(
+            "missing_price_history: {} between {} and {}",
+            symbol,
+            start,
+            rule.eval_date_end
+        );
+    }
+    let observed = if above {
+        prices.iter().copied().fold(Decimal::MAX, Decimal::min)
+    } else {
+        prices.iter().copied().fold(Decimal::ZERO, Decimal::max)
+    };
+    let correct = if above {
+        prices.iter().all(|value| *value >= threshold)
+    } else {
+        prices.iter().all(|value| *value <= threshold)
+    };
+    Ok(RuleDecision {
+        outcome: if correct { "correct" } else { "wrong" },
+        observed,
+        threshold: threshold.to_string(),
+    })
+}
+
+fn evaluate_between_rule(
+    backend: &BackendConnection,
+    rule: &PredictionFalsificationRule,
+    range: bool,
+) -> Result<RuleDecision> {
+    let symbol = rule_symbol(rule)?;
+    let low = decimal_from_f64(rule.threshold_low, "threshold_low")?;
+    let high = decimal_from_f64(rule.threshold_high, "threshold_high")?;
+    let start = rule
+        .eval_date_start
+        .as_deref()
+        .unwrap_or(&rule.eval_date_end);
+    let prices = if range {
+        price_history_range_backend(backend, &symbol, start, &rule.eval_date_end)?
+    } else {
+        get_price_at_date_backend(backend, &symbol, &rule.eval_date_end)?
+            .map(|value| vec![value])
+            .unwrap_or_default()
+    };
+    if prices.is_empty() {
+        bail!(
+            "missing_price_history: {} between {} and {}",
+            symbol,
+            start,
+            rule.eval_date_end
+        );
+    }
+    let observed = *prices.last().unwrap_or(&Decimal::ZERO);
+    let correct = prices.iter().all(|value| *value >= low && *value <= high);
+    Ok(RuleDecision {
+        outcome: if correct { "correct" } else { "wrong" },
+        observed,
+        threshold: format!("{}..{}", low, high),
+    })
+}
+
+fn rule_symbol(rule: &PredictionFalsificationRule) -> Result<String> {
+    rule.symbol
+        .as_deref()
+        .or(rule.prediction_symbol.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow::anyhow!("missing_symbol"))
+}
+
+fn decimal_threshold(rule: &PredictionFalsificationRule) -> Result<Decimal> {
+    decimal_from_f64(
+        rule.threshold_value.or(rule.threshold_high),
+        "threshold_value",
+    )
+}
+
+fn decimal_from_f64(value: Option<f64>, field: &str) -> Result<Decimal> {
+    let value = value.ok_or_else(|| anyhow::anyhow!("missing_{}", field))?;
+    Decimal::from_f64_retain(value).ok_or_else(|| anyhow::anyhow!("invalid_{}", field))
+}
+
+fn price_history_range_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    start: &str,
+    end: &str,
+) -> Result<Vec<Decimal>> {
+    crate::db::query::dispatch(
+        backend,
+        |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT close FROM price_history
+                 WHERE symbol = ?1 AND date >= ?2 AND date <= ?3
+                 ORDER BY date ASC",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![symbol, start, end], |row| {
+                let close: String = row.get(0)?;
+                Ok(close.parse::<Decimal>().unwrap_or(Decimal::ZERO))
+            })?;
+            Ok(rows.filter_map(|row| row.ok()).collect())
+        },
+        |pool| {
+            let rows: Vec<String> = crate::db::pg_runtime::block_on(async {
+                sqlx::query_scalar(
+                    "SELECT close FROM price_history
+                     WHERE symbol = $1 AND date >= $2 AND date <= $3
+                     ORDER BY date ASC",
+                )
+                .bind(symbol)
+                .bind(start)
+                .bind(end)
+                .fetch_all(pool)
+                .await
+            })?;
+            Ok(rows
+                .into_iter()
+                .map(|close| close.parse::<Decimal>().unwrap_or(Decimal::ZERO))
+                .collect())
+        },
+    )
 }
 
 /// List wrong predictions with structured lessons (or mark which lack lessons).
@@ -1207,7 +1412,8 @@ pub fn run_lessons(
     } else {
         limit
     };
-    let mut views = prediction_lessons::list_lesson_views_backend(backend, miss_type, backend_limit)?;
+    let mut views =
+        prediction_lessons::list_lesson_views_backend(backend, miss_type, backend_limit)?;
     if !include_retired {
         // Keep rows that either have no lesson (so unresolved can still
         // surface them) OR have an active lesson.
@@ -1282,7 +1488,10 @@ pub fn run_lessons(
             }
         );
         if unresolved_only {
-            println!("Showing only unresolved backlog ({} without lessons)\n", unresolved_count);
+            println!(
+                "Showing only unresolved backlog ({} without lessons)\n",
+                unresolved_count
+            );
         }
 
         if views.is_empty() {
@@ -1393,7 +1602,10 @@ fn parse_bulk_lessons_input(raw: &str) -> Result<Vec<BulkLessonInput>> {
 }
 
 fn score_timestamp(prediction: &user_predictions::UserPrediction) -> &str {
-    prediction.scored_at.as_deref().unwrap_or(&prediction.created_at)
+    prediction
+        .scored_at
+        .as_deref()
+        .unwrap_or(&prediction.created_at)
 }
 
 fn stub_miss_type(prediction: &user_predictions::UserPrediction) -> &'static str {
@@ -1412,7 +1624,11 @@ fn stub_what_happened(prediction: &user_predictions::UserPrediction) -> String {
     if let Some(symbol) = prediction.symbol.as_deref() {
         parts.push(format!("Symbol: {}.", symbol));
     }
-    if let Some(notes) = prediction.score_notes.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(notes) = prediction
+        .score_notes
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         parts.push(format!("Outcome notes: {}.", notes.trim()));
     } else {
         parts.push("Replace with the actual market outcome that invalidated the call.".to_string());
@@ -1436,7 +1652,12 @@ fn stub_signal_misread(prediction: &user_predictions::UserPrediction) -> Option<
 fn prediction_age_days(prediction: &user_predictions::UserPrediction) -> i64 {
     let timestamp = score_timestamp(prediction);
     timestamp_date_in_timezone(timestamp, local_fixed_offset())
-        .map(|date| Local::now().date_naive().signed_duration_since(date).num_days())
+        .map(|date| {
+            Local::now()
+                .date_naive()
+                .signed_duration_since(date)
+                .num_days()
+        })
         .unwrap_or(0)
 }
 
@@ -1487,8 +1708,10 @@ pub fn run_bulk_lessons(
     let predictions = user_predictions::list_predictions_backend(backend, None, None, None, None)?;
     let lesson_views = prediction_lessons::list_lesson_views_backend(backend, None, None)?;
 
-    let prediction_map: std::collections::HashMap<i64, _> =
-        predictions.into_iter().map(|prediction| (prediction.id, prediction)).collect();
+    let prediction_map: std::collections::HashMap<i64, _> = predictions
+        .into_iter()
+        .map(|prediction| (prediction.id, prediction))
+        .collect();
     let existing_lessons: std::collections::HashSet<i64> = lesson_views
         .into_iter()
         .filter(|view| view.lesson.is_some())
@@ -1566,7 +1789,10 @@ pub fn run_bulk_lessons(
             for prediction in &backlog {
                 let symbol = prediction.symbol.as_deref().unwrap_or("—");
                 let agent = prediction.source_agent.as_deref().unwrap_or("unknown");
-                let scored_at = prediction.scored_at.as_deref().unwrap_or(&prediction.created_at);
+                let scored_at = prediction
+                    .scored_at
+                    .as_deref()
+                    .unwrap_or(&prediction.created_at);
                 println!(
                     "#{} [{}] {} | agent={} | scored={} | age={}d",
                     prediction.id,
@@ -1605,7 +1831,10 @@ pub fn run_bulk_lessons(
                 prediction_id: entry.prediction_id,
                 status: "skipped".to_string(),
                 lesson_id: None,
-                reason: Some(format!("prediction outcome is '{}', not 'wrong'", prediction.outcome)),
+                reason: Some(format!(
+                    "prediction outcome is '{}', not 'wrong'",
+                    prediction.outcome
+                )),
             });
             continue;
         }
@@ -1647,8 +1876,14 @@ pub fn run_bulk_lessons(
         });
     }
 
-    let added = results.iter().filter(|result| result.status == "added").count();
-    let skipped = results.iter().filter(|result| result.status == "skipped").count();
+    let added = results
+        .iter()
+        .filter(|result| result.status == "added")
+        .count();
+    let skipped = results
+        .iter()
+        .filter(|result| result.status == "skipped")
+        .count();
 
     if json_output {
         println!(
@@ -1707,8 +1942,7 @@ pub fn run_add_lesson(
     prediction_lessons::validate_miss_type_str(miss_type)?;
 
     // Look up the prediction to get what_predicted (the claim) and verify it's wrong
-    let predictions =
-        user_predictions::list_predictions_backend(backend, None, None, None, None)?;
+    let predictions = user_predictions::list_predictions_backend(backend, None, None, None, None)?;
     let prediction = predictions
         .iter()
         .find(|p| p.id == prediction_id)
@@ -1938,10 +2172,7 @@ mod tests {
         let p = result.unwrap();
         assert_eq!(p.symbol, "TSLA");
         assert_eq!(p.direction, PriceDirection::Above);
-        assert_eq!(
-            p.target_price,
-            Decimal::from_str_exact("250.50").unwrap()
-        );
+        assert_eq!(p.target_price, Decimal::from_str_exact("250.50").unwrap());
     }
 
     #[test]
@@ -1956,10 +2187,7 @@ mod tests {
 
     #[test]
     fn parse_with_symbol_and_dollar_amount() {
-        let result = parse_price_prediction(
-            "Price will drop below $50,000",
-            Some("BTC-USD"),
-        );
+        let result = parse_price_prediction("Price will drop below $50,000", Some("BTC-USD"));
         assert!(result.is_some());
         let p = result.unwrap();
         assert_eq!(p.symbol, "BTC-USD");
@@ -1969,10 +2197,7 @@ mod tests {
 
     #[test]
     fn parse_non_price_prediction_returns_none() {
-        let result = parse_price_prediction(
-            "Fed will cut rates in Q2 2026",
-            None,
-        );
+        let result = parse_price_prediction("Fed will cut rates in Q2 2026", None);
         assert!(result.is_none());
     }
 
@@ -2011,20 +2236,14 @@ mod tests {
     fn extract_date_converts_utc_naive_timestamp_to_local_calendar_day() {
         let offset = FixedOffset::west_opt(6 * 3600).unwrap();
         let date = timestamp_date_in_timezone("2026-04-06 00:30:00", offset).unwrap();
-        assert_eq!(
-            date,
-            NaiveDate::from_ymd_opt(2026, 4, 5).unwrap()
-        );
+        assert_eq!(date, NaiveDate::from_ymd_opt(2026, 4, 5).unwrap());
     }
 
     #[test]
     fn extract_date_converts_rfc3339_timestamp_to_local_calendar_day() {
         let offset = FixedOffset::west_opt(6 * 3600).unwrap();
         let date = timestamp_date_in_timezone("2026-04-06T00:30:00Z", offset).unwrap();
-        assert_eq!(
-            date,
-            NaiveDate::from_ymd_opt(2026, 4, 5).unwrap()
-        );
+        assert_eq!(date, NaiveDate::from_ymd_opt(2026, 4, 5).unwrap());
     }
 
     #[test]
@@ -2279,7 +2498,164 @@ mod tests {
 
         filter_lesson_views(&mut views, true);
 
-        assert_eq!(views.iter().map(|view| view.prediction_id).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            views
+                .iter()
+                .map(|view| view.prediction_id)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+    }
+
+    #[test]
+    fn autoscore_rule_scores_synthetic_price_history() {
+        let conn = db::open_in_memory();
+        let prediction_id = seed_autoscore_prediction(
+            &conn,
+            "BTC closes above 100 by end of window",
+            "BTC-USD",
+            "close-above",
+            Some(100.0),
+            None,
+            None,
+            "high",
+        );
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('BTC-USD', '2026-05-30', '101', 'test')",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+
+        run_auto_score(&backend, Some("2026-05-01"), false, "medium", false, true).unwrap();
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let scored = rows
+            .into_iter()
+            .find(|row| row.id == prediction_id)
+            .unwrap();
+
+        assert_eq!(scored.outcome, "correct");
+        assert!(scored
+            .score_notes
+            .as_deref()
+            .unwrap()
+            .contains("Auto-scored: rule_type=close-above"));
+    }
+
+    #[test]
+    fn autoscore_missing_price_history_fails_without_scoring() {
+        let conn = db::open_in_memory();
+        let prediction_id = seed_autoscore_prediction(
+            &conn,
+            "BTC closes above 100 by end of window",
+            "BTC-USD",
+            "close-above",
+            Some(100.0),
+            None,
+            None,
+            "high",
+        );
+        let backend = BackendConnection::Sqlite { conn };
+
+        run_auto_score(&backend, Some("2026-05-01"), false, "medium", false, true).unwrap();
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let prediction = rows
+            .into_iter()
+            .find(|row| row.id == prediction_id)
+            .unwrap();
+
+        assert_eq!(prediction.outcome, "pending");
+        let rules = crate::db::prediction_falsification_rules::list_due_auto_score_rules_backend(
+            &backend,
+            Some("2026-05-01"),
+            "2026-06-01",
+        )
+        .unwrap();
+        let err = evaluate_falsification_rule(&backend, &rules[0])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("missing_price_history"));
+    }
+
+    #[test]
+    fn autoscore_dry_run_does_not_mutate_prediction() {
+        let conn = db::open_in_memory();
+        let prediction_id = seed_autoscore_prediction(
+            &conn,
+            "BTC closes below 100 by end of window",
+            "BTC-USD",
+            "close-below",
+            Some(100.0),
+            None,
+            None,
+            "medium",
+        );
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('BTC-USD', '2026-05-30', '90', 'test')",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+
+        run_auto_score(&backend, Some("2026-05-01"), true, "medium", false, true).unwrap();
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let prediction = rows
+            .into_iter()
+            .find(|row| row.id == prediction_id)
+            .unwrap();
+
+        assert_eq!(prediction.outcome, "pending");
+        assert!(prediction.score_notes.is_none());
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn seed_autoscore_prediction(
+        conn: &rusqlite::Connection,
+        claim: &str,
+        symbol: &str,
+        rule_type: &str,
+        threshold_value: Option<f64>,
+        threshold_low: Option<f64>,
+        threshold_high: Option<f64>,
+        confidence: &str,
+    ) -> i64 {
+        let id = crate::db::user_predictions::add_prediction(
+            conn,
+            claim,
+            Some(symbol),
+            Some("medium"),
+            Some("medium"),
+            Some(0.7),
+            Some("test-agent"),
+            Some("2026-05-30"),
+            None,
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO prediction_falsification_rules
+                (prediction_id, rule_type, symbol, threshold_value, threshold_low, threshold_high,
+                 eval_date_start, eval_date_end, parse_confidence, auto_score_eligible)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, '2026-05-01', '2026-05-30', ?7, 1)",
+            rusqlite::params![
+                id,
+                rule_type,
+                symbol,
+                threshold_value,
+                threshold_low,
+                threshold_high,
+                confidence
+            ],
+        )
+        .unwrap();
+        id
     }
 
     #[test]
@@ -2309,7 +2685,10 @@ mod tests {
         assert_eq!(stubs.len(), 1);
         assert_eq!(stubs[0].prediction_id, 7);
         assert_eq!(stubs[0].stub.miss_type, "timing");
-        assert!(stubs[0].stub.what_happened.contains("BTC stayed rangebound"));
+        assert!(stubs[0]
+            .stub
+            .what_happened
+            .contains("BTC stayed rangebound"));
         assert!(stubs[0].stub.why_wrong.contains("Root cause"));
         assert_eq!(
             stubs[0].stub.signal_misread.as_deref(),
@@ -2402,7 +2781,14 @@ mod tests {
         )
         .unwrap();
 
-        let result = run_bulk_lessons(&backend, Some(path.to_str().unwrap()), false, true, true, true);
+        let result = run_bulk_lessons(
+            &backend,
+            Some(path.to_str().unwrap()),
+            false,
+            true,
+            true,
+            true,
+        );
         std::fs::remove_file(&path).ok();
         assert!(result.is_ok());
     }

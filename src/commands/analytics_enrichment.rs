@@ -444,14 +444,15 @@ pub fn falsifications_list(
     }
     for r in &rows {
         println!(
-            "#{:<4} pred={:<6} type={:<16} auto={}  {}",
+            "#{:<4} pred={:<6} type={:<16} auto={}  sym={} eval={}",
             r.id,
             r.prediction_id
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| "-".to_string()),
             r.rule_type,
-            r.auto_eligible,
-            r.description
+            r.auto_score_eligible,
+            r.symbol.as_deref().unwrap_or("-"),
+            r.eval_date_end.as_deref().unwrap_or("-"),
         );
     }
     Ok(())

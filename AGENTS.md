@@ -170,7 +170,7 @@ Contract for predictions:
 | `pftui portfolio set-cash CURRENCY AMOUNT [--confirm] [--dry-run] [--json]` | Replace cash transactions with an exact cash position; requires `--confirm` when more than one row would be discarded |
 | `pftui portfolio watchlist add SYMBOL [--target PRICE]` | Add to watchlist |
 | `pftui portfolio watchlist remove SYMBOL` | Remove from watchlist |
-| `pftui portfolio target set SYMBOL --floor PCT --ceiling PCT` | Set acceptable allocation range; legacy `--target PCT --band PCT` is still accepted |
+| `pftui portfolio target set SYMBOL --floor PCT --ceiling PCT` | Set acceptable allocation range; SYMBOL may be any tradeable symbol or a cash symbol (USD, GBP, EUR — wide bands like `--floor 30 --ceiling 60` model dry-powder optionality while still surfacing drift on breach); legacy `--target PCT --band PCT` is still accepted |
 | `pftui portfolio target remove SYMBOL` | Remove target |
 | `pftui portfolio rebalance --json` | Suggested trades to reach targets |
 | `pftui portfolio broker add BROKER --api-key KEY [--secret SECRET]` | Connect a broker (trading212, ibkr, binance, kraken, coinbase, crypto-com) |

@@ -1,169 +1,489 @@
-//! `prediction_falsification_rules` — falsification rules attached to
-//! predictions. Each row describes a rule that, when triggered, marks the
-//! prediction wrong. Mirrored from the live-DB enrichment session (June 1 2026).
+use anyhow::{anyhow, Result};
+use rusqlite::Connection;
+use serde::Serialize;
+use sqlx::PgPool;
 
-use anyhow::Result;
-use rusqlite::{params, Connection};
-use serde::{Deserialize, Serialize};
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FalsificationRule {
+/// Read-only row shape returned by `list()` for the
+/// `pftui analytics falsifications` CLI. Mirrors the columns actually
+/// present in the live DB / `ensure_table` schema below.
+#[derive(Debug, Clone, Serialize)]
+pub struct FalsificationRuleSummary {
     pub id: i64,
     pub prediction_id: Option<i64>,
     pub rule_type: String,
-    pub description: String,
+    pub symbol: Option<String>,
     pub threshold_value: Option<f64>,
-    pub threshold_symbol: Option<String>,
-    pub time_horizon: Option<String>,
-    pub auto_eligible: bool,
-    pub created_at: String,
+    pub threshold_low: Option<f64>,
+    pub threshold_high: Option<f64>,
+    pub eval_date_start: Option<String>,
+    pub eval_date_end: Option<String>,
+    pub parse_confidence: Option<String>,
+    pub auto_score_eligible: bool,
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PredictionFalsificationRule {
+    pub id: i64,
+    pub prediction_id: i64,
+    pub claim: String,
+    pub prediction_symbol: Option<String>,
+    pub current_outcome: String,
+    pub rule_type: String,
+    pub symbol: Option<String>,
+    pub threshold_value: Option<f64>,
+    pub threshold_low: Option<f64>,
+    pub threshold_high: Option<f64>,
+    pub eval_date_start: Option<String>,
+    pub eval_date_end: String,
+    pub parse_confidence: String,
+}
+
+#[derive(Debug, Clone)]
+struct RuleColumns {
+    id: String,
+    prediction_id: String,
+    rule_type: String,
+    symbol: Option<String>,
+    threshold_value: Option<String>,
+    threshold_low: Option<String>,
+    threshold_high: Option<String>,
+    eval_date_start: Option<String>,
+    eval_date_end: String,
+    parse_confidence: Option<String>,
+    auto_score_eligible: Option<String>,
 }
 
 pub fn ensure_table(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS prediction_falsification_rules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            prediction_id INTEGER,
+            prediction_id INTEGER NOT NULL REFERENCES user_predictions(id) ON DELETE CASCADE,
             rule_type TEXT NOT NULL,
-            description TEXT NOT NULL,
+            symbol TEXT,
             threshold_value REAL,
-            threshold_symbol TEXT,
-            time_horizon TEXT,
-            auto_eligible INTEGER NOT NULL DEFAULT 0 CHECK(auto_eligible IN (0,1)),
+            threshold_low REAL,
+            threshold_high REAL,
+            eval_date_start TEXT,
+            eval_date_end TEXT NOT NULL,
+            parse_confidence TEXT NOT NULL DEFAULT 'medium',
+            auto_score_eligible INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_falsification_rules_prediction
-            ON prediction_falsification_rules(prediction_id);
-        CREATE INDEX IF NOT EXISTS idx_falsification_rules_type
-            ON prediction_falsification_rules(rule_type);",
+        CREATE INDEX IF NOT EXISTS idx_prediction_falsification_rules_auto
+            ON prediction_falsification_rules(auto_score_eligible, eval_date_end, parse_confidence);
+        CREATE INDEX IF NOT EXISTS idx_prediction_falsification_rules_prediction
+            ON prediction_falsification_rules(prediction_id);",
     )?;
     Ok(())
 }
 
+/// Generic list for the `pftui analytics falsifications` CLI. Filters by
+/// rule type, auto-eligibility, and owning prediction. Tolerant of column
+/// drift between schema versions.
 pub fn list(
     conn: &Connection,
     rule_type: Option<&str>,
     auto_eligible_only: bool,
     for_prediction: Option<i64>,
-) -> Result<Vec<FalsificationRule>> {
+) -> Result<Vec<FalsificationRuleSummary>> {
     ensure_table(conn)?;
-    let mut sql = String::from(
-        "SELECT id, prediction_id, rule_type, description, threshold_value,
-                threshold_symbol, time_horizon, auto_eligible, created_at
-         FROM prediction_falsification_rules WHERE 1=1",
+    let columns = detect_columns(conn)?;
+    let symbol_expr = columns
+        .symbol
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let threshold_value_expr = columns
+        .threshold_value
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let threshold_low_expr = columns
+        .threshold_low
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let threshold_high_expr = columns
+        .threshold_high
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let eval_start_expr = columns
+        .eval_date_start
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let parse_confidence_expr = columns
+        .parse_confidence
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let auto_eligible_expr = columns
+        .auto_score_eligible
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "0".to_string());
+
+    let mut sql = format!(
+        "SELECT r.{id} AS id, r.{prediction_id} AS prediction_id, r.{rule_type} AS rule_type,
+                {symbol} AS symbol, {threshold_value} AS threshold_value,
+                {threshold_low} AS threshold_low, {threshold_high} AS threshold_high,
+                {eval_start} AS eval_date_start, r.{eval_end} AS eval_date_end,
+                {parse_confidence} AS parse_confidence,
+                {auto_eligible} AS auto_score_eligible
+         FROM prediction_falsification_rules r WHERE 1=1",
+        id = columns.id,
+        prediction_id = columns.prediction_id,
+        rule_type = columns.rule_type,
+        symbol = symbol_expr,
+        threshold_value = threshold_value_expr,
+        threshold_low = threshold_low_expr,
+        threshold_high = threshold_high_expr,
+        eval_start = eval_start_expr,
+        eval_end = columns.eval_date_end,
+        parse_confidence = parse_confidence_expr,
+        auto_eligible = auto_eligible_expr,
     );
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if let Some(t) = rule_type {
-        sql.push_str(" AND rule_type = ?");
+        sql.push_str(&format!(" AND r.{} = ?", columns.rule_type));
         args.push(Box::new(t.to_string()));
     }
     if auto_eligible_only {
-        sql.push_str(" AND auto_eligible = 1");
+        if let Some(col) = &columns.auto_score_eligible {
+            sql.push_str(&format!(" AND r.{} = 1", col));
+        }
     }
     if let Some(p) = for_prediction {
-        sql.push_str(" AND prediction_id = ?");
+        sql.push_str(&format!(" AND r.{} = ?", columns.prediction_id));
         args.push(Box::new(p));
     }
-    sql.push_str(" ORDER BY id DESC");
+    sql.push_str(&format!(" ORDER BY r.{} DESC", columns.id));
+
     let mut stmt = conn.prepare(&sql)?;
     let params_slice: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
     let rows = stmt
         .query_map(params_slice.as_slice(), |row| {
-            Ok(FalsificationRule {
+            Ok(FalsificationRuleSummary {
                 id: row.get(0)?,
-                prediction_id: row.get(1)?,
+                prediction_id: row.get(1).ok(),
                 rule_type: row.get(2)?,
-                description: row.get(3)?,
-                threshold_value: row.get(4)?,
-                threshold_symbol: row.get(5)?,
-                time_horizon: row.get(6)?,
-                auto_eligible: row.get::<_, i64>(7)? != 0,
-                created_at: row.get(8)?,
+                symbol: row.get(3).ok().flatten(),
+                threshold_value: row.get(4).ok().flatten(),
+                threshold_low: row.get(5).ok().flatten(),
+                threshold_high: row.get(6).ok().flatten(),
+                eval_date_start: row.get(7).ok().flatten(),
+                eval_date_end: row.get(8).ok(),
+                parse_confidence: row.get(9).ok().flatten(),
+                auto_score_eligible: row.get::<_, Option<i64>>(10).ok().flatten().unwrap_or(0)
+                    != 0,
+                created_at: None,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
 
-#[allow(dead_code, clippy::too_many_arguments)]
-pub fn insert(
-    conn: &Connection,
-    prediction_id: Option<i64>,
-    rule_type: &str,
-    description: &str,
-    threshold_value: Option<f64>,
-    threshold_symbol: Option<&str>,
-    time_horizon: Option<&str>,
-    auto_eligible: bool,
-) -> Result<i64> {
-    ensure_table(conn)?;
-    conn.execute(
-        "INSERT INTO prediction_falsification_rules
-            (prediction_id, rule_type, description, threshold_value,
-             threshold_symbol, time_horizon, auto_eligible)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![
-            prediction_id,
-            rule_type,
-            description,
-            threshold_value,
-            threshold_symbol,
-            time_horizon,
-            if auto_eligible { 1 } else { 0 },
-        ],
-    )?;
-    Ok(conn.last_insert_rowid())
+pub fn ensure_table_backend(backend: &BackendConnection) -> Result<()> {
+    query::dispatch(backend, ensure_table, ensure_table_postgres)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub fn list_due_auto_score_rules_backend(
+    backend: &BackendConnection,
+    since: Option<&str>,
+    today: &str,
+) -> Result<Vec<PredictionFalsificationRule>> {
+    query::dispatch(
+        backend,
+        |conn| list_due_auto_score_rules(conn, since, today),
+        |pool| list_due_auto_score_rules_postgres(pool, since, today),
+    )
+}
 
-    fn fresh_conn() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        ensure_table(&conn).unwrap();
-        conn
+fn list_due_auto_score_rules(
+    conn: &Connection,
+    since: Option<&str>,
+    today: &str,
+) -> Result<Vec<PredictionFalsificationRule>> {
+    ensure_table(conn)?;
+    let columns = detect_columns(conn)?;
+
+    let symbol_expr = columns
+        .symbol
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let threshold_value_expr = columns
+        .threshold_value
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let threshold_low_expr = columns
+        .threshold_low
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let threshold_high_expr = columns
+        .threshold_high
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let eval_start_expr = columns
+        .eval_date_start
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let parse_confidence_expr = columns
+        .parse_confidence
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "'medium'".to_string());
+
+    let mut where_parts = vec![format!("r.{} <= ?1", columns.eval_date_end)];
+    if let Some(eligible) = columns.auto_score_eligible.as_ref() {
+        where_parts.push(format!("COALESCE(r.{eligible}, 0) = 1"));
+    }
+    if since.is_some() {
+        where_parts.push(format!("r.{} >= ?2", columns.eval_date_end));
     }
 
-    #[test]
-    fn insert_then_list_filters() {
-        let conn = fresh_conn();
-        insert(
-            &conn,
-            Some(42),
-            "price-threshold",
-            "BTC closes below 80k for 3 sessions",
-            Some(80000.0),
-            Some("BTC"),
-            Some("3d"),
-            true,
-        )
-        .unwrap();
-        insert(
-            &conn,
-            Some(42),
-            "narrative",
-            "Iran ceasefire formally signed",
-            None,
-            None,
-            Some("weeks"),
-            false,
-        )
-        .unwrap();
-        insert(
-            &conn,
-            None,
-            "price-threshold",
-            "DXY above 110",
-            Some(110.0),
-            Some("DXY"),
-            None,
-            true,
-        )
-        .unwrap();
+    let sql = format!(
+        "SELECT
+            r.{id},
+            r.{prediction_id},
+            p.claim,
+            p.symbol,
+            p.outcome,
+            r.{rule_type},
+            {symbol_expr},
+            {threshold_value_expr},
+            {threshold_low_expr},
+            {threshold_high_expr},
+            {eval_start_expr},
+            r.{eval_date_end},
+            {parse_confidence_expr}
+         FROM prediction_falsification_rules r
+         JOIN user_predictions p ON p.id = r.{prediction_id}
+         WHERE {where_clause}
+         ORDER BY r.{eval_date_end} ASC, r.{id} ASC",
+        id = columns.id,
+        prediction_id = columns.prediction_id,
+        rule_type = columns.rule_type,
+        eval_date_end = columns.eval_date_end,
+        where_clause = where_parts.join(" AND "),
+    );
 
-        assert_eq!(list(&conn, Some("price-threshold"), false, None).unwrap().len(), 2);
-        assert_eq!(list(&conn, None, true, None).unwrap().len(), 2);
-        assert_eq!(list(&conn, None, false, Some(42)).unwrap().len(), 2);
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = if let Some(since) = since {
+        stmt.query(rusqlite::params![today, since])?
+    } else {
+        stmt.query(rusqlite::params![today])?
+    };
+
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        out.push(PredictionFalsificationRule {
+            id: row.get(0)?,
+            prediction_id: row.get(1)?,
+            claim: row.get(2)?,
+            prediction_symbol: row.get(3)?,
+            current_outcome: row.get(4)?,
+            rule_type: row.get(5)?,
+            symbol: row.get(6)?,
+            threshold_value: row.get(7)?,
+            threshold_low: row.get(8)?,
+            threshold_high: row.get(9)?,
+            eval_date_start: row.get(10)?,
+            eval_date_end: row.get(11)?,
+            parse_confidence: row
+                .get::<_, Option<String>>(12)?
+                .unwrap_or_else(|| "medium".into()),
+        });
     }
+    Ok(out)
+}
+
+fn detect_columns(conn: &Connection) -> Result<RuleColumns> {
+    let mut stmt = conn.prepare("PRAGMA table_info('prediction_falsification_rules')")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    let mut names = Vec::new();
+    for row in rows {
+        names.push(row?);
+    }
+
+    let required = |candidates: &[&str]| -> Result<String> {
+        optional(&names, candidates).ok_or_else(|| {
+            anyhow!(
+                "prediction_falsification_rules is missing required column; expected one of {:?}",
+                candidates
+            )
+        })
+    };
+
+    Ok(RuleColumns {
+        id: required(&["id"])?,
+        prediction_id: required(&["prediction_id", "user_prediction_id"])?,
+        rule_type: required(&["rule_type"])?,
+        symbol: optional(&names, &["symbol", "asset_symbol", "ticker"]),
+        threshold_value: optional(&names, &["threshold_value", "threshold", "target_value"]),
+        threshold_low: optional(
+            &names,
+            &[
+                "threshold_low",
+                "lower_threshold",
+                "threshold_min",
+                "min_value",
+            ],
+        ),
+        threshold_high: optional(
+            &names,
+            &[
+                "threshold_high",
+                "upper_threshold",
+                "threshold_max",
+                "max_value",
+            ],
+        ),
+        eval_date_start: optional(&names, &["eval_date_start", "start_date", "window_start"]),
+        eval_date_end: required(&["eval_date_end", "end_date", "window_end", "target_date"])?,
+        parse_confidence: optional(&names, &["parse_confidence", "confidence"]),
+        auto_score_eligible: optional(&names, &["auto_score_eligible", "autoscore_eligible"]),
+    })
+}
+
+fn optional(names: &[String], candidates: &[&str]) -> Option<String> {
+    candidates
+        .iter()
+        .find(|candidate| names.iter().any(|name| name == **candidate))
+        .map(|value| (*value).to_string())
+}
+
+fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
+    crate::db::pg_runtime::block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS prediction_falsification_rules (
+                id BIGSERIAL PRIMARY KEY,
+                prediction_id BIGINT NOT NULL REFERENCES user_predictions(id) ON DELETE CASCADE,
+                rule_type TEXT NOT NULL,
+                symbol TEXT,
+                threshold_value DOUBLE PRECISION,
+                threshold_low DOUBLE PRECISION,
+                threshold_high DOUBLE PRECISION,
+                eval_date_start TEXT,
+                eval_date_end TEXT NOT NULL,
+                parse_confidence TEXT NOT NULL DEFAULT 'medium',
+                auto_score_eligible BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_prediction_falsification_rules_auto
+                ON prediction_falsification_rules(auto_score_eligible, eval_date_end, parse_confidence)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_prediction_falsification_rules_prediction
+                ON prediction_falsification_rules(prediction_id)",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn list_due_auto_score_rules_postgres(
+    pool: &PgPool,
+    since: Option<&str>,
+    today: &str,
+) -> Result<Vec<PredictionFalsificationRule>> {
+    ensure_table_postgres(pool)?;
+    let rows = crate::db::pg_runtime::block_on(async {
+        let mut query = sqlx::QueryBuilder::new(
+            "SELECT
+                r.id,
+                r.prediction_id,
+                p.claim,
+                p.symbol,
+                p.outcome,
+                r.rule_type,
+                r.symbol,
+                r.threshold_value,
+                r.threshold_low,
+                r.threshold_high,
+                r.eval_date_start,
+                r.eval_date_end,
+                r.parse_confidence
+             FROM prediction_falsification_rules r
+             JOIN user_predictions p ON p.id = r.prediction_id
+             WHERE r.auto_score_eligible = TRUE
+               AND r.eval_date_end <= ",
+        );
+        query.push_bind(today);
+        if let Some(since) = since {
+            query.push(" AND r.eval_date_end >= ");
+            query.push_bind(since);
+        }
+        query.push(" ORDER BY r.eval_date_end ASC, r.id ASC");
+        query
+            .build_query_as::<(
+                i64,
+                i64,
+                String,
+                Option<String>,
+                String,
+                String,
+                Option<String>,
+                Option<f64>,
+                Option<f64>,
+                Option<f64>,
+                Option<String>,
+                String,
+                String,
+            )>()
+            .fetch_all(pool)
+            .await
+    })?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                prediction_id,
+                claim,
+                prediction_symbol,
+                current_outcome,
+                rule_type,
+                symbol,
+                threshold_value,
+                threshold_low,
+                threshold_high,
+                eval_date_start,
+                eval_date_end,
+                parse_confidence,
+            )| PredictionFalsificationRule {
+                id,
+                prediction_id,
+                claim,
+                prediction_symbol,
+                current_outcome,
+                rule_type,
+                symbol,
+                threshold_value,
+                threshold_low,
+                threshold_high,
+                eval_date_start,
+                eval_date_end,
+                parse_confidence,
+            },
+        )
+        .collect())
 }

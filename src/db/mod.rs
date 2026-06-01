@@ -5,7 +5,6 @@ pub mod calibration_adjustments;
 pub mod event_annotations;
 pub mod failure_correlations;
 pub mod operator_replies;
-pub mod prediction_falsification_rules;
 pub mod reasoning_fragments;
 pub mod sources_registry;
 pub mod clusters;
@@ -62,6 +61,7 @@ pub mod postgres_schema;
 #[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)
 pub mod prediction_cache;
 pub mod prediction_contracts;
+pub mod prediction_falsification_rules;
 pub mod prediction_lessons;
 pub mod predictions_cache;
 pub mod predictions_history;

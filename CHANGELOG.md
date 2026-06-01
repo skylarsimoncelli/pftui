@@ -2,16 +2,25 @@
 
 ### 2026-06-01 — feat: CLI surface for live-DB enrichment tables
 
-- What: Eight new live-DB enrichment tables (`sources_registry`, `event_annotations`, `reasoning_fragments`, `lesson_fragment_edges`, `calibration_adjustments`, `failure_correlations`, `operator_replies`, `prediction_falsification_rules`) plus a `cluster_key` column on `prediction_lessons` are now schema-managed by `db::schema::run_migrations` and exposed through a full CLI surface (all with `--json`):
+- What: Seven new live-DB enrichment tables (`sources_registry`, `event_annotations`, `reasoning_fragments`, `lesson_fragment_edges`, `calibration_adjustments`, `failure_correlations`, `operator_replies`) plus a `cluster_key` column on `prediction_lessons` are now schema-managed by `db::schema::run_migrations` and exposed through a full CLI surface (all with `--json`):
     - `pftui analytics sources list|set|remove [--type ...]`
     - `pftui analytics events list|add [--category --since --asset]`
     - `pftui analytics fragments list|show [--type --topic --cluster --for-claim]` — `--for-claim` runs a keyword-based cluster classifier and returns applicable fragments via `lesson_fragment_edges`
     - `pftui analytics calibration-adjustments [--layer --topic --conviction]`
     - `pftui analytics failures correlations [--cluster --min-share]`
     - `pftui analytics clusters list|stats`
-    - `pftui analytics falsifications [--rule-type --auto-eligible --for-prediction]`
+    - `pftui analytics falsifications [--rule-type --auto-eligible --for-prediction]` (reads the live `prediction_falsification_rules` schema introduced in PR #802)
     - `pftui journal replies list|add` — structured operator replies (yes/no/wait/refine/...) per report decision
 - Why: Live-DB enrichment shipped the tables but most could only be queried via raw `sqlite3`. The CLI surface makes the substrate accessible to analyst routines under the standard `pftui analytics` / `pftui journal` tree per CLAUDE.md CLI design rules. Tests cover roundtrips for every new module plus the cluster classifier.
+
+### 2026-06-01 — feat: allocation target for cash position
+
+- What: Audited the `allocation_targets` write path (`src/db/allocation_targets.rs`, `src/commands/target.rs`) and confirmed it is symbol-agnostic — `pftui portfolio target set USD --floor 30 --ceiling 60` (and analogous GBP/EUR variants) now succeed without any code change. Extracted `compute_drift_rows` from `src/commands/drift.rs::run` so cash-drift inclusion is unit-tested directly: cash positions with a target appear in `pftui portfolio drift` alongside every other asset, and cash without a target stays silent (no auto-seeded default). Documented the design in `docs/ANALYTICS-SPEC.md` under a new "Cash Allocation Bands" section: wide floor/ceiling bands model dry-powder optionality while still emitting drift signals on breach.
+- Why: Closes the visibility loop on the drift system. With cash modeled as a wide-band position rather than a silent zone, every dollar in the portfolio sits within a tracked range — a sustained drop below the cash floor or rise above the cash ceiling now surfaces in the same drift channel that already governs every other holding.
+### 2026-06-01 — feat: add prediction autoscore from falsification rules
+
+- What: Added `pftui prediction autoscore` plus the existing `journal prediction auto-score` path for due `prediction_falsification_rules`, with confidence floors, dry-run, force overwrite control, structured JSON failures, price-history rule evaluation, and tests for scoring, missing data, and dry-run behavior.
+- Why: Auto-eligible predictions can now be scored mechanically when their evaluation window closes, keeping calibration current without requiring the evening analyst to manually resolve every price-based call.
 
 ### 2026-06-01 — feat: lesson half-life curation
 

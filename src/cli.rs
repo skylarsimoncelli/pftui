@@ -2193,14 +2193,21 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Auto-score pending predictions whose target_date has passed, using market price data.
-    /// Only scores unambiguous price-direction predictions (e.g., "BTC above $70K by Mar 28").
-    /// Complex or qualitative predictions are left as pending.
-    #[command(name = "auto-score")]
+    /// Auto-score due predictions from structured falsification rules and market data.
+    #[command(name = "auto-score", alias = "autoscore")]
     AutoScore {
+        /// Only evaluate rules whose eval_date_end is on or after this YYYY-MM-DD date
+        #[arg(long)]
+        since: Option<String>,
         /// Preview what would be scored without writing changes
         #[arg(long)]
         dry_run: bool,
+        /// Minimum parser confidence required for scoring
+        #[arg(long = "confidence-floor", default_value = "medium")]
+        confidence_floor: PredictionConfidenceFloorArg,
+        /// Allow autoscore to overwrite already-scored predictions
+        #[arg(long)]
+        force: bool,
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -2238,6 +2245,12 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum PredictionConfidenceFloorArg {
+    Medium,
+    High,
 }
 
 #[derive(Subcommand)]
@@ -4929,6 +4942,12 @@ pub enum Command {
     Portfolio {
         #[command(subcommand)]
         command: Option<PortfolioCommand>,
+    },
+
+    /// Prediction tracking shortcut for autoscore workflows
+    Prediction {
+        #[command(subcommand)]
+        command: JournalPredictionCommand,
     },
 
     /// Report generation and chart-rendering primitives
