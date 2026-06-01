@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 
 use crate::db::backend::BackendConnection;
 use crate::db::scenario_contract_mappings;
+use crate::db::scenarios;
 use crate::db::user_predictions::{self, UserPrediction};
 
 // ── JSON output structs ────────────────────────────────────────────
@@ -157,6 +158,14 @@ pub fn run(
     };
 
     if mappings.is_empty() {
+        // If there are active scenarios, surface a prompt suggesting --auto-suggest
+        // as the fastest way to seed mappings. The prompt naturally appears only
+        // while calibration is empty — once any mapping is created, the early
+        // empty-branch is skipped so the prompt is shown at most until first use.
+        let active_scenarios_exist = scenarios::list_scenarios_backend(backend, Some("active"))
+            .map(|rows| !rows.is_empty())
+            .unwrap_or(false);
+
         if json_output {
             println!(
                 "{}",
@@ -179,8 +188,25 @@ pub fn run(
         } else {
             println!("No scenario↔contract mappings found.");
             println!();
-            println!("Map prediction market contracts to scenarios first:");
-            println!("  pftui data predictions map --scenario \"US Recession 2026\" --search \"recession\"");
+            if active_scenarios_exist {
+                println!(
+                    "Active scenarios exist but none are mapped to prediction-market contracts."
+                );
+                println!(
+                    "Run auto-suggest to get top-3 candidate mappings per scenario in one call:"
+                );
+                println!("  pftui data predictions map --auto-suggest");
+                println!();
+                println!("Then map the candidate you like:");
+                println!(
+                    "  pftui data predictions map --scenario \"<name>\" --contract-id <id>"
+                );
+            } else {
+                println!("Map prediction market contracts to scenarios first:");
+                println!(
+                    "  pftui data predictions map --scenario \"US Recession 2026\" --search \"recession\""
+                );
+            }
             println!();
             println!("See: pftui data predictions map --help");
             println!();
@@ -832,6 +858,34 @@ mod tests {
         // Should not panic with empty data
         let result = run(&backend, 15.0, 90, false, false);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn calibration_empty_with_active_scenarios_triggers_prompt_branch() {
+        // When calibration is empty AND active scenarios exist, the empty-state
+        // branch must surface the --auto-suggest prompt path. This test pins
+        // that the branch runs to completion without panicking; the prompt
+        // itself is rendered via println! so we can't intercept the string
+        // here, but the branch is the only path that reaches the active-
+        // scenarios message.
+        let backend = setup_test_db();
+        insert_scenario(&backend, "US Recession 2026", 40.0);
+
+        let mappings =
+            scenario_contract_mappings::list_enriched_backend(&backend).unwrap();
+        assert!(mappings.is_empty(), "precondition: no mappings yet");
+
+        let scenarios_active =
+            scenarios::list_scenarios_backend(&backend, Some("active")).unwrap();
+        assert!(!scenarios_active.is_empty(), "precondition: scenario active");
+
+        // Text output (where the prompt would render)
+        let result = run(&backend, 15.0, 90, false, false);
+        assert!(result.is_ok());
+
+        // JSON output (no prompt, but still empty report)
+        let result_json = run(&backend, 15.0, 90, false, true);
+        assert!(result_json.is_ok());
     }
 
     #[test]

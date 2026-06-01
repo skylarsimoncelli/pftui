@@ -1019,7 +1019,7 @@ pub enum DataPredictionsCommand {
     },
     /// Link a prediction market contract to a pftui scenario. On each refresh, the contract's probability is auto-logged as a scenario history data point.
     #[command(
-        after_help = "Maps a Polymarket contract to a pftui scenario so that every\n`pftui data refresh` automatically logs the market probability as a\ndata point in the scenario's history timeline.\n\nUse --search to find contracts by keyword (matches question and event\ntitle). Use --scenario to specify the scenario name.\n\nExample:\n  pftui data predictions map --scenario \"US Recession 2026\" --search \"recession\"\n\nTo see all mappings:\n  pftui data predictions map --list\n\nSee also: `data predictions markets`, `analytics scenario list`,\n          `analytics calibration` (F55.5)"
+        after_help = "Maps a Polymarket contract to a pftui scenario so that every\n`pftui data refresh` automatically logs the market probability as a\ndata point in the scenario's history timeline.\n\nUse --search to find contracts by keyword (matches question and event\ntitle). Use --scenario to specify the scenario name.\n\nUse --auto-suggest to scan every active scenario and emit the top 3\nmapping candidates per scenario, scored by keyword overlap and category\nfit. Combine with --scenario to restrict the scan to one scenario.\n\nUse --contract-id (alias of --contract) to map a specific contract.\n\nExamples:\n  pftui data predictions map --auto-suggest\n  pftui data predictions map --auto-suggest --scenario \"US Recession 2026\"\n  pftui data predictions map --scenario \"US Recession 2026\" --contract-id 0xabc...\n  pftui data predictions map --scenario \"US Recession 2026\" --search \"recession\"\n\nTo see all mappings:\n  pftui data predictions map --list\n\nSee also: `data predictions markets`, `data predictions suggest-mappings`,\n          `analytics scenario list`, `analytics calibration` (F55.5)"
     )]
     Map {
         /// Scenario name to link (must match an existing scenario)
@@ -1030,13 +1030,17 @@ pub enum DataPredictionsCommand {
         #[arg(long)]
         search: Option<String>,
 
-        /// Specific contract_id to link (alternative to --search)
-        #[arg(long)]
+        /// Specific contract_id to link (alternative to --search). Alias: --contract-id
+        #[arg(long, visible_alias = "contract-id")]
         contract: Option<String>,
 
         /// List all existing scenario-contract mappings
         #[arg(long)]
         list: bool,
+
+        /// Auto-suggest top 3 mapping candidates per active scenario, scored by keyword overlap with Polymarket contract titles. Combine with --scenario to restrict to one scenario.
+        #[arg(long = "auto-suggest")]
+        auto_suggest: bool,
 
         /// Output as JSON
         #[arg(long)]
@@ -9702,12 +9706,14 @@ mod tests {
                 search,
                 contract,
                 list,
+                auto_suggest,
                 json,
             }) => {
                 assert_eq!(scenario.as_deref(), Some("US Recession 2026"));
                 assert_eq!(search.as_deref(), Some("recession"));
                 assert!(contract.is_none());
                 assert!(!list);
+                assert!(!auto_suggest);
                 assert!(!json);
             }
             _ => panic!("expected map subcommand"),
@@ -9744,6 +9750,73 @@ mod tests {
                 assert_eq!(scenario.as_deref(), Some("Fed Cut April"));
                 assert_eq!(contract.as_deref(), Some("0xabc123"));
                 assert!(json);
+            }
+            _ => panic!("expected map subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_map_auto_suggest() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "map",
+            "--auto-suggest",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Map {
+                auto_suggest,
+                json,
+                scenario,
+                ..
+            }) => {
+                assert!(auto_suggest);
+                assert!(json);
+                assert!(scenario.is_none());
+            }
+            _ => panic!("expected map subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_map_contract_id_alias() {
+        // --contract-id is a visible alias for --contract per the TODO contract
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "map",
+            "--scenario",
+            "Fed Cut April",
+            "--contract-id",
+            "0xabc123",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Map {
+                scenario,
+                contract,
+                auto_suggest,
+                ..
+            }) => {
+                assert_eq!(scenario.as_deref(), Some("Fed Cut April"));
+                assert_eq!(contract.as_deref(), Some("0xabc123"));
+                assert!(!auto_suggest);
             }
             _ => panic!("expected map subcommand"),
         }

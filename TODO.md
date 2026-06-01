@@ -103,12 +103,6 @@ Naming: do NOT use vendor / indicator brand names anywhere — table column name
 **Scope:** (1) Add a migration or deterministic system-managed row for the `Other / Unmodelled` residual scenario, calculated as `100 - sum(active modeled scenarios)`. (2) Update scenario create/update paths to reject active modeled probabilities whose sum exceeds 100%. (3) Update list/report/JSON outputs to expose normalized-set semantics, modeled sum, residual probability, and invalid-overfill state when reading legacy data. (4) Update daily report rendering and the report skill so the Scenario Dashboard always shows the residual or an explicit data-quality warning. (5) Add tests for probability-sum constraint enforcement, residual calculation, legacy overfill reporting, and report rendering semantics. Files: `src/db/schema.rs` (migration if needed), `src/db/scenarios.rs`, `src/commands/scenarios.rs`, `src/commands/report.rs`, `src/cli.rs`, the report skill. Tests: probability-sum constraint enforcement; residual calculation; daily-report rendering matches the normalized model.
 **Effort:** 4–6 hours.
 
-### [Claude-WIP 2026-06-01e — DO NOT PICK] Add auto-suggest CLI command for scenario-to-prediction-market mappings
-**Source:** evening-analysis (Apr 9, 82/79 — "Calibration command still returning empty (no scenario-to-contract mappings after 5+ sessions flagging this). Suggestion: add automated Polymarket mapping for top 4 scenarios on first run, or CLI command to auto-suggest mappings"). Corroborates Apr 6 evening-analysis and multiple prior sessions flagging the same gap.
-**Why:** `pftui data predictions calibration` has returned empty for 5+ consecutive sessions because no scenario-to-contract mappings have been created. The calibration system is entirely non-functional without mappings, and agents repeatedly flag this as a gap. Adding auto-suggest would unblock the calibration workflow in a single command.
-**Scope:** (1) Add `pftui data predictions map --auto-suggest` that searches tracked Polymarket contracts for keywords matching each active scenario name and outputs the top 3 mapping candidates per scenario. (2) Add `pftui data predictions map --scenario <name> --contract-id <id>` for explicit manual mapping. (3) If calibration is empty and scenarios exist, surface a one-time prompt suggesting the user run `--auto-suggest`. Files: `src/commands/predictions.rs`, `src/data/predictions.rs`.
-**Effort:** 2–4 hours.
-
 ---
 
 ## P3 - Long Term

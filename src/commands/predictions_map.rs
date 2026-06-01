@@ -39,28 +39,35 @@ struct ContractMappingCandidate {
     map_command: String,
 }
 
-/// Run `data predictions map` — link a contract to a scenario, or list existing mappings.
+/// Run `data predictions map` — link a contract to a scenario, list existing mappings,
+/// or emit auto-suggested mappings when `--auto-suggest` is set.
 pub fn run_map(
     backend: &BackendConnection,
     scenario: Option<&str>,
     search: Option<&str>,
     contract_id: Option<&str>,
     list: bool,
+    auto_suggest: bool,
     json: bool,
 ) -> Result<()> {
     if list {
         return list_mappings(backend, json);
     }
 
+    if auto_suggest {
+        // Top 3 candidates per scenario per the TODO contract.
+        return run_suggest_mappings(backend, scenario, 3, json);
+    }
+
     // Must provide a scenario name for creating a mapping
     let scenario_name = match scenario {
         Some(name) => name,
-        None => bail!("--scenario is required. Use --list to see existing mappings."),
+        None => bail!("--scenario is required. Use --list to see existing mappings, or --auto-suggest to get suggested mappings."),
     };
 
-    // Must provide either --search or --contract
+    // Must provide either --search or --contract / --contract-id
     if search.is_none() && contract_id.is_none() {
-        bail!("Provide --search to find a contract by keyword, or --contract with a specific contract_id.");
+        bail!("Provide --search to find a contract by keyword, --contract-id with a specific contract_id, or --auto-suggest for ranked candidates.");
     }
 
     // Resolve scenario
@@ -694,6 +701,140 @@ mod tests {
         let candidates = &report.suggestions[0].candidates;
         assert_eq!(candidates[0].contract_id, "c-recession");
         assert!(!candidates.iter().any(|candidate| candidate.contract_id == "c-inflation"));
+    }
+
+    #[test]
+    fn auto_suggest_returns_top_three_per_scenario() {
+        // Verify the --auto-suggest contract: at most 3 candidates per scenario,
+        // scored highest-first by keyword overlap and liquidity.
+        let backend = setup_test_db();
+        insert_scenario(
+            &backend,
+            "US Recession 2026",
+            45.0,
+            Some("Hard landing recession risk in 2026"),
+            Some("Fed cuts and labor weakness drive recession"),
+        );
+
+        // Five contracts: 3 strongly match "recession", 2 only weakly via "fed".
+        insert_contract(
+            &backend,
+            "c-rec-1",
+            "Will the US enter recession in 2026?",
+            "Recession 2026",
+            "economics",
+            10_000.0,
+            50_000.0,
+        );
+        insert_contract(
+            &backend,
+            "c-rec-2",
+            "US recession by Q4 2026?",
+            "Recession Q4",
+            "economics",
+            20_000.0,
+            80_000.0,
+        );
+        insert_contract(
+            &backend,
+            "c-rec-3",
+            "Recession declared by NBER in 2026?",
+            "NBER recession call",
+            "economics",
+            5_000.0,
+            30_000.0,
+        );
+        insert_contract(
+            &backend,
+            "c-fed-1",
+            "Will the Fed cut rates in 2026?",
+            "Fed rate path",
+            "economics",
+            100_000.0,
+            500_000.0,
+        );
+        insert_contract(
+            &backend,
+            "c-fed-2",
+            "Fed pauses through 2026?",
+            "Fed pause",
+            "economics",
+            90_000.0,
+            450_000.0,
+        );
+
+        let report = build_suggestion_report(&backend, None, 3).unwrap();
+        assert_eq!(report.suggestions.len(), 1);
+        let suggestion = &report.suggestions[0];
+        // Top-3 cap enforced
+        assert!(suggestion.candidates.len() <= 3);
+        // Highest-scoring candidate sits at rank 1
+        assert_eq!(suggestion.candidates[0].rank, 1);
+        // Ranks are monotonically increasing
+        for (idx, candidate) in suggestion.candidates.iter().enumerate() {
+            assert_eq!(candidate.rank, idx + 1);
+        }
+        // Scores are monotonically non-increasing (highest first)
+        for window in suggestion.candidates.windows(2) {
+            assert!(window[0].relevance_score >= window[1].relevance_score);
+        }
+    }
+
+    #[test]
+    fn run_map_with_explicit_contract_id_round_trips() {
+        // --contract-id (aliased to contract) explicit mapping writes a row and
+        // list_mappings reads it back.
+        let backend = setup_test_db();
+        let scenario_id = insert_scenario(
+            &backend,
+            "Fed Cut April",
+            55.0,
+            Some("Probability of an April rate cut"),
+            None,
+        );
+        insert_contract(
+            &backend,
+            "c-fed-april",
+            "Will the Fed cut in April?",
+            "Fed April",
+            "economics",
+            50_000.0,
+            200_000.0,
+        );
+
+        // Explicit mapping path (mirrors --scenario --contract-id).
+        run_map(
+            &backend,
+            Some("Fed Cut April"),
+            None,
+            Some("c-fed-april"),
+            false,
+            false,
+            true,
+        )
+        .unwrap();
+
+        let mappings =
+            scenario_contract_mappings::list_enriched_backend(&backend).unwrap();
+        assert_eq!(mappings.len(), 1);
+        assert_eq!(mappings[0].scenario_id, scenario_id);
+        assert_eq!(mappings[0].contract_id, "c-fed-april");
+    }
+
+    #[test]
+    fn run_map_auto_suggest_delegates_to_suggester() {
+        // --auto-suggest with no scenario active still succeeds and emits an
+        // empty report (zero scenarios scanned).
+        let backend = setup_test_db();
+        let result = run_map(&backend, None, None, None, false, true, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_map_without_scenario_or_flags_errors() {
+        let backend = setup_test_db();
+        let result = run_map(&backend, None, None, None, false, false, false);
+        assert!(result.is_err());
     }
 
     #[test]
