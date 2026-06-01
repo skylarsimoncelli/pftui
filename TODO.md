@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section private outlook by horizon
-**Source:** Scaffold breakdown from the report command Step 5b.
-**Scope:** Add `pub fn render_private_outlook_by_horizon(ctx: &BuildContext) -> Result<String>`. Data: current LOW/MEDIUM/HIGH analyst views or derived convergence horizon fields for held assets. Output shape: `## Outlook by Horizon` table with native `{outlook_arrows(days, weeks, months)}` per held asset and 2-3 sentences interpreting cross-asset alignment. Tests: direction mapping is deterministic, missing horizon data renders neutral/unknown, table order follows portfolio materiality.
-**Effort:** 4-6 hours.
-
 ### `pftui report build daily` — section private risk concentration
 **Source:** Scaffold breakdown from the report command Step 5b.
 **Scope:** Add `pub fn render_private_risk_concentration(ctx: &BuildContext) -> Result<String>`. Data: scenario exposures, current allocations, factor mapping, active scenario probabilities. Output shape: `## Risk Concentration`, native `{factor_exposure(factors)}`, and one paragraph on correlated exposure and hedge pressure. Tests: exposure percentages come from fixture allocations, high-probability scenario alignment is described, missing factor mapping emits a clear fallback.
