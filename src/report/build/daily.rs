@@ -49,6 +49,7 @@ pub struct BuildContext {
     pub private_macro_scenarios: Vec<PrivateMacroScenarioRow>,
     pub private_macro_divergences: Vec<PrivateNarrativeMoneyDivergence>,
     pub private_macro_catalysts: Vec<PrivateMacroCatalyst>,
+    pub private_asset_convergence: Vec<PrivateAssetConvergenceRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -387,4 +388,18 @@ pub struct PrivateMacroCatalyst {
     pub date: String,
     pub event: String,
     pub impact: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateAssetConvergenceRow {
+    pub symbol: String,
+    pub target_pct: Option<f64>,
+    pub views: Vec<PrivateAssetConvergenceView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateAssetConvergenceView {
+    pub analyst: String,
+    pub conviction: i64,
+    pub reasoning_summary: String,
 }
