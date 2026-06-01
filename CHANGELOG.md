@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add private mismatch surface renderer
+
+- What: Added a tested private mismatch-surface renderer with Skylar journal rows, analyst-convergence conviction gaps, native mismatch_card placeholders, aligned fallback handling, and an explicit private-only marker.
+- Why: Native daily report assembly can now flag operator-only disagreements between Skylar's journal view and analyst convergence from synthetic context rows.
+
 ### 2026-06-01 — feat: add private risk concentration renderer
 
 - What: Added a tested private risk-concentration renderer with allocation-derived factor exposure, native factor_exposure placeholders, scenario probability alignment, and missing-mapping fallback copy.

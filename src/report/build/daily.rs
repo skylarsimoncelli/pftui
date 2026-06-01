@@ -53,6 +53,7 @@ pub struct BuildContext {
     pub private_conviction_trajectories: Vec<PrivateConvictionTrajectoryRow>,
     pub private_outlooks: Vec<PrivateOutlookByHorizonRow>,
     pub private_risk_factor_mappings: Vec<PrivateRiskFactorMapping>,
+    pub private_journal_views: Vec<PrivateJournalViewRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -440,4 +441,12 @@ pub struct PrivateRiskFactorMapping {
     pub factor: String,
     pub direction: String,
     pub exposure_multiplier: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateJournalViewRow {
+    pub symbol: String,
+    pub author: String,
+    pub conviction: i64,
+    pub summary: String,
 }
