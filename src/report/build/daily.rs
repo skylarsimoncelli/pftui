@@ -39,6 +39,10 @@ pub struct BuildContext {
     pub public_lessons_applied: Vec<LessonAppliedSummary>,
     pub public_prediction_intelligence: Vec<PredictionMarketIntelligence>,
     pub public_source_tier_overrides: Vec<SourceTierOverrideSummary>,
+    pub private_portfolio_snapshot: Option<PrivatePortfolioSnapshotSummary>,
+    pub private_derived_actions: Vec<DerivedActionSummary>,
+    pub private_binary_catalysts: Vec<BinaryCatalystSummary>,
+    pub private_what_changed_deltas: Vec<WhatChangedDeltaSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,4 +300,34 @@ pub struct SourceTierOverrideSummary {
     pub domain: String,
     pub tier: u8,
     pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivatePortfolioSnapshotSummary {
+    pub total_value: Option<String>,
+    pub daily_pnl: Option<String>,
+    pub daily_pnl_pct: Option<f64>,
+    pub allocation_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DerivedActionSummary {
+    pub asset: String,
+    pub action: String,
+    pub urgency: String,
+    pub rationale: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BinaryCatalystSummary {
+    pub date: String,
+    pub event: String,
+    pub impact: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhatChangedDeltaSummary {
+    pub label: String,
+    pub delta: String,
+    pub direction: String,
 }
