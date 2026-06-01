@@ -36,6 +36,7 @@ pub struct BuildContext {
     pub public_news_silence: Vec<NewsVolumeSignal>,
     pub public_scenarios: Vec<PublicScenarioRow>,
     pub public_calibration: Vec<CalibrationReliabilityRow>,
+    pub private_calibration: Vec<CalibrationReliabilityRow>,
     pub public_lessons_applied: Vec<LessonAppliedSummary>,
     pub public_prediction_intelligence: Vec<PredictionMarketIntelligence>,
     pub public_source_tier_overrides: Vec<SourceTierOverrideSummary>,
