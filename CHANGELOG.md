@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: lesson half-life curation
+
+- What: Added `prediction_lessons.status` (`active|retired|superseded`) and `last_cited_at` columns, a schema-side `lesson_citations` table, and three new CLI commands — `pftui analytics lessons curate [--dry-run] [--retire-after-days 60] [--json]`, `pftui analytics lessons revive <id> [--json]`, and `pftui analytics lessons health [--json]`. `curate` retires lessons that are uncited (or never cited and created) longer than `--retire-after-days` and whose topic cluster has no recent wrong-scored predictions, journals the change to `agent_messages`, and exposes a dry-run mode. `pftui journal prediction lessons` now defaults to active lessons only; pass `--include-retired` to surface the full history.
+- Why: The lesson library has grown to ~200 rows with most uncited; without curation, low-utility lessons crowd out high-utility ones in the analyst context window. The half-life routine keeps the analyst lesson book high-signal while preserving an explicit retirement audit trail.
+
 ### 2026-06-01 — docs: wire analyst routines to enrichment substrate
 
 - What: Updated the four timeframe analyst routines and AGENTS.md with direct read contracts for calibration adjustments, reasoning fragments, falsification rules, scenario links, source influence, event annotations, and calibration matrix context.

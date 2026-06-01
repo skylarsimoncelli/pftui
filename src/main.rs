@@ -294,6 +294,7 @@ fn run_agent_journal(
                 miss_type,
                 unresolved,
                 limit,
+                include_retired,
                 json,
             } => match command {
                 None => commands::predict::run_lessons(
@@ -301,6 +302,7 @@ fn run_agent_journal(
                     miss_type.as_deref(),
                     unresolved,
                     limit,
+                    include_retired,
                     json,
                 ),
                 Some(cli::JournalPredictionLessonsCommand::Add {
@@ -2566,6 +2568,22 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::AnalyticsCommand::Lessons { command } => match command {
                 cli::AnalyticsLessonsCommand::Applied { since, json } => {
                     commands::lessons_applied::run(&backend, &since, json)
+                }
+                cli::AnalyticsLessonsCommand::Curate {
+                    dry_run,
+                    retire_after_days,
+                    json,
+                } => commands::lessons_curate::run_curate(
+                    &backend,
+                    dry_run,
+                    retire_after_days,
+                    json,
+                ),
+                cli::AnalyticsLessonsCommand::Revive { id, json } => {
+                    commands::lessons_curate::run_revive(&backend, id, json)
+                }
+                cli::AnalyticsLessonsCommand::Health { json } => {
+                    commands::lessons_curate::run_health(&backend, json)
                 }
             },
             cli::AnalyticsCommand::DebateScore { command } => match command {

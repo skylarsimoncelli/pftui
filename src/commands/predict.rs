@@ -1189,6 +1189,7 @@ pub fn run_lessons(
     miss_type: Option<&str>,
     unresolved_only: bool,
     limit: Option<usize>,
+    include_retired: bool,
     json_output: bool,
 ) -> Result<()> {
     use crate::db::prediction_lessons;
@@ -1198,8 +1199,23 @@ pub fn run_lessons(
         prediction_lessons::validate_miss_type_str(mt)?;
     }
 
-    let backend_limit = if unresolved_only { None } else { limit };
+    // Pull a larger backend window when filtering; truncate to the
+    // requested limit after the active/unresolved filter is applied so the
+    // half-life retired rows do not consume the cap.
+    let backend_limit = if unresolved_only || !include_retired {
+        None
+    } else {
+        limit
+    };
     let mut views = prediction_lessons::list_lesson_views_backend(backend, miss_type, backend_limit)?;
+    if !include_retired {
+        // Keep rows that either have no lesson (so unresolved can still
+        // surface them) OR have an active lesson.
+        views.retain(|v| match v.lesson.as_ref() {
+            Some(lesson) => lesson.status == prediction_lessons::STATUS_ACTIVE,
+            None => true,
+        });
+    }
     filter_lesson_views(&mut views, unresolved_only);
     if let Some(limit) = limit {
         views.truncate(limit);
@@ -2068,6 +2084,8 @@ mod tests {
                     why_wrong: "wrong".to_string(),
                     signal_misread: None,
                     created_at: "2026-04-06T00:00:00Z".to_string(),
+                    status: "active".to_string(),
+                    last_cited_at: None,
                 }),
             },
         ];
@@ -2181,6 +2199,8 @@ mod tests {
                     why_wrong: "resolved".to_string(),
                     signal_misread: None,
                     created_at: "2026-04-06T00:00:00Z".to_string(),
+                    status: "active".to_string(),
+                    last_cited_at: None,
                 }),
             },
             crate::db::prediction_lessons::PredictionLessonView {

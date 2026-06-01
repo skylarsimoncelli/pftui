@@ -127,6 +127,8 @@ fn assert_current_tables_present(db_info: &Value) {
         "scenario_contract_mappings",
         "narrative_money_history",
         "news_silence_baselines",
+        "prediction_lessons",
+        "lesson_citations",
     ] {
         assert!(
             names.contains(table),
@@ -163,6 +165,11 @@ fn assert_migration_columns_present(db_path: &Path) {
             "lessons_applied",
         ],
     );
+    assert_columns(
+        &conn,
+        "prediction_lessons",
+        &["status", "last_cited_at"],
+    );
     assert_indexes(
         &conn,
         &[
@@ -172,6 +179,8 @@ fn assert_migration_columns_present(db_path: &Path) {
             "idx_news_topic",
             "idx_user_predictions_topic",
             "idx_user_predictions_source_article",
+            "idx_prediction_lessons_status",
+            "idx_prediction_lessons_last_cited_at",
         ],
     );
 }

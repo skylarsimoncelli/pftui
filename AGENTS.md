@@ -182,6 +182,7 @@ Contract for predictions:
 | `pftui journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
 | `pftui journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
 | `pftui journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
+| `pftui journal prediction lessons [--miss-type <t>] [--limit N] [--include-retired] [--json]` | The analyst lesson book. Active lessons only by default; pass `--include-retired` to surface lessons retired by `analytics lessons curate` |
 | `pftui agent message send "TEXT" --from agent-a [--to agent-b] [--batch "TEXT2" --batch "TEXT3"] [--package-title "Fed handoff"] [--package-id pkg-123]` | Send one or multiple structured messages between agent roles, optionally grouped as one intel package |
 | `pftui agent message reply "TEXT" --id N --from agent-b` | Reply to message `N` back to the original sender |
 | `pftui agent message flag "ISSUE" --id N --from agent-b` | Escalate data-quality/risk issue on message `N` |
@@ -215,6 +216,9 @@ Contract for predictions:
 | `pftui analytics narrative-divergence --json [--hours 24]` | Active scenario narrative-vs-money scores from topic news pressure versus mapped prediction-market movement |
 | `pftui analytics news-silence --json [--window-days 90]` | Tier-1/2 topic article volume versus rolling weekday baselines, including silent/saturated status changes |
 | `pftui analytics lessons applied --since 24h --json` | Lessons referenced by this run's predictions, top guards, and strongest historical analog |
+| `pftui analytics lessons curate [--dry-run] [--retire-after-days 60] [--json]` | Retire stale uncited active lessons whose topic cluster is idle; journals the change to `agent_messages` |
+| `pftui analytics lessons revive <id> [--json]` | Manually un-retire a previously retired lesson (sets status back to `active`) |
+| `pftui analytics lessons health [--json]` | Library health summary: total / active / retired / superseded / citations total / avg citations per active |
 | `pftui analytics news-sources accuracy --json [--domain bloomberg.com] [--topic fed]` | Per-source hit-rate ledger for predictions derived from news articles |
 | `pftui analytics news-sources rank --topic iran --json` | Rank news sources for a topic using trailing source-attributed prediction outcomes |
 | `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |

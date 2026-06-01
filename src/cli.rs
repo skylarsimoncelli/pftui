@@ -2228,6 +2228,12 @@ pub enum JournalPredictionCommand {
         /// Maximum lessons to show
         #[arg(long)]
         limit: Option<usize>,
+        /// Include retired/superseded lessons in the output (default: active only).
+        /// The analyst lesson book renders active lessons only so retired
+        /// rows do not crowd the context window; pass this flag to surface
+        /// the full history for review.
+        #[arg(long = "include-retired")]
+        include_retired: bool,
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -4385,6 +4391,45 @@ pub enum AnalyticsLessonsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Retire stale, uncited active lessons whose cluster is idle.
+    ///
+    /// A lesson is retired if it is `status='active'` AND has not been
+    /// cited (or, if never cited, was created) more than
+    /// `--retire-after-days` ago, AND has no recent wrong-scored
+    /// predictions in the same topic cluster.
+    ///
+    /// Use `--dry-run` to preview without mutating. The status change is
+    /// also journaled to `agent_messages` so analyst routines see that
+    /// the substrate has been pruned.
+    #[command(after_help = "Examples:\n  pftui analytics lessons curate --dry-run --json\n  pftui analytics lessons curate --retire-after-days 90\n\nSee also: analytics lessons revive, analytics lessons health")]
+    Curate {
+        /// Do not mutate; report what would be retired
+        #[arg(long)]
+        dry_run: bool,
+        /// Retire lessons stale for at least this many days
+        #[arg(long = "retire-after-days", default_value = "60")]
+        retire_after_days: i64,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manually un-retire a previously retired lesson by id.
+    #[command(after_help = "Example:\n  pftui analytics lessons revive 144 --json")]
+    Revive {
+        /// Lesson id (the `id` column of `prediction_lessons`)
+        id: i64,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Library health summary: total/active/retired counts and avg
+    /// citations per active lesson.
+    #[command(after_help = "Example:\n  pftui analytics lessons health --json")]
+    Health {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -6219,8 +6264,79 @@ mod tests {
         else {
             panic!("expected analytics lessons command");
         };
-        let AnalyticsLessonsCommand::Applied { since, json } = command;
+        let AnalyticsLessonsCommand::Applied { since, json } = command else {
+            panic!("expected analytics lessons applied");
+        };
         assert_eq!(since, "24h");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_lessons_curate() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "lessons",
+            "curate",
+            "--dry-run",
+            "--retire-after-days",
+            "45",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Lessons { command },
+        }) = cli.command
+        else {
+            panic!("expected analytics lessons command");
+        };
+        let AnalyticsLessonsCommand::Curate {
+            dry_run,
+            retire_after_days,
+            json,
+        } = command
+        else {
+            panic!("expected analytics lessons curate");
+        };
+        assert!(dry_run);
+        assert_eq!(retire_after_days, 45);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_lessons_revive_and_health() {
+        let revive_cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "lessons",
+            "revive",
+            "144",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Lessons { command },
+        }) = revive_cli.command
+        else {
+            panic!("expected analytics lessons command");
+        };
+        let AnalyticsLessonsCommand::Revive { id, json } = command else {
+            panic!("expected analytics lessons revive");
+        };
+        assert_eq!(id, 144);
+        assert!(json);
+
+        let health_cli =
+            Cli::try_parse_from(["pftui", "analytics", "lessons", "health", "--json"]).unwrap();
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Lessons { command },
+        }) = health_cli.command
+        else {
+            panic!("expected analytics lessons command");
+        };
+        let AnalyticsLessonsCommand::Health { json } = command else {
+            panic!("expected analytics lessons health");
+        };
         assert!(json);
     }
 
