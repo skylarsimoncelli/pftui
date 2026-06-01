@@ -33,6 +33,10 @@ pub struct BuildContext {
     pub public_news_events: Vec<PublicNewsEvent>,
     pub public_news_silence: Vec<NewsVolumeSignal>,
     pub public_scenarios: Vec<PublicScenarioRow>,
+    pub public_calibration: Vec<CalibrationReliabilityRow>,
+    pub public_lessons_applied: Vec<LessonAppliedSummary>,
+    pub public_prediction_intelligence: Vec<PredictionMarketIntelligence>,
+    pub public_source_tier_overrides: Vec<SourceTierOverrideSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -251,4 +255,35 @@ pub struct PublicScenarioRow {
     pub key_driver: Option<String>,
     pub confirmation: Option<String>,
     pub invalidation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CalibrationReliabilityRow {
+    pub layer: String,
+    pub conviction_band: String,
+    pub predicted_pct: f64,
+    pub observed_pct: f64,
+    pub sample_size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LessonAppliedSummary {
+    pub lesson_id: String,
+    pub summary: String,
+    pub applied_to: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PredictionMarketIntelligence {
+    pub market: String,
+    pub probability: Option<f64>,
+    pub delta_7d: Option<f64>,
+    pub read: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceTierOverrideSummary {
+    pub domain: String,
+    pub tier: u8,
+    pub reason: Option<String>,
 }
