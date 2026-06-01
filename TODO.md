@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section public allocation framework
-**Source:** Scaffold breakdown from the report command Step 5a.
-**Scope:** Add `pub fn render_public_allocation_framework(ctx: &BuildContext) -> Result<String>`. Data: regime/scenario context and generic asset-class ranges only; do not read personal transactions or current allocations. Output shape: `## Allocation Framework` with Conservative/Balanced/Conviction-Driven generic frameworks across cash, BTC, gold/silver, equities, commodities, treasuries. Tests: renderer cannot access personal portfolio fields, output avoids imperative personal advice, each framework has all asset classes.
-**Effort:** 4-6 hours.
-
 ### `pftui report build daily` — section public methodology
 **Source:** Scaffold breakdown from the report command Step 5a.
 **Scope:** Add `pub fn render_public_methodology(ctx: &BuildContext) -> Result<String>`. Data: static methodology/disclaimer template plus runtime metadata such as report date and data freshness summary. Output shape: `## Methodology` and disclaimer footer matching the public routine template. Tests: golden output is stable, includes disclaimer, contains no private symbols or personal framing.

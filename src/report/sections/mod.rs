@@ -1,3 +1,4 @@
+pub mod public_allocation_framework;
 pub mod public_bitcoin;
 pub mod public_equities;
 pub mod public_executive_summary;
