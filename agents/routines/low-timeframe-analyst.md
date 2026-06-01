@@ -46,6 +46,26 @@ If any indicator has been evaluated by the refresh pipeline and crossed a thresh
 
 Prefer the canonical analytics payloads for prioritization. Use raw feeds like movers, alerts, and scans to investigate and enrich what `situation` and `deltas` already surfaced.
 
+### Enrichment Substrate Read
+
+Before writing predictions or structured views, load LOW-specific learned guardrails from the enrichment tables. These tables are derived from prior predictions, lessons, fragments, and scenario links; they are read-only inputs for this routine.
+
+```bash
+DB="${PFTUI_DB:-$HOME/Library/Application Support/pftui/pftui.db}"
+sqlite3 -json "$DB" "SELECT * FROM calibration_adjustments WHERE layer='low' ORDER BY topic, conviction_band"
+sqlite3 -json "$DB" "SELECT canonical_id, cluster_key, topic, fragment, cited_count FROM reasoning_fragments WHERE topic IN ('crypto','equities','geopolitics','fed','other') ORDER BY cited_count DESC LIMIT 30"
+sqlite3 -json "$DB" "SELECT prediction_id, rule_type, symbol, threshold_value, eval_date_start, eval_date_end, parse_confidence FROM prediction_falsification_rules WHERE auto_score_eligible=1 ORDER BY parsed_at DESC LIMIT 30"
+sqlite3 -json "$DB" "SELECT scenario_name, ROUND(AVG(scenario_probability_at_write), 2) AS avg_probability_at_write, COUNT(*) AS resolved_predictions FROM scenario_prediction_links spl JOIN user_predictions p ON p.id=spl.prediction_id WHERE p.timeframe='low' AND p.outcome IN ('correct','partial','wrong') GROUP BY scenario_name ORDER BY resolved_predictions DESC, scenario_name LIMIT 20"
+sqlite3 -json "$DB" "SELECT event_date, category, title, asset, scenario, notes FROM event_annotations WHERE event_date >= date('now','-14 days') ORDER BY event_date DESC LIMIT 40"
+```
+
+Use the results explicitly:
+- Before writing each prediction, find the `calibration_adjustments` row for `(low, predicted topic, conviction band)`. If `adjustment_direction='discount'`, subtract `adjustment_pp` from the confidence you write.
+- When a claim maps to a known `cluster_key`, read the connected `reasoning_fragments` through `lesson_fragment_edges` and cite the top 2-3 `canonical_id` values in the reasoning chain.
+- Use `prediction_falsification_rules` as exemplars for crisp target dates and observable thresholds.
+- Use `scenario_prediction_links` to avoid treating an active scenario as fresh if prior LOW predictions in that scenario cluster have repeatedly failed.
+- Use `event_annotations` as the structured timeline before fuzzy-searching journal or news text.
+
 2. Check guidance from Evening Analyst:
 ```bash
 pftui agent message list --to low-agent --unacked

@@ -47,6 +47,30 @@ For negative scores, use `--score=-2`.
 Cross-timeframe signal detection (alignment/divergence/transition) computed during
 `pftui data refresh` and stored in `timeframe_signals`.
 
+### Enrichment Substrate For Analyst Routines
+
+Analyst routines should consume the derived enrichment tables before writing new predictions, scenario updates, or structured views. These tables are the machine-readable memory built from prior prediction outcomes, lessons, scenario links, source influence, and event annotations.
+
+Until dedicated CLI commands exist for every enrichment table, routines may read these tables directly with SQLite using the local pftui DB path. Use read-only `SELECT` queries only; do not mutate enrichment rows from routine prompts.
+
+| Table | Routine Use |
+|---|---|
+| `calibration_adjustments` | Per-layer confidence correction by topic and conviction band. If `adjustment_direction='discount'`, subtract `adjustment_pp` before writing prediction confidence. |
+| `reasoning_fragments` + `lesson_fragment_edges` | Reusable lesson fragments for known claim clusters. Cite 2-3 `canonical_id` values when a new prediction uses a learned fragment. |
+| `prediction_falsification_rules` | Examples of observable thresholds and evaluation windows. Use them to make new predictions mechanically scorable when possible. |
+| `scenario_prediction_links` | Historical scenario context at prediction-write time. Check whether prior calls around a scenario resolved correctly before raising confidence. |
+| `failure_correlations` | Cross-cluster failure warnings for synthesis. If a claim cluster often co-fails with another, sanity-check the shared assumption. |
+| `sources_registry` | Named source and framework influence ledger. MACRO should explicitly reference high-influence frameworks such as Dixon, Dalio, and Fourth Turning when they shape a call. |
+| `event_annotations` | Canonical structured timeline. Prefer this for regime context around a date before fuzzy-searching `news_cache`, notes, or journal rows. |
+| `calibration_matrix` | Realized prediction rates by layer/topic/conviction. Use as sample-size context, not proof of precision. |
+
+Contract for predictions:
+- Determine the prediction topic and conviction band first.
+- Read the matching `calibration_adjustments` row for the analyst's layer.
+- Apply any confidence discount before saving.
+- Attach relevant lesson IDs or reasoning-fragment `canonical_id` values in the prediction reasoning.
+- Prefer concrete falsification criteria with dates and thresholds.
+
 ---
 
 ## CLI Reference

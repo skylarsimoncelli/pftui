@@ -51,6 +51,26 @@ This reveals which situations create overlapping risk or opportunity for that sy
 
 Use these canonical payloads as your starting frame. Your job is to update probabilities and explain cause-and-effect chains, not to reconstruct the ranked situation model from scratch.
 
+## Enrichment Substrate Read
+
+Before changing scenario probabilities or writing predictions, load MEDIUM-specific learned guardrails from the enrichment tables. These tables summarize prior calibration, lesson fragments, falsification rules, and scenario-linked prediction outcomes.
+
+```bash
+DB="${PFTUI_DB:-$HOME/Library/Application Support/pftui/pftui.db}"
+sqlite3 -json "$DB" "SELECT * FROM calibration_adjustments WHERE layer='medium' ORDER BY topic, conviction_band"
+sqlite3 -json "$DB" "SELECT canonical_id, cluster_key, topic, fragment, cited_count FROM reasoning_fragments WHERE topic IN ('fed','inflation','geopolitics','commodities','equities','other') ORDER BY cited_count DESC LIMIT 40"
+sqlite3 -json "$DB" "SELECT prediction_id, rule_type, symbol, threshold_value, eval_date_start, eval_date_end, parse_confidence FROM prediction_falsification_rules WHERE auto_score_eligible=1 ORDER BY parsed_at DESC LIMIT 30"
+sqlite3 -json "$DB" "SELECT scenario_name, ROUND(AVG(scenario_probability_at_write), 2) AS avg_probability_at_write, COUNT(*) AS resolved_predictions FROM scenario_prediction_links spl JOIN user_predictions p ON p.id=spl.prediction_id WHERE p.timeframe='medium' AND p.outcome IN ('correct','partial','wrong') GROUP BY scenario_name ORDER BY resolved_predictions DESC, scenario_name LIMIT 30"
+sqlite3 -json "$DB" "SELECT event_date, category, title, asset, scenario, notes FROM event_annotations WHERE event_date >= date('now','-45 days') ORDER BY event_date DESC LIMIT 60"
+```
+
+Use the results explicitly:
+- Before writing each prediction, find the `calibration_adjustments` row for `(medium, predicted topic, conviction band)`. If `adjustment_direction='discount'`, subtract `adjustment_pp` from the confidence you write.
+- When a claim falls into one of the known `cluster_key` groups, read the connected `reasoning_fragments` through `lesson_fragment_edges` and cite the top 2-3 `canonical_id` values in the reasoning chain.
+- Use `prediction_falsification_rules` as exemplars for medium-horizon predictions with clear observable thresholds.
+- Use `scenario_prediction_links` before raising or cutting scenario odds; if resolved predictions around that scenario have repeatedly failed, explain what changed.
+- Use `event_annotations` as the canonical structured timeline for regime context around any date.
+
 Read the user profile and portfolio files for conviction state and allocation context.
 
 ## pftui Data (read BEFORE web research)
