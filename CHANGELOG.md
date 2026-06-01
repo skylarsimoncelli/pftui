@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add private portfolio snapshot renderer
+
+- What: Added a tested private portfolio snapshot renderer with native stacked allocation placeholder, deterministic position table, dust-position note, and per-target drift-bar placeholders.
+- Why: Native daily report assembly can now render the private portfolio overview without querying real portfolio data during tests.
+
 ### 2026-06-01 — feat: add private bottom line renderer
 
 - What: Added a tested private bottom-line renderer with regime, portfolio P&L, derived-action, binary-catalyst, and what-changed-delta context rows.

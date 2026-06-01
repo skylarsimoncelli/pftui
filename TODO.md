@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section private portfolio snapshot
-**Source:** Scaffold breakdown from the report command Step 5b.
-**Scope:** Add `pub fn render_private_portfolio_snapshot(ctx: &BuildContext) -> Result<String>`. Data: held positions, cached prices, allocation percentages, unrealized PnL, allocation targets, drift rows. Output shape: `## Portfolio Snapshot`, native `{stacked_bar(segments)}`, positions table, `### Drift vs Allocation Targets`, and native drift bars. Tests: synthetic holdings render deterministically, dust positions are handled, target drift bars match fixture values.
-**Effort:** 5-7 hours.
-
 ### `pftui report build daily` — section private macro context
 **Source:** Scaffold breakdown from the report command Step 5b.
 **Scope:** Add `pub fn render_private_macro_context(ctx: &BuildContext) -> Result<String>`. Data: regime quadrant inputs, active scenarios and 7-day deltas, narrative-vs-money divergence, near-term catalysts. Output shape: `## Macro Context` with side-by-side native `{regime_quadrant(...)}` and `{prob_bar(...)}` output plus <=2 paragraphs. Tests: scenario bars use normalized semantics, narrative-vs-money divergence appears when material, output stays concise.
