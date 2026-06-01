@@ -57,6 +57,29 @@ pftui analytics situation update list --situation "<name>" --limit 5 --json
 
 Use `situation` and `synthesis` to see how structural context is already flowing into the live stack before updating the deepest layer.
 
+## Enrichment Substrate Read
+
+Before changing multi-year thesis state, macro outcome probabilities, or structural predictions, load MACRO-specific learned guardrails from the enrichment tables. These tables turn prior lessons, source influence, falsification rules, and event annotations into durable macro context.
+
+```bash
+DB="${PFTUI_DB:-$HOME/Library/Application Support/pftui/pftui.db}"
+sqlite3 -json "$DB" "SELECT * FROM calibration_adjustments WHERE layer='macro' ORDER BY topic, conviction_band"
+sqlite3 -json "$DB" "SELECT canonical_id, cluster_key, topic, fragment, cited_count FROM reasoning_fragments WHERE topic IN ('geopolitics','inflation','commodities','crypto','macro','other') ORDER BY cited_count DESC LIMIT 60"
+sqlite3 -json "$DB" "SELECT prediction_id, rule_type, symbol, threshold_value, eval_date_start, eval_date_end, parse_confidence FROM prediction_falsification_rules WHERE auto_score_eligible=1 ORDER BY parsed_at DESC LIMIT 30"
+sqlite3 -json "$DB" "SELECT scenario_name, ROUND(AVG(scenario_probability_at_write), 2) AS avg_probability_at_write, COUNT(*) AS resolved_predictions FROM scenario_prediction_links spl JOIN user_predictions p ON p.id=spl.prediction_id WHERE p.timeframe='macro' AND p.outcome IN ('correct','partial','wrong') GROUP BY scenario_name ORDER BY resolved_predictions DESC, scenario_name LIMIT 30"
+sqlite3 -json "$DB" "SELECT name, source_type, influence_count, notes FROM sources_registry ORDER BY influence_count DESC, name LIMIT 20"
+sqlite3 -json "$DB" "SELECT event_date, category, title, asset, scenario, notes FROM event_annotations ORDER BY event_date DESC LIMIT 120"
+sqlite3 -json "$DB" "SELECT layer, topic, conviction_band, predicted_rate, observed_rate, sample_size FROM calibration_matrix WHERE layer='macro' ORDER BY topic, conviction_band"
+```
+
+Use the results explicitly:
+- Before writing each prediction, find the `calibration_adjustments` row for `(macro, predicted topic, conviction band)`. If `adjustment_direction='discount'`, subtract `adjustment_pp` from the confidence you write.
+- When a macro claim maps to a known `cluster_key`, read the connected `reasoning_fragments` through `lesson_fragment_edges` and cite the top 2-3 `canonical_id` values in the reasoning chain.
+- Reference the highest-cited `sources_registry` frameworks by name when they shape the call, especially Dixon, Dalio, and Fourth Turning rows.
+- Use `prediction_falsification_rules` as examples for shorter checkpoint predictions attached to slow macro theses.
+- Use `scenario_prediction_links` and `calibration_matrix` to avoid presenting slow-feedback macro calls as more calibrated than the scored sample supports.
+- Use `event_annotations` as the canonical structured timeline for regime context around dates and thesis-stage transitions.
+
 Read STRUCTURAL.md for qualitative framework context.
 
 ## Macro News Quality + Negative-Space Substrate

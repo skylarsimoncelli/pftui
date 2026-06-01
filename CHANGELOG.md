@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — docs: wire analyst routines to enrichment substrate
+
+- What: Updated the four timeframe analyst routines and AGENTS.md with direct read contracts for calibration adjustments, reasoning fragments, falsification rules, scenario links, source influence, event annotations, and calibration matrix context.
+- Why: Analyst runs now have explicit instructions to consume the derived enrichment memory before writing predictions, scenario updates, or structural views.
+
 ### 2026-06-01 — feat: add private mismatch surface renderer
 
 - What: Added a tested private mismatch-surface renderer with Skylar journal rows, analyst-convergence conviction gaps, native mismatch_card placeholders, aligned fallback handling, and an explicit private-only marker.
