@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add public allocation framework renderer
+
+- What: Added a tested public allocation framework renderer with Conservative, Balanced, and Conviction-Driven generic range tables across cash, BTC, gold/silver, equities, commodities, and treasuries.
+- Why: Native daily report assembly can now include publishable regime-aware allocation frameworks without reading private holdings or producing imperative trade advice.
+
 ### 2026-06-01 — feat: add public how we analyse renderer
 
 - What: Added a tested public methodology-of-analysis renderer with calibration chart placeholder, low-sample caveats, lessons-applied rows, prediction-market intelligence, and source-tier override command references.
