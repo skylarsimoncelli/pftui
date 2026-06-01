@@ -612,6 +612,25 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         -- AFTER the ALTER TABLE migrations that add the columns. Creating them in
         -- this initial batch races the migrations and fails on pre-existing DBs.
 
+        CREATE TABLE IF NOT EXISTS prediction_falsification_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prediction_id INTEGER NOT NULL REFERENCES user_predictions(id) ON DELETE CASCADE,
+            rule_type TEXT NOT NULL,
+            symbol TEXT,
+            threshold_value REAL,
+            threshold_low REAL,
+            threshold_high REAL,
+            eval_date_start TEXT,
+            eval_date_end TEXT NOT NULL,
+            parse_confidence TEXT NOT NULL DEFAULT 'medium',
+            auto_score_eligible INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_prediction_falsification_rules_auto
+            ON prediction_falsification_rules(auto_score_eligible, eval_date_end, parse_confidence);
+        CREATE INDEX IF NOT EXISTS idx_prediction_falsification_rules_prediction
+            ON prediction_falsification_rules(prediction_id);
+
         CREATE TABLE IF NOT EXISTS news_source_accuracy (
             source_domain TEXT NOT NULL,
             topic TEXT NOT NULL
