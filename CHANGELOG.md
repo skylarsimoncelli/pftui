@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add public methodology renderer
+
+- What: Added a tested public methodology renderer with report-date metadata, source freshness summary rows, the pftui methodology template, and the public disclaimer footer.
+- Why: Native daily report assembly can now finish the public report with a stable publishable methodology and disclaimer section.
+
 ### 2026-06-01 — feat: add public allocation framework renderer
 
 - What: Added a tested public allocation framework renderer with Conservative, Balanced, and Conviction-Driven generic range tables across cash, BTC, gold/silver, equities, commodities, and treasuries.
