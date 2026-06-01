@@ -1,5 +1,9 @@
 # Changelog
 
+### 2026-06-01 — feat: allocation target for cash position
+
+- What: Audited the `allocation_targets` write path (`src/db/allocation_targets.rs`, `src/commands/target.rs`) and confirmed it is symbol-agnostic — `pftui portfolio target set USD --floor 30 --ceiling 60` (and analogous GBP/EUR variants) now succeed without any code change. Extracted `compute_drift_rows` from `src/commands/drift.rs::run` so cash-drift inclusion is unit-tested directly: cash positions with a target appear in `pftui portfolio drift` alongside every other asset, and cash without a target stays silent (no auto-seeded default). Documented the design in `docs/ANALYTICS-SPEC.md` under a new "Cash Allocation Bands" section: wide floor/ceiling bands model dry-powder optionality while still emitting drift signals on breach.
+- Why: Closes the visibility loop on the drift system. With cash modeled as a wide-band position rather than a silent zone, every dollar in the portfolio sits within a tracked range — a sustained drop below the cash floor or rise above the cash ceiling now surfaces in the same drift channel that already governs every other holding.
 ### 2026-06-01 — feat: add prediction autoscore from falsification rules
 
 - What: Added `pftui prediction autoscore` plus the existing `journal prediction auto-score` path for due `prediction_falsification_rules`, with confidence floors, dry-run, force overwrite control, structured JSON failures, price-history rule evaluation, and tests for scoring, missing data, and dry-run behavior.

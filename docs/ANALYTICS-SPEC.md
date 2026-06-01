@@ -359,6 +359,31 @@ Do not derive stagflation as `Inflation Spike probability * Hard Recession proba
 
 ---
 
+### Cash Allocation Bands
+
+**Design intent:** cash bands model optionality without losing visibility. The floor + ceiling capture the operator's intended range for dry powder (e.g. floor 30%, ceiling 60% — wide because cash IS the optionality vehicle). Drift only fires outside the band, so a portfolio sitting at 45% cash with a 30–60 band stays silent. A portfolio that has bought down to 25% cash, or accumulated to 65% cash, surfaces in `pftui portfolio drift` and the Portfolio Snapshot section of the daily report alongside every other asset's drift.
+
+**Why this matters:** the original argument against a cash target was "cash is optionality, not a position." With floor/ceiling bands, cash CAN be modeled as a position with a wide band — capturing the "optionality is preserved" intent while still surfacing breach signals. This closes the loop on the drift system: every dollar in the portfolio is within a tracked range, no silent zone outside the analysis.
+
+**Usage:**
+
+```
+pftui portfolio target set USD --floor 30 --ceiling 60
+pftui portfolio target set GBP --floor 5 --ceiling 15
+pftui portfolio drift                     # cash drift appears alongside asset drift
+pftui portfolio drift --json              # cash row is emitted in JSON
+```
+
+**Semantics:**
+- Cash symbols (`USD`, `GBP`, `EUR`, etc — anything classified `AssetCategory::Cash` in transactions) use the same `allocation_targets` row schema as any tradeable symbol. No separate table, no special handling.
+- The drift engine (`src/commands/drift.rs`) prices cash positions at 1.0 in the working price map, computes cash allocation via `compute_positions`, and applies the target band like any other position.
+- A cash symbol without a target row stays silent — there is no auto-seeded default. The operator opts in once with an explicit `target set`, then the band participates in every subsequent drift evaluation.
+- `pftui portfolio rebalance` uses the same `rebalance_pct_for_actual` edge-snap logic for cash, so a cash overshoot recommends sells to bring cash to the ceiling and a cash undershoot recommends buys to bring cash to the floor — symmetric with non-cash assets.
+
+**Files:** `src/db/allocation_targets.rs` (symbol-agnostic from inception), `src/commands/target.rs` (no cash filter — operator can target any symbol), `src/commands/drift.rs` (already includes cash via the cash-price-1.0 normalization), `src/commands/rebalance.rs` (same).
+
+---
+
 ### F7: Enhanced Agent Output (`brief --agent`)
 
 **What:** Single CLI entry point for all agent-consumable data. Token-efficient, structured, comprehensive.

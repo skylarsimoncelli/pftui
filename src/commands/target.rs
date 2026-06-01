@@ -172,4 +172,32 @@ mod tests {
             .to_string();
         assert!(err.contains("Floor percentage"));
     }
+
+    #[test]
+    fn cash_symbols_accepted_with_wide_band() {
+        // The target setter has no special-case for cash. Operators can set
+        // wide bands on USD/GBP/EUR to model cash optionality.
+        let backend = backend();
+        run(&backend, "USD", Some("30"), Some("60"), None, None).unwrap();
+        run(&backend, "GBP", Some("5"), Some("15"), None, None).unwrap();
+        run(&backend, "EUR", Some("0"), Some("10"), None, None).unwrap();
+
+        let usd = allocation_targets::get_target_backend(&backend, "USD")
+            .unwrap()
+            .unwrap();
+        assert_eq!(usd.target_floor_pct, dec!(30));
+        assert_eq!(usd.target_ceiling_pct, dec!(60));
+
+        let gbp = allocation_targets::get_target_backend(&backend, "GBP")
+            .unwrap()
+            .unwrap();
+        assert_eq!(gbp.target_floor_pct, dec!(5));
+        assert_eq!(gbp.target_ceiling_pct, dec!(15));
+
+        let eur = allocation_targets::get_target_backend(&backend, "EUR")
+            .unwrap()
+            .unwrap();
+        assert_eq!(eur.target_floor_pct, dec!(0));
+        assert_eq!(eur.target_ceiling_pct, dec!(10));
+    }
 }
