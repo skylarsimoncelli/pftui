@@ -3900,6 +3900,51 @@ pub enum AnalyticsNewsSourcesCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsAlignmentCommand {
+    /// Today's operator-vs-analyst alignment score (computed on demand if not yet stored)
+    ///
+    /// Aggregates the per-asset gap between Skylar's stated views (journal entries
+    /// authored 'skylar' last 14d + operator_replies if present) and the analyst
+    /// convergence per held asset, weighted by allocation. Score is 0-100.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics alignment current --json
+    Current {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Time-series of stored alignment scores
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics alignment history --json
+    ///   pftui analytics alignment history --since 90d --json
+    ///   pftui analytics alignment history --since 2026-01-01 --json
+    History {
+        /// Lookback window (Nd, Nw, Nm) or YYYY-MM-DD anchor. Default: 90d.
+        #[arg(long, default_value = "90d")]
+        since: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Recompute the score for one date (optionally store + emit drift alert)
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics alignment compute --date 2026-06-01 --json
+    ///   pftui analytics alignment compute --date 2026-06-01 --store --json
+    Compute {
+        /// Date to compute (YYYY-MM-DD). Default: today.
+        #[arg(long)]
+        date: Option<String>,
+        /// Persist the computed row to `alignment_score_history` and run the
+        /// drift-alert check against the recent history window.
+        #[arg(long)]
+        store: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsCommand {
     /// Full synthesized intelligence blob for a single asset
     Asset {
@@ -4086,8 +4131,20 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Cross-timeframe alignment: how LOW/MEDIUM/HIGH/MACRO layers agree or conflict per asset
+    /// Cross-timeframe alignment OR operator-vs-analyst alignment score (subcommands)
+    ///
+    /// Bare form (no subcommand): cross-timeframe alignment for analyst layers.
+    /// `current` / `history` / `compute`: operator-vs-analyst daily alignment score
+    /// aggregating Skylar's stated views vs analyst convergence per held asset.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics alignment --json
+    ///   pftui analytics alignment current --json
+    ///   pftui analytics alignment history --since 90d --json
+    ///   pftui analytics alignment compute --date 2026-06-01 --store --json
     Alignment {
+        #[command(subcommand)]
+        command: Option<AnalyticsAlignmentCommand>,
         #[arg(long)]
         symbol: Option<String>,
         /// Compact summary grouped by consensus (counts + notable symbols)
@@ -9440,6 +9497,7 @@ mod tests {
             panic!("expected analytics");
         };
         let AnalyticsCommand::Alignment {
+            command: subcommand,
             symbol,
             summary,
             json,
@@ -9447,6 +9505,7 @@ mod tests {
         else {
             panic!("expected Alignment");
         };
+        assert!(subcommand.is_none());
         assert!(summary);
         assert!(json);
         assert!(symbol.is_none());
@@ -9460,13 +9519,81 @@ mod tests {
             panic!("expected analytics");
         };
         let AnalyticsCommand::Alignment {
-            summary, json, ..
+            command: subcommand,
+            summary,
+            json,
+            ..
         } = command
         else {
             panic!("expected Alignment");
         };
+        assert!(subcommand.is_none());
         assert!(!summary);
         assert!(json);
+    }
+
+    #[test]
+    fn parse_alignment_current_subcommand() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "alignment", "current", "--json"]).unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alignment { command, .. } = command else {
+            panic!("expected Alignment");
+        };
+        assert!(matches!(
+            command,
+            Some(AnalyticsAlignmentCommand::Current { json: true })
+        ));
+    }
+
+    #[test]
+    fn parse_alignment_history_subcommand_default_since() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "alignment", "history", "--json"]).unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alignment { command, .. } = command else {
+            panic!("expected Alignment");
+        };
+        match command {
+            Some(AnalyticsAlignmentCommand::History { since, json }) => {
+                assert_eq!(since, "90d");
+                assert!(json);
+            }
+            _ => panic!("expected History"),
+        }
+    }
+
+    #[test]
+    fn parse_alignment_compute_with_store() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "alignment",
+            "compute",
+            "--date",
+            "2026-06-01",
+            "--store",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alignment { command, .. } = command else {
+            panic!("expected Alignment");
+        };
+        match command {
+            Some(AnalyticsAlignmentCommand::Compute { date, store, json }) => {
+                assert_eq!(date.as_deref(), Some("2026-06-01"));
+                assert!(store);
+                assert!(json);
+            }
+            _ => panic!("expected Compute"),
+        }
     }
 
     #[test]

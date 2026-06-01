@@ -3397,10 +3397,30 @@ fn run_cli(cli: Cli) -> Result<()> {
                 },
             },
             cli::AnalyticsCommand::Alignment {
+                command,
                 symbol,
                 summary,
                 json,
-            } => commands::analytics::run(
+            } => match command {
+                Some(cli::AnalyticsAlignmentCommand::Current { json: cmd_json }) => {
+                    commands::alignment_score::run_current(&backend, &config, cmd_json || json)
+                }
+                Some(cli::AnalyticsAlignmentCommand::History {
+                    since,
+                    json: cmd_json,
+                }) => commands::alignment_score::run_history(&backend, &since, cmd_json || json),
+                Some(cli::AnalyticsAlignmentCommand::Compute {
+                    date,
+                    store,
+                    json: cmd_json,
+                }) => commands::alignment_score::run_compute(
+                    &backend,
+                    &config,
+                    date.as_deref(),
+                    store,
+                    cmd_json || json,
+                ),
+                None => commands::analytics::run(
                 &backend,
                 if summary {
                     "alignment-summary"
@@ -3434,6 +3454,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 None,
                 json,
             ),
+            },
             cli::AnalyticsCommand::Divergence { symbol, json } => commands::analytics::run(
                 &backend,
                 "divergence",

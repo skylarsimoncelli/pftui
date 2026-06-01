@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: skylar-vs-analyst alignment score
+
+- What: New `alignment_score_history` table plus `pftui analytics alignment current|history|compute` CLI. Each held asset above 1% allocation contributes (operator view from journal entries authored 'skylar' last 14d or the optional operator_replies table) vs (analyst convergence via the existing `convergence_report_backend`) classified as aligned / divergent-magnitude / divergent-direction / insufficient-views, weighted by allocation. Daily score 0-100 mapped to high-alignment (>=80), mixed (50-79), or divergent (<50). When the score stays below 50 for 2+ consecutive days, an `agent_messages` row is emitted to `synthesis` (priority=normal, category=signal, idempotent per day).
+- Why: pftui captures both the operator's views and analyst convergence on the same substrate. Aggregating the gap into a single allocation-weighted daily number makes regime drift between operator and analyst readable as a time series; multi-day low alignment is a regime-change signal.
+
 ### 2026-06-01 — docs: wire analyst routines to enrichment substrate
 
 - What: Updated the four timeframe analyst routines and AGENTS.md with direct read contracts for calibration adjustments, reasoning fragments, falsification rules, scenario links, source influence, event annotations, and calibration matrix context.

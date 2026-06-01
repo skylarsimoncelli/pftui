@@ -207,6 +207,9 @@ Contract for predictions:
 | `pftui analytics opportunities --json` | Rank high-alignment non-held opportunities from the same analytics evidence chain |
 | `pftui analytics synthesis --json` | Cross-timeframe synthesis: alignment, divergence, constraint flows, unresolved tensions, watch-tomorrow |
 | `pftui analytics alignment --symbol SYM --json` | Per-asset cross-timeframe alignment matrix |
+| `pftui analytics alignment current --json` | Today's operator-vs-analyst alignment score (0-100). Aggregates Skylar's journal/operator_replies views vs analyst convergence per held asset above 1% allocation, allocation-weighted, classified aligned/divergent-magnitude/divergent-direction. Returns the stored row if present, otherwise computes on demand. |
+| `pftui analytics alignment history --since 90d --json` | Stored alignment-score time series. `--since` accepts Nd/Nw/Nm tokens or a YYYY-MM-DD anchor. |
+| `pftui analytics alignment compute --date YYYY-MM-DD [--store] [--json]` | Recompute the score for one date. `--store` persists to `alignment_score_history` and runs the drift-alert check (emits an `agent_messages` row to `synthesis` with priority=normal, category=signal when the score has been below 50 for 2+ consecutive days; idempotent per date). |
 | `pftui analytics divergence --json` | Cross-layer disagreement table for conflicting signals |
 | `pftui analytics digest --agent-filter low-agent --json` | Role-aware summary payload for agent handoffs |
 | `pftui analytics recap --date yesterday --json` | Chronological event recap for a given day |
