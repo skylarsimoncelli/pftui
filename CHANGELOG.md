@@ -1,5 +1,9 @@
 # Changelog
 
+### 2026-06-01 — feat: add private self-retrospective calibration renderer
+
+- What: Added a tested private self-retrospective calibration renderer (`render_private_self_retrospective_calibration`) with native `{calibration_dot_plot(private_calibration)}` placeholder, 2-3 bullets surfacing the largest absolute miscalibration rows (predicted vs observed deltas, directional over/underconfident labels, sample sizes, low-sample caveats), an empty-state fallback when no 90-day rows are attached, and an explicit private-only marker. Adds a `private_calibration: Vec<CalibrationReliabilityRow>` field on `BuildContext`.
+- Why: Native daily report assembly can now render the private self-retrospective calibration section from synthetic context rows without skill-side markdown.
 ### 2026-06-01 — feat: report build daily — private open predictions section
 
 - What: Added `pub fn render_private_open_predictions(ctx: &BuildContext) -> Result<String>` under `src/report/sections/private_open_predictions.rs` with new `PrivateOpenPredictionRow` and `PrivateOpenPredictionsCalibration` carriers on `BuildContext`. Emits the `## Open Predictions Resolving in Next 7 Days` heading, an inlined `{open_predictions_table(predictions_from_db=[...])}` native chart call (filtered to pending rows with `0 <= days_remaining <= 7`), and one interpretation sentence that folds in trailing-window calibration context when attached. The empty fixture path renders an explicit "No pending predictions resolve in the next 7 days." line.
