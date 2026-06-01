@@ -88,6 +88,7 @@ pub mod regime;
 pub mod regime_flows;
 pub mod regime_transitions;
 pub mod remove_tx;
+pub mod repair_pairs;
 pub mod report;
 pub mod research;
 pub mod scan;

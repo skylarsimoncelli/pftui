@@ -574,11 +574,25 @@ pub fn run_asset_intelligence(
     Ok(())
 }
 
+/// Notice surfaced when the operator passes `--include-pre-deployment`. The
+/// `news_source_accuracy` ledger populates forward from feature deployment
+/// only — historical predictions written before `source_article_id` landed
+/// are not retroactively attributed to a source (fuzzy claim-vs-article
+/// matching is too unreliable to trust). See the doc-comment on
+/// `news_source_accuracy::ensure_tables` for the table-level contract.
+pub const PRE_DEPLOYMENT_NOTICE: &str =
+    "NOTICE: news_source_accuracy is forward-only. Historical predictions \
+     written before the source_article_id column landed are NOT \
+     retroactively attributed to a source. The ledger accumulates from \
+     feature deployment forward; older windows will appear sparser than \
+     prediction volume alone implies.";
+
 pub fn run_news_source_accuracy(
     backend: &BackendConnection,
     domain: Option<&str>,
     topic: Option<&str>,
     window_days: Option<i64>,
+    include_pre_deployment: bool,
     json_output: bool,
 ) -> Result<()> {
     let normalized_topic = topic
@@ -591,15 +605,25 @@ pub fn run_news_source_accuracy(
         window_days,
     )?;
     if json_output {
-        let output = json!({
+        let mut output = json!({
             "domain": domain,
             "topic": normalized_topic,
             "window_days": window_days,
             "count": rows.len(),
             "sources": rows,
         });
+        if include_pre_deployment {
+            output["pre_deployment_notice"] =
+                serde_json::Value::String(PRE_DEPLOYMENT_NOTICE.to_string());
+            output["forward_only"] = serde_json::Value::Bool(true);
+        }
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
+    }
+
+    if include_pre_deployment {
+        println!("{PRE_DEPLOYMENT_NOTICE}");
+        println!();
     }
 
     if rows.is_empty() {
