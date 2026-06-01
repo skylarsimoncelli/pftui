@@ -32,6 +32,7 @@ pub struct BuildContext {
     pub equity_news: Vec<EquityNewsSignal>,
     pub public_news_events: Vec<PublicNewsEvent>,
     pub public_news_silence: Vec<NewsVolumeSignal>,
+    pub public_scenarios: Vec<PublicScenarioRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,4 +240,15 @@ pub struct PublicNewsEvent {
     pub topic: Option<String>,
     pub bound_market: Option<String>,
     pub impact_score: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PublicScenarioRow {
+    pub name: String,
+    pub probability: f64,
+    pub delta_7d: Option<f64>,
+    pub narrative_vs_money: Option<String>,
+    pub key_driver: Option<String>,
+    pub confirmation: Option<String>,
+    pub invalidation: Option<String>,
 }

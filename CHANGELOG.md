@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add public scenario dashboard renderer
+
+- What: Added a tested public scenario dashboard renderer with probability deltas, narrative-vs-money rows, driver/confirmation/invalidation columns, normalized residual handling, and overfilled-set warnings.
+- Why: Native daily report assembly now renders scenarios using the normalized scenario-set model instead of implying overlapping marginal probabilities.
+
 ### 2026-06-01 — feat: add public news and catalysts renderer
 
 - What: Added a tested public news and catalysts renderer with ranked event blocks, mandatory source/topic/bound-market metadata, news-volume context, and tomorrow calendar rows.
