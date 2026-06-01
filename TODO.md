@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section private mismatch surface
-**Source:** Scaffold breakdown from the report command Step 5b.
-**Scope:** Add `pub fn render_private_mismatch_surface(ctx: &BuildContext) -> Result<String>`. Data: recent journal entries by `author='skylar'`, held-asset convergence summaries, mismatch thresholds. Output shape: `## Mismatch Surface — Skylar's view vs analyst convergence` with native `{mismatch_card(...)}` for meaningful divergences or one aligned sentence. Tests: synthetic divergence creates a card, aligned fixture creates the one-sentence fallback, no public renderer can call this section.
-**Effort:** 5-7 hours.
-
 ### `pftui report build daily` — section private news and catalysts
 **Source:** Scaffold breakdown from the report command Step 5b.
 **Scope:** Add `pub fn render_private_news_catalysts(ctx: &BuildContext) -> Result<String>`. Data: last-24h news, source metadata, held assets, active scenarios, news-silence analytics. Output shape: `## News & Catalysts`, 3-5 event blocks with What happened / Where the money moved / Who benefits / What it means and the required source metadata line. Tests: events connect to held assets or scenarios, metadata line is mandatory, insufficient-baseline silence rows are skipped.
