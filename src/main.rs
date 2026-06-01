@@ -286,8 +286,18 @@ fn run_agent_journal(
                     json,
                 )
             }
-            cli::JournalPredictionCommand::AutoScore { dry_run, json } => {
-                commands::predict::run_auto_score(backend, dry_run, json)
+            cli::JournalPredictionCommand::AutoScore {
+                since,
+                dry_run,
+                confidence_floor,
+                force,
+                json,
+            } => {
+                let floor = match confidence_floor {
+                    cli::PredictionConfidenceFloorArg::Medium => "medium",
+                    cli::PredictionConfidenceFloorArg::High => "high",
+                };
+                commands::predict::run_auto_score(backend, since.as_deref(), dry_run, floor, force, json)
             }
             cli::JournalPredictionCommand::Lessons {
                 command,
@@ -1057,6 +1067,10 @@ fn run_cli(cli: Cli) -> Result<()> {
         Some(Command::Console) => unreachable!("console handled before backend initialization"),
 
         Some(Command::Journal { command }) => run_agent_journal(&backend, command),
+
+        Some(Command::Prediction { command }) => {
+            run_agent_journal(&backend, Some(cli::JournalCommand::Prediction { command }))
+        }
 
         Some(Command::Data { command }) => match command {
             cli::DataCommand::Refresh {
