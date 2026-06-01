@@ -48,6 +48,7 @@ pub mod impact_matrix;
 pub mod import;
 pub mod journal;
 pub mod lessons_applied;
+pub mod lessons_curate;
 pub mod list_tx;
 pub mod macro_cmd;
 pub mod market_hours;

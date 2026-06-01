@@ -437,6 +437,8 @@ mod tests {
             why_wrong: why_wrong.to_string(),
             signal_misread: Some("volume did not confirm".to_string()),
             created_at: "2026-05-01T00:00:00Z".to_string(),
+            status: "active".to_string(),
+            last_cited_at: None,
         }
     }
 

@@ -1452,6 +1452,68 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     }
     conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_daily_notes_author ON daily_notes(author)")?;
 
+    // Migration: lesson half-life curation (status + last_cited_at on
+    // prediction_lessons, plus lesson_citations table).
+    //
+    // The prediction_lessons table is created lazily by
+    // `crate::db::prediction_lessons::ensure_table`; we mirror its CREATE
+    // here so the ALTER TABLE migrations below have a target on fresh DBs.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS prediction_lessons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prediction_id INTEGER NOT NULL UNIQUE,
+            miss_type TEXT NOT NULL,
+            what_predicted TEXT NOT NULL,
+            what_happened TEXT NOT NULL,
+            why_wrong TEXT NOT NULL,
+            signal_misread TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (prediction_id) REFERENCES user_predictions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_prediction_lessons_pid
+            ON prediction_lessons(prediction_id);",
+    )?;
+
+    let prediction_lessons_has_status: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('prediction_lessons') WHERE name = 'status'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !prediction_lessons_has_status {
+        // SQLite ALTER TABLE ADD COLUMN cannot embed a multi-value CHECK
+        // constraint with subqueries; the inline CHECK below is allowed
+        // because it only references the new column's value.
+        conn.execute_batch(
+            "ALTER TABLE prediction_lessons ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
+                CHECK(status IN ('active','retired','superseded'))",
+        )?;
+    }
+    let prediction_lessons_has_last_cited_at: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('prediction_lessons') WHERE name = 'last_cited_at'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !prediction_lessons_has_last_cited_at {
+        conn.execute_batch(
+            "ALTER TABLE prediction_lessons ADD COLUMN last_cited_at TEXT",
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_prediction_lessons_status
+            ON prediction_lessons(status);
+         CREATE INDEX IF NOT EXISTS idx_prediction_lessons_last_cited_at
+            ON prediction_lessons(last_cited_at);",
+    )?;
+
+    // Ensure the lesson_citations table exists. It was originally created
+    // during a live-DB enrichment session; this CREATE makes it available
+    // on every fresh install for the lesson half-life curation routine.
+    crate::db::lesson_citations::ensure_table(conn)?;
+
     Ok(())
 }
 
