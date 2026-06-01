@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section public scenario dashboard
-**Source:** Scaffold breakdown from the report command Step 5a.
-**Scope:** Add `pub fn render_public_scenario_dashboard(ctx: &BuildContext) -> Result<String>`. Data: active scenarios, `scenario_history` 7-day deltas, narrative-vs-money divergence, normalized scenario residual/overfill status. Output shape: `## Scenario Dashboard` table with Scenario, Probability, 7d Delta, Narrative vs Money, Key Driver, Confirmation, Invalidation; include `Other / Unmodelled` or a temporary data-quality footnote. Tests: probability deltas render, residual semantics match `docs/ANALYTICS-SPEC.md`, overfilled legacy data emits warning instead of overlap language.
-**Effort:** 5-7 hours.
-
 ### `pftui report build daily` — section public how we analyse
 **Source:** Scaffold breakdown from the report command Step 5a.
 **Scope:** Add `pub fn render_public_how_we_analyse(ctx: &BuildContext) -> Result<String>`. Data: calibration rows, lessons applied in last 24h, prediction-market intelligence, active/new predictions, source-tier override summary. Output shape: `## How We Analyse` with prediction accountability prose, `{calibration_dot_plot(...)}` output from native chart registry, lessons-applied summary, and news-quality filter paragraph. Tests: calibration chart is included when data exists, low-sample rows are marked, source-tier command references stay parseable.
