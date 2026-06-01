@@ -7,6 +7,7 @@ pub mod private_outlook_by_horizon;
 pub mod private_per_asset_convergence;
 pub mod private_portfolio_snapshot;
 pub mod private_risk_concentration;
+pub mod private_upcoming_calendar;
 pub mod public_allocation_framework;
 pub mod public_bitcoin;
 pub mod public_equities;
