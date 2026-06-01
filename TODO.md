@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section private macro context
-**Source:** Scaffold breakdown from the report command Step 5b.
-**Scope:** Add `pub fn render_private_macro_context(ctx: &BuildContext) -> Result<String>`. Data: regime quadrant inputs, active scenarios and 7-day deltas, narrative-vs-money divergence, near-term catalysts. Output shape: `## Macro Context` with side-by-side native `{regime_quadrant(...)}` and `{prob_bar(...)}` output plus <=2 paragraphs. Tests: scenario bars use normalized semantics, narrative-vs-money divergence appears when material, output stays concise.
-**Effort:** 5-7 hours.
-
 ### `pftui report build daily` — section private per-asset convergence
 **Source:** Scaffold breakdown from the report command Step 5b.
 **Scope:** Add `pub fn render_private_per_asset_convergence(ctx: &BuildContext) -> Result<String>`. Data: held assets above 1%, `analytics views convergence --asset`, user targets, current allocation, deterministic analyst range. Output shape: `## Per-Asset Convergence` followed by native `{analyst_convergence_card(...)}` per held asset. Tests: missing analyst layers surface `insufficient-views`, derived ranges follow the canonical formula exactly, card count matches held assets above threshold.

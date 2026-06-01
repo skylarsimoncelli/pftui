@@ -1,4 +1,5 @@
 pub mod private_bottom_line;
+pub mod private_macro_context;
 pub mod private_portfolio_snapshot;
 pub mod public_allocation_framework;
 pub mod public_bitcoin;

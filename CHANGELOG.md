@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add private macro context renderer
+
+- What: Added a tested private macro context renderer with native regime-quadrant and probability-bar placeholders, normalized scenario-set semantics, material divergence callouts, and near-term catalyst summaries.
+- Why: Native daily report assembly can now render the private macro dashboard from synthetic context rows without relying on skill-side markdown assembly.
+
 ### 2026-06-01 — feat: add private portfolio snapshot renderer
 
 - What: Added a tested private portfolio snapshot renderer with native stacked allocation placeholder, deterministic position table, dust-position note, and per-target drift-bar placeholders.

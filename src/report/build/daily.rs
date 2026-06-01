@@ -45,6 +45,10 @@ pub struct BuildContext {
     pub private_what_changed_deltas: Vec<WhatChangedDeltaSummary>,
     pub private_positions: Vec<PrivatePositionSnapshotRow>,
     pub private_drift_rows: Vec<PrivateDriftRow>,
+    pub private_macro_regime: Option<PrivateMacroRegimeQuadrant>,
+    pub private_macro_scenarios: Vec<PrivateMacroScenarioRow>,
+    pub private_macro_divergences: Vec<PrivateNarrativeMoneyDivergence>,
+    pub private_macro_catalysts: Vec<PrivateMacroCatalyst>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -349,4 +353,38 @@ pub struct PrivateDriftRow {
     pub target_pct: f64,
     pub actual_pct: f64,
     pub band_pct: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateMacroRegimeQuadrant {
+    pub growth: f64,
+    pub inflation: f64,
+    pub trail: Vec<PrivateRegimeTrailPoint>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateRegimeTrailPoint {
+    pub growth: f64,
+    pub inflation: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateMacroScenarioRow {
+    pub name: String,
+    pub probability: f64,
+    pub prior_7d: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateNarrativeMoneyDivergence {
+    pub scenario: String,
+    pub summary: String,
+    pub material: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateMacroCatalyst {
+    pub date: String,
+    pub event: String,
+    pub impact: String,
 }
