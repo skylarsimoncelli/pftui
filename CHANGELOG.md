@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add private per-asset convergence renderer
+
+- What: Added a tested private per-asset convergence renderer with native analyst-convergence-card placeholders, held-asset filtering, missing-layer warnings, and deterministic analyst allocation ranges.
+- Why: Native daily report assembly can now render private per-asset convergence cards from synthetic context rows while preserving the existing convergence classifier.
+
 ### 2026-06-01 — feat: add private macro context renderer
 
 - What: Added a tested private macro context renderer with native regime-quadrant and probability-bar placeholders, normalized scenario-set semantics, material divergence callouts, and near-term catalyst summaries.
