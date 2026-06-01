@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add private self-retrospective calibration renderer
+
+- What: Added a tested private self-retrospective calibration renderer (`render_private_self_retrospective_calibration`) with native `{calibration_dot_plot(private_calibration)}` placeholder, 2-3 bullets surfacing the largest absolute miscalibration rows (predicted vs observed deltas, directional over/underconfident labels, sample sizes, low-sample caveats), an empty-state fallback when no 90-day rows are attached, and an explicit private-only marker. Adds a `private_calibration: Vec<CalibrationReliabilityRow>` field on `BuildContext`.
+- Why: Native daily report assembly can now render the private self-retrospective calibration section from synthetic context rows without skill-side markdown.
+
 ### 2026-06-01 — feat: populate empty enrichment tables
 
 - What: Three new idempotent backfill commands — `pftui analytics news-sources rebuild-accuracy [--since 180d] [--dry-run] --json` (replays `sync_prediction_outcome` for every scored prediction with a `source_article_id`), `pftui analytics narrative-divergence rebuild --since 90d --json` (walks historical `news_cache` + `predictions_history` to backfill `narrative_money_history`), and `pftui analytics news-silence rebuild-baselines --since 90d --json` (re-computes per-(topic, weekday) baselines from the trailing news_cache window). `data refresh` now silently runs the news-silence baseline rebuild, appends today's narrative divergence per active scenario, and replays the trailing-30d news-source accuracy sync after each news ingest pass; `rss_feed_health` was already wired in the news fetch path. New `pftui system data-coverage [--json]` reports row counts vs expected minimum for 17 enrichment tables and loudly surfaces 0-row / missing tables. Schema additions: CREATE TABLE IF NOT EXISTS for `scenario_prediction_links`, `thesis_citations`, `prediction_falsification_rules`, `conviction_durability`, and `calibration_matrix` so a fresh install is schema-complete (the other live-DB tables are now managed by the parallel #813 CLI-surface PR).
