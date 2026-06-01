@@ -273,6 +273,7 @@ mod tests {
     use super::*;
     use rust_decimal_macros::dec;
 
+    #[allow(clippy::too_many_arguments)]
     fn tx(
         id: i64,
         symbol: &str,
@@ -425,6 +426,7 @@ mod tests {
             }
         }
 
+        #[allow(clippy::too_many_arguments)]
         fn insert(
             backend: &BackendConnection,
             symbol: &str,
