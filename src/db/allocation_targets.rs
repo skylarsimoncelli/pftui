@@ -475,4 +475,39 @@ mod tests {
         assert_eq!(target.rebalance_pct_for_actual(dec!(33)), Some(dec!(30)));
         Ok(())
     }
+
+    #[test]
+    fn cash_symbol_target_round_trips_through_db() -> Result<()> {
+        // Cash symbols (USD, GBP, EUR, etc) must round-trip through the same
+        // allocation_targets schema as any tradeable symbol — the table is
+        // symbol-agnostic by design. A wide band (e.g. 30-60% for USD) models
+        // cash optionality without losing drift visibility.
+        let conn = test_db()?;
+        set_target_range(&conn, "USD", dec!(30), dec!(60))?;
+        set_target_range(&conn, "GBP", dec!(5), dec!(15))?;
+        set_target_range(&conn, "EUR", dec!(0), dec!(10))?;
+
+        let usd = get_target(&conn, "USD")?.unwrap();
+        assert_eq!(usd.target_floor_pct, dec!(30));
+        assert_eq!(usd.target_ceiling_pct, dec!(60));
+        assert_eq!(usd.target_pct, dec!(45));
+        assert_eq!(usd.drift_band_pct, dec!(15));
+
+        let gbp = get_target(&conn, "GBP")?.unwrap();
+        assert_eq!(gbp.target_floor_pct, dec!(5));
+        assert_eq!(gbp.target_ceiling_pct, dec!(15));
+
+        let eur = get_target(&conn, "EUR")?.unwrap();
+        assert_eq!(eur.target_floor_pct, dec!(0));
+        assert_eq!(eur.target_ceiling_pct, dec!(10));
+
+        // Drift math identical to non-cash assets.
+        assert_eq!(usd.drift_from_actual(dec!(45)), Decimal::ZERO);
+        assert_eq!(usd.band_position(dec!(45)), BandPosition::InBand);
+        assert_eq!(usd.drift_from_actual(dec!(25)), dec!(-5));
+        assert_eq!(usd.band_position(dec!(25)), BandPosition::BelowFloor);
+        assert_eq!(usd.drift_from_actual(dec!(65)), dec!(5));
+        assert_eq!(usd.band_position(dec!(65)), BandPosition::AboveCeiling);
+        Ok(())
+    }
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: allocation target for cash position
+
+- What: Audited the `allocation_targets` write path (`src/db/allocation_targets.rs`, `src/commands/target.rs`) and confirmed it is symbol-agnostic — `pftui portfolio target set USD --floor 30 --ceiling 60` (and analogous GBP/EUR variants) now succeed without any code change. Extracted `compute_drift_rows` from `src/commands/drift.rs::run` so cash-drift inclusion is unit-tested directly: cash positions with a target appear in `pftui portfolio drift` alongside every other asset, and cash without a target stays silent (no auto-seeded default). Documented the design in `docs/ANALYTICS-SPEC.md` under a new "Cash Allocation Bands" section: wide floor/ceiling bands model dry-powder optionality while still emitting drift signals on breach.
+- Why: Closes the visibility loop on the drift system. With cash modeled as a wide-band position rather than a silent zone, every dollar in the portfolio sits within a tracked range — a sustained drop below the cash floor or rise above the cash ceiling now surfaces in the same drift channel that already governs every other holding.
+
 ### 2026-06-01 — feat: lesson half-life curation
 
 - What: Added `prediction_lessons.status` (`active|retired|superseded`) and `last_cited_at` columns, a schema-side `lesson_citations` table, and three new CLI commands — `pftui analytics lessons curate [--dry-run] [--retire-after-days 60] [--json]`, `pftui analytics lessons revive <id> [--json]`, and `pftui analytics lessons health [--json]`. `curate` retires lessons that are uncited (or never cited and created) longer than `--retire-after-days` and whose topic cluster has no recent wrong-scored predictions, journals the change to `agent_messages`, and exposes a dry-run mode. `pftui journal prediction lessons` now defaults to active lessons only; pass `--include-retired` to surface the full history.
