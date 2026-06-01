@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section public gold and precious metals
-**Source:** Scaffold breakdown from the report command Step 5a.
-**Scope:** Add `pub fn render_public_gold_precious_metals(ctx: &BuildContext) -> Result<String>`. Data: GC=F and SI=F price/history, supply/COT/COMEX data, sovereign holdings when available, real-yield context, gold/silver analyst views and news. Output shape: `## Gold (and Precious Metals)` with Current State, Multi-Timeframe View, What to Watch, and silver as a sub-asset. Tests: renders gold and silver together, degrades when COMEX/COT is stale, includes source-tier metadata for news.
-**Effort:** 5-7 hours.
-
 ### `pftui report build daily` — section public equities
 **Source:** Scaffold breakdown from the report command Step 5a.
 **Scope:** Add `pub fn render_public_equities(ctx: &BuildContext) -> Result<String>`. Data: SPX/SPY, NDX/QQQ, sector ETF prices, breadth/earnings/news when available, equity analyst views. Output shape: `## Equities` with Current State, Multi-Timeframe View, What to Watch. Tests: renders broad-index and sector rows from fixture data, falls back when breadth/earnings data is absent, avoids unsupported market-cap claims.

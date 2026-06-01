@@ -18,6 +18,12 @@ pub struct BuildContext {
     pub bitcoin_analyst_views: Vec<AnalystViewSummary>,
     pub bitcoin_news: Vec<BitcoinCatalystSummary>,
     pub bitcoin_prediction_signals: Vec<BitcoinPredictionSignal>,
+    pub precious_metals_market: Vec<PreciousMetalMarketRow>,
+    pub precious_metals_supply: Vec<PreciousMetalsSupplyRow>,
+    pub precious_metals_analyst_views: Vec<AnalystViewSummary>,
+    pub precious_metals_news: Vec<PreciousMetalsNewsSignal>,
+    pub real_yield_context: Option<RealYieldSummary>,
+    pub sovereign_gold_holdings: Vec<SovereignHoldingSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,4 +136,50 @@ pub struct BitcoinPredictionSignal {
     pub probability: Option<f64>,
     pub delta_7d: Option<f64>,
     pub relevance: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreciousMetalMarketRow {
+    pub asset: String,
+    pub symbol: String,
+    pub price: Option<String>,
+    pub daily_change_pct: Option<f64>,
+    pub weekly_change_pct: Option<f64>,
+    pub trend: Option<String>,
+    pub freshness: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreciousMetalsSupplyRow {
+    pub asset: String,
+    pub metric: String,
+    pub value: Option<String>,
+    pub interpretation: Option<String>,
+    pub freshness: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreciousMetalsNewsSignal {
+    pub headline: String,
+    pub domain: String,
+    pub source_tier: Option<u8>,
+    pub independence: Option<String>,
+    pub topic: Option<String>,
+    pub relevance: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RealYieldSummary {
+    pub value: Option<String>,
+    pub direction: Option<String>,
+    pub interpretation: Option<String>,
+    pub freshness: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SovereignHoldingSummary {
+    pub holder: String,
+    pub latest: Option<String>,
+    pub change: Option<String>,
+    pub freshness: Option<String>,
 }

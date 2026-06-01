@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add public gold and precious metals renderer
+
+- What: Added a tested public gold and precious-metals renderer with gold/silver price rows, real-yield context, supply/COT/COMEX rows, sovereign holdings, analyst views, and source-tiered news.
+- Why: Native daily report assembly now has a precious-metals section that includes silver, surfaces stale physical-market data, and keeps public claims sourceable.
+
 ### 2026-06-01 — feat: add public bitcoin section renderer
 
 - What: Added a tested public Bitcoin renderer with BTC price context, optional ETF-flow and on-chain blocks, BTC analyst views, news catalysts, and prediction-market signals.
