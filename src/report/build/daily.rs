@@ -56,6 +56,8 @@ pub struct BuildContext {
     pub private_journal_views: Vec<PrivateJournalViewRow>,
     pub private_news_events: Vec<PrivateNewsCatalyst>,
     pub private_news_silence: Vec<NewsVolumeSignal>,
+    pub private_open_predictions: Vec<PrivateOpenPredictionRow>,
+    pub private_open_predictions_calibration: Option<PrivateOpenPredictionsCalibration>,
     pub private_lessons_applied: Option<PrivateLessonsAppliedSummary>,
 }
 
@@ -495,4 +497,21 @@ pub struct PrivateNewsCatalyst {
     pub related_assets: Vec<String>,
     pub related_scenarios: Vec<String>,
     pub impact_score: f64,
+pub struct PrivateOpenPredictionRow {
+    pub id: Option<i64>,
+    pub symbol: String,
+    pub claim: String,
+    pub target_date: String,
+    pub days_remaining: i64,
+    pub confidence: Option<f64>,
+    pub conviction: Option<i64>,
+    pub direction: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateOpenPredictionsCalibration {
+    pub layer: Option<String>,
+    pub sample_size: u32,
+    pub predicted_pct: Option<f64>,
+    pub observed_pct: Option<f64>,
 }
