@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add private risk concentration renderer
+
+- What: Added a tested private risk-concentration renderer with allocation-derived factor exposure, native factor_exposure placeholders, scenario probability alignment, and missing-mapping fallback copy.
+- Why: Native daily report assembly can now surface operator-only concentration and hedge-pressure context from synthetic factor mappings without touching real holdings data in tests.
+
 ### 2026-06-01 — feat: add private outlook by horizon renderer
 
 - What: Added a tested private outlook-by-horizon renderer with native outlook_arrows placeholders, deterministic direction normalization, neutral/unknown fallbacks, and portfolio-materiality ordering.

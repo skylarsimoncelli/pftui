@@ -52,6 +52,7 @@ pub struct BuildContext {
     pub private_asset_convergence: Vec<PrivateAssetConvergenceRow>,
     pub private_conviction_trajectories: Vec<PrivateConvictionTrajectoryRow>,
     pub private_outlooks: Vec<PrivateOutlookByHorizonRow>,
+    pub private_risk_factor_mappings: Vec<PrivateRiskFactorMapping>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -431,4 +432,12 @@ pub struct PrivateOutlookByHorizonRow {
 pub struct PrivateOutlookPoint {
     pub direction: String,
     pub conviction: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateRiskFactorMapping {
+    pub symbol: String,
+    pub factor: String,
+    pub direction: String,
+    pub exposure_multiplier: f64,
 }
