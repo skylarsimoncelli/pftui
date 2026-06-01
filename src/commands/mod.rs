@@ -23,6 +23,7 @@ pub mod cot;
 pub mod crisis;
 pub mod daily_pnl;
 pub mod daemon;
+pub mod data_coverage;
 pub mod debate;
 pub mod debate_score;
 pub mod db_info;

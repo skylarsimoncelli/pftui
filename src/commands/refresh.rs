@@ -1477,6 +1477,14 @@ fn run_pipeline(
         &mut dag_result,
     );
 
+    // Enrichment passes that depend on freshly-written news: recompute the
+    // news-silence baselines (per-topic, per-weekday), append today's
+    // narrative-vs-money divergence per active scenario, and replay the
+    // news-source accuracy ledger for any newly-scored predictions tagged
+    // with a `source_article_id`. Each pass is best-effort — failures are
+    // logged but do not abort the refresh.
+    run_news_enrichment_passes(backend, verbose, rss_refresh || brave_refresh);
+
     // COT (synchronous — uses reqwest::blocking internally)
     store_cot_result(backend, verbose, cot_due, plan.cot, &mut dag_result);
 
@@ -2652,6 +2660,41 @@ type BraveNewsData = Option<(
     Vec<(String, Result<Vec<crate::data::brave::BraveNewsResult>>)>,
     Duration,
 )>;
+
+/// Forward-population for the four news-related enrichment tables. Called
+/// after `store_news_result` writes any new articles. Each pass is wrapped
+/// in `Result` and a failure is logged but does not abort the refresh — the
+/// goal is steady-state population, not a hard dependency.
+fn run_news_enrichment_passes(
+    backend: &BackendConnection,
+    verbose: bool,
+    news_refreshed: bool,
+) {
+    if !news_refreshed {
+        return;
+    }
+    // (1) news_silence_baselines: rebuild from trailing 90d news_cache.
+    if let Err(err) =
+        crate::commands::news_silence::rebuild_baselines_silent(backend, 90)
+    {
+        warn_ln!(verbose, "news-silence baseline refresh failed: {}", err);
+    }
+    // (2) narrative_money_history: append today's divergence per active scenario.
+    if let Err(err) =
+        crate::commands::narrative_divergence::record_today_silent(backend, 24, 2.0)
+    {
+        warn_ln!(verbose, "narrative-divergence refresh failed: {}", err);
+    }
+    // (3) news_source_accuracy: replay the trailing-30d window so any newly
+    // scored predictions get reflected in the ledger.
+    if let Err(err) = crate::db::news_source_accuracy::backfill_accuracy_backend(
+        backend,
+        Some(30),
+        false,
+    ) {
+        warn_ln!(verbose, "news-source accuracy refresh failed: {}", err);
+    }
+}
 
 fn warn_unhealthy_rss_feeds(backend: &BackendConnection, verbose: bool) {
     if !verbose {

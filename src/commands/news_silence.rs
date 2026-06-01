@@ -446,6 +446,142 @@ fn round2(value: f64) -> f64 {
     (value * 100.0).round() / 100.0
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct NewsSilenceRebuildReport {
+    pub since_days: i64,
+    pub baselines_written: usize,
+    pub topics: usize,
+}
+
+/// Backfill `news_silence_baselines` from the trailing `since_days` of
+/// `news_cache` rows. Computes per-(topic, day-of-week) percentiles using the
+/// observed daily tier-1/2 counts and upserts one baseline row per
+/// (topic, day_of_week). Idempotent — re-running just refreshes.
+pub fn rebuild_baselines(
+    backend: &BackendConnection,
+    since_days: i64,
+    json_output: bool,
+) -> Result<()> {
+    if since_days <= 0 {
+        anyhow::bail!("--since must be a positive duration");
+    }
+    news_silence::ensure_table_backend(backend)?;
+    let today = Utc::now().date_naive();
+    let window_start = today - Duration::days(since_days);
+    let start_ts = day_start_ts(window_start)?;
+    let end_ts = day_start_ts(today + Duration::days(1))?;
+    let counts = news_silence::tier12_daily_counts_backend(backend, start_ts, end_ts)?;
+
+    // Group counts by (topic, day_of_week) → BTreeMap<date, count>
+    let mut grouped: HashMap<(String, i64), BTreeMap<String, i64>> = HashMap::new();
+    for row in &counts {
+        grouped
+            .entry((row.topic.clone(), row.day_of_week))
+            .or_default()
+            .insert(row.date.clone(), row.count);
+    }
+
+    let mut topics = BTreeSet::new();
+    let mut upserts: Vec<NewsSilenceBaselineUpsert> = Vec::new();
+    for ((topic, day_of_week), date_map) in grouped {
+        topics.insert(topic.clone());
+        let sample_counts: Vec<i64> = date_map.values().copied().collect();
+        let (median, p30, p80) = distribution_stats(&sample_counts);
+        let observed = *sample_counts.last().unwrap_or(&0);
+        let status =
+            classify_status(observed, p30, p80, sample_counts.len()).to_string();
+        let samples: Vec<NewsSilenceSample> = date_map
+            .into_iter()
+            .map(|(date, count)| NewsSilenceSample { date, count })
+            .collect();
+        upserts.push(NewsSilenceBaselineUpsert {
+            topic,
+            day_of_week,
+            samples,
+            median_count: round2(median),
+            p30_count: round2(p30),
+            p80_count: round2(p80),
+            observed_count: observed,
+            status,
+            previous_status: None,
+            changed_at: None,
+        });
+    }
+    let baselines_written = news_silence::upsert_baselines_backend(backend, &upserts)?;
+    let report = NewsSilenceRebuildReport {
+        since_days,
+        baselines_written,
+        topics: topics.len(),
+    };
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("News-silence baseline rebuild");
+        println!("════════════════════════════════════════════════════════════════");
+        println!(
+            "Window: trailing {}d • topics: {} • baselines written: {}",
+            report.since_days, report.topics, report.baselines_written
+        );
+    }
+    Ok(())
+}
+
+/// Same as `rebuild_baselines` but returns a structured report without
+/// touching stdout. Used by the refresh path.
+pub fn rebuild_baselines_silent(
+    backend: &BackendConnection,
+    since_days: i64,
+) -> Result<NewsSilenceRebuildReport> {
+    if since_days <= 0 {
+        anyhow::bail!("--since must be a positive duration");
+    }
+    news_silence::ensure_table_backend(backend)?;
+    let today = Utc::now().date_naive();
+    let window_start = today - Duration::days(since_days);
+    let start_ts = day_start_ts(window_start)?;
+    let end_ts = day_start_ts(today + Duration::days(1))?;
+    let counts = news_silence::tier12_daily_counts_backend(backend, start_ts, end_ts)?;
+    let mut grouped: HashMap<(String, i64), BTreeMap<String, i64>> = HashMap::new();
+    for row in &counts {
+        grouped
+            .entry((row.topic.clone(), row.day_of_week))
+            .or_default()
+            .insert(row.date.clone(), row.count);
+    }
+    let mut topics = BTreeSet::new();
+    let mut upserts: Vec<NewsSilenceBaselineUpsert> = Vec::new();
+    for ((topic, day_of_week), date_map) in grouped {
+        topics.insert(topic.clone());
+        let sample_counts: Vec<i64> = date_map.values().copied().collect();
+        let (median, p30, p80) = distribution_stats(&sample_counts);
+        let observed = *sample_counts.last().unwrap_or(&0);
+        let status =
+            classify_status(observed, p30, p80, sample_counts.len()).to_string();
+        let samples: Vec<NewsSilenceSample> = date_map
+            .into_iter()
+            .map(|(date, count)| NewsSilenceSample { date, count })
+            .collect();
+        upserts.push(NewsSilenceBaselineUpsert {
+            topic,
+            day_of_week,
+            samples,
+            median_count: round2(median),
+            p30_count: round2(p30),
+            p80_count: round2(p80),
+            observed_count: observed,
+            status,
+            previous_status: None,
+            changed_at: None,
+        });
+    }
+    let baselines_written = news_silence::upsert_baselines_backend(backend, &upserts)?;
+    Ok(NewsSilenceRebuildReport {
+        since_days,
+        baselines_written,
+        topics: topics.len(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -629,5 +765,26 @@ mod tests {
             .unwrap();
         assert_eq!(fed.observed_count, 5);
         assert_eq!(fed.status, "saturated");
+    }
+
+    #[test]
+    fn rebuild_baselines_silent_writes_one_row_per_topic_weekday() {
+        let conn = setup();
+        let today = Utc::now().date_naive();
+        // Synthesise news for "fed-policy" on three distinct weekdays
+        for days_ago in [7, 14, 21] {
+            let dt = today - Duration::days(days_ago);
+            add_current_news(&conn, "fed-policy", dt, 4);
+        }
+        let backend = BackendConnection::Sqlite { conn };
+        let report = rebuild_baselines_silent(&backend, 90).unwrap();
+        assert!(report.baselines_written >= 1);
+        assert!(report.topics >= 1);
+        let baselines = news_silence::list_baselines_backend(&backend).unwrap();
+        let fed = baselines
+            .into_iter()
+            .find(|row| row.topic == "fed-policy")
+            .expect("fed-policy baseline row written");
+        assert!(!fed.samples.is_empty(), "samples should be populated");
     }
 }

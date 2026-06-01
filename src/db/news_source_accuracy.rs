@@ -709,6 +709,129 @@ fn rank_sources_postgres(
     Ok(rows)
 }
 
+/// Summary of a `rebuild-accuracy` backfill pass.
+#[derive(Debug, Clone, Serialize)]
+pub struct AccuracyBackfillReport {
+    pub since_days: Option<i64>,
+    pub scanned: usize,
+    pub synced: usize,
+    pub skipped_missing_article: usize,
+    pub skipped_other: usize,
+    pub dry_run: bool,
+}
+
+/// Walk `user_predictions` rows that have a non-pending outcome AND a
+/// `source_article_id`, optionally restricted to the trailing `since_days`
+/// window, and replay `sync_prediction_outcome` for each. Idempotent:
+/// re-running produces no double-counting because `sync_prediction_outcome`
+/// deletes any prior event row before inserting.
+pub fn backfill_accuracy(
+    conn: &Connection,
+    since_days: Option<i64>,
+    dry_run: bool,
+) -> Result<AccuracyBackfillReport> {
+    ensure_tables(conn)?;
+    if let Some(days) = since_days {
+        if days <= 0 {
+            bail!("since-days must be positive");
+        }
+    }
+
+    let mut sql = String::from(
+        "SELECT id, topic, source_article_id, outcome
+         FROM user_predictions
+         WHERE source_article_id IS NOT NULL
+           AND outcome IN ('correct','partial','wrong')",
+    );
+    let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(days) = since_days {
+        sql.push_str(
+            " AND (scored_at IS NULL
+                   OR datetime(scored_at) >= datetime('now', ?))",
+        );
+        params_vec.push(Box::new(format!("-{} days", days)));
+    }
+    sql.push_str(" ORDER BY id ASC");
+
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut report = AccuracyBackfillReport {
+        since_days,
+        scanned: 0,
+        synced: 0,
+        skipped_missing_article: 0,
+        skipped_other: 0,
+        dry_run,
+    };
+
+    for (id, topic, source_article_id, outcome) in rows {
+        report.scanned += 1;
+        let Some(article_id) = source_article_id else {
+            report.skipped_other += 1;
+            continue;
+        };
+        if dry_run {
+            // Validate inputs without mutating
+            if validate_outcome(&outcome).is_err() {
+                report.skipped_other += 1;
+                continue;
+            }
+            let exists: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM news_cache WHERE id = ?1",
+                    params![article_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !exists {
+                report.skipped_missing_article += 1;
+                continue;
+            }
+            report.synced += 1;
+            continue;
+        }
+        match sync_prediction_outcome(conn, id, Some(article_id), &topic, &outcome) {
+            Ok(()) => report.synced += 1,
+            Err(err) => {
+                let msg = err.to_string();
+                if msg.contains("does not exist in news_cache") {
+                    report.skipped_missing_article += 1;
+                } else {
+                    report.skipped_other += 1;
+                }
+            }
+        }
+    }
+
+    Ok(report)
+}
+
+pub fn backfill_accuracy_backend(
+    backend: &BackendConnection,
+    since_days: Option<i64>,
+    dry_run: bool,
+) -> Result<AccuracyBackfillReport> {
+    query::dispatch(
+        backend,
+        |conn| backfill_accuracy(conn, since_days, dry_run),
+        |_pool| {
+            bail!("rebuild-accuracy is only supported on the SQLite backend in this release")
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -827,5 +950,78 @@ mod tests {
         assert_eq!(rows[0].n_wrong, 0);
         assert_eq!(rows[0].n_partial, 1);
         assert_eq!(rows[0].hit_rate_pct, 50.0);
+    }
+
+    #[test]
+    fn backfill_replays_scored_predictions_and_is_idempotent() {
+        let conn = db::open_in_memory();
+        news_cache::insert_news(
+            &conn,
+            "Fed cuts coming",
+            "https://www.bloomberg.com/news/fed-cut-2",
+            "Bloomberg",
+            "macro",
+            1_709_610_000,
+        )
+        .unwrap();
+        let article_id: i64 = conn
+            .query_row(
+                "SELECT id FROM news_cache WHERE url = ?1",
+                params!["https://www.bloomberg.com/news/fed-cut-2"],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        let pid = crate::db::user_predictions::add_prediction_with_details(
+            &conn,
+            "Fed cuts in July",
+            None,
+            None,
+            Some("medium"),
+            None,
+            None,
+            None,
+            None,
+            &[],
+            Some("fed"),
+            Some(article_id),
+        )
+        .unwrap();
+        // Direct outcome update without going through the score path — this
+        // simulates a prediction that was scored before sync_prediction_outcome
+        // was wired into the score path.
+        conn.execute(
+            "UPDATE user_predictions
+             SET outcome = 'correct', scored_at = datetime('now')
+             WHERE id = ?1",
+            params![pid],
+        )
+        .unwrap();
+
+        // Pre-backfill: ledger should be empty
+        let before = list_accuracy(&conn, None, None, None).unwrap();
+        assert!(before.is_empty(), "ledger should be empty before backfill");
+
+        // Dry-run: counts scanned but does not mutate
+        let dry = backfill_accuracy(&conn, None, true).unwrap();
+        assert_eq!(dry.scanned, 1);
+        assert_eq!(dry.synced, 1);
+        let still_empty = list_accuracy(&conn, None, None, None).unwrap();
+        assert!(still_empty.is_empty(), "dry-run must not mutate ledger");
+
+        // Real run: produces one ledger row
+        let real = backfill_accuracy(&conn, None, false).unwrap();
+        assert_eq!(real.synced, 1);
+        let after = list_accuracy(&conn, None, None, None).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].n_correct, 1);
+
+        // Idempotency: re-running does not double-count
+        let again = backfill_accuracy(&conn, None, false).unwrap();
+        assert_eq!(again.synced, 1);
+        let after2 = list_accuracy(&conn, None, None, None).unwrap();
+        assert_eq!(after2.len(), 1);
+        assert_eq!(after2[0].n_predictions_implied, 1);
+        assert_eq!(after2[0].n_correct, 1);
     }
 }
