@@ -2069,6 +2069,29 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                     commands::list_tx::run(&backend, notes, paired, json)
                 }
+                cli::PortfolioTransactionCommand::RepairPairs {
+                    dry_run,
+                    confirm,
+                    skip,
+                    max_days,
+                    max_notional_pct,
+                    json,
+                } => {
+                    if config.is_percentage_mode() {
+                        bail!("repair-pairs is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
+                    }
+                    commands::repair_pairs::run(
+                        &backend,
+                        commands::repair_pairs::Options {
+                            dry_run,
+                            confirm,
+                            skip,
+                            max_days,
+                            max_notional_pct,
+                            json,
+                        },
+                    )
+                }
             },
             Some(cli::PortfolioCommand::Broker { command }) => match command {
                 cli::PortfolioBrokerCommand::Add {
@@ -2738,12 +2761,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                     domain,
                     topic,
                     window_days,
+                    include_pre_deployment,
                     json,
                 } => commands::analytics::run_news_source_accuracy(
                     &backend,
                     domain.as_deref(),
                     topic.as_deref(),
                     window_days,
+                    include_pre_deployment,
                     json,
                 ),
                 cli::AnalyticsNewsSourcesCommand::Rank {

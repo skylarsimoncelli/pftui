@@ -1198,6 +1198,37 @@ pub enum PortfolioTransactionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Heuristically pair unpaired pre-deployment transactions.
+    ///
+    /// For each unpaired buy on a non-cash symbol, find the closest USD
+    /// sell within ±2 days and ±10% notional. Idempotent — only proposes
+    /// pairs where BOTH legs currently have `paired_tx_id = NULL`.
+    ///
+    /// EXAMPLES:
+    ///   pftui portfolio transaction repair-pairs --dry-run --json
+    ///   pftui portfolio transaction repair-pairs --confirm
+    ///   pftui portfolio transaction repair-pairs --skip 17 --confirm
+    #[command(name = "repair-pairs")]
+    RepairPairs {
+        /// Preview proposed pairs without mutating the database (default).
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        /// Apply proposed pairs to the database.
+        #[arg(long)]
+        confirm: bool,
+        /// Exclude a specific transaction id from pairing (repeatable).
+        #[arg(long = "skip")]
+        skip: Vec<i64>,
+        /// Maximum day delta for candidate sell (default: 2).
+        #[arg(long = "max-days", default_value_t = 2)]
+        max_days: i64,
+        /// Maximum notional delta percentage (default: 10.0).
+        #[arg(long = "max-notional-pct", default_value_t = 10.0)]
+        max_notional_pct: f64,
+        /// Output JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3951,6 +3982,12 @@ pub enum AnalyticsNewsSourcesCommand {
         /// Restrict to predictions scored in the last N days
         #[arg(long = "window-days")]
         window_days: Option<i64>,
+        /// Emit an explicit notice that historical predictions before the
+        /// `source_article_id` column landed are NOT retroactively attributed
+        /// to a source. The accuracy ledger populates forward from feature
+        /// deployment only.
+        #[arg(long = "include-pre-deployment")]
+        include_pre_deployment: bool,
         #[arg(long)]
         json: bool,
     },
@@ -5821,6 +5858,120 @@ mod tests {
             }
             _ => panic!("expected portfolio transaction remove command"),
         }
+    }
+
+    #[test]
+    fn parses_portfolio_transaction_repair_pairs_dry_run() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "transaction",
+            "repair-pairs",
+            "--dry-run",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command:
+                    Some(PortfolioCommand::Transaction {
+                        command:
+                            PortfolioTransactionCommand::RepairPairs {
+                                dry_run,
+                                confirm,
+                                skip,
+                                max_days,
+                                max_notional_pct,
+                                json,
+                            },
+                    }),
+            }) => {
+                assert!(dry_run);
+                assert!(!confirm);
+                assert!(skip.is_empty());
+                assert_eq!(max_days, 2);
+                assert!((max_notional_pct - 10.0).abs() < f64::EPSILON);
+                assert!(json);
+            }
+            _ => panic!("expected portfolio transaction repair-pairs command"),
+        }
+    }
+
+    #[test]
+    fn parses_portfolio_transaction_repair_pairs_confirm_with_skip() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "transaction",
+            "repair-pairs",
+            "--confirm",
+            "--skip",
+            "17",
+            "--skip",
+            "42",
+            "--max-days",
+            "3",
+            "--max-notional-pct",
+            "15.0",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command:
+                    Some(PortfolioCommand::Transaction {
+                        command:
+                            PortfolioTransactionCommand::RepairPairs {
+                                dry_run,
+                                confirm,
+                                skip,
+                                max_days,
+                                max_notional_pct,
+                                json,
+                            },
+                    }),
+            }) => {
+                assert!(!dry_run);
+                assert!(confirm);
+                assert_eq!(skip, vec![17, 42]);
+                assert_eq!(max_days, 3);
+                assert!((max_notional_pct - 15.0).abs() < f64::EPSILON);
+                assert!(!json);
+            }
+            _ => panic!("expected portfolio transaction repair-pairs command"),
+        }
+    }
+
+    #[test]
+    fn parses_analytics_news_sources_accuracy_include_pre_deployment() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "news-sources",
+            "accuracy",
+            "--window-days",
+            "365",
+            "--include-pre-deployment",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::NewsSources {
+                    command:
+                        AnalyticsNewsSourcesCommand::Accuracy {
+                            window_days,
+                            include_pre_deployment,
+                            json,
+                            ..
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics news-sources accuracy command");
+        };
+        assert_eq!(window_days, Some(365));
+        assert!(include_pre_deployment);
+        assert!(json);
     }
 
     #[test]
