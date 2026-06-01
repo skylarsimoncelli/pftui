@@ -1,5 +1,18 @@
 # Changelog
 
+### 2026-06-01 — feat: CLI surface for live-DB enrichment tables
+
+- What: Eight new live-DB enrichment tables (`sources_registry`, `event_annotations`, `reasoning_fragments`, `lesson_fragment_edges`, `calibration_adjustments`, `failure_correlations`, `operator_replies`, `prediction_falsification_rules`) plus a `cluster_key` column on `prediction_lessons` are now schema-managed by `db::schema::run_migrations` and exposed through a full CLI surface (all with `--json`):
+    - `pftui analytics sources list|set|remove [--type ...]`
+    - `pftui analytics events list|add [--category --since --asset]`
+    - `pftui analytics fragments list|show [--type --topic --cluster --for-claim]` — `--for-claim` runs a keyword-based cluster classifier and returns applicable fragments via `lesson_fragment_edges`
+    - `pftui analytics calibration-adjustments [--layer --topic --conviction]`
+    - `pftui analytics failures correlations [--cluster --min-share]`
+    - `pftui analytics clusters list|stats`
+    - `pftui analytics falsifications [--rule-type --auto-eligible --for-prediction]`
+    - `pftui journal replies list|add` — structured operator replies (yes/no/wait/refine/...) per report decision
+- Why: Live-DB enrichment shipped the tables but most could only be queried via raw `sqlite3`. The CLI surface makes the substrate accessible to analyst routines under the standard `pftui analytics` / `pftui journal` tree per CLAUDE.md CLI design rules. Tests cover roundtrips for every new module plus the cluster classifier.
+
 ### 2026-06-01 — feat: lesson half-life curation
 
 - What: Added `prediction_lessons.status` (`active|retired|superseded`) and `last_cited_at` columns, a schema-side `lesson_citations` table, and three new CLI commands — `pftui analytics lessons curate [--dry-run] [--retire-after-days 60] [--json]`, `pftui analytics lessons revive <id> [--json]`, and `pftui analytics lessons health [--json]`. `curate` retires lessons that are uncited (or never cited and created) longer than `--retire-after-days` and whose topic cluster has no recent wrong-scored predictions, journals the change to `agent_messages`, and exposes a dry-run mode. `pftui journal prediction lessons` now defaults to active lessons only; pass `--include-retired` to surface the full history.

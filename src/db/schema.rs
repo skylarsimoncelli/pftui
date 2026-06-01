@@ -1514,6 +1514,38 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     // on every fresh install for the lesson half-life curation routine.
     crate::db::lesson_citations::ensure_table(conn)?;
 
+    // Migration: add cluster_key to prediction_lessons (live-DB enrichment).
+    // Used by the `pftui analytics clusters` and `analytics fragments
+    // --for-claim` surfaces to group lessons by taxonomic cluster.
+    let prediction_lessons_has_cluster_key: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('prediction_lessons') WHERE name = 'cluster_key'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !prediction_lessons_has_cluster_key {
+        conn.execute_batch(
+            "ALTER TABLE prediction_lessons ADD COLUMN cluster_key TEXT",
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_prediction_lessons_cluster_key
+            ON prediction_lessons(cluster_key);",
+    )?;
+
+    // Enrichment tables shipped via live-DB sessions (June 1 enrichment pass).
+    // Schemas are mirrored here verbatim so fresh installs pick them up
+    // and the corresponding `pftui analytics` / `pftui journal` CLIs work
+    // from day one.
+    crate::db::sources_registry::ensure_table(conn)?;
+    crate::db::event_annotations::ensure_table(conn)?;
+    crate::db::reasoning_fragments::ensure_table(conn)?;
+    crate::db::calibration_adjustments::ensure_table(conn)?;
+    crate::db::failure_correlations::ensure_table(conn)?;
+    crate::db::operator_replies::ensure_table(conn)?;
+    crate::db::prediction_falsification_rules::ensure_table(conn)?;
+
     Ok(())
 }
 
