@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add private outlook by horizon renderer
+
+- What: Added a tested private outlook-by-horizon renderer with native outlook_arrows placeholders, deterministic direction normalization, neutral/unknown fallbacks, and portfolio-materiality ordering.
+- Why: Native daily report assembly can now render private cross-horizon outlook rows from synthetic context without relying on skill-side markdown.
+
 ### 2026-06-01 — feat: add private conviction trajectory renderer
 
 - What: Added a tested private conviction trajectory renderer with native conviction_trajectory placeholders, sparse-series handling, canonical layer ordering, and held-asset filtering.

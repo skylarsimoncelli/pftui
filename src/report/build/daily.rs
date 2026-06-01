@@ -51,6 +51,7 @@ pub struct BuildContext {
     pub private_macro_catalysts: Vec<PrivateMacroCatalyst>,
     pub private_asset_convergence: Vec<PrivateAssetConvergenceRow>,
     pub private_conviction_trajectories: Vec<PrivateConvictionTrajectoryRow>,
+    pub private_outlooks: Vec<PrivateOutlookByHorizonRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -416,4 +417,18 @@ pub struct PrivateConvictionTrajectoryRow {
 pub struct PrivateConvictionTrajectoryPoint {
     pub date: String,
     pub conviction: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateOutlookByHorizonRow {
+    pub symbol: String,
+    pub days: Option<PrivateOutlookPoint>,
+    pub weeks: Option<PrivateOutlookPoint>,
+    pub months: Option<PrivateOutlookPoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateOutlookPoint {
+    pub direction: String,
+    pub conviction: String,
 }
