@@ -497,6 +497,9 @@ pub struct PrivateNewsCatalyst {
     pub related_assets: Vec<String>,
     pub related_scenarios: Vec<String>,
     pub impact_score: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct PrivateOpenPredictionRow {
     pub id: Option<i64>,
     pub symbol: String,
