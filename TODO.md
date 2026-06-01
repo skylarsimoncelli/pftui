@@ -88,11 +88,6 @@ Naming: do NOT use vendor / indicator brand names anywhere — table column name
 **Scope:** Add `pub fn render_private_lessons_applied(ctx: &BuildContext) -> Result<String>`. Data: `analytics lessons applied --since 24h`, prediction lessons, historical analog references. Output shape: `## Lessons Applied This Run` with guarded-prediction count, top referenced lessons, strongest analog, or an explicit accountability-gap sentence. Tests: zero-lessons fixture renders the gap, nonzero fixture lists lesson ids, output remains private-only when tied to operator decisions.
 **Effort:** 4-6 hours.
 
-### [Claude-WIP 2026-06-01d — DO NOT PICK] `pftui report build daily` — section private decisions pending
-**Source:** Scaffold breakdown from the report command Step 5b.
-**Scope:** Add `pub fn render_private_decisions_pending(ctx: &BuildContext) -> Result<String>`. Data: derived ADD/TRIM/HOLD actions, allocation target drift, stale targets, mismatch cards, catalyst urgency. Output shape: `## Decisions Pending — Your Reply Requested` with native `{decision_card(...)}` questions ordered by urgency and gap size. Tests: recommendations derive from convergence formula, response tokens are short, no imperative trade action appears without evidence reference.
-**Effort:** 6-8 hours.
-
 ### `pftui report build daily` — assembler + dry-run
 **Source:** Scaffold breakdown from the report command Step 5a/5b.
 **Scope:** Wire `pftui report build daily [--mode public|private|both] [--date YYYY-MM-DD] [--out-dir <path>] [--dry-run]` through `src/cli.rs` and `src/commands/report.rs`. Add `BuildContext` loading in `src/report/build/daily.rs`, call public/private section renderers in order, write markdown to the correct destinations, and update the report command/skill to call the native command for assembly. `--dry-run` prints the section plan, data availability summary, output paths, and privacy-audit status without writing files. Tests: public/private/both mode output paths, dry-run writes nothing, section ordering fixture, public privacy guard rejects private tokens, assembled markdown golden fixture is stable.
