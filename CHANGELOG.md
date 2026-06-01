@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add public bitcoin section renderer
+
+- What: Added a tested public Bitcoin renderer with BTC price context, optional ETF-flow and on-chain blocks, BTC analyst views, news catalysts, and prediction-market signals.
+- Why: Native daily report assembly now has a sourceable Bitcoin section that degrades from price-only data and avoids personal ownership framing.
+
 ### 2026-06-01 — feat: add public macro section renderer
 
 - What: Added a tested public macro renderer with regime state, macro indicators, multi-timeframe analyst views, economic calendar watch rows, and macro news-volume callouts.

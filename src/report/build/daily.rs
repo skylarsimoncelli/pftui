@@ -12,6 +12,12 @@ pub struct BuildContext {
     pub economic_calendar: Vec<EconomicCalendarEvent>,
     pub macro_analyst_views: Vec<AnalystViewSummary>,
     pub macro_news_volume: Vec<NewsVolumeSignal>,
+    pub bitcoin_market: Option<BitcoinMarketSummary>,
+    pub bitcoin_etf_flows: Vec<BitcoinEtfFlowSummary>,
+    pub bitcoin_onchain: Vec<BitcoinOnChainSummary>,
+    pub bitcoin_analyst_views: Vec<AnalystViewSummary>,
+    pub bitcoin_news: Vec<BitcoinCatalystSummary>,
+    pub bitcoin_prediction_signals: Vec<BitcoinPredictionSignal>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,4 +90,44 @@ pub struct NewsVolumeSignal {
     pub baseline_count: Option<f64>,
     pub status: String,
     pub caveat: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BitcoinMarketSummary {
+    pub price: Option<String>,
+    pub daily_change_pct: Option<f64>,
+    pub weekly_change_pct: Option<f64>,
+    pub trend: Option<String>,
+    pub freshness: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BitcoinEtfFlowSummary {
+    pub period: String,
+    pub net_flow: Option<String>,
+    pub detail: Option<String>,
+    pub freshness: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BitcoinOnChainSummary {
+    pub metric: String,
+    pub value: Option<String>,
+    pub interpretation: Option<String>,
+    pub freshness: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BitcoinCatalystSummary {
+    pub headline: String,
+    pub source: Option<String>,
+    pub relevance: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BitcoinPredictionSignal {
+    pub market: String,
+    pub probability: Option<f64>,
+    pub delta_7d: Option<f64>,
+    pub relevance: Option<String>,
 }
