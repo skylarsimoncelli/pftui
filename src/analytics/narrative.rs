@@ -274,6 +274,14 @@ pub fn collect_recap_events_backend(
 
     let scenario_rows = db::scenarios::list_scenarios_backend(backend, None).unwrap_or_default();
     for scenario in scenario_rows {
+        // Skip the system-managed residual row: its updated_at moves on every
+        // recompute (any scenario CRUD ticks it), but those ticks aren't
+        // operator-visible events worth surfacing in the daily recap.
+        if scenario.status == db::scenarios::RESIDUAL_SCENARIO_STATUS
+            || scenario.name.eq_ignore_ascii_case(db::scenarios::RESIDUAL_SCENARIO_NAME)
+        {
+            continue;
+        }
         if ts_matches_day(&scenario.updated_at, day) {
             events.push(RecapEvent {
                 at: scenario.updated_at.clone(),
@@ -786,9 +794,25 @@ mod tests {
             conn: crate::db::open_in_memory(),
         };
 
+        // Probabilities are tuned to stay <= 100 under the normalized
+        // scenario-set model. BTC moves 25pp (most material), Gold moves 4pp.
         let btc = db::scenarios::add_scenario(
             backend.sqlite(),
             "BTC breakout",
+            15.0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        db::scenarios::update_scenario_probability(backend.sqlite(), btc, 20.0, Some("warming"))
+            .unwrap();
+        db::scenarios::update_scenario_probability(backend.sqlite(), btc, 40.0, Some("ETF flows"))
+            .unwrap();
+        let gold = db::scenarios::add_scenario(
+            backend.sqlite(),
+            "Gold consolidation",
             30.0,
             None,
             None,
@@ -796,23 +820,9 @@ mod tests {
             None,
         )
         .unwrap();
-        db::scenarios::update_scenario_probability(backend.sqlite(), btc, 35.0, Some("warming"))
+        db::scenarios::update_scenario_probability(backend.sqlite(), gold, 32.0, Some("range"))
             .unwrap();
-        db::scenarios::update_scenario_probability(backend.sqlite(), btc, 55.0, Some("ETF flows"))
-            .unwrap();
-        let gold = db::scenarios::add_scenario(
-            backend.sqlite(),
-            "Gold consolidation",
-            60.0,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        db::scenarios::update_scenario_probability(backend.sqlite(), gold, 62.0, Some("range"))
-            .unwrap();
-        db::scenarios::update_scenario_probability(backend.sqlite(), gold, 64.0, Some("range"))
+        db::scenarios::update_scenario_probability(backend.sqlite(), gold, 34.0, Some("range"))
             .unwrap();
 
         db::convictions::set_conviction_backend(&backend, "BTC", 1, Some("starter")).unwrap();
