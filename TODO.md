@@ -6,6 +6,36 @@
 
 ## P2 - Coverage And Agent Consumption
 
+### Enhance `pftui analytics technicals` — Gaussian/Donchian channels, volatility-weighted trend line, multi-timeframe RSI, Pi Cycle, MTF breakouts, momentum exhaustion, Bollinger reversal
+**Source:** Skylar (June 1).
+**Why:** pftui's existing `analytics technicals` covers RSI, MACD, SMA, Bollinger Bands, and ATR — solid baseline TA but limited to single-timeframe indicators with simple parameterisation. A richer set of methods would substantially upgrade the analyst routines' ability to reason about trend strength, regime shifts, and breakout/reversal moments — all of which currently produce miss patterns (`tight_threshold_close_miss`, `flow-beats-mean-reversion`, `mean_reversion_lost_to_flow`). The methods below are well-established TA primitives that several mature charting platforms compute; bringing them into the pftui pipeline lets the analysts reference them via `--json` rather than relying on external visual indicators they cannot evaluate.
+**Scope:** Implement the following as additional outputs from `pftui analytics technicals --symbols <SYM> [--include <feature>] [--json]`:
+
+(1) **Gaussian Channel band**: a DEMA → multi-pass Gaussian filter → SMMA chain with σ-bands. Configurable: DEMA length (default 7), Gaussian length (default 4), Gaussian σ (default 2.0), SMMA length (default 12), SD length (default 30), upper/lower SD multipliers (default 2.5 / 1.8). Output: middle line + upper/lower bands + a derived `band_state` enum (`above_upper` / `in_band` / `below_lower`).
+
+(2) **Zone-based EMA channel** (companion to Gaussian): two EMAs (default 144 / 233 periods, timeframe-adapted) forming inner + outer zones with configurable scale and extension. Output: `zone_position` (`upper-outer` / `upper-inner` / `lower-inner` / `lower-outer`) and the four band values.
+
+(3) **Volatility-weighted trend line**: a smoothed momentum line whose smoothing constant is modulated by realised volatility (high-vol periods = faster reaction, low-vol = slower). Sensitivity: Fast / Medium / Slow → length 9 / 18 / 27. Output: trend value + slope direction + `trend_strength` integer 0-3.
+
+(4) **Donchian channel midline trend** (alternative to Volatility-Weighted): midline of conversion-length (default 5) Donchian + baseline-length (default 26) Donchian. Output: trend value + slope. The hybrid mode (configurable weight) blends Volatility-Weighted and Donchian trends.
+
+(5) **Multi-timeframe RSI alignment**: compute RSI on the current timeframe and at 4 higher timeframes (auto-selected from current TF: 5min → [15,30,60,240]; 1h → [4h,1d,1w,1M]; etc). Output: per-TF RSI values + boolean flags `aligned_overbought` (all four HTFs > 70 + current > 70) and `aligned_oversold` (mirror). This is the key input that prevents single-TF RSI-extreme predictions from firing against the longer-horizon flow.
+
+(6) **Pi Cycle Top/Bottom signal** (Bitcoin-flavoured but generic): top = 350d SMA × 2 crossing under 111d SMA on daily close; bottom = 471d SMA × 0.745 crossing over 150d EMA. Output: latest crossover date + days-since per signal. Each is a HISTORICAL pattern; expose for any asset, document that the parameters were calibrated on BTC.
+
+(7) **Multi-timeframe breakout signal**: composite of three sub-signals — (a) MTF-RSI breakout: current RSI just exited a `oversold/overbought across 4 HTFs` zone; (b) 3-Line Strike pattern: 3 consecutive down-closes followed by an up-close that exceeds bar-1 open (and mirror for bear); (c) Momentum exhaustion: 5+ closes greater than close[-4] with current close < open AND high >= 25-bar high (mirror for bottom). Output: per-signal boolean + `signal_count` (0-3) + cooldown-aware `breakout_state` (`bull-fresh` / `bull-armed` / `none` / `bear-armed` / `bear-fresh`). Cooldown: minimum 5 bars between signals (configurable).
+
+(8) **Bollinger reversal signals**: cross-under upper band → `top_reversal_signal`; cross-over lower band → `bottom_reversal_signal`. Multi-bar confirmations: `confirmation_1` (price stays below the reversal-bar low for the next 1 bar) and `confirmation_2` (sustains for 2 bars). Output: per-signal boolean + bar offsets where the signal fired.
+
+(9) **RSI extreme highlighting** as a derived flag: when current-TF RSI > 85 AND multi-timeframe alignment (signal 5) is `aligned_overbought` AND current bar makes a new 14-bar high → flag `rsi_extreme_high`. Mirror for low. This is the consolidated "frothy" indicator.
+
+CLI: each output should be selectable via `--include gaussian-channel,zone-channel,volatility-trend,donchian-trend,mtf-rsi,pi-cycle,mtf-breakout,bollinger-reversal,rsi-extreme` (or `--include all`). Default for backward-compat: existing RSI/MACD/SMA/BB/ATR set only.
+
+Implementation: most of these are pure functions over a `&[Candle]` slice (where Candle = open/high/low/close/volume/timestamp). Put them in `src/indicators/extended.rs` (new module). Hook the new computations into `src/commands/technicals.rs` (or wherever the existing `--symbols ... --json` handler lives). Reference for the formulas: standard TA literature; cross-verify against TradingView's public Pine reference where available. Files: `src/indicators/extended.rs` (new), `src/commands/technicals.rs`, `src/cli.rs`, `AGENTS.md`. Tests: each function gets a synthetic-candle fixture test verifying the computed value against a hand-calculated expected value at a known bar; integration test that `--include all --json` returns the expected JSON shape.
+
+Naming: do NOT use vendor / indicator brand names anywhere — table column names, JSON field names, CLI flags. Use the canonical TA terminology (e.g. `gaussian_channel`, not any vendor variant; `multi_timeframe_rsi`, not any branded name). No reference to any external indicator scripts.
+**Effort:** 2–3 weeks (8 methods + JSON wiring + tests).
+
 ### Pre-flight check at prediction write time — surface calibration / fragments / similar past predictions / co-failures BEFORE save
 **Source:** Claude DB enrichment session (June 1). Highest-leverage move identified from the cross-session work.
 **Why:** The DB now contains 14 enrichment tables totalling ~11,000 derived rows (calibration_adjustments, lesson_fragment_edges, reasoning_fragments, prediction_falsification_rules, scenario_prediction_links, failure_correlations, sources_registry, event_annotations, etc). Today this substrate is evaluated RETROSPECTIVELY — predictions get scored, lessons get written, calibration gets re-aggregated. But the substrate isn't surfaced AT WRITE TIME, when a new prediction is being composed. That's the exact moment most miscalibration could be prevented. An analyst writing "Gold closes above $4,500 on July 15" should see, before save: "your cluster is `tight_threshold_close_miss`; applicable fragments are `tight-threshold-coin-flip`, `cot-extreme-needs-catalyst`, `dxy-two-driver`; your layer's calibration on commodities-high says discount confidence by 17pp; 12 similar past predictions, 4 correct (33%); highest co-failing cluster is `btc_correlation_regime` at 80% co-fail share; check that one too." No existing tool surfaces this. It's the single biggest behavior change available from the substrate that already exists.
