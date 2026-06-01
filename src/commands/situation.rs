@@ -2046,10 +2046,11 @@ mod tests {
     #[test]
     fn test_matrix_shows_branches_and_impacts() {
         let backend = setup();
+        // Probabilities stay <= 100 sum under the normalized scenario-set model.
         let s1 = scenarios::add_scenario_backend(
             &backend,
             "Trade War",
-            65.0,
+            40.0,
             Some("US-China trade war escalation"),
             None,
             None,
@@ -2069,7 +2070,7 @@ mod tests {
         let s2 = scenarios::add_scenario_backend(
             &backend,
             "Rate Cut Cycle",
-            55.0,
+            35.0,
             Some("Fed cuts rates aggressively"),
             None,
             None,
