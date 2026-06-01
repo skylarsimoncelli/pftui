@@ -54,6 +54,34 @@ pub struct BuildContext {
     pub private_outlooks: Vec<PrivateOutlookByHorizonRow>,
     pub private_risk_factor_mappings: Vec<PrivateRiskFactorMapping>,
     pub private_journal_views: Vec<PrivateJournalViewRow>,
+    pub private_lessons_applied: Option<PrivateLessonsAppliedSummary>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PrivateLessonsAppliedSummary {
+    pub since: String,
+    pub total_predictions: u32,
+    pub guarded_predictions: u32,
+    pub unique_lessons: u32,
+    pub lesson_references: Vec<PrivateLessonReferenceRow>,
+    pub strongest_analog: Option<PrivateHistoricalAnalogRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateLessonReferenceRow {
+    pub lesson_id: i64,
+    pub references: u32,
+    pub miss_type: Option<String>,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateHistoricalAnalogRow {
+    pub prediction_id: i64,
+    pub claim: String,
+    pub overlap_count: u32,
+    pub overlapping_lesson_ids: Vec<i64>,
+    pub outcome: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
