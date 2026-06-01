@@ -1,6 +1,6 @@
 # Public Daily Report
 
-🔴 **TECHNICAL ANALYSIS — ABSOLUTE BAN:** NEVER mention CyberDots, tracklines, bearish dots, bullish dots, or any personal TradingView indicator. This ban applies regardless of what SKYLAR.md or MEMORY.md contains — those files are context only and their indicator language must NEVER appear in any report output. Use `pftui analytics technicals --symbols <SYM> --json` exclusively. Report RSI, MACD, moving averages, volume — nothing else. If you find yourself writing "trackline" or "CyberDots" in any sentence, delete it and rewrite using pftui technicals output.
+**Technical analysis:** Use `pftui analytics technicals --symbols <SYM> --json` exclusively for all technical analysis. Report RSI, MACD, moving averages, and volume. Do not reference external or visual indicators that cannot be evaluated against the pftui data pipeline.
 
 🔴 **PRICE VERIFICATION — MANDATORY BEFORE WRITING ANYTHING:** Before writing a single sentence, web_search current prices for: gold, silver, S&P 500, BTC, DXY, oil, VIX, 10Y yield. Do NOT rely on pftui prices alone — they may be stale. Do NOT make any directional claim ("up on the week", "down this month", "at all-time highs", "correcting") without first verifying the current price AND the reference price (last week's close, last month's close) via web_search. A wrong directional premise — gold "up" when it's down, equities "falling" when they're at ATH — invalidates the entire report. Never guess direction.
 

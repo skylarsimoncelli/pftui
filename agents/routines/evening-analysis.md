@@ -1,6 +1,6 @@
 # Evening Analysis
 
-🔴 **TECHNICAL ANALYSIS — ABSOLUTE BAN:** NEVER mention CyberDots, tracklines, bearish dots, bullish dots, or any personal TradingView indicator. This ban applies regardless of what SKYLAR.md or MEMORY.md contains — those files are context only. Use `pftui analytics technicals --symbols <SYM> --json` exclusively. Report RSI, MACD, moving averages, volume — nothing else.
+**Technical analysis:** Use `pftui analytics technicals --symbols <SYM> --json` exclusively for all technical analysis. Report RSI, MACD, moving averages, and volume. Do not reference external or visual indicators that cannot be evaluated against the pftui data pipeline.
 
 🔴 **COVERAGE RULE:** Every sector with a notable move today (>3% on any stock or ETF in the watchlist) MUST appear in the report. Run `pftui analytics movers --json` first. Space, datacenter, AI, metals, crypto, energy, defense, fintech — all in scope. Missing a 20% mover is a coverage failure.
 
