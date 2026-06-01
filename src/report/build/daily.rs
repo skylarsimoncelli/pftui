@@ -2,6 +2,8 @@
 
 #[derive(Debug, Clone, Default)]
 pub struct BuildContext {
+    pub report_date: Option<String>,
+    pub data_freshness: Vec<DataFreshnessSummary>,
     pub synthesis: Option<SynthesisSnapshot>,
     pub regime: Option<RegimeSummary>,
     pub analyst_convergence: Vec<AnalystConvergenceSummary>,
@@ -37,6 +39,14 @@ pub struct BuildContext {
     pub public_lessons_applied: Vec<LessonAppliedSummary>,
     pub public_prediction_intelligence: Vec<PredictionMarketIntelligence>,
     pub public_source_tier_overrides: Vec<SourceTierOverrideSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataFreshnessSummary {
+    pub source: String,
+    pub last_fetch: Option<String>,
+    pub records: Option<u64>,
+    pub status: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

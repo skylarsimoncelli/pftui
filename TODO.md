@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section public methodology
-**Source:** Scaffold breakdown from the report command Step 5a.
-**Scope:** Add `pub fn render_public_methodology(ctx: &BuildContext) -> Result<String>`. Data: static methodology/disclaimer template plus runtime metadata such as report date and data freshness summary. Output shape: `## Methodology` and disclaimer footer matching the public routine template. Tests: golden output is stable, includes disclaimer, contains no private symbols or personal framing.
-**Effort:** 3-5 hours.
-
 ### `pftui report build daily` — section private bottom line
 **Source:** Scaffold breakdown from the report command Step 5b.
 **Scope:** Add `pub fn render_private_bottom_line(ctx: &BuildContext) -> Result<String>`. Data: private portfolio snapshot, daily PnL context, most material derived actions, binary catalysts, what-changed deltas. Output shape: `## Bottom Line`, 3-5 bullets, and native `{what_changed_strip(deltas)}`. Tests: bullets include regime/action/catalyst coverage, chart helper output is embedded, private-only content is never reused in public mode.
