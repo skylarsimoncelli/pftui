@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add public news and catalysts renderer
+
+- What: Added a tested public news and catalysts renderer with ranked event blocks, mandatory source/topic/bound-market metadata, news-volume context, and tomorrow calendar rows.
+- Why: Native daily report assembly can now publish sourceable public catalyst summaries while marking inferred source tiers provisionally.
+
 ### 2026-06-01 — feat: add public equities renderer
 
 - What: Added a tested public equities renderer with broad-index rows, sector ETF rows, breadth and earnings context, equity analyst views, and source-tiered equity watch news.
