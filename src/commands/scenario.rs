@@ -106,11 +106,21 @@ pub fn run(
 
         "list" => {
             let scenarios_list = scenarios::list_scenarios_backend(backend, status)?;
+            let normalized = scenarios::compute_normalized_set_backend(backend)?;
 
             if json_output {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&json!({ "scenarios": scenarios_list }))?
+                    serde_json::to_string_pretty(&json!({
+                        "scenarios": scenarios_list,
+                        "normalized_set": {
+                            "modeled_sum": normalized.modeled_sum,
+                            "residual_probability": normalized.residual_probability,
+                            "residual_materialized": normalized.residual_materialized,
+                            "residual_scenario_name": scenarios::RESIDUAL_SCENARIO_NAME,
+                            "overfill_state": normalized.overfill_state.as_str(),
+                        }
+                    }))?
                 );
             } else if scenarios_list.is_empty() {
                 println!("No scenarios found");
@@ -133,6 +143,22 @@ pub fn run(
                     println!(
                         "  {:25} {:5.1}%   {}{}",
                         s.name, s.probability, s.status, desc_preview
+                    );
+                }
+                println!(
+                    "  modeled sum: {:.1}%  residual ({}): {:.1}%  state: {}",
+                    normalized.modeled_sum,
+                    scenarios::RESIDUAL_SCENARIO_NAME,
+                    normalized.residual_probability,
+                    normalized.overfill_state.as_str(),
+                );
+                if matches!(
+                    normalized.overfill_state,
+                    scenarios::OverfillState::Overfilled
+                ) {
+                    println!(
+                        "  data-quality warning: modeled scenarios sum to {:.1}% (>100%); rebalance the set (see docs/ANALYTICS-SPEC.md)",
+                        normalized.modeled_sum,
                     );
                 }
             }

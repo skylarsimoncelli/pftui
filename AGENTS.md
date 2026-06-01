@@ -35,6 +35,25 @@ Layers constrain downward and signal upward. Use `pftui analytics signals` for a
 Track macro scenarios with probability estimates. Each probability update is logged
 to history for calibration. Signals track evidence for/against each scenario.
 
+Scenario probabilities follow the **normalized scenario-set model** (see
+`docs/ANALYTICS-SPEC.md` → Scenario Probability Semantics): active modeled
+scenarios are mutually exclusive and collectively exhaustive after including an
+explicit `Other / Unmodelled` residual row that pftui manages automatically.
+Concretely:
+- The `Other / Unmodelled` row is system-managed (`status = 'system-managed'`).
+  It is seeded on first migration and its probability is recomputed as
+  `100 - sum(active modeled scenarios)` after every CRUD on a modeled scenario.
+  Do not create, update, or delete this row directly — `pftui scenario add`,
+  `update`, and `remove` will reject the attempt.
+- `pftui scenario add` and `pftui scenario update --probability` reject any
+  write that would push the modeled (non-residual) sum above 100. Rebalance the
+  set before writing.
+- `pftui scenario list --json` returns a `normalized_set` block alongside the
+  scenario rows with `modeled_sum`, `residual_probability`,
+  `residual_materialized`, and `overfill_state` (one of `ok`, `overfilled`,
+  `underfilled`, with a 0.05pp tolerance band). Treat `overfilled` as a
+  data-quality warning, not as evidence that scenarios overlap.
+
 ### Thesis
 Thesis tracking is maintained as narrative workflow files (`THESIS.md`) and journal notes.
 

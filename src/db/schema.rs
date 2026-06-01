@@ -1377,6 +1377,69 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_power_flows_complex ON power_flows(source_complex);",
     )?;
 
+    // Normalized scenario-set model — guarantee an `Other / Unmodelled`
+    // system-managed residual row exists. The row tracks
+    // `100 - sum(active modeled scenarios)` and is recomputed deterministically
+    // by `crate::db::scenarios::recompute_residual_scenario` on every mutation.
+    // See `docs/ANALYTICS-SPEC.md` (Scenario Probability Semantics) for the
+    // model. This block is idempotent: re-running just refreshes the status
+    // marker / probability.
+    //
+    // Legacy DBs (pre-v0.28) may be missing some columns that this insert and
+    // the surrounding scenarios CRUD depend on. Add any missing columns first
+    // so the migration succeeds against the pinned prior-release fixture.
+    for (column, ddl) in &[
+        ("status", "ALTER TABLE scenarios ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"),
+        ("asset_impact", "ALTER TABLE scenarios ADD COLUMN asset_impact TEXT"),
+        ("triggers", "ALTER TABLE scenarios ADD COLUMN triggers TEXT"),
+        ("historical_precedent", "ALTER TABLE scenarios ADD COLUMN historical_precedent TEXT"),
+    ] {
+        let exists: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('scenarios') WHERE name = ?1")?
+            .query_row([column], |row| row.get::<_, i64>(0))
+            .unwrap_or(0)
+            > 0;
+        if !exists {
+            conn.execute_batch(ddl)?;
+        }
+    }
+
+    {
+        let residual_exists: bool = conn
+            .prepare("SELECT COUNT(*) FROM scenarios WHERE name = ?1")?
+            .query_row([crate::db::scenarios::RESIDUAL_SCENARIO_NAME], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap_or(0)
+            > 0;
+        if !residual_exists {
+            // Seed at 100 — when no modeled scenarios exist the residual fills
+            // the whole probability space.
+            conn.execute(
+                "INSERT INTO scenarios (name, probability, description, status, phase)
+                 VALUES (?1, 100.0, ?2, ?3, 'active')",
+                rusqlite::params![
+                    crate::db::scenarios::RESIDUAL_SCENARIO_NAME,
+                    "System-managed residual: 100 - sum(active modeled scenarios). Represents outcomes outside the named scenario set.",
+                    crate::db::scenarios::RESIDUAL_SCENARIO_STATUS,
+                ],
+            )?;
+        } else {
+            // Refresh the status marker on legacy DBs that may have created the
+            // row with the default 'active' status.
+            conn.execute(
+                "UPDATE scenarios SET status = ?1 WHERE name = ?2 AND status != ?1",
+                rusqlite::params![
+                    crate::db::scenarios::RESIDUAL_SCENARIO_STATUS,
+                    crate::db::scenarios::RESIDUAL_SCENARIO_NAME,
+                ],
+            )?;
+        }
+        // Recompute against current modeled rows so a freshly-migrated DB
+        // already exposes the correct residual.
+        crate::db::scenarios::recompute_residual_scenario(conn)?;
+    }
+
     // F55.4: Scenario-contract mappings — link prediction market contracts to scenarios
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS scenario_contract_mappings (
