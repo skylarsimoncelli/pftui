@@ -50,6 +50,7 @@ pub struct BuildContext {
     pub private_macro_divergences: Vec<PrivateNarrativeMoneyDivergence>,
     pub private_macro_catalysts: Vec<PrivateMacroCatalyst>,
     pub private_asset_convergence: Vec<PrivateAssetConvergenceRow>,
+    pub private_conviction_trajectories: Vec<PrivateConvictionTrajectoryRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -402,4 +403,17 @@ pub struct PrivateAssetConvergenceView {
     pub analyst: String,
     pub conviction: i64,
     pub reasoning_summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateConvictionTrajectoryRow {
+    pub symbol: String,
+    pub layer: String,
+    pub points: Vec<PrivateConvictionTrajectoryPoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateConvictionTrajectoryPoint {
+    pub date: String,
+    pub conviction: i64,
 }

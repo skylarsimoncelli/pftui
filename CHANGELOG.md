@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add private conviction trajectory renderer
+
+- What: Added a tested private conviction trajectory renderer with native conviction_trajectory placeholders, sparse-series handling, canonical layer ordering, and held-asset filtering.
+- Why: Native daily report assembly can now render 30-day private conviction history from synthetic context rows without querying real analyst history in tests.
+
 ### 2026-06-01 — feat: add private per-asset convergence renderer
 
 - What: Added a tested private per-asset convergence renderer with native analyst-convergence-card placeholders, held-asset filtering, missing-layer warnings, and deterministic analyst allocation ranges.
