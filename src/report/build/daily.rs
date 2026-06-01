@@ -54,6 +54,8 @@ pub struct BuildContext {
     pub private_outlooks: Vec<PrivateOutlookByHorizonRow>,
     pub private_risk_factor_mappings: Vec<PrivateRiskFactorMapping>,
     pub private_journal_views: Vec<PrivateJournalViewRow>,
+    pub private_news_events: Vec<PrivateNewsCatalyst>,
+    pub private_news_silence: Vec<NewsVolumeSignal>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -449,4 +451,20 @@ pub struct PrivateJournalViewRow {
     pub author: String,
     pub conviction: i64,
     pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateNewsCatalyst {
+    pub headline: String,
+    pub what_happened: Option<String>,
+    pub money_moved: Option<String>,
+    pub who_benefits: Option<String>,
+    pub what_it_means: Option<String>,
+    pub domain: String,
+    pub source_tier: Option<u8>,
+    pub independence: Option<String>,
+    pub topic: Option<String>,
+    pub related_assets: Vec<String>,
+    pub related_scenarios: Vec<String>,
+    pub impact_score: f64,
 }

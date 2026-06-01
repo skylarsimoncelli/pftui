@@ -68,11 +68,6 @@ Naming: do NOT use vendor / indicator brand names anywhere — table column name
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### [Claude-WIP 2026-06-01c — DO NOT PICK] `pftui report build daily` — section private news and catalysts
-**Source:** Scaffold breakdown from the report command Step 5b.
-**Scope:** Add `pub fn render_private_news_catalysts(ctx: &BuildContext) -> Result<String>`. Data: last-24h news, source metadata, held assets, active scenarios, news-silence analytics. Output shape: `## News & Catalysts`, 3-5 event blocks with What happened / Where the money moved / Who benefits / What it means and the required source metadata line. Tests: events connect to held assets or scenarios, metadata line is mandatory, insufficient-baseline silence rows are skipped.
-**Effort:** 5-7 hours.
-
 ### [Claude-WIP 2026-06-01c — DO NOT PICK] `pftui report build daily` — section private upcoming calendar
 **Source:** Scaffold breakdown from the report command Step 5b.
 **Scope:** Add `pub fn render_private_upcoming_calendar(ctx: &BuildContext) -> Result<String>`. Data: economic calendar, earnings calendar when available, known political/geopolitical dates, held-asset relevance flags. Output shape: `## Upcoming Calendar` with compact per-day bullets for the next 3-7 days and bold items affecting held positions. Tests: dates sort ascending, held-asset relevance is bolded, empty calendar emits a concise no-known-catalysts line.

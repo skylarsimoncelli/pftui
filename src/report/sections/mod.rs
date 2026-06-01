@@ -2,6 +2,7 @@ pub mod private_bottom_line;
 pub mod private_conviction_trajectory;
 pub mod private_macro_context;
 pub mod private_mismatch_surface;
+pub mod private_news_catalysts;
 pub mod private_outlook_by_horizon;
 pub mod private_per_asset_convergence;
 pub mod private_portfolio_snapshot;
