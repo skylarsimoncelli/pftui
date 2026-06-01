@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add private bottom line renderer
+
+- What: Added a tested private bottom-line renderer with regime, portfolio P&L, derived-action, binary-catalyst, and what-changed-delta context rows.
+- Why: Native daily report assembly can now start the private report with a concise operator-only summary and the native what-changed chart placeholder.
+
 ### 2026-06-01 — feat: add public methodology renderer
 
 - What: Added a tested public methodology renderer with report-date metadata, source freshness summary rows, the pftui methodology template, and the public disclaimer footer.

@@ -1,3 +1,4 @@
+pub mod private_bottom_line;
 pub mod public_allocation_framework;
 pub mod public_bitcoin;
 pub mod public_equities;
