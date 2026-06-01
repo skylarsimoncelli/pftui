@@ -870,6 +870,17 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_technical_snapshots_symbol_tf
             ON technical_snapshots(symbol, timeframe, computed_at DESC);
+
+        CREATE TABLE IF NOT EXISTS alignment_score_history (
+            date TEXT PRIMARY KEY,
+            total_alignment_score REAL CHECK(total_alignment_score BETWEEN 0 AND 100),
+            components TEXT NOT NULL DEFAULT '[]',
+            divergent_assets TEXT NOT NULL DEFAULT '[]',
+            regime_state TEXT CHECK(regime_state IN ('high-alignment','mixed','divergent')),
+            computed_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_alignment_score_history_date
+            ON alignment_score_history(date DESC);
         ",
     )?;
 
