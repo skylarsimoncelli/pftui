@@ -43,6 +43,8 @@ pub struct BuildContext {
     pub private_derived_actions: Vec<DerivedActionSummary>,
     pub private_binary_catalysts: Vec<BinaryCatalystSummary>,
     pub private_what_changed_deltas: Vec<WhatChangedDeltaSummary>,
+    pub private_positions: Vec<PrivatePositionSnapshotRow>,
+    pub private_drift_rows: Vec<PrivateDriftRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -330,4 +332,21 @@ pub struct WhatChangedDeltaSummary {
     pub label: String,
     pub delta: String,
     pub direction: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivatePositionSnapshotRow {
+    pub symbol: String,
+    pub price: Option<String>,
+    pub daily_change: Option<String>,
+    pub allocation_pct: f64,
+    pub unrealized_pnl: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateDriftRow {
+    pub symbol: String,
+    pub target_pct: f64,
+    pub actual_pct: f64,
+    pub band_pct: f64,
 }
