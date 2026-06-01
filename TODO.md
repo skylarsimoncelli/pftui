@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section private conviction trajectory
-**Source:** Scaffold breakdown from the report command Step 5b.
-**Scope:** Add `pub fn render_private_conviction_trajectory(ctx: &BuildContext) -> Result<String>`. Data: 30-day conviction or analyst-view history by held asset and layer. Output shape: `## Conviction Trajectory (30 days)` plus native `{conviction_trajectory(asset, layer_series)}` for each held position. Tests: sparse series render without panic, layers stay ordered LOW/MEDIUM/HIGH/MACRO, output includes every qualifying held asset.
-**Effort:** 4-6 hours.
-
 ### `pftui report build daily` — section private outlook by horizon
 **Source:** Scaffold breakdown from the report command Step 5b.
 **Scope:** Add `pub fn render_private_outlook_by_horizon(ctx: &BuildContext) -> Result<String>`. Data: current LOW/MEDIUM/HIGH analyst views or derived convergence horizon fields for held assets. Output shape: `## Outlook by Horizon` table with native `{outlook_arrows(days, weeks, months)}` per held asset and 2-3 sentences interpreting cross-asset alignment. Tests: direction mapping is deterministic, missing horizon data renders neutral/unknown, table order follows portfolio materiality.
