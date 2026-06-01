@@ -54,6 +54,8 @@ pub struct BuildContext {
     pub private_outlooks: Vec<PrivateOutlookByHorizonRow>,
     pub private_risk_factor_mappings: Vec<PrivateRiskFactorMapping>,
     pub private_journal_views: Vec<PrivateJournalViewRow>,
+    pub private_open_predictions: Vec<PrivateOpenPredictionRow>,
+    pub private_open_predictions_calibration: Option<PrivateOpenPredictionsCalibration>,
     pub private_lessons_applied: Option<PrivateLessonsAppliedSummary>,
 }
 
@@ -477,4 +479,24 @@ pub struct PrivateJournalViewRow {
     pub author: String,
     pub conviction: i64,
     pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateOpenPredictionRow {
+    pub id: Option<i64>,
+    pub symbol: String,
+    pub claim: String,
+    pub target_date: String,
+    pub days_remaining: i64,
+    pub confidence: Option<f64>,
+    pub conviction: Option<i64>,
+    pub direction: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateOpenPredictionsCalibration {
+    pub layer: Option<String>,
+    pub sample_size: u32,
+    pub predicted_pct: Option<f64>,
+    pub observed_pct: Option<f64>,
 }
