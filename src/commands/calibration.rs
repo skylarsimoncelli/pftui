@@ -974,19 +974,22 @@ mod tests {
     fn calibration_multiple_mappings_sorted_by_divergence() {
         let backend = setup_test_db();
 
-        // Small divergence: 50% vs 48% = 2pp
-        let s1 = insert_scenario(&backend, "BTC ATH", 50.0);
-        insert_contract(&backend, "c1", "BTC ATH?", 0.48);
+        // Normalized scenario-set model caps modeled sum at 100. The
+        // divergences below (kept identical) drive the sort assertions; the
+        // scenario probabilities themselves are tuned so the set sums to <=100.
+        // Small divergence: 25% vs 23% = 2pp
+        let s1 = insert_scenario(&backend, "BTC ATH", 25.0);
+        insert_contract(&backend, "c1", "BTC ATH?", 0.23);
         scenario_contract_mappings::add_mapping(backend.sqlite(), s1, "c1").unwrap();
 
-        // Large divergence: 80% vs 30% = 50pp
-        let s2 = insert_scenario(&backend, "Dollar Collapse", 80.0);
-        insert_contract(&backend, "c2", "Dollar collapse?", 0.30);
+        // Large divergence: 55% vs 5% = 50pp
+        let s2 = insert_scenario(&backend, "Dollar Collapse", 55.0);
+        insert_contract(&backend, "c2", "Dollar collapse?", 0.05);
         scenario_contract_mappings::add_mapping(backend.sqlite(), s2, "c2").unwrap();
 
-        // Medium divergence: 40% vs 22% = 18pp
-        let s3 = insert_scenario(&backend, "Recession", 40.0);
-        insert_contract(&backend, "c3", "Recession?", 0.22);
+        // Medium divergence: 20% vs 2% = 18pp
+        let s3 = insert_scenario(&backend, "Recession", 20.0);
+        insert_contract(&backend, "c3", "Recession?", 0.02);
         scenario_contract_mappings::add_mapping(backend.sqlite(), s3, "c3").unwrap();
 
         let mappings = scenario_contract_mappings::list_enriched(backend.sqlite()).unwrap();

@@ -35,6 +35,25 @@ Layers constrain downward and signal upward. Use `pftui analytics signals` for a
 Track macro scenarios with probability estimates. Each probability update is logged
 to history for calibration. Signals track evidence for/against each scenario.
 
+Scenario probabilities follow the **normalized scenario-set model** (see
+`docs/ANALYTICS-SPEC.md` → Scenario Probability Semantics): active modeled
+scenarios are mutually exclusive and collectively exhaustive after including an
+explicit `Other / Unmodelled` residual row that pftui manages automatically.
+Concretely:
+- The `Other / Unmodelled` row is system-managed (`status = 'system-managed'`).
+  It is seeded on first migration and its probability is recomputed as
+  `100 - sum(active modeled scenarios)` after every CRUD on a modeled scenario.
+  Do not create, update, or delete this row directly — `pftui scenario add`,
+  `update`, and `remove` will reject the attempt.
+- `pftui scenario add` and `pftui scenario update --probability` reject any
+  write that would push the modeled (non-residual) sum above 100. Rebalance the
+  set before writing.
+- `pftui scenario list --json` returns a `normalized_set` block alongside the
+  scenario rows with `modeled_sum`, `residual_probability`,
+  `residual_materialized`, and `overfill_state` (one of `ok`, `overfilled`,
+  `underfilled`, with a 0.05pp tolerance band). Treat `overfilled` as a
+  data-quality warning, not as evidence that scenarios overlap.
+
 ### Thesis
 Thesis tracking is maintained as narrative workflow files (`THESIS.md`) and journal notes.
 
@@ -169,6 +188,7 @@ Contract for predictions:
 | `pftui portfolio transaction add --symbol SYM --category CAT --tx-type buy/sell --quantity N --price P --date D [--cash-currency USD] [--no-auto-cash] [--dry-run] [--json]` | Add transaction; non-cash buys/sells auto-insert a paired cash debit/credit unless opted out; dry-run/JSON include post-add allocation, drift, and cash delta |
 | `pftui portfolio transaction remove ID [--unpaired] [--dry-run] [--json]` | Remove transaction by ID; paired cash legs are removed too unless `--unpaired` is passed; dry-run/JSON preview post-remove allocation, drift, and cash delta |
 | `pftui portfolio transaction list --paired --json` | List transactions with paired transaction IDs |
+| `pftui portfolio transaction repair-pairs [--dry-run] [--confirm] [--skip ID] [--max-days N] [--max-notional-pct PCT] [--json]` | Heuristic backfill for pre-paired-leg-era `paired_tx_id`: matches each unpaired non-cash buy with the closest USD sell within ±2 days and ±10% notional. Idempotent; only touches rows where both legs currently have `paired_tx_id = NULL`. `--dry-run` (default) previews; `--confirm` applies; `--skip` excludes specific ids that need manual review |
 | `pftui portfolio set-cash CURRENCY AMOUNT [--confirm] [--dry-run] [--json]` | Replace cash transactions with an exact cash position; requires `--confirm` when more than one row would be discarded |
 | `pftui portfolio watchlist add SYMBOL [--target PRICE]` | Add to watchlist |
 | `pftui portfolio watchlist remove SYMBOL` | Remove from watchlist |
@@ -245,7 +265,7 @@ Contract for predictions:
 | `pftui analytics lessons curate [--dry-run] [--retire-after-days 60] [--json]` | Retire stale uncited active lessons whose topic cluster is idle; journals the change to `agent_messages` |
 | `pftui analytics lessons revive <id> [--json]` | Manually un-retire a previously retired lesson (sets status back to `active`) |
 | `pftui analytics lessons health [--json]` | Library health summary: total / active / retired / superseded / citations total / avg citations per active |
-| `pftui analytics news-sources accuracy --json [--domain bloomberg.com] [--topic fed]` | Per-source hit-rate ledger for predictions derived from news articles |
+| `pftui analytics news-sources accuracy --json [--domain bloomberg.com] [--topic fed] [--include-pre-deployment]` | Per-source hit-rate ledger for predictions derived from news articles. `--include-pre-deployment` emits an explicit forward-only notice (the ledger does NOT retroactively attribute pre-`source_article_id`-deployment predictions to a source) |
 | `pftui analytics news-sources rank --topic iran --json` | Rank news sources for a topic using trailing source-attributed prediction outcomes |
 | `pftui analytics news-sources rebuild-accuracy [--since 180d] [--dry-run] --json` | Replay `sync_prediction_outcome` for every scored prediction with a `source_article_id`; idempotent backfill |
 | `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |

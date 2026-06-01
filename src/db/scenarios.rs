@@ -8,6 +8,68 @@ use sqlx::PgPool;
 use crate::db::backend::BackendConnection;
 use crate::db::query;
 
+/// Canonical name for the residual "Other / Unmodelled" scenario row.
+///
+/// `docs/ANALYTICS-SPEC.md` (Scenario Probability Semantics section) defines the
+/// normalized scenario-set model: modeled scenarios plus this residual sum to
+/// 100%. The residual is system-managed: it must never be created by the
+/// operator/agents directly and its probability is recomputed deterministically
+/// from `100 - sum(active modeled scenarios)` after every mutation.
+pub const RESIDUAL_SCENARIO_NAME: &str = "Other / Unmodelled";
+
+/// Status marker for the system-managed residual row. Distinct from the
+/// operator-facing `active` / `monitoring` / `resolved` lifecycle so that the
+/// row is filtered out of the modeled set when computing sums.
+pub const RESIDUAL_SCENARIO_STATUS: &str = "system-managed";
+
+/// Tolerance (percentage points) for floating-point modeled-sum comparisons.
+/// Small drift below 0.05pp is treated as 0 to avoid spurious overfill errors
+/// from f64 accumulation.
+const NORMALIZED_EPSILON: f64 = 0.05;
+
+/// Total a normalized scenario set must sum to (in percent).
+const NORMALIZED_TOTAL: f64 = 100.0;
+
+/// Classification of the modeled-sum state under the normalized scenario-set
+/// model. `Ok` means the modeled rows sum to exactly 100 (within epsilon).
+/// `Overfilled` means modeled rows exceed 100 — invalid under the model;
+/// `Underfilled` means modeled rows are strictly below 100 (residual covers
+/// the gap, materialized or implicit).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OverfillState {
+    Ok,
+    Overfilled,
+    Underfilled,
+}
+
+impl OverfillState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OverfillState::Ok => "ok",
+            OverfillState::Overfilled => "overfilled",
+            OverfillState::Underfilled => "underfilled",
+        }
+    }
+}
+
+/// Summary of the active scenario set under the normalized model. Surfaces the
+/// modeled probability sum, the residual ("Other / Unmodelled") probability,
+/// and the overfill state for legacy data quality reporting.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NormalizedScenarioSet {
+    /// Sum of probabilities across active modeled (non-residual) scenarios.
+    pub modeled_sum: f64,
+    /// Materialized residual probability (the `Other / Unmodelled` row), if it
+    /// exists, or the implicit residual `100 - modeled_sum` (clamped at 0) if
+    /// not.
+    pub residual_probability: f64,
+    /// Whether the residual row exists in the database (vs being inferred).
+    pub residual_materialized: bool,
+    /// Classification of the modeled sum.
+    pub overfill_state: OverfillState,
+}
+
 type ScenarioExtRow = (
     i64,
     String,
@@ -264,12 +326,141 @@ pub fn add_scenario(
     triggers: Option<&str>,
     precedent: Option<&str>,
 ) -> Result<i64> {
+    if name.trim().eq_ignore_ascii_case(RESIDUAL_SCENARIO_NAME) {
+        bail!(
+            "'{}' is the system-managed residual scenario and cannot be created directly",
+            RESIDUAL_SCENARIO_NAME
+        );
+    }
+    if !probability.is_finite() || probability < 0.0 {
+        bail!(
+            "scenario probability must be a non-negative number, got {}",
+            probability
+        );
+    }
+    if probability > NORMALIZED_TOTAL + NORMALIZED_EPSILON {
+        bail!(
+            "scenario probability {:.2}% exceeds 100%; normalized scenario-set model requires modeled probabilities sum to <= 100",
+            probability
+        );
+    }
+    let new_sum = modeled_probability_sum(conn)? + probability;
+    if new_sum > NORMALIZED_TOTAL + NORMALIZED_EPSILON {
+        bail!(
+            "adding '{}' at {:.2}% would push modeled scenario sum to {:.2}% (>100%); rebalance the scenario set before adding (see docs/ANALYTICS-SPEC.md normalized scenario-set model)",
+            name,
+            probability,
+            new_sum
+        );
+    }
     conn.execute(
         "INSERT INTO scenarios (name, probability, description, asset_impact, triggers, historical_precedent)
          VALUES (?, ?, ?, ?, ?, ?)",
         params![name, probability, description, asset_impact, triggers, precedent],
     )?;
+    let id = conn.last_insert_rowid();
+    ensure_residual_scenario(conn)?;
+    recompute_residual_scenario(conn)?;
+    Ok(id)
+}
+
+/// Ensure a `Other / Unmodelled` system-managed residual row exists in
+/// `scenarios`. Idempotent: returns the existing row's id if present, otherwise
+/// inserts a new row at probability 100 (the entire set is residual when no
+/// modeled scenarios exist yet) and returns its id.
+pub fn ensure_residual_scenario(conn: &Connection) -> Result<i64> {
+    if let Ok(existing) = conn.query_row(
+        "SELECT id FROM scenarios WHERE name = ?1",
+        params![RESIDUAL_SCENARIO_NAME],
+        |row| row.get::<_, i64>(0),
+    ) {
+        // Ensure the status marker is current even if the row pre-existed.
+        conn.execute(
+            "UPDATE scenarios SET status = ?1, phase = 'active' WHERE id = ?2 AND status != ?1",
+            params![RESIDUAL_SCENARIO_STATUS, existing],
+        )?;
+        return Ok(existing);
+    }
+    conn.execute(
+        "INSERT INTO scenarios (name, probability, description, status, phase)
+         VALUES (?1, ?2, ?3, ?4, 'active')",
+        params![
+            RESIDUAL_SCENARIO_NAME,
+            NORMALIZED_TOTAL,
+            "System-managed residual: 100 - sum(active modeled scenarios). Represents outcomes outside the named scenario set.",
+            RESIDUAL_SCENARIO_STATUS,
+        ],
+    )?;
     Ok(conn.last_insert_rowid())
+}
+
+/// Sum probabilities across active modeled scenarios (excluding the
+/// system-managed residual row and resolved rows). Uses SQLite arithmetic so it
+/// is consistent with the constraint checks in `add_scenario` /
+/// `update_scenario_probability`.
+pub fn modeled_probability_sum(conn: &Connection) -> Result<f64> {
+    let sum: f64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(probability), 0.0)
+             FROM scenarios
+             WHERE status != ?1
+               AND status != 'resolved'
+               AND phase != 'resolved'
+               AND name != ?2",
+            params![RESIDUAL_SCENARIO_STATUS, RESIDUAL_SCENARIO_NAME],
+            |row| row.get(0),
+        )
+        .unwrap_or(0.0);
+    Ok(sum)
+}
+
+/// Recompute the residual probability as `100 - modeled_sum`, clamping at 0 so
+/// the row never goes negative even if legacy data is overfilled (the overfill
+/// state surfaces the data-quality issue separately). No-op if the residual row
+/// does not exist; call `ensure_residual_scenario` first when needed.
+pub fn recompute_residual_scenario(conn: &Connection) -> Result<()> {
+    let modeled_sum = modeled_probability_sum(conn)?;
+    let residual = (NORMALIZED_TOTAL - modeled_sum).max(0.0);
+    conn.execute(
+        "UPDATE scenarios SET probability = ?1, updated_at = datetime('now') WHERE name = ?2",
+        params![residual, RESIDUAL_SCENARIO_NAME],
+    )?;
+    Ok(())
+}
+
+/// Compute the current normalized scenario set summary: modeled sum, residual
+/// probability (materialized or inferred), and overfill classification.
+pub fn compute_normalized_set(conn: &Connection) -> Result<NormalizedScenarioSet> {
+    let modeled_sum = modeled_probability_sum(conn)?;
+    let residual_row: Option<f64> = conn
+        .query_row(
+            "SELECT probability FROM scenarios WHERE name = ?1",
+            params![RESIDUAL_SCENARIO_NAME],
+            |row| row.get(0),
+        )
+        .ok();
+    let residual_materialized = residual_row.is_some();
+    let residual_probability = residual_row.unwrap_or_else(|| (NORMALIZED_TOTAL - modeled_sum).max(0.0));
+    let overfill_state = classify_overfill(modeled_sum);
+    Ok(NormalizedScenarioSet {
+        modeled_sum,
+        residual_probability,
+        residual_materialized,
+        overfill_state,
+    })
+}
+
+/// Classify a modeled-probability sum into `Ok` / `Overfilled` / `Underfilled`.
+/// Pure function — exposed for tests and callers operating on summed values
+/// computed elsewhere (e.g. report build contexts).
+pub fn classify_overfill(modeled_sum: f64) -> OverfillState {
+    if modeled_sum > NORMALIZED_TOTAL + NORMALIZED_EPSILON {
+        OverfillState::Overfilled
+    } else if modeled_sum < NORMALIZED_TOTAL - NORMALIZED_EPSILON {
+        OverfillState::Underfilled
+    } else {
+        OverfillState::Ok
+    }
 }
 
 pub fn list_scenarios(conn: &Connection, status_filter: Option<&str>) -> Result<Vec<Scenario>> {
@@ -298,15 +489,17 @@ pub fn list_scenarios(conn: &Connection, status_filter: Option<&str>) -> Result<
     Ok(scenarios)
 }
 
-/// List scenarios filtered by phase (hypothesis, active, resolved)
+/// List scenarios filtered by phase (hypothesis, active, resolved). The
+/// system-managed residual row is excluded — it has no lifecycle and should not
+/// appear in operator-facing phase queries.
 pub fn list_scenarios_by_phase(conn: &Connection, phase: &str) -> Result<Vec<Scenario>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at, updated_at, phase, resolved_at, resolution_notes
          FROM scenarios
-         WHERE phase = ?
+         WHERE phase = ?1 AND status != ?2
          ORDER BY probability DESC",
     )?;
-    let rows = stmt.query_map([phase], Scenario::from_row)?;
+    let rows = stmt.query_map(params![phase, RESIDUAL_SCENARIO_STATUS], Scenario::from_row)?;
     let mut scenarios = Vec::new();
     for row in rows {
         scenarios.push(row?);
@@ -361,6 +554,10 @@ pub fn resolve_scenario(conn: &Connection, id: i64, resolution_notes: Option<&st
         "INSERT INTO scenario_history (scenario_id, probability, driver) SELECT id, probability, 'Resolved' FROM scenarios WHERE id = ?",
         [id],
     )?;
+    // A resolved row drops out of the modeled set; the residual absorbs its
+    // share so the active scenario set still sums to 100%.
+    ensure_residual_scenario(conn)?;
+    recompute_residual_scenario(conn)?;
     Ok(())
 }
 
@@ -677,6 +874,49 @@ pub fn update_scenario_probability(
         params![id],
         |row| row.get(0),
     )?;
+    let scenario_status: String = conn.query_row(
+        "SELECT status FROM scenarios WHERE id = ?",
+        params![id],
+        |row| row.get(0),
+    )?;
+
+    // The residual row is recomputed deterministically by
+    // recompute_residual_scenario; reject direct probability writes against it.
+    if scenario_name.eq_ignore_ascii_case(RESIDUAL_SCENARIO_NAME)
+        || scenario_status == RESIDUAL_SCENARIO_STATUS
+    {
+        bail!(
+            "'{}' is the system-managed residual scenario; its probability is recomputed automatically from 100 - sum(active modeled scenarios)",
+            scenario_name
+        );
+    }
+
+    if !probability.is_finite() || probability < 0.0 {
+        bail!(
+            "scenario probability must be a non-negative number, got {}",
+            probability
+        );
+    }
+    if probability > NORMALIZED_TOTAL + NORMALIZED_EPSILON {
+        bail!(
+            "scenario probability {:.2}% exceeds 100%; normalized scenario-set model requires modeled probabilities sum to <= 100",
+            probability
+        );
+    }
+
+    // Enforce normalized-set constraint: modeled sum (with this row swapped to
+    // the new value) must not exceed 100. We compute the projected sum without
+    // mutating storage first so the rejection is atomic.
+    let modeled_sum_excluding_self = modeled_probability_sum(conn)? - old_prob;
+    let projected_sum = modeled_sum_excluding_self + probability;
+    if projected_sum > NORMALIZED_TOTAL + NORMALIZED_EPSILON {
+        bail!(
+            "updating '{}' to {:.2}% would push modeled scenario sum to {:.2}% (>100%); rebalance the scenario set before updating (see docs/ANALYTICS-SPEC.md normalized scenario-set model)",
+            scenario_name,
+            probability,
+            projected_sum
+        );
+    }
 
     // Update scenario
     conn.execute(
@@ -732,6 +972,11 @@ pub fn update_scenario_probability(
         )?;
     }
 
+    // Recompute the system-managed residual so the displayed scenario set
+    // continues to sum to 100% under the normalized model.
+    ensure_residual_scenario(conn)?;
+    recompute_residual_scenario(conn)?;
+
     Ok(())
 }
 
@@ -780,7 +1025,24 @@ pub fn update_scenario(
 }
 
 pub fn remove_scenario(conn: &Connection, id: i64) -> Result<()> {
+    let (name, status): (String, String) = conn
+        .query_row(
+            "SELECT name, status FROM scenarios WHERE id = ?",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap_or_else(|_| (String::new(), String::new()));
+    if name.eq_ignore_ascii_case(RESIDUAL_SCENARIO_NAME) || status == RESIDUAL_SCENARIO_STATUS {
+        bail!(
+            "'{}' is the system-managed residual scenario and cannot be removed; it is recomputed automatically from 100 - sum(active modeled scenarios)",
+            RESIDUAL_SCENARIO_NAME
+        );
+    }
     conn.execute("DELETE FROM scenarios WHERE id = ?", [id])?;
+    // After removing a modeled scenario the residual absorbs its share of the
+    // probability space.
+    ensure_residual_scenario(conn)?;
+    recompute_residual_scenario(conn)?;
     Ok(())
 }
 
@@ -1066,6 +1328,27 @@ pub fn list_scenarios_backend(
         backend,
         |conn| list_scenarios(conn, status_filter),
         |pool| list_scenarios_postgres(pool, status_filter),
+    )
+}
+
+/// Backend wrapper for `compute_normalized_set`. Postgres backend currently
+/// returns a stub set (`Underfilled`, residual=100) because the normalized-set
+/// enforcement only ships for SQLite in this iteration; the report builders run
+/// against SQLite installs.
+pub fn compute_normalized_set_backend(
+    backend: &BackendConnection,
+) -> Result<NormalizedScenarioSet> {
+    query::dispatch(
+        backend,
+        compute_normalized_set,
+        |_pool| {
+            Ok(NormalizedScenarioSet {
+                modeled_sum: 0.0,
+                residual_probability: NORMALIZED_TOTAL,
+                residual_materialized: false,
+                overfill_state: OverfillState::Underfilled,
+            })
+        },
     )
 }
 
@@ -2906,8 +3189,9 @@ mod tests {
     fn test_get_all_timelines_with_history() -> Result<()> {
         let conn = test_db()?;
 
-        // Create two scenarios
-        let id1 = add_scenario(&conn, "Recession", 50.0, Some("test"), None, None, None)?;
+        // Create two scenarios — totals stay under 100% so the residual stays
+        // non-negative.
+        let id1 = add_scenario(&conn, "Recession", 25.0, Some("test"), None, None, None)?;
         let id2 = add_scenario(&conn, "Inflation", 70.0, Some("test2"), None, None, None)?;
 
         // Add history entries
@@ -3037,9 +3321,10 @@ mod tests {
     #[test]
     fn count_branches_batch_multiple_scenarios() -> Result<()> {
         let conn = test_db()?;
-        let s1 = add_scenario(&conn, "Scenario A", 50.0, None, None, None, None)?;
+        // Keep modeled sum <= 100 under the normalized scenario-set model.
+        let s1 = add_scenario(&conn, "Scenario A", 30.0, None, None, None, None)?;
         let s2 = add_scenario(&conn, "Scenario B", 30.0, None, None, None, None)?;
-        let s3 = add_scenario(&conn, "Scenario C", 70.0, None, None, None, None)?;
+        let s3 = add_scenario(&conn, "Scenario C", 40.0, None, None, None, None)?;
 
         add_branch(&conn, s1, "Branch 1A", 60.0, None)?;
         add_branch(&conn, s1, "Branch 1B", 40.0, None)?;
@@ -3196,6 +3481,169 @@ mod tests {
             err.to_string().contains("invalid next_decision_at"),
             "unexpected error: {err}"
         );
+        Ok(())
+    }
+
+    // --- Normalized scenario-set model tests --------------------------------
+
+    /// The schema migration must seed the system-managed residual row on a
+    /// fresh DB so every read sees the normalized set semantics from day one.
+    #[test]
+    fn migration_seeds_system_managed_residual_row() -> Result<()> {
+        let conn = test_db()?;
+        let residual = get_scenario_by_name(&conn, RESIDUAL_SCENARIO_NAME)?;
+        let row = residual.expect("residual row should be seeded by migration");
+        assert_eq!(row.status, RESIDUAL_SCENARIO_STATUS);
+        // No modeled scenarios yet => residual fills the entire space.
+        assert!(
+            (row.probability - 100.0).abs() < 0.001,
+            "expected residual=100, got {}",
+            row.probability
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn residual_is_recomputed_when_modeled_scenarios_are_added() -> Result<()> {
+        let conn = test_db()?;
+        add_scenario(&conn, "Inflation Spike", 45.0, None, None, None, None)?;
+        add_scenario(&conn, "Hard Recession", 25.0, None, None, None, None)?;
+        add_scenario(&conn, "Soft Landing", 20.0, None, None, None, None)?;
+        let set = compute_normalized_set(&conn)?;
+        assert!((set.modeled_sum - 90.0).abs() < 0.001);
+        assert!((set.residual_probability - 10.0).abs() < 0.001);
+        assert!(set.residual_materialized);
+        assert_eq!(set.overfill_state, OverfillState::Underfilled);
+
+        let residual = get_scenario_by_name(&conn, RESIDUAL_SCENARIO_NAME)?.unwrap();
+        assert!((residual.probability - 10.0).abs() < 0.001);
+        Ok(())
+    }
+
+    #[test]
+    fn add_scenario_rejects_modeled_sum_overfill() -> Result<()> {
+        let conn = test_db()?;
+        add_scenario(&conn, "Inflation Spike", 60.0, None, None, None, None)?;
+        let err = add_scenario(&conn, "Hard Recession", 50.0, None, None, None, None).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("modeled scenario sum") && msg.contains("110"),
+            "expected overfill rejection message, got {msg}"
+        );
+        // The residual stays consistent with what got committed (only the
+        // first scenario was inserted before the second was rejected).
+        let set = compute_normalized_set(&conn)?;
+        assert!((set.modeled_sum - 60.0).abs() < 0.001);
+        assert!((set.residual_probability - 40.0).abs() < 0.001);
+        Ok(())
+    }
+
+    #[test]
+    fn update_scenario_probability_rejects_overfill() -> Result<()> {
+        let conn = test_db()?;
+        let a = add_scenario(&conn, "A", 40.0, None, None, None, None)?;
+        let _b = add_scenario(&conn, "B", 40.0, None, None, None, None)?;
+        // Bumping A to 70 would push modeled sum to 110.
+        let err = update_scenario_probability(&conn, a, 70.0, Some("test")).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("modeled scenario sum") && msg.contains("110"),
+            "expected overfill rejection on update, got {msg}"
+        );
+        // Bumping A to 55 (sum 95) is allowed and recomputes the residual.
+        update_scenario_probability(&conn, a, 55.0, Some("ok"))?;
+        let set = compute_normalized_set(&conn)?;
+        assert!((set.modeled_sum - 95.0).abs() < 0.001);
+        assert!((set.residual_probability - 5.0).abs() < 0.001);
+        assert_eq!(set.overfill_state, OverfillState::Underfilled);
+        Ok(())
+    }
+
+    #[test]
+    fn modeled_sum_exactly_100_classifies_ok() -> Result<()> {
+        let conn = test_db()?;
+        add_scenario(&conn, "A", 60.0, None, None, None, None)?;
+        add_scenario(&conn, "B", 40.0, None, None, None, None)?;
+        let set = compute_normalized_set(&conn)?;
+        assert_eq!(set.overfill_state, OverfillState::Ok);
+        assert!((set.modeled_sum - 100.0).abs() < 0.001);
+        assert!(set.residual_probability.abs() < 0.001);
+        Ok(())
+    }
+
+    #[test]
+    fn residual_row_cannot_be_mutated_directly() -> Result<()> {
+        let conn = test_db()?;
+        let residual = get_scenario_by_name(&conn, RESIDUAL_SCENARIO_NAME)?.unwrap();
+        let err = update_scenario_probability(&conn, residual.id, 42.0, None).unwrap_err();
+        assert!(
+            err.to_string().contains("system-managed"),
+            "expected system-managed rejection, got {err}"
+        );
+        let err = remove_scenario(&conn, residual.id).unwrap_err();
+        assert!(
+            err.to_string().contains("system-managed"),
+            "expected system-managed rejection on remove, got {err}"
+        );
+        // The row by-name path must also reject re-creation.
+        let err = add_scenario(&conn, RESIDUAL_SCENARIO_NAME, 5.0, None, None, None, None)
+            .unwrap_err();
+        assert!(err.to_string().contains("residual"), "got {err}");
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_overfill_is_detected_and_reported() -> Result<()> {
+        // Simulate a pre-enforcement DB by inserting rows directly that sum
+        // above 100. The normalized-set summary must surface this as
+        // `Overfilled` and the residual must clamp at 0 rather than going
+        // negative.
+        let conn = test_db()?;
+        conn.execute(
+            "INSERT INTO scenarios (name, probability, status, phase) VALUES (?1, ?2, 'active', 'active')",
+            params!["Oil Shock", 70.0],
+        )?;
+        conn.execute(
+            "INSERT INTO scenarios (name, probability, status, phase) VALUES (?1, ?2, 'active', 'active')",
+            params!["Hard Recession", 50.0],
+        )?;
+        let set = compute_normalized_set(&conn)?;
+        assert_eq!(set.overfill_state, OverfillState::Overfilled);
+        assert!((set.modeled_sum - 120.0).abs() < 0.001);
+        // Recompute clamps residual at zero so the row never goes negative.
+        recompute_residual_scenario(&conn)?;
+        let residual = get_scenario_by_name(&conn, RESIDUAL_SCENARIO_NAME)?.unwrap();
+        assert!(
+            residual.probability >= 0.0,
+            "residual must clamp at 0, got {}",
+            residual.probability
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn classify_overfill_handles_epsilon_band() {
+        assert_eq!(classify_overfill(100.0), OverfillState::Ok);
+        assert_eq!(classify_overfill(100.02), OverfillState::Ok); // within epsilon
+        assert_eq!(classify_overfill(99.98), OverfillState::Ok); // within epsilon
+        assert_eq!(classify_overfill(100.1), OverfillState::Overfilled);
+        assert_eq!(classify_overfill(99.5), OverfillState::Underfilled);
+    }
+
+    #[test]
+    fn resolve_scenario_recomputes_residual() -> Result<()> {
+        let conn = test_db()?;
+        let a = add_scenario(&conn, "A", 50.0, None, None, None, None)?;
+        let _b = add_scenario(&conn, "B", 40.0, None, None, None, None)?;
+        // residual should be 10
+        let set = compute_normalized_set(&conn)?;
+        assert!((set.residual_probability - 10.0).abs() < 0.001);
+
+        resolve_scenario(&conn, a, Some("collapsed"))?;
+        // After resolve, modeled set is only B=40, residual absorbs to 60.
+        let set = compute_normalized_set(&conn)?;
+        assert!((set.modeled_sum - 40.0).abs() < 0.001);
+        assert!((set.residual_probability - 60.0).abs() < 0.001);
         Ok(())
     }
 }
