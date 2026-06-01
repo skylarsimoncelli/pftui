@@ -627,6 +627,36 @@ pub fn run_news_source_accuracy(
     Ok(())
 }
 
+pub fn run_news_source_rebuild_accuracy(
+    backend: &BackendConnection,
+    since_days: Option<i64>,
+    dry_run: bool,
+    json_output: bool,
+) -> Result<()> {
+    let report =
+        news_source_accuracy::backfill_accuracy_backend(backend, since_days, dry_run)?;
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+    println!("News-source accuracy backfill");
+    println!("════════════════════════════════════════════════════════════════");
+    let window = report
+        .since_days
+        .map(|d| format!("trailing {d}d"))
+        .unwrap_or_else(|| "all scored predictions".to_string());
+    println!(
+        "Window: {} • dry_run: {} • scanned: {} • synced: {} • missing article: {} • other skipped: {}",
+        window,
+        report.dry_run,
+        report.scanned,
+        report.synced,
+        report.skipped_missing_article,
+        report.skipped_other,
+    );
+    Ok(())
+}
+
 pub fn run_news_source_rank(
     backend: &BackendConnection,
     topic: Option<&str>,

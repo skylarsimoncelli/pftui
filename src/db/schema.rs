@@ -1565,6 +1565,60 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     crate::db::operator_replies::ensure_table(conn)?;
     crate::db::prediction_falsification_rules::ensure_table(conn)?;
 
+    // Additional live-DB enrichment tables that are not yet managed by
+    // dedicated modules. The `pftui system data-coverage` audit references
+    // them; CREATE TABLE IF NOT EXISTS makes a fresh `pftui` install
+    // schema-complete. Column shapes are conservative; any agent populating
+    // these tables can ALTER TABLE later without conflict.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS calibration_matrix (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            layer TEXT,
+            topic TEXT,
+            conviction_band TEXT,
+            n INTEGER NOT NULL DEFAULT 0,
+            hit_rate REAL NOT NULL DEFAULT 0.0,
+            stated_confidence REAL,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS scenario_prediction_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL,
+            prediction_id INTEGER NOT NULL,
+            link_kind TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(scenario_id, prediction_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS lesson_fragment_edges (
+            lesson_id INTEGER NOT NULL,
+            fragment_id INTEGER NOT NULL,
+            edge_weight REAL NOT NULL DEFAULT 1.0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (lesson_id, fragment_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS thesis_citations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            thesis_id INTEGER NOT NULL,
+            source_type TEXT NOT NULL,
+            source_id INTEGER,
+            citation_text TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS conviction_durability (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prediction_id INTEGER NOT NULL,
+            window_days INTEGER NOT NULL,
+            conviction_drift REAL NOT NULL DEFAULT 0.0,
+            note TEXT,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
+    )?;
+
+
     Ok(())
 }
 

@@ -25,6 +25,41 @@ use crate::config::{load_config_with_first_run_prompt, DatabaseBackend};
 use crate::db::backend::open_from_config;
 use crate::db::default_db_path;
 
+/// Parse a `--since` duration string into a positive day count.
+///
+/// Accepts `Nh` (hours, rounded up to one day minimum), `Nd` (days), `Nw`
+/// (weeks), or `Nm` (months ≈ 30 days). Used by the analytics rebuild
+/// commands which operate at daily resolution.
+fn parse_since_to_days(value: &str) -> Result<i64> {
+    let value = value.trim();
+    if value.is_empty() {
+        bail!("--since must not be empty");
+    }
+    let last = value
+        .chars()
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("--since must not be empty"))?;
+    let stripped = &value[..value.len() - last.len_utf8()];
+    let amount: i64 = stripped
+        .parse()
+        .map_err(|err| anyhow::anyhow!("invalid --since amount '{}': {}", stripped, err))?;
+    if amount <= 0 {
+        bail!("--since must be a positive duration");
+    }
+    let days = match last {
+        'h' | 'H' => std::cmp::max(1, amount / 24),
+        'd' | 'D' => amount,
+        'w' | 'W' => amount * 7,
+        'm' | 'M' => amount * 30,
+        other => bail!(
+            "could not parse --since '{}': expected Nh/Nd/Nw/Nm (got suffix '{}')",
+            value,
+            other
+        ),
+    };
+    Ok(days)
+}
+
 fn run_agent_journal(
     backend: &crate::db::backend::BackendConnection,
     command: Option<cli::JournalCommand>,
@@ -1557,6 +1592,9 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::SystemCommand::MarketHours { json } => {
                 commands::market_hours::run(json)
             }
+            cli::SystemCommand::DataCoverage { json } => {
+                commands::data_coverage::run(&backend, json)
+            }
             cli::SystemCommand::MigrateJournal {
                 path,
                 dry_run,
@@ -2612,13 +2650,28 @@ fn run_cli(cli: Cli) -> Result<()> {
                 commands::calibration::run(&backend, threshold, window_days, by_layer, json)
             }
             cli::AnalyticsCommand::NarrativeDivergence {
+                command,
                 hours,
                 threshold,
                 json,
-            } => commands::narrative_divergence::run(&backend, hours, threshold, json),
-            cli::AnalyticsCommand::NewsSilence { window_days, json } => {
-                commands::news_silence::run(&backend, window_days, json)
-            }
+            } => match command {
+                None => commands::narrative_divergence::run(&backend, hours, threshold, json),
+                Some(cli::AnalyticsNarrativeDivergenceCommand::Rebuild { since, json }) => {
+                    let days = parse_since_to_days(&since)?;
+                    commands::narrative_divergence::rebuild_history(&backend, days, json)
+                }
+            },
+            cli::AnalyticsCommand::NewsSilence {
+                command,
+                window_days,
+                json,
+            } => match command {
+                None => commands::news_silence::run(&backend, window_days, json),
+                Some(cli::AnalyticsNewsSilenceCommand::RebuildBaselines { since, json }) => {
+                    let days = parse_since_to_days(&since)?;
+                    commands::news_silence::rebuild_baselines(&backend, days, json)
+                }
+            },
             cli::AnalyticsCommand::Lessons { command } => match command {
                 cli::AnalyticsLessonsCommand::Applied { since, json } => {
                     commands::lessons_applied::run(&backend, &since, json)
@@ -2705,6 +2758,19 @@ fn run_cli(cli: Cli) -> Result<()> {
                     limit,
                     json,
                 ),
+                cli::AnalyticsNewsSourcesCommand::RebuildAccuracy {
+                    since,
+                    dry_run,
+                    json,
+                } => {
+                    let days = since
+                        .as_deref()
+                        .map(parse_since_to_days)
+                        .transpose()?;
+                    commands::analytics::run_news_source_rebuild_accuracy(
+                        &backend, days, dry_run, json,
+                    )
+                }
             },
             cli::AnalyticsCommand::Views { command } => match command {
                 cli::AnalyticsViewsCommand::Set {

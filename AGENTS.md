@@ -236,13 +236,16 @@ Contract for predictions:
 | `pftui analytics narrative --json` | Structured analytical memory: recap, scenario/conviction/trend shifts, scorecard, surprises, lessons, catalyst outcomes |
 | `pftui analytics calibration --by-layer --json [--window-days 90]` | Scenario-vs-market divergences plus realised prediction calibration by layer, sample size, 1σ uncertainty, and conviction band |
 | `pftui analytics narrative-divergence --json [--hours 24]` | Active scenario narrative-vs-money scores from topic news pressure versus mapped prediction-market movement |
+| `pftui analytics narrative-divergence rebuild --since 90d --json` | Backfill `narrative_money_history` from existing news_cache + predictions_history; one row per (scenario, day) |
 | `pftui analytics news-silence --json [--window-days 90]` | Tier-1/2 topic article volume versus rolling weekday baselines, including silent/saturated status changes |
+| `pftui analytics news-silence rebuild-baselines --since 90d --json` | Re-compute per-(topic, weekday) baselines from the trailing news_cache window; idempotent |
 | `pftui analytics lessons applied --since 24h --json` | Lessons referenced by this run's predictions, top guards, and strongest historical analog |
 | `pftui analytics lessons curate [--dry-run] [--retire-after-days 60] [--json]` | Retire stale uncited active lessons whose topic cluster is idle; journals the change to `agent_messages` |
 | `pftui analytics lessons revive <id> [--json]` | Manually un-retire a previously retired lesson (sets status back to `active`) |
 | `pftui analytics lessons health [--json]` | Library health summary: total / active / retired / superseded / citations total / avg citations per active |
 | `pftui analytics news-sources accuracy --json [--domain bloomberg.com] [--topic fed]` | Per-source hit-rate ledger for predictions derived from news articles |
 | `pftui analytics news-sources rank --topic iran --json` | Rank news sources for a topic using trailing source-attributed prediction outcomes |
+| `pftui analytics news-sources rebuild-accuracy [--since 180d] [--dry-run] --json` | Replay `sync_prediction_outcome` for every scored prediction with a `source_article_id`; idempotent backfill |
 | `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |
 | `pftui analytics signals --json` | Show all signals (cross-timeframe + per-symbol technical) |
 | `pftui analytics signals --source technical --json` | Per-symbol technical signals: RSI overbought/oversold, MACD cross, SMA 200 reclaim/break, BB squeeze, volume expansion, 52W extremes |
@@ -260,6 +263,7 @@ Contract for predictions:
 | `pftui system schema verify [--json]` | Check SQLite schema drift before startup migrations mutate the DB |
 | `pftui system schema repair --dry-run [--json]` | Preview safe missing-table/column/index repair SQL |
 | `pftui system schema repair --confirm [--json]` | Apply safe schema repairs after reviewing the dry-run plan |
+| `pftui system data-coverage [--json]` | Per-enrichment-table row count vs expected minimum; surfaces 0-row and missing tables loudly |
 | `pftui system snapshot` | Render full TUI to stdout (for sharing or screenshots) |
 | `pftui system demo` | Launch with sample data (for testing, no real data) |
 | `pftui system daemon start [--interval N] [--json]` | Run the always-on daemon loop for refresh + analytics + alerts + cleanup |

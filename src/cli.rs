@@ -1865,6 +1865,17 @@ pub enum SystemCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Report row counts for every enrichment table vs an expected minimum,
+    /// surfacing "shipped but unpopulated" tables loudly.
+    ///
+    /// EXAMPLES:
+    ///   pftui system data-coverage
+    ///   pftui system data-coverage --json
+    #[command(name = "data-coverage")]
+    DataCoverage {
+        #[arg(long)]
+        json: bool,
+    },
     /// One-time migration from legacy JOURNAL.md into SQLite journal table
     #[command(name = "migrate-journal")]
     MigrateJournal {
@@ -3961,6 +3972,58 @@ pub enum AnalyticsNewsSourcesCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Replay `sync_prediction_outcome` for every scored prediction with a
+    /// `source_article_id`, rebuilding `news_source_accuracy` from scratch.
+    /// Idempotent — re-running produces no double-counting.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics news-sources rebuild-accuracy --since 180d --json
+    ///   pftui analytics news-sources rebuild-accuracy --since 365d --dry-run --json
+    #[command(name = "rebuild-accuracy")]
+    RebuildAccuracy {
+        /// Lookback window: Nh / Nd / Nw / Nm — only predictions scored within
+        /// the window are replayed. Default: all scored predictions.
+        #[arg(long)]
+        since: Option<String>,
+        /// Preview the scan without mutating the ledger.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsNarrativeDivergenceCommand {
+    /// Backfill `narrative_money_history` from existing `news_cache` and
+    /// `predictions_history` over the trailing `--since` window.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics narrative-divergence rebuild --since 90d --json
+    Rebuild {
+        /// Lookback window: Nh / Nd / Nw / Nm (default: 90d)
+        #[arg(long, default_value = "90d")]
+        since: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsNewsSilenceCommand {
+    /// Re-compute per-(topic, day-of-week) baselines from the trailing
+    /// `--since` window of `news_cache` rows.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics news-silence rebuild-baselines --since 90d --json
+    #[command(name = "rebuild-baselines")]
+    RebuildBaselines {
+        /// Lookback window: Nh / Nd / Nw / Nm (default: 90d)
+        #[arg(long, default_value = "90d")]
+        since: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -4111,8 +4174,10 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// Compare scenario news pressure against mapped prediction-market movement
-    #[command(name = "narrative-divergence", after_help = "Scores each active scenario by comparing 24h topic-tagged news pressure\nagainst mapped prediction-market movement. Positive scores mean narrative\nis running ahead of money; negative scores mean pricing moved with little\nheadline confirmation.\n\nExamples:\n  pftui analytics narrative-divergence --json\n  pftui analytics narrative-divergence --hours 48 --threshold 1.5\n\nSee also: data news topics, data predictions map, analytics calibration")]
+    #[command(name = "narrative-divergence", after_help = "Scores each active scenario by comparing 24h topic-tagged news pressure\nagainst mapped prediction-market movement. Positive scores mean narrative\nis running ahead of money; negative scores mean pricing moved with little\nheadline confirmation.\n\nExamples:\n  pftui analytics narrative-divergence --json\n  pftui analytics narrative-divergence --hours 48 --threshold 1.5\n  pftui analytics narrative-divergence rebuild --since 90d --json\n\nSee also: data news topics, data predictions map, analytics calibration")]
     NarrativeDivergence {
+        #[command(subcommand)]
+        command: Option<AnalyticsNarrativeDivergenceCommand>,
         /// News lookback window in hours
         #[arg(long, default_value = "24")]
         hours: i64,
@@ -4123,8 +4188,10 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// Compare topic news volume against rolling weekday baselines
-    #[command(name = "news-silence", after_help = "Reports whether tier-1/2 article volume by topic is silent, normal,\nor saturated versus a rolling weekday-matched baseline.\n\nExamples:\n  pftui analytics news-silence --json\n  pftui analytics news-silence --window-days 60\n\nSee also: data news, data news topics, analytics narrative-divergence")]
+    #[command(name = "news-silence", after_help = "Reports whether tier-1/2 article volume by topic is silent, normal,\nor saturated versus a rolling weekday-matched baseline.\n\nExamples:\n  pftui analytics news-silence --json\n  pftui analytics news-silence --window-days 60\n  pftui analytics news-silence rebuild-baselines --since 90d --json\n\nSee also: data news, data news topics, analytics narrative-divergence")]
     NewsSilence {
+        #[command(subcommand)]
+        command: Option<AnalyticsNewsSilenceCommand>,
         /// Rolling baseline window in days
         #[arg(long, default_value = "90")]
         window_days: i64,
@@ -6515,6 +6582,7 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::NarrativeDivergence {
+                    command: subcmd,
                     hours,
                     threshold,
                     json,
@@ -6523,8 +6591,36 @@ mod tests {
         else {
             panic!("expected analytics narrative divergence command");
         };
+        assert!(subcmd.is_none());
         assert_eq!(hours, 48);
         assert!((threshold - 1.5).abs() < f64::EPSILON);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_narrative_divergence_rebuild() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "narrative-divergence",
+            "rebuild",
+            "--since",
+            "90d",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::NarrativeDivergence {
+                    command: Some(AnalyticsNarrativeDivergenceCommand::Rebuild { since, json }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics narrative-divergence rebuild command");
+        };
+        assert_eq!(since, "90d");
         assert!(json);
     }
 
@@ -6543,6 +6639,7 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::NewsSilence {
+                    command: subcmd,
                     window_days,
                     json,
                 },
@@ -6550,7 +6647,84 @@ mod tests {
         else {
             panic!("expected analytics news silence command");
         };
+        assert!(subcmd.is_none());
         assert_eq!(window_days, 60);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_news_silence_rebuild_baselines() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "news-silence",
+            "rebuild-baselines",
+            "--since",
+            "90d",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::NewsSilence {
+                    command:
+                        Some(AnalyticsNewsSilenceCommand::RebuildBaselines { since, json }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics news-silence rebuild-baselines command");
+        };
+        assert_eq!(since, "90d");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_news_sources_rebuild_accuracy() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "news-sources",
+            "rebuild-accuracy",
+            "--since",
+            "180d",
+            "--dry-run",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::NewsSources {
+                    command:
+                        AnalyticsNewsSourcesCommand::RebuildAccuracy { since, dry_run, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics news-sources rebuild-accuracy command");
+        };
+        assert_eq!(since.as_deref(), Some("180d"));
+        assert!(dry_run);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_system_data_coverage() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "system",
+            "data-coverage",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::System {
+            command: SystemCommand::DataCoverage { json },
+        }) = cli.command
+        else {
+            panic!("expected system data-coverage command");
+        };
         assert!(json);
     }
 
