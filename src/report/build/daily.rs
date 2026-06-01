@@ -30,6 +30,8 @@ pub struct BuildContext {
     pub equity_earnings: Option<EquityEarningsSummary>,
     pub equity_analyst_views: Vec<AnalystViewSummary>,
     pub equity_news: Vec<EquityNewsSignal>,
+    pub public_news_events: Vec<PublicNewsEvent>,
+    pub public_news_silence: Vec<NewsVolumeSignal>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,4 +227,16 @@ pub struct EquityNewsSignal {
     pub independence: Option<String>,
     pub topic: Option<String>,
     pub relevance: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PublicNewsEvent {
+    pub headline: String,
+    pub summary: Option<String>,
+    pub domain: String,
+    pub source_tier: Option<u8>,
+    pub independence: Option<String>,
+    pub topic: Option<String>,
+    pub bound_market: Option<String>,
+    pub impact_score: f64,
 }

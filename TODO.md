@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section public news and catalysts
-**Source:** Scaffold breakdown from the report command Step 5a.
-**Scope:** Add `pub fn render_public_news_catalysts(ctx: &BuildContext) -> Result<String>`. Data: `news_cache` last 24h, source tiers, source independence, topic bindings, bound markets, economic calendar, news-silence analytics. Output shape: `## News & Catalysts`, 3-5 event blocks, and `### Tomorrow's Calendar`; each event includes `*Source: <domain> (Tier <N>, <independence-class>) | Topic: <topic> | Bound market: <market-or-none>*`. Tests: fixture ranks top events, every event includes metadata, inferred source tiers are worded provisionally.
-**Effort:** 5-7 hours.
-
 ### `pftui report build daily` — section public scenario dashboard
 **Source:** Scaffold breakdown from the report command Step 5a.
 **Scope:** Add `pub fn render_public_scenario_dashboard(ctx: &BuildContext) -> Result<String>`. Data: active scenarios, `scenario_history` 7-day deltas, narrative-vs-money divergence, normalized scenario residual/overfill status. Output shape: `## Scenario Dashboard` table with Scenario, Probability, 7d Delta, Narrative vs Money, Key Driver, Confirmation, Invalidation; include `Other / Unmodelled` or a temporary data-quality footnote. Tests: probability deltas render, residual semantics match `docs/ANALYTICS-SPEC.md`, overfilled legacy data emits warning instead of overlap language.
