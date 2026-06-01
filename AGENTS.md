@@ -63,6 +63,19 @@ Until dedicated CLI commands exist for every enrichment table, routines may read
 | `sources_registry` | Named source and framework influence ledger. MACRO should explicitly reference high-influence frameworks such as Dixon, Dalio, and Fourth Turning when they shape a call. |
 | `event_annotations` | Canonical structured timeline. Prefer this for regime context around a date before fuzzy-searching `news_cache`, notes, or journal rows. |
 | `calibration_matrix` | Realized prediction rates by layer/topic/conviction. Use as sample-size context, not proof of precision. |
+| `cyberdots_signals` | Operator's CyberDots TradingView trigger ledger per (symbol, timeframe). Query the latest 1d/4h state before recommending entries; flag when a recommendation runs against an inactive trackline (`dot_state='bearish' AND trackline_position='above'` for a long). |
+
+Example queries:
+```sh
+# Latest CyberDots state across every (symbol, timeframe) the operator tracks
+pftui portfolio cyberdots current --json
+
+# Recent flips on Bitcoin
+pftui portfolio cyberdots flips --symbol BTC-USD --since 30d --json
+
+# Daily-timeframe history on Gold for the last quarter
+pftui portfolio cyberdots list --symbol GC=F --timeframe 1d --since 90d --json
+```
 
 Contract for predictions:
 - Determine the prediction topic and conviction band first.
@@ -158,6 +171,11 @@ Contract for predictions:
 | `pftui portfolio broker sync [BROKER] [--dry-run] --json` | Sync positions from connected brokers |
 | `pftui portfolio broker list --json` | List configured broker connections |
 | `pftui portfolio broker remove BROKER` | Remove a broker and its synced transactions |
+| `pftui portfolio cyberdots add --symbol SYM --timeframe 1h\|4h\|1d\|1w\|1M --dot bullish\|bearish\|flat --trackline above\|below\|on [--notes "..."] [--source skylar-manual\|journal-parsed\|tradingview-import] [--related-tx ID] [--json]` | Record a CyberDots signal; auto-computes `flip_from_prior` against the most-recent prior (symbol, timeframe) row |
+| `pftui portfolio cyberdots flip SYMBOL TIMEFRAME NEW_DOT_STATE [--notes "..."] [--json]` | Shorthand flip — reuses the prior row's trackline_position; errors if no prior row for that (symbol, timeframe) |
+| `pftui portfolio cyberdots list [--symbol SYM] [--timeframe 1d] [--since 30d\|YYYY-MM-DD] [--json]` | Query CyberDots history with optional filters |
+| `pftui portfolio cyberdots flips [--symbol SYM] [--since 30d] [--json]` | Show only rows that recorded a flip (flipped-bullish/flipped-bearish) |
+| `pftui portfolio cyberdots current [--symbol SYM] [--json]` | Most-recent signal per (symbol, timeframe) — current dot/trackline state |
 | `pftui analytics alerts add "CONDITION"` | Add alert |
 | `pftui analytics alerts list --json` | List active alerts |
 | `pftui analytics alerts remove ID` | Remove alert |

@@ -881,6 +881,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_alignment_score_history_date
             ON alignment_score_history(date DESC);
+
+        CREATE TABLE IF NOT EXISTS cyberdots_signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL CHECK(timeframe IN ('1h','4h','1d','1w','1M')),
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+            dot_state TEXT NOT NULL CHECK(dot_state IN ('bullish','bearish','flat')),
+            trackline_position TEXT NOT NULL CHECK(trackline_position IN ('above','below','on')),
+            flip_from_prior TEXT CHECK(flip_from_prior IN ('flipped-bullish','flipped-bearish','held','flat-confirmed') OR flip_from_prior IS NULL),
+            source TEXT NOT NULL DEFAULT 'skylar-manual' CHECK(source IN ('skylar-manual','journal-parsed','tradingview-import')),
+            notes TEXT,
+            related_transaction_id INTEGER REFERENCES transactions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_cyberdots_symbol_tf_time
+            ON cyberdots_signals(symbol, timeframe, recorded_at DESC);
         ",
     )?;
 

@@ -20,6 +20,7 @@ pub mod conviction;
 pub mod correlations;
 pub mod cot;
 pub mod crisis;
+pub mod cyberdots;
 pub mod daily_pnl;
 pub mod daemon;
 pub mod debate;

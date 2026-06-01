@@ -2005,6 +2005,67 @@ fn run_cli(cli: Cli) -> Result<()> {
                     commands::broker::run_list(&backend, json)
                 }
             },
+            Some(cli::PortfolioCommand::Cyberdots { command }) => match command {
+                cli::PortfolioCyberdotsCommand::Add {
+                    symbol,
+                    timeframe,
+                    dot_state,
+                    trackline_position,
+                    source,
+                    notes,
+                    related_tx,
+                    json,
+                } => commands::cyberdots::run_add(
+                    &backend,
+                    &symbol,
+                    &timeframe,
+                    &dot_state,
+                    &trackline_position,
+                    source.as_deref(),
+                    notes.as_deref(),
+                    related_tx,
+                    json,
+                ),
+                cli::PortfolioCyberdotsCommand::Flip {
+                    symbol,
+                    timeframe,
+                    new_dot_state,
+                    notes,
+                    json,
+                } => commands::cyberdots::run_flip(
+                    &backend,
+                    &symbol,
+                    &timeframe,
+                    &new_dot_state,
+                    notes.as_deref(),
+                    json,
+                ),
+                cli::PortfolioCyberdotsCommand::List {
+                    symbol,
+                    timeframe,
+                    since,
+                    json,
+                } => commands::cyberdots::run_list(
+                    &backend,
+                    symbol.as_deref(),
+                    timeframe.as_deref(),
+                    since.as_deref(),
+                    json,
+                ),
+                cli::PortfolioCyberdotsCommand::Flips {
+                    symbol,
+                    since,
+                    json,
+                } => commands::cyberdots::run_flips(
+                    &backend,
+                    symbol.as_deref(),
+                    Some(since.as_str()),
+                    json,
+                ),
+                cli::PortfolioCyberdotsCommand::Current { symbol, json } => {
+                    commands::cyberdots::run_current(&backend, symbol.as_deref(), json)
+                }
+            },
         },
 
         Some(Command::Report {

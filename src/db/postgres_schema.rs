@@ -1023,6 +1023,29 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
 
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS cyberdots_signals (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL CHECK(timeframe IN ('1h','4h','1d','1w','1M')),
+                recorded_at TEXT NOT NULL DEFAULT (to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')),
+                dot_state TEXT NOT NULL CHECK(dot_state IN ('bullish','bearish','flat')),
+                trackline_position TEXT NOT NULL CHECK(trackline_position IN ('above','below','on')),
+                flip_from_prior TEXT CHECK(flip_from_prior IN ('flipped-bullish','flipped-bearish','held','flat-confirmed')),
+                source TEXT NOT NULL DEFAULT 'skylar-manual' CHECK(source IN ('skylar-manual','journal-parsed','tradingview-import')),
+                notes TEXT,
+                related_transaction_id BIGINT REFERENCES transactions(id)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_cyberdots_symbol_tf_time
+                ON cyberdots_signals(symbol, timeframe, recorded_at DESC)",
+        )
+        .execute(pool)
+        .await?;
+
         // Migrate PPI series from PPIACO (All Commodities) to PPIFIS (Final Demand).
         // PPIFIS matches the headline PPI figure reported by BLS.
         // PPIACO and PPIFIS have different index levels, so we can't copy values —

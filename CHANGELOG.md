@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: cyberdots signal tracking
+
+- What: Added the `cyberdots_signals` SQLite/Postgres table plus a `pftui portfolio cyberdots {add,flip,list,flips,current}` CLI subtree with `--json` on every command. The `add` and `flip` writers auto-compute `flip_from_prior` against the most-recent prior (symbol, timeframe) row using the rule set (`flipped-bullish`, `flipped-bearish`, `held`, `flat-confirmed`). CHECK constraints reject invalid timeframes, dot states, trackline positions, and sources. AGENTS.md documents the new commands and adds an enrichment-substrate row so analyst routines know to query CyberDots state before recommending entries.
+- Why: Skylar's user-profile thesis section names CyberDots as the primary technical trigger, but the system had no structural place to record those signals. Capturing them lets analysts reason about the operator's real decision criteria, flag recommendations that run against an inactive trackline, and score CyberDots accuracy as a separate per-asset signal over time. Backfill from journal entries and analyst-routine wire-up are intentionally deferred to follow-up TODOs to keep this PR tight.
+
 ### 2026-06-01 — feat: lesson half-life curation
 
 - What: Added `prediction_lessons.status` (`active|retired|superseded`) and `last_cited_at` columns, a schema-side `lesson_citations` table, and three new CLI commands — `pftui analytics lessons curate [--dry-run] [--retire-after-days 60] [--json]`, `pftui analytics lessons revive <id> [--json]`, and `pftui analytics lessons health [--json]`. `curate` retires lessons that are uncited (or never cited and created) longer than `--retire-after-days` and whose topic cluster has no recent wrong-scored predictions, journals the change to `agent_messages`, and exposes a dry-run mode. `pftui journal prediction lessons` now defaults to active lessons only; pass `--include-retired` to surface the full history.

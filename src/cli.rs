@@ -1648,6 +1648,124 @@ pub enum PortfolioCommand {
         #[command(subcommand)]
         command: PortfolioBrokerCommand,
     },
+    /// Track Skylar's CyberDots TradingView signals (dot state + trackline position) per symbol/timeframe
+    #[command(
+        after_help = "CyberDots is the operator's primary technical trigger (custom TradingView\n\
+                      indicator — trend-following trackline + dot system). This subtree captures\n\
+                      signal flips structurally so analysts can reason about Skylar's real entry/exit\n\
+                      criteria instead of inferring them from journal prose.\n\n\
+                      Examples:\n\
+                        pftui portfolio cyberdots add --symbol BTC-USD --timeframe 1d --dot bullish --trackline above\n\
+                        pftui portfolio cyberdots flip BTC-USD 1d bearish\n\
+                        pftui portfolio cyberdots current --symbol BTC-USD --json\n\
+                        pftui portfolio cyberdots flips --since 30d --json\n\
+                        pftui portfolio cyberdots list --symbol GC=F --timeframe 1d --json"
+    )]
+    Cyberdots {
+        #[command(subcommand)]
+        command: PortfolioCyberdotsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PortfolioCyberdotsCommand {
+    /// Record a new CyberDots signal (auto-computes flip_from_prior against the latest prior row)
+    #[command(
+        after_help = "Records a CyberDots signal (dot state + trackline position) for a symbol and \n\
+                      timeframe. The system compares the new row to the most-recent prior row for\n\
+                      the same (symbol, timeframe) and writes a structured `flip_from_prior` field\n\
+                      so analysts can query \"when did Skylar last say BTC daily flipped bullish?\".\n\n\
+                      Examples:\n\
+                        pftui portfolio cyberdots add --symbol BTC-USD --timeframe 1d --dot bullish --trackline above\n\
+                        pftui portfolio cyberdots add --symbol GC=F --timeframe 4h --dot bearish --trackline below --notes \"failed retest\"\n\
+                        pftui portfolio cyberdots add --symbol BTC-USD --timeframe 1d --dot bullish --trackline above --related-tx 142 --json"
+    )]
+    Add {
+        /// Asset symbol (e.g. BTC-USD, GC=F)
+        #[arg(long)]
+        symbol: String,
+        /// Timeframe: 1h, 4h, 1d, 1w, 1M
+        #[arg(long)]
+        timeframe: String,
+        /// Dot state: bullish, bearish, flat
+        #[arg(long = "dot")]
+        dot_state: String,
+        /// Trackline position: above, below, on
+        #[arg(long = "trackline")]
+        trackline_position: String,
+        /// Signal source: skylar-manual (default), journal-parsed, tradingview-import
+        #[arg(long)]
+        source: Option<String>,
+        /// Free-form notes
+        #[arg(long)]
+        notes: Option<String>,
+        /// Optional related transaction ID (links this signal to a trade)
+        #[arg(long = "related-tx")]
+        related_tx: Option<i64>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Shorthand: record a flip on (symbol, timeframe) reusing the prior trackline_position
+    #[command(
+        after_help = "Reuses the most-recent prior row's trackline_position for the same (symbol,\n\
+                      timeframe) so the operator only types the new dot state. Defaults notes to\n\
+                      'flip detected'. Errors if there is no prior row — use `add` for the first\n\
+                      signal of a (symbol, timeframe).\n\n\
+                      Examples:\n\
+                        pftui portfolio cyberdots flip BTC-USD 1d bullish\n\
+                        pftui portfolio cyberdots flip GC=F 4h bearish --notes \"closed below trackline\" --json"
+    )]
+    Flip {
+        /// Asset symbol
+        symbol: String,
+        /// Timeframe: 1h, 4h, 1d, 1w, 1M
+        timeframe: String,
+        /// New dot state: bullish, bearish, flat
+        new_dot_state: String,
+        /// Override the default 'flip detected' notes
+        #[arg(long)]
+        notes: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List CyberDots history with optional filters
+    List {
+        /// Filter to a single symbol
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Filter to a single timeframe (1h, 4h, 1d, 1w, 1M)
+        #[arg(long)]
+        timeframe: Option<String>,
+        /// Window since: YYYY-MM-DD or a token like 30d, 12h, 4w
+        #[arg(long)]
+        since: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show only rows that recorded a flip (flipped-bullish or flipped-bearish)
+    Flips {
+        /// Filter to a single symbol
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Window since: YYYY-MM-DD or a token like 30d (default: 30d)
+        #[arg(long, default_value = "30d")]
+        since: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show the most-recent signal per (symbol, timeframe)
+    Current {
+        /// Filter to a single symbol
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
