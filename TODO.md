@@ -13,11 +13,6 @@
 **Implementation plan:** Complete the section TODOs below first; each should be a focused 4-8 hour PR. Do not pick this umbrella item directly. When all section renderers exist, complete `pftui report build daily — assembler + dry-run` to wire them into the CLI and retire the remaining Python/skill-side assembly path.
 **Effort:** Incremental; each section item is sized independently.
 
-### `pftui report build daily` — section public equities
-**Source:** Scaffold breakdown from the report command Step 5a.
-**Scope:** Add `pub fn render_public_equities(ctx: &BuildContext) -> Result<String>`. Data: SPX/SPY, NDX/QQQ, sector ETF prices, breadth/earnings/news when available, equity analyst views. Output shape: `## Equities` with Current State, Multi-Timeframe View, What to Watch. Tests: renders broad-index and sector rows from fixture data, falls back when breadth/earnings data is absent, avoids unsupported market-cap claims.
-**Effort:** 5-7 hours.
-
 ### `pftui report build daily` — section public news and catalysts
 **Source:** Scaffold breakdown from the report command Step 5a.
 **Scope:** Add `pub fn render_public_news_catalysts(ctx: &BuildContext) -> Result<String>`. Data: `news_cache` last 24h, source tiers, source independence, topic bindings, bound markets, economic calendar, news-silence analytics. Output shape: `## News & Catalysts`, 3-5 event blocks, and `### Tomorrow's Calendar`; each event includes `*Source: <domain> (Tier <N>, <independence-class>) | Topic: <topic> | Bound market: <market-or-none>*`. Tests: fixture ranks top events, every event includes metadata, inferred source tiers are worded provisionally.

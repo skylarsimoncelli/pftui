@@ -24,6 +24,12 @@ pub struct BuildContext {
     pub precious_metals_news: Vec<PreciousMetalsNewsSignal>,
     pub real_yield_context: Option<RealYieldSummary>,
     pub sovereign_gold_holdings: Vec<SovereignHoldingSummary>,
+    pub equity_indices: Vec<EquityMarketRow>,
+    pub equity_sectors: Vec<EquityMarketRow>,
+    pub equity_breadth: Option<EquityBreadthSummary>,
+    pub equity_earnings: Option<EquityEarningsSummary>,
+    pub equity_analyst_views: Vec<AnalystViewSummary>,
+    pub equity_news: Vec<EquityNewsSignal>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,4 +188,41 @@ pub struct SovereignHoldingSummary {
     pub latest: Option<String>,
     pub change: Option<String>,
     pub freshness: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EquityMarketRow {
+    pub name: String,
+    pub symbol: String,
+    pub price: Option<String>,
+    pub daily_change_pct: Option<f64>,
+    pub weekly_change_pct: Option<f64>,
+    pub trend: Option<String>,
+    pub freshness: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EquityBreadthSummary {
+    pub label: String,
+    pub value: Option<String>,
+    pub interpretation: Option<String>,
+    pub freshness: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EquityEarningsSummary {
+    pub label: String,
+    pub value: Option<String>,
+    pub interpretation: Option<String>,
+    pub freshness: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EquityNewsSignal {
+    pub headline: String,
+    pub domain: String,
+    pub source_tier: Option<u8>,
+    pub independence: Option<String>,
+    pub topic: Option<String>,
+    pub relevance: Option<String>,
 }

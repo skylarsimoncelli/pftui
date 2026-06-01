@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-01 — feat: add public equities renderer
+
+- What: Added a tested public equities renderer with broad-index rows, sector ETF rows, breadth and earnings context, equity analyst views, and source-tiered equity watch news.
+- Why: Native daily report assembly now has an equities section that distinguishes price-only claims from breadth/earnings-supported claims and avoids unsupported market-cap framing.
+
 ### 2026-06-01 — feat: add public gold and precious metals renderer
 
 - What: Added a tested public gold and precious-metals renderer with gold/silver price rows, real-yield context, supply/COT/COMEX rows, sovereign holdings, analyst views, and source-tiered news.
