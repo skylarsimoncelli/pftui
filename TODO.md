@@ -76,6 +76,9 @@ Naming: do NOT use vendor / indicator brand names anywhere — table column name
 ### [Claude-WIP 2026-06-01c — DO NOT PICK] `pftui report build daily` — section private upcoming calendar
 **Source:** Scaffold breakdown from the report command Step 5b.
 **Scope:** Add `pub fn render_private_upcoming_calendar(ctx: &BuildContext) -> Result<String>`. Data: economic calendar, earnings calendar when available, known political/geopolitical dates, held-asset relevance flags. Output shape: `## Upcoming Calendar` with compact per-day bullets for the next 3-7 days and bold items affecting held positions. Tests: dates sort ascending, held-asset relevance is bolded, empty calendar emits a concise no-known-catalysts line.
+### [Claude-WIP 2026-06-01c — DO NOT PICK] `pftui report build daily` — section private open predictions
+**Source:** Scaffold breakdown from the report command Step 5b.
+**Scope:** Add `pub fn render_private_open_predictions(ctx: &BuildContext) -> Result<String>`. Data: pending `user_predictions` resolving in the next 7 days, confidence/conviction/target dates, calibration context. Output shape: `## Open Predictions Resolving in Next 7 Days`, native `{open_predictions_table(predictions_from_db)}`, and one interpretation sentence. Tests: pending-window filter is correct, date ordering is stable, no-predictions fixture renders an explicit empty state.
 **Effort:** 4-6 hours.
 
 ### [Claude-WIP 2026-06-01d — DO NOT PICK] `pftui report build daily` — section private lessons applied
