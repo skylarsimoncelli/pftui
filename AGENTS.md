@@ -51,7 +51,26 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 
 Analyst routines should consume the derived enrichment tables before writing new predictions, scenario updates, or structured views. These tables are the machine-readable memory built from prior prediction outcomes, lessons, scenario links, source influence, and event annotations.
 
-Until dedicated CLI commands exist for every enrichment table, routines may read these tables directly with SQLite using the local pftui DB path. Use read-only `SELECT` queries only; do not mutate enrichment rows from routine prompts.
+Native CLI surfaces for the enrichment substrate (all support `--json`):
+
+| Command | What It Returns |
+|---|---|
+| `pftui analytics sources list [--type person\|framework\|institution\|outlet] [--json]` | `sources_registry` rows — canonical people/frameworks/institutions/outlets the substrate cites. |
+| `pftui analytics sources set <canonical_id> --display-name <n> --type <t> [--aliases a,b] [--topics x,y] [--accuracy-rating r] [--framework-summary <s>] [--json]` | Upsert a source. |
+| `pftui analytics sources remove <canonical_id> [--json]` | Remove a source. |
+| `pftui analytics events list [--category <c>] [--since YYYY-MM-DD] [--asset <s>] [--json]` | `event_annotations` rows — operator-curated macro/market event catalogue. |
+| `pftui analytics events add --event-date YYYY-MM-DD --category <c> --headline <h> [--detail <d>] [--magnitude 1..5] [--persistence transient\|days\|weeks\|structural] [--asset-impact a,b] [--related-scenario s1,s2] [--related-prediction 1,2] [--source <s>] [--notes <n>] [--json]` | Insert a new event annotation. |
+| `pftui analytics fragments list [--type <t>] [--topic <t>] [--cluster <c>] [--for-claim "<text>"] [--json]` | `reasoning_fragments` rows. `--for-claim` runs a keyword-based cluster classifier and returns fragments reachable via `lesson_fragment_edges`. |
+| `pftui analytics fragments show <canonical_id> [--json]` | One fragment + its lesson edges. |
+| `pftui analytics calibration-adjustments [--layer <l>] [--topic <t>] [--conviction <c>] [--json]` | `calibration_adjustments` — per-(layer, topic, conviction) discount/boost factors with `apply_note`. |
+| `pftui analytics failures correlations [--cluster <c>] [--min-share 0.5] [--json]` | `failure_correlations` — pairwise co-failure share between lesson clusters. |
+| `pftui analytics clusters list [--json]` | Distinct `cluster_key` values present on `prediction_lessons` with lesson counts. |
+| `pftui analytics clusters stats [--json]` | Lesson count plus the number of `user_predictions` referencing each cluster via `lessons_applied`. |
+| `pftui analytics falsifications [--rule-type <t>] [--auto-eligible] [--for-prediction <id>] [--json]` | `prediction_falsification_rules` filtered by rule type, auto-eligibility, or owning prediction. |
+| `pftui journal replies list [--report-date <d>] [--asset <a>] [--decision-type <t>] [--json]` | `operator_replies` — structured per-decision replies the operator wrote against a report. |
+| `pftui journal replies add --report-date <d> --decision-type <t> --response-class <c> --raw-content <text> [--asset <a>] [--reply-date <d>] [--conviction-implied <c>] [--horizon <h>] [--reasoning <r>] [--journal-id <id>] [--json]` | Record a new operator reply. |
+
+Use these CLIs in routine prompts instead of raw `sqlite3` calls. The CLIs handle schema-missing-on-fresh-installs gracefully (empty lists rather than errors).
 
 | Table | Routine Use |
 |---|---|

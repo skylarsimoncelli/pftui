@@ -718,6 +718,46 @@ fn run_agent_journal(
                 }
             },
         },
+        Some(cli::JournalCommand::Replies { command }) => match command {
+            cli::JournalRepliesCommand::List {
+                report_date,
+                asset,
+                decision_type,
+                json,
+            } => commands::analytics_enrichment::replies_list(
+                backend,
+                report_date.as_deref(),
+                asset.as_deref(),
+                decision_type.as_deref(),
+                json,
+            ),
+            cli::JournalRepliesCommand::Add {
+                report_date,
+                reply_date,
+                asset,
+                decision_type,
+                response_class,
+                conviction_implied,
+                horizon,
+                reasoning,
+                raw_content,
+                journal_id,
+                json,
+            } => commands::analytics_enrichment::replies_add(
+                backend,
+                &report_date,
+                reply_date.as_deref(),
+                asset.as_deref(),
+                &decision_type,
+                &response_class,
+                conviction_implied.as_deref(),
+                horizon.as_deref(),
+                reasoning.as_deref(),
+                &raw_content,
+                journal_id,
+                json,
+            ),
+        },
     }
 }
 
@@ -4741,6 +4781,145 @@ fn run_cli(cli: Cli) -> Result<()> {
                     commands::backtest::run_diagnostics(&backend, agent.as_deref(), json)
                 }
             },
+            cli::AnalyticsCommand::Sources { command } => match command {
+                cli::AnalyticsSourcesCommand::List { source_type, json } => {
+                    commands::analytics_enrichment::sources_list(
+                        &backend,
+                        source_type.as_deref(),
+                        json,
+                    )
+                }
+                cli::AnalyticsSourcesCommand::Set {
+                    canonical_id,
+                    display_name,
+                    source_type,
+                    aliases,
+                    topics,
+                    accuracy_rating,
+                    framework_summary,
+                    json,
+                } => commands::analytics_enrichment::sources_set(
+                    &backend,
+                    &canonical_id,
+                    &display_name,
+                    &source_type,
+                    aliases.as_deref(),
+                    topics.as_deref(),
+                    accuracy_rating.as_deref(),
+                    framework_summary.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsSourcesCommand::Remove { canonical_id, json } => {
+                    commands::analytics_enrichment::sources_remove(&backend, &canonical_id, json)
+                }
+            },
+            cli::AnalyticsCommand::Events { command } => match command {
+                cli::AnalyticsEventsCommand::List {
+                    category,
+                    since,
+                    asset,
+                    json,
+                } => commands::analytics_enrichment::events_list(
+                    &backend,
+                    category.as_deref(),
+                    since.as_deref(),
+                    asset.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsEventsCommand::Add {
+                    event_date,
+                    event_time,
+                    category,
+                    headline,
+                    detail,
+                    source,
+                    magnitude,
+                    persistence,
+                    asset_impact,
+                    related_scenario,
+                    related_prediction,
+                    notes,
+                    json,
+                } => commands::analytics_enrichment::events_add(
+                    &backend,
+                    &event_date,
+                    event_time.as_deref(),
+                    &category,
+                    &headline,
+                    detail.as_deref(),
+                    source.as_deref(),
+                    magnitude,
+                    persistence.as_deref(),
+                    asset_impact.as_deref(),
+                    related_scenario.as_deref(),
+                    related_prediction.as_deref(),
+                    notes.as_deref(),
+                    json,
+                ),
+            },
+            cli::AnalyticsCommand::Fragments { command } => match command {
+                cli::AnalyticsFragmentsCommand::List {
+                    fragment_type,
+                    topic,
+                    cluster,
+                    for_claim,
+                    json,
+                } => commands::analytics_enrichment::fragments_list(
+                    &backend,
+                    fragment_type.as_deref(),
+                    topic.as_deref(),
+                    cluster.as_deref(),
+                    for_claim.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsFragmentsCommand::Show { canonical_id, json } => {
+                    commands::analytics_enrichment::fragments_show(&backend, &canonical_id, json)
+                }
+            },
+            cli::AnalyticsCommand::CalibrationAdjustments {
+                layer,
+                topic,
+                conviction,
+                json,
+            } => commands::analytics_enrichment::calibration_adjustments_list(
+                &backend,
+                layer.as_deref(),
+                topic.as_deref(),
+                conviction.as_deref(),
+                json,
+            ),
+            cli::AnalyticsCommand::Failures { command } => match command {
+                cli::AnalyticsFailuresCommand::Correlations {
+                    cluster,
+                    min_share,
+                    json,
+                } => commands::analytics_enrichment::failures_correlations(
+                    &backend,
+                    cluster.as_deref(),
+                    min_share,
+                    json,
+                ),
+            },
+            cli::AnalyticsCommand::Clusters { command } => match command {
+                cli::AnalyticsClustersCommand::List { json } => {
+                    commands::analytics_enrichment::clusters_list(&backend, json)
+                }
+                cli::AnalyticsClustersCommand::Stats { json } => {
+                    commands::analytics_enrichment::clusters_stats(&backend, json)
+                }
+            },
+            cli::AnalyticsCommand::Falsifications {
+                rule_type,
+                auto_eligible,
+                for_prediction,
+                json,
+            } => commands::analytics_enrichment::falsifications_list(
+                &backend,
+                rule_type.as_deref(),
+                auto_eligible,
+                for_prediction,
+                json,
+            ),
         },
     };
 

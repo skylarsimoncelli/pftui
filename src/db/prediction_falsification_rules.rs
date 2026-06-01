@@ -1,9 +1,29 @@
 use anyhow::{anyhow, Result};
 use rusqlite::Connection;
+use serde::Serialize;
 use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
 use crate::db::query;
+
+/// Read-only row shape returned by `list()` for the
+/// `pftui analytics falsifications` CLI. Mirrors the columns actually
+/// present in the live DB / `ensure_table` schema below.
+#[derive(Debug, Clone, Serialize)]
+pub struct FalsificationRuleSummary {
+    pub id: i64,
+    pub prediction_id: Option<i64>,
+    pub rule_type: String,
+    pub symbol: Option<String>,
+    pub threshold_value: Option<f64>,
+    pub threshold_low: Option<f64>,
+    pub threshold_high: Option<f64>,
+    pub eval_date_start: Option<String>,
+    pub eval_date_end: Option<String>,
+    pub parse_confidence: Option<String>,
+    pub auto_score_eligible: bool,
+    pub created_at: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct PredictionFalsificationRule {
@@ -59,6 +79,113 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
             ON prediction_falsification_rules(prediction_id);",
     )?;
     Ok(())
+}
+
+/// Generic list for the `pftui analytics falsifications` CLI. Filters by
+/// rule type, auto-eligibility, and owning prediction. Tolerant of column
+/// drift between schema versions.
+pub fn list(
+    conn: &Connection,
+    rule_type: Option<&str>,
+    auto_eligible_only: bool,
+    for_prediction: Option<i64>,
+) -> Result<Vec<FalsificationRuleSummary>> {
+    ensure_table(conn)?;
+    let columns = detect_columns(conn)?;
+    let symbol_expr = columns
+        .symbol
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let threshold_value_expr = columns
+        .threshold_value
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let threshold_low_expr = columns
+        .threshold_low
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let threshold_high_expr = columns
+        .threshold_high
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let eval_start_expr = columns
+        .eval_date_start
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let parse_confidence_expr = columns
+        .parse_confidence
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let auto_eligible_expr = columns
+        .auto_score_eligible
+        .as_ref()
+        .map(|c| format!("r.{c}"))
+        .unwrap_or_else(|| "0".to_string());
+
+    let mut sql = format!(
+        "SELECT r.{id} AS id, r.{prediction_id} AS prediction_id, r.{rule_type} AS rule_type,
+                {symbol} AS symbol, {threshold_value} AS threshold_value,
+                {threshold_low} AS threshold_low, {threshold_high} AS threshold_high,
+                {eval_start} AS eval_date_start, r.{eval_end} AS eval_date_end,
+                {parse_confidence} AS parse_confidence,
+                {auto_eligible} AS auto_score_eligible
+         FROM prediction_falsification_rules r WHERE 1=1",
+        id = columns.id,
+        prediction_id = columns.prediction_id,
+        rule_type = columns.rule_type,
+        symbol = symbol_expr,
+        threshold_value = threshold_value_expr,
+        threshold_low = threshold_low_expr,
+        threshold_high = threshold_high_expr,
+        eval_start = eval_start_expr,
+        eval_end = columns.eval_date_end,
+        parse_confidence = parse_confidence_expr,
+        auto_eligible = auto_eligible_expr,
+    );
+    let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(t) = rule_type {
+        sql.push_str(&format!(" AND r.{} = ?", columns.rule_type));
+        args.push(Box::new(t.to_string()));
+    }
+    if auto_eligible_only {
+        if let Some(col) = &columns.auto_score_eligible {
+            sql.push_str(&format!(" AND r.{} = 1", col));
+        }
+    }
+    if let Some(p) = for_prediction {
+        sql.push_str(&format!(" AND r.{} = ?", columns.prediction_id));
+        args.push(Box::new(p));
+    }
+    sql.push_str(&format!(" ORDER BY r.{} DESC", columns.id));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_slice: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
+    let rows = stmt
+        .query_map(params_slice.as_slice(), |row| {
+            Ok(FalsificationRuleSummary {
+                id: row.get(0)?,
+                prediction_id: row.get(1).ok(),
+                rule_type: row.get(2)?,
+                symbol: row.get(3).ok().flatten(),
+                threshold_value: row.get(4).ok().flatten(),
+                threshold_low: row.get(5).ok().flatten(),
+                threshold_high: row.get(6).ok().flatten(),
+                eval_date_start: row.get(7).ok().flatten(),
+                eval_date_end: row.get(8).ok(),
+                parse_confidence: row.get(9).ok().flatten(),
+                auto_score_eligible: row.get::<_, Option<i64>>(10).ok().flatten().unwrap_or(0)
+                    != 0,
+                created_at: None,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
 }
 
 pub fn ensure_table_backend(backend: &BackendConnection) -> Result<()> {

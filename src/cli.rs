@@ -2551,6 +2551,51 @@ pub enum JournalCommand {
         #[command(subcommand)]
         command: JournalScenarioCommand,
     },
+    /// Operator replies — structured per-decision responses to reports
+    Replies {
+        #[command(subcommand)]
+        command: JournalRepliesCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum JournalRepliesCommand {
+    /// List operator replies
+    List {
+        #[arg(long = "report-date")]
+        report_date: Option<String>,
+        #[arg(long)]
+        asset: Option<String>,
+        #[arg(long = "decision-type")]
+        decision_type: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add a new operator reply
+    Add {
+        #[arg(long = "report-date")]
+        report_date: String,
+        #[arg(long = "reply-date")]
+        reply_date: Option<String>,
+        #[arg(long)]
+        asset: Option<String>,
+        #[arg(long = "decision-type")]
+        decision_type: String,
+        #[arg(long = "response-class")]
+        response_class: String,
+        #[arg(long = "conviction-implied")]
+        conviction_implied: Option<String>,
+        #[arg(long = "horizon")]
+        horizon: Option<String>,
+        #[arg(long = "reasoning")]
+        reasoning: Option<String>,
+        #[arg(long = "raw-content")]
+        raw_content: String,
+        #[arg(long = "journal-id")]
+        journal_id: Option<i64>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -4447,6 +4492,194 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
     Backtest {
         #[command(subcommand)]
         command: AnalyticsBacktestCommand,
+    },
+    /// `sources_registry` — canonical person/framework/institution/outlet lookup
+    Sources {
+        #[command(subcommand)]
+        command: AnalyticsSourcesCommand,
+    },
+    /// `event_annotations` — operator-curated macro/market event catalogue
+    Events {
+        #[command(subcommand)]
+        command: AnalyticsEventsCommand,
+    },
+    /// `reasoning_fragments` — typed heuristics + lesson_fragment_edges
+    Fragments {
+        #[command(subcommand)]
+        command: AnalyticsFragmentsCommand,
+    },
+    /// `calibration_adjustments` — per-(layer, topic, conviction) discount/boost rules.
+    /// Accessed via `pftui analytics calibration-adjustments`.
+    #[command(name = "calibration-adjustments")]
+    CalibrationAdjustments {
+        #[arg(long)]
+        layer: Option<String>,
+        #[arg(long)]
+        topic: Option<String>,
+        #[arg(long)]
+        conviction: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// `failure_correlations` — pairwise co-failure rates between lesson clusters
+    Failures {
+        #[command(subcommand)]
+        command: AnalyticsFailuresCommand,
+    },
+    /// `clusters` — lesson cluster_key taxonomy (list + per-cluster prediction usage)
+    Clusters {
+        #[command(subcommand)]
+        command: AnalyticsClustersCommand,
+    },
+    /// `prediction_falsification_rules` — auto/manual falsification triggers per prediction
+    Falsifications {
+        #[arg(long = "rule-type")]
+        rule_type: Option<String>,
+        #[arg(long = "auto-eligible")]
+        auto_eligible: bool,
+        #[arg(long = "for-prediction")]
+        for_prediction: Option<i64>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsSourcesCommand {
+    /// List sources, optionally filtered by type
+    List {
+        #[arg(long = "type")]
+        source_type: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Upsert a source by canonical_id
+    Set {
+        canonical_id: String,
+        #[arg(long = "display-name")]
+        display_name: String,
+        #[arg(long = "type")]
+        source_type: String,
+        /// Comma-separated aliases
+        #[arg(long)]
+        aliases: Option<String>,
+        /// Comma-separated topic tags
+        #[arg(long)]
+        topics: Option<String>,
+        #[arg(long = "accuracy-rating")]
+        accuracy_rating: Option<String>,
+        #[arg(long = "framework-summary")]
+        framework_summary: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a source by canonical_id
+    Remove {
+        canonical_id: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsEventsCommand {
+    /// List event annotations
+    List {
+        #[arg(long)]
+        category: Option<String>,
+        /// Only events on or after this YYYY-MM-DD date
+        #[arg(long)]
+        since: Option<String>,
+        /// Filter to a single asset symbol in the event's asset_impact list
+        #[arg(long)]
+        asset: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add a new event annotation
+    Add {
+        #[arg(long = "event-date")]
+        event_date: String,
+        #[arg(long = "event-time")]
+        event_time: Option<String>,
+        #[arg(long)]
+        category: String,
+        #[arg(long)]
+        headline: String,
+        #[arg(long)]
+        detail: Option<String>,
+        #[arg(long)]
+        source: Option<String>,
+        /// Magnitude 1..=5 (default 3)
+        #[arg(long, default_value = "3")]
+        magnitude: i64,
+        #[arg(long)]
+        persistence: Option<String>,
+        /// Comma-separated asset symbols affected
+        #[arg(long = "asset-impact")]
+        asset_impact: Option<String>,
+        /// Comma-separated related scenario keys
+        #[arg(long = "related-scenario")]
+        related_scenario: Option<String>,
+        /// Comma-separated related prediction ids
+        #[arg(long = "related-prediction")]
+        related_prediction: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsFragmentsCommand {
+    /// List reasoning fragments. With `--for-claim`, classify and return
+    /// applicable fragments via lesson_fragment_edges.
+    List {
+        #[arg(long = "type")]
+        fragment_type: Option<String>,
+        #[arg(long)]
+        topic: Option<String>,
+        #[arg(long)]
+        cluster: Option<String>,
+        #[arg(long = "for-claim")]
+        for_claim: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a single fragment with its lesson edges
+    Show {
+        canonical_id: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsFailuresCommand {
+    /// Pairwise cluster co-failure correlations
+    Correlations {
+        #[arg(long)]
+        cluster: Option<String>,
+        /// Minimum co-wrong share, e.g. 0.5
+        #[arg(long = "min-share")]
+        min_share: Option<f64>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsClustersCommand {
+    /// List distinct cluster_keys with lesson counts
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Cluster stats: lesson count + predictions referencing each cluster
+    Stats {
+        #[arg(long)]
+        json: bool,
     },
 }
 

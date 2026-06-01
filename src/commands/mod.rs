@@ -5,6 +5,7 @@ pub mod alignment_score;
 pub mod allocation;
 pub mod analyst_views;
 pub mod analytics;
+pub mod analytics_enrichment;
 pub mod annotate;
 pub mod backfill;
 pub mod backtest;

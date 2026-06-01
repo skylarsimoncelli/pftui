@@ -1,6 +1,13 @@
 pub mod agent_messages;
 pub mod alignment_score;
 pub mod analyst_views;
+pub mod calibration_adjustments;
+pub mod event_annotations;
+pub mod failure_correlations;
+pub mod operator_replies;
+pub mod reasoning_fragments;
+pub mod sources_registry;
+pub mod clusters;
 #[allow(dead_code)] // Infrastructure for F6 alert engine — consumed by F6.2+ (CLI, TUI, refresh)
 pub mod alerts;
 pub mod allocation_targets;
