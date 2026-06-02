@@ -1,5 +1,30 @@
 #![allow(dead_code)]
 
+// =====================================================================
+// Performance budget — `pftui report build daily --mode both`
+// =====================================================================
+//
+// Target: < 2s end-to-end wall-time against the standard fixture
+//         (`tests/fixtures/db/v0.27.0.sqlite` — ~90 days of history,
+//         4 positions, ~800 predictions).
+//
+// Why this lives here:
+//   `build daily` is the primary report-generation path for both the
+//   operator workflow and every cron-driven autonomous run. Once a
+//   section's render cost creeps into seconds, the whole pipeline
+//   degrades silently. The budget is enforced by
+//   `tests/report_build_daily_perf.rs`; if you change the budget,
+//   update BOTH the test constant AND this comment in the same PR.
+//
+// Re-baseline policy:
+//   - Raise the budget ONLY when a major feature intentionally adds
+//     cost (e.g., a new heavy aggregate query) AND a reviewer signs
+//     off in the PR description. Never silently.
+//   - If a section regularly dominates the budget, add `--timing`
+//     instrumentation so the test's failure path can name the section.
+//
+// =====================================================================
+
 #[derive(Debug, Clone, Default)]
 pub struct BuildContext {
     pub report_date: Option<String>,
