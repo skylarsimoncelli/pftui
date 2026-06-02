@@ -12,7 +12,7 @@ use serde::Serialize;
 use crate::db::backend::BackendConnection;
 use crate::db::{
     calibration_adjustments, clusters, event_annotations, failure_correlations, operator_replies,
-    prediction_falsification_rules, reasoning_fragments, sources_registry,
+    prediction_falsification_rules, reasoning_fragments, sources_registry, thesis_dependencies,
 };
 
 fn require_sqlite(backend: &BackendConnection) -> Result<&rusqlite::Connection> {
@@ -421,6 +421,136 @@ pub fn clusters_stats(backend: &BackendConnection, json: bool) -> Result<()> {
             c.cluster_key, c.lesson_count, c.predictions_applying
         );
     }
+    Ok(())
+}
+
+// ------- thesis chains -------
+
+pub fn thesis_chains_list(
+    backend: &BackendConnection,
+    state: Option<&str>,
+    node: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let conn = require_sqlite(backend)?;
+    let rows = thesis_dependencies::list(conn, state, node)?;
+    if json {
+        return print_json(&rows);
+    }
+    if rows.is_empty() {
+        println!("No thesis chains match.");
+        return Ok(());
+    }
+    for r in &rows {
+        println!(
+            "#{:<4} [{:<13}] {} --{}--> {}  conv={} validated={}",
+            r.id,
+            r.current_state,
+            r.antecedent_text,
+            r.relation,
+            r.consequent_text,
+            r.conviction.as_deref().unwrap_or("-"),
+            r.last_validated_at.as_deref().unwrap_or("never"),
+        );
+    }
+    Ok(())
+}
+
+pub fn thesis_chains_show(backend: &BackendConnection, id: i64, json: bool) -> Result<()> {
+    let conn = require_sqlite(backend)?;
+    let chain = thesis_dependencies::get(conn, id)?
+        .ok_or_else(|| anyhow!("thesis_dependencies row {} not found", id))?;
+    if json {
+        return print_json(&chain);
+    }
+    println!("Chain #{} [{}]", chain.id, chain.current_state);
+    println!("  antecedent: {}", chain.antecedent_text);
+    println!("  relation:   {}", chain.relation);
+    println!("  consequent: {}", chain.consequent_text);
+    println!("  conviction: {}", chain.conviction.as_deref().unwrap_or("-"));
+    println!("  evidence_count: {}", chain.evidence_count);
+    if let Some(s) = chain.source_lesson_ids.as_deref() {
+        println!("  source_lesson_ids: {}", s);
+    }
+    if let Some(s) = chain.source_thesis_sections.as_deref() {
+        println!("  source_thesis_sections: {}", s);
+    }
+    println!(
+        "  last_validated_at: {}",
+        chain.last_validated_at.as_deref().unwrap_or("never")
+    );
+    println!("  created_at: {}", chain.created_at);
+    Ok(())
+}
+
+pub fn thesis_chains_validate(
+    backend: &BackendConnection,
+    id: i64,
+    as_of: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let conn = require_sqlite(backend)?;
+    let outcome = thesis_dependencies::validate_chain(conn, id, as_of)?;
+    if json {
+        return print_json(&outcome);
+    }
+    println!(
+        "Chain #{} -> {} (antecedent={:?}, consequent={:?})",
+        outcome.id, outcome.new_chain_state, outcome.antecedent_state, outcome.consequent_state
+    );
+    println!("  note: {}", outcome.note);
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn thesis_chains_add(
+    backend: &BackendConnection,
+    antecedent: &str,
+    consequent: &str,
+    relation: &str,
+    antecedent_id: Option<&str>,
+    consequent_id: Option<&str>,
+    conviction: Option<&str>,
+    evidence_count: i64,
+    source_lesson_ids: Option<&str>,
+    source_thesis_sections: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let conn = require_sqlite(backend)?;
+    let lessons = split_csv_i64(source_lesson_ids)?;
+    let lessons_slice: Option<&[i64]> = if lessons.is_empty() {
+        None
+    } else {
+        Some(&lessons)
+    };
+    let sections = split_csv(source_thesis_sections);
+    let sections_slice: Option<&[String]> = if sections.is_empty() {
+        None
+    } else {
+        Some(&sections)
+    };
+    let id = thesis_dependencies::insert(
+        conn,
+        antecedent_id,
+        antecedent,
+        relation,
+        consequent_id,
+        consequent,
+        evidence_count,
+        conviction,
+        lessons_slice,
+        sections_slice,
+    )?;
+    let chain = thesis_dependencies::get(conn, id)?
+        .ok_or_else(|| anyhow!("inserted chain {} could not be re-read", id))?;
+    if json {
+        return print_json(&chain);
+    }
+    println!("Inserted thesis chain #{}", id);
+    println!(
+        "  {} --{}--> {}",
+        chain.antecedent_text, chain.relation, chain.consequent_text
+    );
     Ok(())
 }
 
