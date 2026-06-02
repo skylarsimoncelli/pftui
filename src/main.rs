@@ -4924,6 +4924,65 @@ fn run_cli(cli: Cli) -> Result<()> {
                 cli::AnalyticsBacktestCommand::Diagnostics { agent, json } => {
                     commands::backtest::run_diagnostics(&backend, agent.as_deref(), json)
                 }
+                cli::AnalyticsBacktestCommand::Scenario {
+                    regime,
+                    inflation_min,
+                    inflation_max,
+                    recession_min,
+                    recession_max,
+                    iran_min,
+                    iran_max,
+                    risk_on_min,
+                    risk_on_max,
+                    layer,
+                    topic,
+                    conviction,
+                    json,
+                } => {
+                    let args = commands::backtest_scenario::ScenarioBacktestArgs {
+                        regime: regime.as_deref(),
+                        inflation_min,
+                        inflation_max,
+                        recession_min,
+                        recession_max,
+                        iran_min,
+                        iran_max,
+                        risk_on_min,
+                        risk_on_max,
+                        layer: layer.as_deref(),
+                        topic: topic.as_deref(),
+                        conviction: conviction.as_deref(),
+                    };
+                    commands::backtest_scenario::run_scenario(&backend, args, json)
+                }
+                cli::AnalyticsBacktestCommand::LayerBias {
+                    regime,
+                    inflation_min,
+                    inflation_max,
+                    recession_min,
+                    recession_max,
+                    iran_min,
+                    iran_max,
+                    risk_on_min,
+                    risk_on_max,
+                    json,
+                } => {
+                    let args = commands::backtest_scenario::ScenarioBacktestArgs {
+                        regime: regime.as_deref(),
+                        inflation_min,
+                        inflation_max,
+                        recession_min,
+                        recession_max,
+                        iran_min,
+                        iran_max,
+                        risk_on_min,
+                        risk_on_max,
+                        layer: None,
+                        topic: None,
+                        conviction: None,
+                    };
+                    commands::backtest_scenario::run_layer_bias(&backend, args, json)
+                }
             },
             cli::AnalyticsCommand::Sources { command } => match command {
                 cli::AnalyticsSourcesCommand::List { source_type, json } => {

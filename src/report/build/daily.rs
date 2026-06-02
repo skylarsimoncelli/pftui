@@ -85,6 +85,23 @@ pub struct BuildContext {
     pub private_open_predictions: Vec<PrivateOpenPredictionRow>,
     pub private_open_predictions_calibration: Option<PrivateOpenPredictionsCalibration>,
     pub private_lessons_applied: Option<PrivateLessonsAppliedSummary>,
+    /// Optional regime-conditional hit-rate summary surfaced in the
+    /// Self-Retrospective Calibration section. Populated by the report
+    /// assembler from `pftui analytics backtest layer-bias` when the regime
+    /// classifier has recorded a non-neutral regime for the current day.
+    pub private_regime_conditional: Option<PrivateRegimeConditionalSummary>,
+}
+
+/// Compact regime-aware calibration prior emitted by the Self-Retrospective
+/// Calibration section. Surfaces the strongest layer/topic deviation when
+/// conditioned on the current regime.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateRegimeConditionalSummary {
+    pub current_regime: String,
+    pub top_layer: String,
+    pub top_topic: String,
+    pub hit_rate_pct: f64,
+    pub sample_size: u32,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

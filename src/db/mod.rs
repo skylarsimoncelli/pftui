@@ -69,6 +69,7 @@ pub mod predictions_history;
 pub mod price_cache;
 pub mod price_history;
 pub mod query;
+pub mod regime_history;
 pub mod regime_snapshots;
 pub mod research_questions;
 pub mod rss_feed_health;

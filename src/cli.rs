@@ -5008,6 +5008,83 @@ pub enum AnalyticsBacktestCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Scenario-conditional backtest: hit rate of predictions made under a named regime
+    #[command(after_help = "Computes hit rates conditioned on the regime that was active when each\nprediction was made. Joins `scenario_prediction_links` to `user_predictions`,\nfilters by per-scenario probability bands, and reports correct/partial/wrong.\n\nRegime presets:\n  --regime stagflation-iran-cool  (Inflation Spike ≥85 AND Iran ≤20)\n  --regime crisis                 (Hard Recession ≥40 AND Iran ≥30)\n  --regime risk-on                (Risk-On ≥40)\n\nExamples:\n  pftui analytics backtest scenario --regime stagflation-iran-cool --json\n  pftui analytics backtest scenario --inflation-min 80 --iran-max 25 --json\n  pftui analytics backtest scenario --regime crisis --layer LOW --topic commodities --json")]
+    Scenario {
+        /// Regime preset name (stagflation-iran-cool, crisis, risk-on)
+        #[arg(long)]
+        regime: Option<String>,
+        /// Inflation Spike probability minimum (0-100)
+        #[arg(long)]
+        inflation_min: Option<f64>,
+        /// Inflation Spike probability maximum (0-100)
+        #[arg(long)]
+        inflation_max: Option<f64>,
+        /// Hard Recession probability minimum (0-100)
+        #[arg(long)]
+        recession_min: Option<f64>,
+        /// Hard Recession probability maximum (0-100)
+        #[arg(long)]
+        recession_max: Option<f64>,
+        /// Iran-US escalation probability minimum (0-100)
+        #[arg(long)]
+        iran_min: Option<f64>,
+        /// Iran-US escalation probability maximum (0-100)
+        #[arg(long)]
+        iran_max: Option<f64>,
+        /// Risk-On probability minimum (0-100)
+        #[arg(long)]
+        risk_on_min: Option<f64>,
+        /// Risk-On probability maximum (0-100)
+        #[arg(long)]
+        risk_on_max: Option<f64>,
+        /// Filter by layer / timeframe (low, medium, high, macro)
+        #[arg(long)]
+        layer: Option<String>,
+        /// Filter by topic (commodities, equities, crypto, fed, inflation, ...)
+        #[arg(long)]
+        topic: Option<String>,
+        /// Filter by conviction (high, medium, low)
+        #[arg(long)]
+        conviction: Option<String>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Layer-bias matrix conditioned on a regime (LOW/MEDIUM/HIGH/MACRO × topic hit rates)
+    #[command(after_help = "Same shape as the calibration matrix but conditioned on the regime.\nSurfaces rows like 'LOW layer commodities hit rate was 65% during\nstagflation-iran-cool but 30% during crisis'.\n\nExamples:\n  pftui analytics backtest layer-bias --regime stagflation-iran-cool --json\n  pftui analytics backtest layer-bias --regime crisis --json")]
+    LayerBias {
+        /// Regime preset name
+        #[arg(long)]
+        regime: Option<String>,
+        /// Inflation Spike probability minimum (0-100)
+        #[arg(long)]
+        inflation_min: Option<f64>,
+        /// Inflation Spike probability maximum (0-100)
+        #[arg(long)]
+        inflation_max: Option<f64>,
+        /// Hard Recession probability minimum (0-100)
+        #[arg(long)]
+        recession_min: Option<f64>,
+        /// Hard Recession probability maximum (0-100)
+        #[arg(long)]
+        recession_max: Option<f64>,
+        /// Iran-US escalation probability minimum (0-100)
+        #[arg(long)]
+        iran_min: Option<f64>,
+        /// Iran-US escalation probability maximum (0-100)
+        #[arg(long)]
+        iran_max: Option<f64>,
+        /// Risk-On probability minimum (0-100)
+        #[arg(long)]
+        risk_on_min: Option<f64>,
+        /// Risk-On probability maximum (0-100)
+        #[arg(long)]
+        risk_on_max: Option<f64>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
