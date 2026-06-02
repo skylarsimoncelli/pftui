@@ -83,6 +83,7 @@ pub mod predictions_map;
 pub mod prices;
 pub mod question;
 pub mod rebalance;
+pub mod recommendations;
 pub mod refresh;
 pub mod refresh_dag;
 pub mod regime;

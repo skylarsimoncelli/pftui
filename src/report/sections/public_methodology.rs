@@ -34,6 +34,13 @@ pub fn render_public_methodology(ctx: &BuildContext) -> Result<String> {
     output.push_str(&render_runtime_metadata(ctx));
     output.push_str("\n\n");
     output.push_str(METHODOLOGY_BODY);
+    if let Some(acc) = ctx.recommendation_accuracy_7d.as_ref() {
+        output.push_str("\n\n");
+        output.push_str(&format!(
+            "**Recent recommendation accuracy ({}-day rolling):** hit rate {:.1}% across {} scored outcome(s) (avg score {:+.1} / 100). Recommendations are the imperative ADD / TRIM / HOLD calls the private report emits; outcomes are computed deterministically from price action since the recommendation date.",
+            acc.window_days, acc.hit_rate_pct, acc.scored, acc.avg_score
+        ));
+    }
     output.push_str("\n\n");
     output.push_str(DISCLAIMER_FOOTER);
 
@@ -78,6 +85,34 @@ fn clean_cell(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::report::build::daily::RecommendationAccuracySummary;
+
+    #[test]
+    fn public_methodology_includes_recommendation_accuracy_when_present() {
+        let ctx = BuildContext {
+            report_date: Some("2026-06-01".to_string()),
+            recommendation_accuracy_7d: Some(RecommendationAccuracySummary {
+                window_days: 7,
+                scored: 4,
+                hits: 3,
+                hit_rate_pct: 75.0,
+                avg_score: 32.5,
+            }),
+            ..BuildContext::default()
+        };
+        let rendered = render_public_methodology(&ctx).unwrap();
+        assert!(rendered.contains("Recent recommendation accuracy"));
+        assert!(rendered.contains("75.0%"));
+        assert!(rendered.contains("4 scored outcome"));
+    }
+
+    #[test]
+    fn public_methodology_omits_recommendation_accuracy_when_absent() {
+        let ctx = BuildContext::default();
+        let rendered = render_public_methodology(&ctx).unwrap();
+        assert!(!rendered.contains("Recent recommendation accuracy"));
+    }
+
 
     #[test]
     fn public_methodology_golden_output_is_stable_for_sparse_context() {

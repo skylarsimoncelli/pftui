@@ -71,11 +71,36 @@ pub fn run_add(
 
     let id = journal::add_entry_backend(backend, &entry)?;
 
+    // Auto-link: if the entry is authored by the operator (skylar) and
+    // matches a DECISION REPLY payload, insert a structured operator_reply
+    // row and link it to the matching open recommendation.
+    let author_name = entry.author.as_str();
+    let linked_reply_id = if author_name == "skylar" {
+        let ymd = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+            .map(|dt| dt.format("%Y-%m-%d").to_string())
+            .unwrap_or_else(|_| chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string());
+        crate::commands::recommendations::try_link_decision_reply_from_journal(
+            backend, id, content, &ymd,
+        )
+        .ok()
+        .flatten()
+    } else {
+        None
+    };
+
     if json_output {
-        let inserted = journal::get_entry_backend(backend, id)?.unwrap();
-        println!("{}", serde_json::to_string_pretty(&inserted)?);
+        let inserted = journal::get_entry_backend(backend, id)?
+            .ok_or_else(|| anyhow::anyhow!("journal entry {id} disappeared after insert"))?;
+        let payload = json!({
+            "entry": inserted,
+            "operator_reply_id": linked_reply_id,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
         println!("Added journal entry #{}", id);
+        if let Some(rid) = linked_reply_id {
+            println!("  linked DECISION REPLY operator_reply #{}", rid);
+        }
     }
 
     Ok(())

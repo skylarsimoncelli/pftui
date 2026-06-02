@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::cli::{ReportBuildMode, ReportChartFormat};
 use crate::report::build::daily::{
-    self as build_daily, assemble, plan_assembly, render_dry_run, resolve_report_date, BuildContext,
+    self as build_daily, plan_assembly, render_dry_run, resolve_report_date, BuildContext,
     BuildMode,
 };
 use crate::config::{Config, PortfolioMode};
@@ -171,7 +171,19 @@ pub fn run_build_daily(
         return Ok(());
     }
 
-    let outcome = assemble(&ctx, mode, &date, public_out_dir, private_out_dir)?;
+    // Persist + assemble: when in private/both mode and the SQLite backend
+    // is available, every derived decision card is written to the
+    // `recommendations` table and tagged with a `<!-- rec_id: N -->` marker
+    // so downstream auto-linkers (operator_replies, transactions, outcome
+    // scoring) can resolve the chain.
+    let outcome = build_daily::assemble_with_backend(
+        &ctx,
+        mode,
+        &date,
+        public_out_dir,
+        private_out_dir,
+        Some(backend),
+    )?;
 
     if options.json {
         let payload = BuildDailyOutcomeJson {

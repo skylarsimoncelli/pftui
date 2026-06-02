@@ -5168,6 +5168,69 @@ fn run_cli(cli: Cli) -> Result<()> {
                 for_prediction,
                 json,
             ),
+            cli::AnalyticsCommand::Recommendations { command } => match command {
+                cli::AnalyticsRecommendationsCommand::List {
+                    date,
+                    asset,
+                    recommendation_type,
+                    since,
+                    json,
+                } => commands::recommendations::list_cmd(
+                    &backend,
+                    date.as_deref(),
+                    asset.as_deref(),
+                    recommendation_type.as_deref(),
+                    since.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsRecommendationsCommand::Score {
+                    all,
+                    id,
+                    horizon,
+                    since,
+                    json,
+                } => commands::recommendations::score_cmd(
+                    &backend,
+                    all,
+                    id,
+                    horizon,
+                    since.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsRecommendationsCommand::Accuracy {
+                    recommendation_type,
+                    asset,
+                    since,
+                    threshold,
+                    by_asset,
+                    json,
+                } => commands::recommendations::accuracy_cmd(
+                    &backend,
+                    recommendation_type.as_deref(),
+                    asset.as_deref(),
+                    &since,
+                    threshold,
+                    by_asset,
+                    json,
+                ),
+                cli::AnalyticsRecommendationsCommand::Link {
+                    id,
+                    reply_id,
+                    transaction_id,
+                    action_status,
+                    json,
+                } => commands::recommendations::link_cmd(
+                    &backend,
+                    id,
+                    reply_id,
+                    transaction_id,
+                    action_status.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsRecommendationsCommand::RelinkHistorical { window, json } => {
+                    commands::recommendations::relink_historical_cmd(&backend, window, json)
+                }
+            },
         },
     };
 

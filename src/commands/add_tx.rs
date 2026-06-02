@@ -157,6 +157,23 @@ pub fn run(
     }
 
     let id = insert_transaction_backend(backend, &tx)?;
+
+    // Auto-link: if there is an open recommendation for the same asset and
+    // matching direction within the 7-day window, attach this transaction.
+    let direction = match tx.tx_type {
+        TxType::Buy => "buy",
+        TxType::Sell => "sell",
+    };
+    let _linked_rec_id = crate::commands::recommendations::try_link_transaction_to_recommendation(
+        backend,
+        id,
+        &tx.symbol,
+        direction,
+        &tx.date,
+        7,
+    )
+    .ok()
+    .flatten();
     let cash_summary = if let Some((cash_amount, fx_rate, trade_value, cash_tx_type)) = cash_leg {
         let cash_tx = NewTransaction {
             symbol: cash_currency.clone(),
