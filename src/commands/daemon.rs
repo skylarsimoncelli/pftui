@@ -210,6 +210,7 @@ impl CadenceTracker {
             worldbank: self.due("worldbank", cadence.worldbank_interval_secs),
             comex: self.due("comex", cadence.comex_interval_secs),
             onchain: self.due("onchain", cadence.onchain_interval_secs),
+            flows: self.due("flows", cadence.onchain_interval_secs),
             analytics: self.due("analytics", cadence.analytics_interval_secs),
             alerts: self.due("alerts", cadence.alerts_interval_secs),
             cleanup: self.due("cleanup", cadence.cleanup_interval_secs),

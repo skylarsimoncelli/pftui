@@ -14,6 +14,8 @@ pub mod economic;
 pub mod eia;
 #[allow(dead_code)] // Infrastructure for F31+ consumers (FedWatch CLI)
 pub mod fedwatch;
+#[allow(dead_code)] // Infrastructure for F59 capital flow tracking (provider scaffold)
+pub mod flows;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
 pub mod fred;
 #[allow(dead_code)] // Infrastructure for ISM PMI direct scraping (fresher PMI data)

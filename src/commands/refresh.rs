@@ -86,6 +86,7 @@ pub struct RefreshPlan {
     pub worldbank: bool,
     pub comex: bool,
     pub onchain: bool,
+    pub flows: bool,
     pub analytics: bool,
     pub alerts: bool,
     pub cleanup: bool,
@@ -111,6 +112,7 @@ impl RefreshPlan {
         "worldbank",
         "comex",
         "onchain",
+        "flows",
         "analytics",
         "alerts",
         "cleanup",
@@ -134,6 +136,7 @@ impl RefreshPlan {
             worldbank: true,
             comex: true,
             onchain: true,
+            flows: true,
             analytics: true,
             alerts: true,
             cleanup: true,
@@ -159,6 +162,7 @@ impl RefreshPlan {
             worldbank: false,
             comex: false,
             onchain: false,
+            flows: false,
             analytics: false,
             alerts: false,
             cleanup: false,
@@ -215,6 +219,7 @@ impl RefreshPlan {
             "worldbank" => self.worldbank = enabled,
             "comex" => self.comex = enabled,
             "onchain" => self.onchain = enabled,
+            "flows" => self.flows = enabled,
             "analytics" => self.analytics = enabled,
             "alerts" => self.alerts = enabled,
             "cleanup" => self.cleanup = enabled,
@@ -274,6 +279,9 @@ impl RefreshPlan {
         }
         if self.onchain {
             names.push("onchain");
+        }
+        if self.flows {
+            names.push("flows");
         }
         if self.analytics {
             names.push("analytics");
@@ -1577,6 +1585,8 @@ fn run_pipeline(
 
     // Options + GEX (synchronous)
     store_options_result(backend, verbose, plan.options, &mut dag_result);
+    // Capital flows (F59 scaffold — provider configured via PFTUI_FLOWS_PROVIDER)
+    store_flows_result(backend, verbose, plan.flows, &mut dag_result);
 
     if let Some(result) = maybe_stop_for_timeout(
         deadline,
@@ -4409,6 +4419,108 @@ fn store_options_result(
         error: None,
         detail: None,
     });
+}
+
+/// Persist capital-flow observations from the configured provider (F59 scaffold).
+///
+/// Defaults to the `NoopProvider`, which logs "capital flows provider not
+/// configured" and inserts zero rows. The stub `etf_com_csv` and
+/// `sec_edgar_13f` providers return a hard error today; their failures are
+/// surfaced via the DAG result rather than panicking.
+fn store_flows_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    in_plan: bool,
+    dag_result: &mut RefreshResult,
+) {
+    let start = Instant::now();
+    if !in_plan {
+        info_ln!(verbose, "⊘ flows (skipped)");
+        dag_result.add(SourceResult {
+            name: "flows".to_string(),
+            label: "Capital Flows".to_string(),
+            status: SourceStatus::Skipped,
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("not in plan".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
+        return;
+    }
+
+    let provider = crate::data::flows::provider_from_env();
+    let provider_name = provider.name().to_string();
+    match provider.fetch(None) {
+        Ok(result) => {
+            let mut inserted = 0usize;
+            let mut insert_error: Option<String> = None;
+            for flow in &result.flows {
+                match crate::db::capital_flows::insert(backend.sqlite(), flow) {
+                    Ok(_) => inserted += 1,
+                    Err(e) => {
+                        insert_error = Some(e.to_string());
+                        break;
+                    }
+                }
+            }
+            let status = if insert_error.is_some() {
+                SourceStatus::Failed
+            } else if result.flows.is_empty() {
+                // Noop / no-data path: still Ok — the pipeline succeeded.
+                SourceStatus::Ok
+            } else {
+                SourceStatus::Ok
+            };
+            let note = if result.note.is_empty() {
+                format!("provider={provider_name}")
+            } else {
+                format!("provider={provider_name}; {}", result.note)
+            };
+            info_ln!(
+                verbose,
+                "✓ flows ({} fetched, {} inserted; {})",
+                result.flows.len(),
+                inserted,
+                note
+            );
+            dag_result.add(SourceResult {
+                name: "flows".to_string(),
+                label: "Capital Flows".to_string(),
+                status,
+                items_attempted: Some(result.flows.len()),
+                items_failed: Some(result.flows.len().saturating_sub(inserted)),
+                failed_symbols: None,
+                items_updated: Some(inserted),
+                duration_ms: start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: insert_error,
+                detail: Some(note),
+            });
+        }
+        Err(e) => {
+            info_ln!(verbose, "✗ flows (provider {} failed: {})", provider_name, e);
+            dag_result.add(SourceResult {
+                name: "flows".to_string(),
+                label: "Capital Flows".to_string(),
+                status: SourceStatus::Failed,
+                items_attempted: Some(0),
+                items_failed: Some(0),
+                failed_symbols: None,
+                items_updated: Some(0),
+                duration_ms: start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: Some(e.to_string()),
+                detail: Some(format!("provider={provider_name}")),
+            });
+        }
+    }
 }
 
 fn run_cleanup(backend: &BackendConnection, verbose: bool) {

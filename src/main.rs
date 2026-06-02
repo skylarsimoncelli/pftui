@@ -1563,6 +1563,16 @@ fn run_cli(cli: Cli) -> Result<()> {
                     json,
                 ),
             },
+            cli::DataCommand::Flows { command } => match command {
+                cli::DataFlowsCommand::Refresh { asset, json } => {
+                    commands::flows::refresh(&backend, asset, json)
+                }
+                cli::DataFlowsCommand::Show {
+                    asset,
+                    since,
+                    json,
+                } => commands::flows::show(&backend, asset, since, json),
+            },
         },
         Some(Command::System { command }) => match command {
             cli::SystemCommand::Daemon { command } => match command {
@@ -5324,6 +5334,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                         )
                     }
                 },
+            },
+            cli::AnalyticsCommand::Flows { command } => match command {
+                cli::AnalyticsFlowsCommand::Summary { since, json } => {
+                    commands::flows::summary(&backend, since, json)
+                }
             },
         },
     };
