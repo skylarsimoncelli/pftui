@@ -2147,6 +2147,29 @@ fn run_cli(cli: Cli) -> Result<()> {
             },
         ),
 
+        Some(Command::Report {
+            command:
+                cli::ReportCommand::Build {
+                    command:
+                        cli::ReportBuildCommand::Daily {
+                            mode,
+                            date,
+                            out_dir,
+                            dry_run,
+                            json,
+                        },
+                },
+        }) => commands::report::run_build_daily(
+            &backend,
+            commands::report::BuildDailyOptions {
+                mode,
+                date: date.as_deref(),
+                out_dir: out_dir.as_deref(),
+                dry_run,
+                json,
+            },
+        ),
+
         Some(Command::Agent { command }) => match command {
             crate::cli::AgentCommand::Message { command } => match command {
                 cli::AgentMessageCommand::Send {

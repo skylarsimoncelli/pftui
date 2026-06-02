@@ -11,7 +11,11 @@ use rust_decimal_macros::dec;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::cli::ReportChartFormat;
+use crate::cli::{ReportBuildMode, ReportChartFormat};
+use crate::report::build::daily::{
+    self as build_daily, assemble, plan_assembly, render_dry_run, resolve_report_date, BuildContext,
+    BuildMode,
+};
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations_backend;
 use crate::db::analyst_views;
@@ -59,6 +63,149 @@ pub struct ReportChartOptions<'a> {
     pub out: Option<&'a Path>,
     pub format: ReportChartFormat,
     pub json_output: bool,
+}
+
+pub struct BuildDailyOptions<'a> {
+    pub mode: ReportBuildMode,
+    pub date: Option<&'a str>,
+    pub out_dir: Option<&'a Path>,
+    pub dry_run: bool,
+    pub json: bool,
+}
+
+fn report_build_mode_from_cli(mode: ReportBuildMode) -> BuildMode {
+    match mode {
+        ReportBuildMode::Public => BuildMode::Public,
+        ReportBuildMode::Private => BuildMode::Private,
+        ReportBuildMode::Both => BuildMode::Both,
+    }
+}
+
+#[derive(serde::Serialize)]
+struct BuildDailyDryRunJson<'a> {
+    mode: &'a str,
+    date: &'a str,
+    section_plan: Vec<BuildDailyPlanRowJson>,
+    data_availability: Vec<BuildDailyDataRowJson>,
+    output_paths: Vec<String>,
+    privacy_audit_status: &'a str,
+    dry_run: bool,
+}
+
+#[derive(serde::Serialize)]
+struct BuildDailyPlanRowJson {
+    name: &'static str,
+    visibility: &'static str,
+}
+
+#[derive(serde::Serialize)]
+struct BuildDailyDataRowJson {
+    field: &'static str,
+    populated: bool,
+}
+
+#[derive(serde::Serialize)]
+struct BuildDailyOutcomeJson<'a> {
+    mode: &'a str,
+    date: &'a str,
+    public_written: Option<String>,
+    private_written: Option<String>,
+    bytes_written: usize,
+    dry_run: bool,
+}
+
+/// Dispatcher for `pftui report build daily`.
+pub fn run_build_daily(
+    backend: &BackendConnection,
+    options: BuildDailyOptions<'_>,
+) -> Result<()> {
+    let mode = report_build_mode_from_cli(options.mode);
+    let date = resolve_report_date(options.date);
+    let ctx = BuildContext::load(backend, &date)?;
+
+    let (public_out_dir, private_out_dir) = match options.out_dir {
+        Some(dir) => (Some(dir), Some(dir)),
+        None => (None, None),
+    };
+
+    if options.dry_run {
+        let summary = render_dry_run(&ctx, mode, &date, public_out_dir, private_out_dir);
+        if options.json {
+            let plan_rows: Vec<BuildDailyPlanRowJson> = summary
+                .plan
+                .iter()
+                .map(|spec| BuildDailyPlanRowJson {
+                    name: spec.name,
+                    visibility: match spec.visibility {
+                        build_daily::SectionVisibility::Public => "public",
+                        build_daily::SectionVisibility::Private => "private",
+                    },
+                })
+                .collect();
+            let data_rows: Vec<BuildDailyDataRowJson> = summary
+                .data_availability
+                .iter()
+                .map(|row| BuildDailyDataRowJson {
+                    field: row.field,
+                    populated: row.populated,
+                })
+                .collect();
+            let output_paths: Vec<String> = summary
+                .output_paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect();
+            let payload = BuildDailyDryRunJson {
+                mode: mode.as_str(),
+                date: &date,
+                section_plan: plan_rows,
+                data_availability: data_rows,
+                output_paths,
+                privacy_audit_status: summary.privacy_audit_status.as_str(),
+                dry_run: true,
+            };
+            println!("{}", serde_json::to_string_pretty(&payload)?);
+        } else {
+            print!("{}", summary.render_text());
+        }
+        return Ok(());
+    }
+
+    let outcome = assemble(&ctx, mode, &date, public_out_dir, private_out_dir)?;
+
+    if options.json {
+        let payload = BuildDailyOutcomeJson {
+            mode: mode.as_str(),
+            date: &date,
+            public_written: outcome
+                .public_written
+                .as_ref()
+                .map(|p| p.display().to_string()),
+            private_written: outcome
+                .private_written
+                .as_ref()
+                .map(|p| p.display().to_string()),
+            bytes_written: outcome.bytes_written,
+            dry_run: false,
+        };
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        let plan = plan_assembly(mode, &date, public_out_dir, private_out_dir);
+        println!(
+            "pftui report build daily --mode {} --date {}",
+            mode.as_str(),
+            date
+        );
+        println!("  sections rendered: {}", plan.sections.len());
+        if let Some(path) = outcome.public_written.as_ref() {
+            println!("  wrote public: {}", path.display());
+        }
+        if let Some(path) = outcome.private_written.as_ref() {
+            println!("  wrote private: {}", path.display());
+        }
+        println!("  bytes written: {}", outcome.bytes_written);
+    }
+    Ok(())
 }
 
 pub fn run_chart(
