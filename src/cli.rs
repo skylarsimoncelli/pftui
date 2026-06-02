@@ -1375,6 +1375,44 @@ pub enum ReportChartFormat {
     Html,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum ReportBuildMode {
+    Public,
+    Private,
+    Both,
+}
+
+#[derive(Subcommand)]
+pub enum ReportBuildCommand {
+    /// Assemble the daily intelligence report markdown from the populated DB
+    #[command(
+        name = "daily",
+        after_help = "Assembles the daily intelligence report markdown by calling the registered\nsection renderers in canonical order. `--mode public` writes the public\nnewsletter; `--mode private` writes the operator decision document; `--mode\nboth` (default) writes both to their own destinations.\n\n`--dry-run` prints the section plan, data availability, output paths, and\nprivacy-audit status without writing files.\n\nDefault destinations:\n  public  ~/pftui/reports/daily-<DATE>.md\n  private /tmp/pftui-private-<DATE>.md\n\nExamples:\n  pftui report build daily\n  pftui report build daily --mode public --dry-run\n  pftui report build daily --mode both --date 2026-06-02 --out-dir /tmp/run\n  pftui report build daily --mode private --out-dir /tmp/private --json"
+    )]
+    Daily {
+        /// Which report(s) to assemble
+        #[arg(long, value_enum, default_value = "both")]
+        mode: ReportBuildMode,
+
+        /// Report date (YYYY-MM-DD). Defaults to today's UTC date.
+        #[arg(long, value_name = "DATE")]
+        date: Option<String>,
+
+        /// Override BOTH output directories at once (public and private)
+        #[arg(long, value_name = "DIR")]
+        out_dir: Option<PathBuf>,
+
+        /// Print the section plan, data availability, output paths, and
+        /// privacy-audit status without writing anything
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Emit the dry-run plan / write outcome as JSON for agent consumption
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Subcommand)]
 pub enum ReportCommand {
     /// Render report chart primitives from JSON or canonical database queries
@@ -1405,6 +1443,16 @@ pub enum ReportCommand {
         /// Output command metadata as JSON
         #[arg(long)]
         json: bool,
+    },
+
+    /// Build assembled report markdown from registered section renderers
+    #[command(
+        name = "build",
+        after_help = "Subcommands:\n  daily  Assemble the daily intelligence report (public/private/both)"
+    )]
+    Build {
+        #[command(subcommand)]
+        command: ReportBuildCommand,
     },
 }
 

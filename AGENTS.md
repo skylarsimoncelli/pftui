@@ -113,6 +113,12 @@ Contract for predictions:
 
 ## CLI Reference
 
+### Report Assembly
+
+| Command | What It Does |
+|---|---|
+| `pftui report build daily [--mode public\|private\|both] [--date YYYY-MM-DD] [--out-dir <path>] [--dry-run] [--json]` | Assemble the daily intelligence report markdown by calling every registered section renderer in canonical order. `--mode public` writes the public newsletter to `~/pftui/reports/daily-<DATE>.md`; `--mode private` writes the private operator decision document to `<tmp>/pftui-private-<DATE>.md`; `--mode both` (default) writes both. `--out-dir` overrides BOTH destinations. `--dry-run` prints the section plan, data availability summary, output paths, and privacy-audit status without writing files. Public-mode output is enforced through `audit_public_markdown` (no personal portfolio framing) before the file is written. |
+
 ### Charts
 
 | Command | What It Returns |
