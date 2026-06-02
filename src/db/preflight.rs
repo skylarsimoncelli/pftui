@@ -32,6 +32,7 @@ use crate::db::calibration_adjustments::{self, CalibrationAdjustment};
 use crate::db::clusters;
 use crate::db::failure_correlations::{self, FailureCorrelation};
 use crate::db::reasoning_fragments::{self, ReasoningFragment};
+use crate::db::thesis_dependencies::{self, ThesisDependency};
 
 /// Draft prediction inputs the analyst is composing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +101,10 @@ pub struct PreflightFindings {
     pub top_co_failing_cluster: Option<FailureCorrelation>,
     pub scenario_link_distribution: Vec<ScenarioLinkRow>,
     pub similar_falsification_rule: Option<SimilarFalsificationRule>,
+    /// Thesis-dependency chains whose antecedent or consequent references
+    /// the draft prediction's symbol. Populated only when a symbol is
+    /// supplied and the `thesis_dependencies` table is present.
+    pub thesis_chains: Vec<ThesisDependency>,
     pub preflight_score: u32,
     pub risk_factors: Vec<String>,
 }
@@ -152,6 +157,15 @@ impl PreflightFindings {
                 },
                 c.co_wrong_share * 100.0,
             ));
+        }
+        if !self.thesis_chains.is_empty() {
+            let summary: Vec<String> = self
+                .thesis_chains
+                .iter()
+                .take(3)
+                .map(|c| format!("#{}:{}", c.id, c.current_state))
+                .collect();
+            parts.push(format!("thesis_chains=[{}]", summary.join(",")));
         }
         format!("[preflight] {}", parts.join("; "))
     }
@@ -227,12 +241,33 @@ pub fn compute_preflight(conn: &Connection, draft: &PreflightDraft) -> Result<Pr
     let similar_falsification_rule =
         collect_similar_falsification_rule(conn, &draft.claim, cluster_key.as_deref())?;
 
-    let (preflight_score, risk_factors) = score_preflight(
+    // Thesis-dependency chains touching the draft's symbol. Tolerant of
+    // missing schema (fresh installs).
+    let thesis_chains = match draft.symbol.as_deref() {
+        Some(sym) if table_exists(conn, "thesis_dependencies")? => {
+            thesis_dependencies::find_chains_for_symbol(conn, sym)?
+        }
+        _ => Vec::new(),
+    };
+
+    let (preflight_score, mut risk_factors) = score_preflight(
         &reasoning_fragments,
         calibration_adjustment.as_ref(),
         cluster_hit_stats.as_ref(),
         top_co_failing_cluster.as_ref(),
     );
+
+    // Surface chain-state warnings as ancillary risk factors so the analyst
+    // sees them inline. We do NOT inflate `preflight_score` here — the chain
+    // graph is advisory, not blocking.
+    for chain in &thesis_chains {
+        if chain.current_state == "disconfirmed" {
+            risk_factors.push(format!(
+                "thesis_chain_disconfirmed:{}",
+                chain.id
+            ));
+        }
+    }
 
     Ok(PreflightFindings {
         draft: draft.clone(),
@@ -244,6 +279,7 @@ pub fn compute_preflight(conn: &Connection, draft: &PreflightDraft) -> Result<Pr
         top_co_failing_cluster,
         scenario_link_distribution,
         similar_falsification_rule,
+        thesis_chains,
         preflight_score,
         risk_factors,
     })
@@ -902,6 +938,38 @@ mod tests {
         // Only the +15 from the anti-pattern fires.
         assert_eq!(findings.preflight_score, 15);
         assert!(!findings.is_blocking(DEFAULT_PREFLIGHT_ABORT_THRESHOLD));
+    }
+
+    #[test]
+    fn preflight_surfaces_thesis_chains_for_matching_symbol() {
+        let conn = fresh_conn();
+        // Chain referencing BTC in its consequent.
+        crate::db::thesis_dependencies::insert(
+            &conn,
+            None,
+            "XAU > 4500",
+            "implies",
+            None,
+            "BTC > 100000",
+            1,
+            Some("high"),
+            None,
+            None,
+        )
+        .unwrap();
+        let draft = PreflightDraft {
+            claim: "BTC blast through 120k by July".into(),
+            symbol: Some("BTC".into()),
+            timeframe: None,
+            conviction: None,
+            layer: None,
+            topic: None,
+        };
+        let findings = compute_preflight(&conn, &draft).unwrap();
+        assert_eq!(findings.thesis_chains.len(), 1);
+        assert_eq!(findings.thesis_chains[0].relation, "implies");
+        let summary = findings.inline_summary();
+        assert!(summary.contains("thesis_chains="));
     }
 
     #[test]

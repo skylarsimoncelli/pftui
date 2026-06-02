@@ -5111,6 +5111,51 @@ fn run_cli(cli: Cli) -> Result<()> {
                     commands::analytics_enrichment::clusters_stats(&backend, json)
                 }
             },
+            cli::AnalyticsCommand::ThesisChains { command } => match command {
+                cli::AnalyticsThesisChainsCommand::List { state, node, json } => {
+                    commands::analytics_enrichment::thesis_chains_list(
+                        &backend,
+                        state.as_deref(),
+                        node.as_deref(),
+                        json,
+                    )
+                }
+                cli::AnalyticsThesisChainsCommand::Show { id, json } => {
+                    commands::analytics_enrichment::thesis_chains_show(&backend, id, json)
+                }
+                cli::AnalyticsThesisChainsCommand::Validate { id, as_of, json } => {
+                    commands::analytics_enrichment::thesis_chains_validate(
+                        &backend,
+                        id,
+                        as_of.as_deref(),
+                        json,
+                    )
+                }
+                cli::AnalyticsThesisChainsCommand::Add {
+                    antecedent,
+                    consequent,
+                    relation,
+                    antecedent_id,
+                    consequent_id,
+                    conviction,
+                    evidence_count,
+                    source_lesson_ids,
+                    source_thesis_sections,
+                    json,
+                } => commands::analytics_enrichment::thesis_chains_add(
+                    &backend,
+                    &antecedent,
+                    &consequent,
+                    &relation,
+                    antecedent_id.as_deref(),
+                    consequent_id.as_deref(),
+                    conviction.as_deref(),
+                    evidence_count,
+                    source_lesson_ids.as_deref(),
+                    source_thesis_sections.as_deref(),
+                    json,
+                ),
+            },
             cli::AnalyticsCommand::Falsifications {
                 rule_type,
                 auto_eligible,

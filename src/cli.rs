@@ -4754,6 +4754,13 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         #[command(subcommand)]
         command: AnalyticsClustersCommand,
     },
+    /// `thesis_dependencies` — formalized cross-asset if-then chains.
+    /// List, show, validate, or manually add chains.
+    #[command(name = "thesis-chains", after_help = "Cross-asset thesis dependency graph: structured\nantecedent → consequent triples extracted from the thesis table,\nprediction_lessons, and agent_messages.\n\nExamples:\n  pftui analytics thesis-chains list --json\n  pftui analytics thesis-chains list --state confirmed --json\n  pftui analytics thesis-chains show 1 --json\n  pftui analytics thesis-chains validate 1 --json\n  pftui analytics thesis-chains add --antecedent \"XAU > 4500\" \\\n    --consequent \"BTC > 100000\" --relation implies --conviction high")]
+    ThesisChains {
+        #[command(subcommand)]
+        command: AnalyticsThesisChainsCommand,
+    },
     /// `prediction_falsification_rules` — auto/manual falsification triggers per prediction
     Falsifications {
         #[arg(long = "rule-type")]
@@ -4948,6 +4955,67 @@ pub enum AnalyticsFragmentsCommand {
     /// Show a single fragment with its lesson edges
     Show {
         canonical_id: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsThesisChainsCommand {
+    /// List chains, optionally filtered by state or graph node
+    List {
+        /// Filter by current_state: confirmed, open, disconfirmed, stale
+        #[arg(long)]
+        state: Option<String>,
+        /// Filter to chains touching a given node id or symbol substring
+        #[arg(long)]
+        node: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a single chain by id
+    Show {
+        id: i64,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Evaluate antecedent + consequent against recent prices and update state
+    Validate {
+        id: i64,
+        /// Reference date for the lookup (YYYY-MM-DD); defaults to today
+        #[arg(long = "as-of")]
+        as_of: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manually add a chain (LLM-assisted extraction follow-up TODO)
+    Add {
+        /// Antecedent free-form text (e.g. "XAU > 4500")
+        #[arg(long)]
+        antecedent: String,
+        /// Consequent free-form text (e.g. "BTC > 100000")
+        #[arg(long)]
+        consequent: String,
+        /// Relation: implies, contradicts, contingent-on, accelerates, dampens
+        #[arg(long)]
+        relation: String,
+        /// Optional canonical id for the antecedent node
+        #[arg(long = "antecedent-id")]
+        antecedent_id: Option<String>,
+        /// Optional canonical id for the consequent node
+        #[arg(long = "consequent-id")]
+        consequent_id: Option<String>,
+        #[arg(long)]
+        conviction: Option<String>,
+        /// Initial evidence_count (default 1)
+        #[arg(long = "evidence-count", default_value = "1")]
+        evidence_count: i64,
+        /// Comma-separated source prediction_lessons ids
+        #[arg(long = "source-lesson-ids")]
+        source_lesson_ids: Option<String>,
+        /// Comma-separated source thesis section slugs
+        #[arg(long = "source-thesis-sections")]
+        source_thesis_sections: Option<String>,
         #[arg(long)]
         json: bool,
     },

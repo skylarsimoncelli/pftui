@@ -87,6 +87,10 @@ Native CLI surfaces for the enrichment substrate (all support `--json`):
 | `pftui analytics clusters list [--json]` | Distinct `cluster_key` values present on `prediction_lessons` with lesson counts. |
 | `pftui analytics clusters stats [--json]` | Lesson count plus the number of `user_predictions` referencing each cluster via `lessons_applied`. |
 | `pftui analytics falsifications [--rule-type <t>] [--auto-eligible] [--for-prediction <id>] [--json]` | `prediction_falsification_rules` filtered by rule type, auto-eligibility, or owning prediction. |
+| `pftui analytics thesis-chains list [--state <s>] [--node <n>] [--json]` | `thesis_dependencies` — cross-asset if-then chains. Filter by `current_state` (`confirmed`/`open`/`disconfirmed`/`stale`) or by an antecedent/consequent node id or symbol substring. |
+| `pftui analytics thesis-chains show <id> [--json]` | One chain with its source-lesson ids and thesis section ids. |
+| `pftui analytics thesis-chains validate <id> [--as-of YYYY-MM-DD] [--json]` | Evaluate the chain's antecedent and consequent against recent prices; persists a new `current_state` and `last_validated_at`. Predicates that don't parse to `<SYMBOL> {>,>=,<,<=,==,!=} <value>` leave the chain `open` with note "not yet evaluable". |
+| `pftui analytics thesis-chains add --antecedent "<text>" --consequent "<text>" --relation <r> [--conviction <c>] [--antecedent-id <id>] [--consequent-id <id>] [--evidence-count <n>] [--source-lesson-ids 1,2,3] [--source-thesis-sections slug-a,slug-b] [--json]` | Manually author a chain. The LLM-assisted extraction backfill is tracked as a follow-up TODO. |
 | `pftui journal replies list [--report-date <d>] [--asset <a>] [--decision-type <t>] [--json]` | `operator_replies` — structured per-decision replies the operator wrote against a report. |
 | `pftui journal replies add --report-date <d> --decision-type <t> --response-class <c> --raw-content <text> [--asset <a>] [--reply-date <d>] [--conviction-implied <c>] [--horizon <h>] [--reasoning <r>] [--journal-id <id>] [--json]` | Record a new operator reply. |
 
@@ -102,6 +106,7 @@ Use these CLIs in routine prompts instead of raw `sqlite3` calls. The CLIs handl
 | `sources_registry` | Named source and framework influence ledger. MACRO should explicitly reference high-influence frameworks such as Dixon, Dalio, and Fourth Turning when they shape a call. |
 | `event_annotations` | Canonical structured timeline. Prefer this for regime context around a date before fuzzy-searching `news_cache`, notes, or journal rows. |
 | `calibration_matrix` | Realized prediction rates by layer/topic/conviction. Use as sample-size context, not proof of precision. |
+| `thesis_dependencies` | Cross-asset if-then chains. When a draft prediction's symbol matches a chain antecedent or consequent, `pftui journal prediction preflight` surfaces the chain and its `current_state`. The daily-report Macro section can render confirmed/disconfirmed chains via `crate::report::sections::thesis_chains_macro::render_thesis_chains_block` — the renderer is exposed but not yet auto-wired into `assemble_*`; assemblers should load chains via `thesis_dependencies::list(conn, None, None)?` and pass to the renderer to surface "active confirmed chains" / "newly disconfirmed chains" inline. |
 
 Contract for predictions:
 - Determine the prediction topic and conviction band first.
