@@ -5,6 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
+use crate::db::agent_messages;
 use crate::db::backend::BackendConnection;
 use crate::db::news_source_accuracy;
 use crate::db::query;
@@ -91,6 +92,88 @@ impl UserPrediction {
 fn parse_lessons_applied(raw: Option<String>) -> Vec<i64> {
     raw.and_then(|value| serde_json::from_str::<Vec<i64>>(&value).ok())
         .unwrap_or_default()
+}
+
+/// Marker used on every `timeframe='macro-checkpoint'` prediction.
+///
+/// Macro-checkpoint predictions are short-horizon (≈90-day) falsifiable
+/// sub-claims attached to a multi-year MACRO thesis (Stage 6, Fourth Turning,
+/// de-dollarisation, Dalio composite, structural inflation). They must carry a
+/// `[thesis=<slug>]` tag inside the `claim` so the scoring layer can group
+/// failed checkpoints back to the parent thesis and surface a re-evaluation
+/// signal to synthesis.
+pub const MACRO_CHECKPOINT_TIMEFRAME: &str = "macro-checkpoint";
+
+/// Extract the parent-thesis slug from a macro-checkpoint claim.
+///
+/// Convention: the analyst writes `[thesis=<slug>] <rest of claim>`.
+/// `<slug>` is a short kebab-case identifier (e.g. `stage-6`, `fourth-turning`,
+/// `de-dollarisation`, `dalio-composite`, `structural-inflation`).
+///
+/// Falls back to scanning `resolution_criteria` if the tag is not present in
+/// the claim. Returns `None` when no tag is found — callers should still score
+/// the prediction but cannot emit a thesis re-eval signal without it.
+pub fn parse_thesis_tag(claim: &str, resolution_criteria: Option<&str>) -> Option<String> {
+    if let Some(slug) = extract_thesis_tag(claim) {
+        return Some(slug);
+    }
+    resolution_criteria.and_then(extract_thesis_tag)
+}
+
+fn extract_thesis_tag(text: &str) -> Option<String> {
+    let needle = "thesis=";
+    let start = text.find(needle)? + needle.len();
+    let tail = &text[start..];
+    let end = tail.find([']', ' ', '\t', '\n']).unwrap_or(tail.len());
+    let slug = tail[..end].trim().trim_matches(|c: char| c == '"' || c == '\'');
+    if slug.is_empty() {
+        None
+    } else {
+        Some(slug.to_string())
+    }
+}
+
+/// When a macro-checkpoint is scored Wrong, count how many checkpoints belong
+/// to the parent thesis and how many of those are already Wrong, then emit one
+/// agent message to synthesis (`analyst-evening`) flagging the parent thesis
+/// for re-examination on the next macro run.
+fn emit_macro_checkpoint_reeval_message(
+    conn: &Connection,
+    failed_id: i64,
+    thesis_slug: &str,
+) -> Result<()> {
+    let (total, wrong): (i64, i64) = conn.query_row(
+        "SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN outcome = 'wrong' THEN 1 ELSE 0 END) AS wrong_count
+         FROM user_predictions
+         WHERE timeframe = ?1
+           AND (claim LIKE ?2 OR COALESCE(resolution_criteria, '') LIKE ?2)",
+        params![
+            MACRO_CHECKPOINT_TIMEFRAME,
+            format!("%thesis={}%", thesis_slug),
+        ],
+        |row| Ok((row.get(0)?, row.get::<_, Option<i64>>(1)?.unwrap_or(0))),
+    )?;
+    let content = format!(
+        "Macro thesis '{thesis}' has {wrong} of {total} checkpoint(s) failed (latest failure: prediction #{id}); analyst-macro should re-examine before next run.",
+        thesis = thesis_slug,
+        wrong = wrong,
+        total = total,
+        id = failed_id,
+    );
+    agent_messages::send_message(
+        conn,
+        "analyst-macro",
+        Some("analyst-evening"),
+        Some("high"),
+        &content,
+        Some("macro-checkpoint-reeval"),
+        Some("macro"),
+        None,
+        None,
+    )?;
+    Ok(())
 }
 
 fn lessons_applied_json(lesson_ids: &[i64]) -> String {
@@ -453,6 +536,20 @@ pub fn score_prediction(
                 &prediction.topic,
                 outcome,
             )?;
+            // Macro-checkpoint failure surfaces a re-evaluation message to
+            // synthesis so the next macro run is forced to re-examine the
+            // parent thesis. Only fires when a `macro-checkpoint` prediction
+            // is scored Wrong AND the claim carries a `[thesis=<slug>]` tag.
+            if outcome == "wrong"
+                && prediction.timeframe.as_deref() == Some(MACRO_CHECKPOINT_TIMEFRAME)
+            {
+                if let Some(slug) = parse_thesis_tag(
+                    &prediction.claim,
+                    prediction.resolution_criteria.as_deref(),
+                ) {
+                    emit_macro_checkpoint_reeval_message(conn, id, &slug)?;
+                }
+            }
         }
     }
     Ok(())
@@ -1165,5 +1262,186 @@ mod tests {
 
         let rows = list_predictions(&conn, None, None, None, None).unwrap();
         assert_eq!(rows[0].lessons_applied, Vec::<i64>::new());
+    }
+
+    #[test]
+    fn parse_thesis_tag_finds_slug_in_claim() {
+        assert_eq!(
+            parse_thesis_tag(
+                "[thesis=stage-6] By 2026-09-28, IF DXY > 95 then thesis degraded",
+                None,
+            ),
+            Some("stage-6".to_string())
+        );
+        assert_eq!(
+            parse_thesis_tag(
+                "By 2026-09-28 CB gold purchases below 800t [thesis=de-dollarisation]",
+                None,
+            ),
+            Some("de-dollarisation".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_thesis_tag_falls_back_to_resolution_criteria() {
+        assert_eq!(
+            parse_thesis_tag(
+                "Plain checkpoint claim with no inline tag",
+                Some("Resolves when thesis=fourth-turning indicator triggers"),
+            ),
+            Some("fourth-turning".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_thesis_tag_returns_none_when_absent() {
+        assert_eq!(
+            parse_thesis_tag("Plain claim with no tag", Some("Plain resolution")),
+            None
+        );
+    }
+
+    #[test]
+    fn macro_checkpoint_creation_persists_with_new_timeframe() {
+        let conn = db::open_in_memory();
+        let id = add_prediction(
+            &conn,
+            "[thesis=stage-6] By 2026-09-28, IF DXY > 95 my stage-6 thesis is degraded",
+            None,
+            Some("medium"),
+            Some(MACRO_CHECKPOINT_TIMEFRAME),
+            Some(0.6),
+            Some("analyst-macro"),
+            Some("2026-09-28"),
+            Some("DXY closes > 95 on target_date"),
+        )
+        .unwrap();
+
+        let row = list_predictions(&conn, None, None, Some(MACRO_CHECKPOINT_TIMEFRAME), None)
+            .unwrap()
+            .into_iter()
+            .find(|p| p.id == id)
+            .unwrap();
+        assert_eq!(row.timeframe.as_deref(), Some(MACRO_CHECKPOINT_TIMEFRAME));
+        assert_eq!(row.source_agent.as_deref(), Some("analyst-macro"));
+        assert_eq!(row.target_date.as_deref(), Some("2026-09-28"));
+    }
+
+    #[test]
+    fn scoring_macro_checkpoint_wrong_emits_synthesis_reeval_message() {
+        let conn = db::open_in_memory();
+        // Three checkpoints under the same parent thesis.
+        let id1 = add_prediction(
+            &conn,
+            "[thesis=stage-6] DXY breaks 95 by 2026-09-28",
+            None,
+            Some("medium"),
+            Some(MACRO_CHECKPOINT_TIMEFRAME),
+            None,
+            Some("analyst-macro"),
+            Some("2026-09-28"),
+            None,
+        )
+        .unwrap();
+        add_prediction(
+            &conn,
+            "[thesis=stage-6] CB gold purchases stay > 800t/yr",
+            None,
+            Some("medium"),
+            Some(MACRO_CHECKPOINT_TIMEFRAME),
+            None,
+            Some("analyst-macro"),
+            Some("2026-09-28"),
+            None,
+        )
+        .unwrap();
+        add_prediction(
+            &conn,
+            "[thesis=stage-6] 10y real yields stay below 2%",
+            None,
+            Some("medium"),
+            Some(MACRO_CHECKPOINT_TIMEFRAME),
+            None,
+            Some("analyst-macro"),
+            Some("2026-09-28"),
+            None,
+        )
+        .unwrap();
+
+        // Pre-condition: no prior synthesis messages.
+        let before =
+            agent_messages::list_messages(&conn, Some("analyst-macro"), None, None, false, None, None, None)
+                .unwrap();
+        assert!(before.is_empty());
+
+        // Score the first checkpoint Wrong → must surface a re-eval message.
+        score_prediction(&conn, id1, "wrong", Some("DXY held above 95"), None).unwrap();
+
+        let after =
+            agent_messages::list_messages(&conn, Some("analyst-macro"), None, None, false, None, None, None)
+                .unwrap();
+        assert_eq!(after.len(), 1, "expected exactly one re-eval message");
+        let msg = &after[0];
+        assert_eq!(msg.to_agent.as_deref(), Some("analyst-evening"));
+        assert_eq!(msg.category.as_deref(), Some("macro-checkpoint-reeval"));
+        assert_eq!(msg.layer.as_deref(), Some("macro"));
+        assert!(
+            msg.content.contains("stage-6"),
+            "message must name parent thesis slug, got: {}",
+            msg.content
+        );
+        assert!(
+            msg.content.contains("1 of 3"),
+            "message must report 1 of 3 checkpoints failed, got: {}",
+            msg.content
+        );
+    }
+
+    #[test]
+    fn scoring_macro_checkpoint_correct_does_not_emit_reeval_message() {
+        let conn = db::open_in_memory();
+        let id = add_prediction(
+            &conn,
+            "[thesis=fourth-turning] Institutional approval ratings fall below 30%",
+            None,
+            Some("medium"),
+            Some(MACRO_CHECKPOINT_TIMEFRAME),
+            None,
+            Some("analyst-macro"),
+            Some("2026-09-28"),
+            None,
+        )
+        .unwrap();
+        score_prediction(&conn, id, "correct", None, None).unwrap();
+        let msgs =
+            agent_messages::list_messages(&conn, Some("analyst-macro"), None, None, false, None, None, None)
+                .unwrap();
+        assert!(msgs.is_empty(), "correct scoring must not surface a re-eval");
+    }
+
+    #[test]
+    fn scoring_macro_prediction_wrong_does_not_emit_reeval_message() {
+        let conn = db::open_in_memory();
+        // A multi-year structural macro call — NOT a checkpoint.
+        let id = add_prediction(
+            &conn,
+            "[thesis=de-dollarisation] By 2029 USD reserves fall under 50%",
+            None,
+            Some("medium"),
+            Some("macro"),
+            None,
+            Some("analyst-macro"),
+            Some("2029-01-01"),
+            None,
+        )
+        .unwrap();
+        score_prediction(&conn, id, "wrong", None, None).unwrap();
+        let msgs =
+            agent_messages::list_messages(&conn, Some("analyst-macro"), None, None, false, None, None, None)
+                .unwrap();
+        assert!(
+            msgs.is_empty(),
+            "scoring a `timeframe='macro'` row must NOT trigger checkpoint re-eval"
+        );
     }
 }

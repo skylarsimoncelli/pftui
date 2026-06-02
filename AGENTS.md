@@ -219,7 +219,7 @@ Contract for predictions:
 | `pftui journal scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
 | `pftui journal scenario signal add "SIGNAL" --scenario "NAME"` | Attach a tracked signal to a scenario |
 | `pftui journal scenario history "NAME" --limit N --json` | Show scenario probability history |
-| `pftui journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent] [--topic fed] [--source-article-id 123] [--lessons 218,240] [--override-cap]` | Add a prediction call for later scoring, optionally recording lesson IDs and news-source attribution. LOW analyst calls are capped at 5/hour unless `--override-cap` is passed |
+| `pftui journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low\|medium\|high\|macro\|macro-checkpoint] [--confidence 0.7] [--source-agent low-agent] [--topic fed] [--source-article-id 123] [--lessons 218,240] [--override-cap]` | Add a prediction call for later scoring, optionally recording lesson IDs and news-source attribution. LOW analyst calls are capped at 5/hour unless `--override-cap` is passed. `--timeframe macro-checkpoint` is reserved for falsifiable 90-day sub-claims attached to a multi-year macro thesis (claim MUST embed `[thesis=<slug>]`) |
 | `pftui journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
 | `pftui journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
 | `pftui journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
@@ -515,6 +515,33 @@ These agents do NOT message the user. They research, update the database, make p
 | **Medium Timeframe** | Daily (evening, before synthesis) | Central bank policy, geopolitical timelines, economic data trends, scenario tracking | `agents/routines/medium-timeframe-analyst.md` |
 | **High Timeframe** | 2x/week | Technology disruption, de-dollarisation, commodity supercycle, structural trends | `agents/routines/high-timeframe-analyst.md` |
 | **Macro Timeframe** | Weekly | Empire cycles (Dalio Big Cycle), generational theory (Fourth Turning), power metrics | `agents/routines/macro-timeframe-analyst.md` |
+
+### MACRO Falsifiable Checkpoints (`timeframe='macro-checkpoint'`)
+
+Multi-year MACRO predictions (Stage 6 currency debasement, Fourth Turning crisis-climax, de-dollarisation, Dalio composite, structural inflation) resolve too slowly to ever calibrate the MACRO layer from feedback. They are valuable structural calls but they cannot fail on a horizon the analyst lives on. Without an additional, scorable feedback loop, MACRO conviction drifts unchecked.
+
+The fix: on every weekly macro run, for every active thesis carrying meaningful conviction, the macro analyst MUST write **2-3 falsifiable 90-day checkpoints** alongside the multi-year call.
+
+Contract:
+
+- Timeframe: `macro-checkpoint` (a first-class value alongside `low|medium|high|macro`, accepted by `pftui journal prediction add --timeframe`).
+- Target date: `recorded_at + 90 days`.
+- Claim format: `[thesis=<slug>] By <date>, IF <observable leading indicator> is NOT <specific threshold>, my <thesis name> is degraded.`
+- Canonical thesis slugs (kebab-case): `stage-6`, `fourth-turning`, `de-dollarisation`, `dalio-composite`, `structural-inflation`. Mint a new slug for any additional thesis and stay consistent across runs so failed checkpoints aggregate to the right parent.
+- The leading indicator must be observable from data pftui already ingests; the threshold must be specific.
+- `timeframe='macro'` predictions stay as multi-year structural calls and remain uncalibrated by design.
+- `pftui analytics calibration --by-layer --json` accumulates `macro-checkpoint` as its OWN layer — it is not folded into `macro`. This is how the MACRO layer earns calibration over time.
+- When `pftui journal prediction score --id <N> --outcome wrong` runs against a `macro-checkpoint` row whose claim carries a `[thesis=<slug>]` tag, the scorer auto-inserts an `agent_messages` row with `category='macro-checkpoint-reeval'`, `layer='macro'`, `from='analyst-macro'`, `to='analyst-evening'`, and content like `"Macro thesis 'stage-6' has 1 of 3 checkpoint(s) failed (latest failure: prediction #N); analyst-macro should re-examine before next run."` Synthesis (evening analyst) surfaces these. The next macro run MUST read them and re-examine the flagged thesis before writing fresh views or convictions.
+
+Example:
+
+```bash
+TARGET="$(date -u -d '+90 days' +%Y-%m-%d 2>/dev/null || date -u -v +90d +%Y-%m-%d)"
+pftui journal prediction add \
+  --claim "[thesis=de-dollarisation] By $TARGET, IF central-bank gold purchases drop below 800t annualized, my de-dollarisation thesis is degraded" \
+  --timeframe macro-checkpoint --target-date "$TARGET" \
+  --conviction medium --confidence 0.55 --source-agent analyst-macro --topic geopolitics
+```
 
 ### Delivery Agents (message the user)
 
