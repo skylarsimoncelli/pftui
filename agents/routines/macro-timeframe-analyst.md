@@ -388,6 +388,38 @@ pftui journal prediction add "[structural cause from Dalio/4T framework] will [m
 
 Score any MACRO predictions that accumulated enough evidence. For macro predictions, evidence direction matters more than binary resolution.
 
+### Mandatory Falsifiable 90-Day Checkpoints (`timeframe='macro-checkpoint'`)
+
+Long-horizon macro calls (years to decades) cannot be falsified on a feedback cycle that improves the analyst. They must be paired with shorter-horizon, leading-indicator checkpoints that CAN be scored — otherwise the MACRO layer accumulates conviction without calibration.
+
+**For EVERY active multi-year macro thesis** (Stage 6 currency debasement, Fourth Turning crisis-climax, de-dollarisation, Dalio composite, structural inflation, and any other thesis carrying meaningful conviction), you MUST write **2-3 quarterly checkpoint predictions on a 90-day horizon** alongside the structural call.
+
+Format (the `[thesis=<slug>]` tag is mandatory — the scorer uses it to identify the parent thesis):
+
+> `[thesis=<slug>] By <recorded_at + 90 days>, IF <observable leading indicator> is NOT <specific threshold>, my <thesis name> is degraded.`
+
+Canonical thesis slugs (kebab-case, no spaces): `stage-6`, `fourth-turning`, `de-dollarisation`, `dalio-composite`, `structural-inflation`. Mint a new slug for any additional thesis and stay consistent across runs so failed checkpoints aggregate to the right parent.
+
+Write each checkpoint with `--timeframe macro-checkpoint` and `--target-date = today + 90 days`:
+
+```bash
+TARGET="$(date -u -d '+90 days' +%Y-%m-%d 2>/dev/null || date -u -v +90d +%Y-%m-%d)"
+pftui journal prediction add \
+  --claim "[thesis=de-dollarisation] By $TARGET, IF central-bank gold purchases drop below 800t annualized, my de-dollarisation thesis is degraded" \
+  --timeframe macro-checkpoint --target-date "$TARGET" \
+  --conviction medium --confidence 0.55 --source-agent analyst-macro \
+  --topic geopolitics --resolution-criteria "WGC quarterly CB gold purchase data, 4-quarter rolling sum"
+```
+
+Rules:
+- Existing `timeframe='macro'` predictions stay as multi-year structural calls (uncalibrated by design).
+- `timeframe='macro-checkpoint'` rows are the calibration substrate — they aggregate in `pftui analytics calibration --by-layer --json` as their own layer `macro-checkpoint`, NOT inside `macro`.
+- The leading indicator must be observable from data pftui already ingests (FRED, COT, WGC, sovereign reserves, prediction markets, news topics). If the indicator is not reachable, pick a different one.
+- The threshold must be a specific number, date, or boolean — not "elevated" or "weakening".
+- When `pftui journal prediction score --id <N> --outcome wrong` runs on a `macro-checkpoint` row, the scorer auto-emits an `agent_messages` row (`category='macro-checkpoint-reeval'`, `to='analyst-evening'`, `layer='macro'`) tagging the parent thesis. The next macro run MUST read those messages (`pftui agent message list --to analyst-evening --json | jq '.[] | select(.category=="macro-checkpoint-reeval")'`) and re-examine the flagged thesis before writing new views or convictions.
+
+Score any macro-checkpoints whose target date has passed using the same outcome vocabulary as other predictions (`correct|partial|wrong`).
+
 ## Output to Evening Analyst
 
 ```bash

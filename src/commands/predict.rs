@@ -52,9 +52,9 @@ fn resolve_timeframe_alias(value: &str) -> &str {
 
 fn validate_timeframe(value: &str) -> Result<()> {
     match value {
-        "low" | "medium" | "high" | "macro" => Ok(()),
+        "low" | "medium" | "high" | "macro" | "macro-checkpoint" => Ok(()),
         _ => bail!(
-            "invalid timeframe '{}'. Valid: low, medium, high, macro (aliases: short=low, long=high). Use --timeframe <value> or positional shorthand after the claim.",
+            "invalid timeframe '{}'. Valid: low, medium, high, macro, macro-checkpoint (aliases: short=low, long=high). Use --timeframe <value> or positional shorthand after the claim.",
             value
         ),
     }
@@ -395,12 +395,13 @@ pub fn run(
                         "low" => 0,
                         "medium" => 1,
                         "high" => 2,
-                        "macro" => 3,
-                        _ => 4,
+                        "macro-checkpoint" => 3,
+                        "macro" => 4,
+                        _ => 5,
                     });
                     for (tf, s) in &tf_entries {
                         println!(
-                            "    {:<8} — {}/{} scored, {:.1}% hit rate ({} correct, {} partial, {} wrong)",
+                            "    {:<16} — {}/{} scored, {:.1}% hit rate ({} correct, {} partial, {} wrong)",
                             tf, s.scored, s.total, s.hit_rate_pct, s.correct, s.partial, s.wrong
                         );
                     }

@@ -969,7 +969,7 @@ pub enum DataPredictionsCommand {
     },
     /// Prediction accuracy statistics — hit rate by conviction, timeframe, symbol, and agent
     Stats {
-        /// Filter by timeframe: low, medium, high, macro
+        /// Filter by timeframe: low, medium, high, macro, macro-checkpoint
         #[arg(long)]
         timeframe: Option<String>,
 
@@ -1001,7 +1001,7 @@ pub enum DataPredictionsCommand {
     },
     /// List unanswered/pending predictions awaiting scoring
     Unanswered {
-        /// Filter by timeframe: low, medium, high, macro
+        /// Filter by timeframe: low, medium, high, macro, macro-checkpoint
         #[arg(long)]
         timeframe: Option<String>,
 
@@ -1083,7 +1083,7 @@ pub enum DataPredictionsCommand {
     },
     /// Add a personal prediction (convenience alias for `journal prediction add`)
     #[command(
-        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`.\n\nTimeframe accepts: low, medium, high, macro (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\nUse either `--source-agent` or the shorter alias `--agent`.\nUse `--lessons` to record which structured lesson IDs informed the call.\nLOW analyst calls are capped at 5/hour unless `--override-cap` is passed.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD --lessons 218,240\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high --agent medium-agent\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
+        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`.\n\nTimeframe accepts: low, medium, high, macro, macro-checkpoint (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\nUse either `--source-agent` or the shorter alias `--agent`.\nUse `--lessons` to record which structured lesson IDs informed the call.\nLOW analyst calls are capped at 5/hour unless `--override-cap` is passed.\nMACRO-CHECKPOINT predictions must embed `[thesis=<slug>]` in the claim;\nscoring a checkpoint Wrong fires a parent-thesis re-eval message to synthesis.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD --lessons 218,240\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high --agent medium-agent\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n  pftui analytics predictions add --claim \"[thesis=de-dollarisation] CB gold > 800t by 2026-09-28\" --timeframe macro-checkpoint --agent analyst-macro --target-date 2026-09-28\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
     )]
     Add {
         /// The prediction claim text
@@ -1098,7 +1098,7 @@ pub enum DataPredictionsCommand {
         #[arg(long)]
         conviction: Option<String>,
 
-        /// Analytics timeframe: low, medium, high, macro (aliases: short=low, long=high)
+        /// Analytics timeframe: low, medium, high, macro, macro-checkpoint (aliases: short=low, long=high)
         #[arg(long)]
         timeframe: Option<String>,
 
@@ -2173,21 +2173,27 @@ pub enum JournalEntryCommand {
 
 #[derive(Subcommand)]
 pub enum JournalPredictionCommand {
-    /// Add a prediction. Timeframe accepts: low, medium, high, macro (aliases: short=low, long=high).
+    /// Add a prediction. Timeframe accepts: low, medium, high, macro, macro-checkpoint (aliases: short=low, long=high).
     /// LOW analyst calls are capped at 5/hour unless --override-cap is passed.
     /// Prefer --claim flag for the prediction text; positional form kept for backwards compatibility.
+    ///
+    /// MACRO-CHECKPOINT predictions are short-horizon (≈90-day) falsifiable sub-claims attached
+    /// to a multi-year MACRO thesis. The claim MUST embed `[thesis=<slug>]` so a failed
+    /// checkpoint can surface a parent-thesis re-evaluation message to synthesis.
     ///
     /// Examples:
     ///   pftui journal prediction add --claim "BTC above 70k" --timeframe short --confidence 0.7
     ///   pftui journal prediction add "BTC above 70k" --timeframe short --confidence 0.7
     ///   pftui journal prediction add "Gold to 3000" medium 0.8
+    ///   pftui journal prediction add --claim "[thesis=stage-6] By 2026-09-28 DXY above 95" \
+    ///     --timeframe macro-checkpoint --target-date 2026-09-28 --agent analyst-macro
     Add {
         /// The prediction claim text (positional, backwards-compatible)
         value: Option<String>,
         /// The prediction claim text (named flag, preferred)
         #[arg(long)]
         claim: Option<String>,
-        /// Timeframe (positional shorthand, backwards-compat): low|medium|high|macro|short|long
+        /// Timeframe (positional shorthand, backwards-compat): low|medium|high|macro|macro-checkpoint|short|long
         timeframe_pos: Option<String>,
         /// Confidence (positional shorthand): 0.0..=1.0
         confidence_pos: Option<f64>,
@@ -2265,7 +2271,7 @@ pub enum JournalPredictionCommand {
     },
     /// Prediction accuracy statistics: hit rate by conviction, timeframe, symbol, and agent
     Stats {
-        /// Filter by timeframe: low, medium, high, macro
+        /// Filter by timeframe: low, medium, high, macro, macro-checkpoint
         #[arg(long)]
         timeframe: Option<String>,
 

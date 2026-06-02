@@ -692,7 +692,12 @@ fn prediction_layer(prediction: &UserPrediction) -> Option<String> {
 
 fn normalize_layer(value: &str) -> Option<&'static str> {
     let v = value.trim().to_ascii_lowercase();
-    if v.contains("low") || v == "short" {
+    // Check macro-checkpoint BEFORE the generic `contains("macro")` rule so
+    // falsifiable shorter-horizon checkpoints accumulate as their own layer
+    // (`macro-checkpoint`) instead of being folded back into multi-year `macro`.
+    if v == "macro-checkpoint" || v.contains("macro-checkpoint") {
+        Some("macro-checkpoint")
+    } else if v.contains("low") || v == "short" {
         Some("low")
     } else if v.contains("medium") || v == "med" {
         Some("medium")
@@ -718,8 +723,9 @@ fn layer_order(layer: &str) -> u8 {
         "low" => 0,
         "medium" => 1,
         "high" => 2,
-        "macro" => 3,
-        _ => 4,
+        "macro-checkpoint" => 3,
+        "macro" => 4,
+        _ => 5,
     }
 }
 
