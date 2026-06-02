@@ -1019,7 +1019,7 @@ pub enum DataPredictionsCommand {
     },
     /// Link a prediction market contract to a pftui scenario. On each refresh, the contract's probability is auto-logged as a scenario history data point.
     #[command(
-        after_help = "Maps a Polymarket contract to a pftui scenario so that every\n`pftui data refresh` automatically logs the market probability as a\ndata point in the scenario's history timeline.\n\nUse --search to find contracts by keyword (matches question and event\ntitle). Use --scenario to specify the scenario name.\n\nExample:\n  pftui data predictions map --scenario \"US Recession 2026\" --search \"recession\"\n\nTo see all mappings:\n  pftui data predictions map --list\n\nSee also: `data predictions markets`, `analytics scenario list`,\n          `analytics calibration` (F55.5)"
+        after_help = "Maps a Polymarket contract to a pftui scenario so that every\n`pftui data refresh` automatically logs the market probability as a\ndata point in the scenario's history timeline.\n\nUse --search to find contracts by keyword (matches question and event\ntitle). Use --scenario to specify the scenario name.\n\nUse --auto-suggest to scan every active scenario and emit the top 3\nmapping candidates per scenario, scored by keyword overlap and category\nfit. Combine with --scenario to restrict the scan to one scenario.\n\nUse --contract-id (alias of --contract) to map a specific contract.\n\nExamples:\n  pftui data predictions map --auto-suggest\n  pftui data predictions map --auto-suggest --scenario \"US Recession 2026\"\n  pftui data predictions map --scenario \"US Recession 2026\" --contract-id 0xabc...\n  pftui data predictions map --scenario \"US Recession 2026\" --search \"recession\"\n\nTo see all mappings:\n  pftui data predictions map --list\n\nSee also: `data predictions markets`, `data predictions suggest-mappings`,\n          `analytics scenario list`, `analytics calibration` (F55.5)"
     )]
     Map {
         /// Scenario name to link (must match an existing scenario)
@@ -1030,13 +1030,17 @@ pub enum DataPredictionsCommand {
         #[arg(long)]
         search: Option<String>,
 
-        /// Specific contract_id to link (alternative to --search)
-        #[arg(long)]
+        /// Specific contract_id to link (alternative to --search). Alias: --contract-id
+        #[arg(long, visible_alias = "contract-id")]
         contract: Option<String>,
 
         /// List all existing scenario-contract mappings
         #[arg(long)]
         list: bool,
+
+        /// Auto-suggest top 3 mapping candidates per active scenario, scored by keyword overlap with Polymarket contract titles. Combine with --scenario to restrict to one scenario.
+        #[arg(long = "auto-suggest")]
+        auto_suggest: bool,
 
         /// Output as JSON
         #[arg(long)]
@@ -1195,6 +1199,37 @@ pub enum PortfolioTransactionCommand {
         paired: bool,
 
         /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Heuristically pair unpaired pre-deployment transactions.
+    ///
+    /// For each unpaired buy on a non-cash symbol, find the closest USD
+    /// sell within ±2 days and ±10% notional. Idempotent — only proposes
+    /// pairs where BOTH legs currently have `paired_tx_id = NULL`.
+    ///
+    /// EXAMPLES:
+    ///   pftui portfolio transaction repair-pairs --dry-run --json
+    ///   pftui portfolio transaction repair-pairs --confirm
+    ///   pftui portfolio transaction repair-pairs --skip 17 --confirm
+    #[command(name = "repair-pairs")]
+    RepairPairs {
+        /// Preview proposed pairs without mutating the database (default).
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        /// Apply proposed pairs to the database.
+        #[arg(long)]
+        confirm: bool,
+        /// Exclude a specific transaction id from pairing (repeatable).
+        #[arg(long = "skip")]
+        skip: Vec<i64>,
+        /// Maximum day delta for candidate sell (default: 2).
+        #[arg(long = "max-days", default_value_t = 2)]
+        max_days: i64,
+        /// Maximum notional delta percentage (default: 10.0).
+        #[arg(long = "max-notional-pct", default_value_t = 10.0)]
+        max_notional_pct: f64,
+        /// Output JSON
         #[arg(long)]
         json: bool,
     },
@@ -3951,6 +3986,12 @@ pub enum AnalyticsNewsSourcesCommand {
         /// Restrict to predictions scored in the last N days
         #[arg(long = "window-days")]
         window_days: Option<i64>,
+        /// Emit an explicit notice that historical predictions before the
+        /// `source_article_id` column landed are NOT retroactively attributed
+        /// to a source. The accuracy ledger populates forward from feature
+        /// deployment only.
+        #[arg(long = "include-pre-deployment")]
+        include_pre_deployment: bool,
         #[arg(long)]
         json: bool,
     },
@@ -5821,6 +5862,120 @@ mod tests {
             }
             _ => panic!("expected portfolio transaction remove command"),
         }
+    }
+
+    #[test]
+    fn parses_portfolio_transaction_repair_pairs_dry_run() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "transaction",
+            "repair-pairs",
+            "--dry-run",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command:
+                    Some(PortfolioCommand::Transaction {
+                        command:
+                            PortfolioTransactionCommand::RepairPairs {
+                                dry_run,
+                                confirm,
+                                skip,
+                                max_days,
+                                max_notional_pct,
+                                json,
+                            },
+                    }),
+            }) => {
+                assert!(dry_run);
+                assert!(!confirm);
+                assert!(skip.is_empty());
+                assert_eq!(max_days, 2);
+                assert!((max_notional_pct - 10.0).abs() < f64::EPSILON);
+                assert!(json);
+            }
+            _ => panic!("expected portfolio transaction repair-pairs command"),
+        }
+    }
+
+    #[test]
+    fn parses_portfolio_transaction_repair_pairs_confirm_with_skip() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "transaction",
+            "repair-pairs",
+            "--confirm",
+            "--skip",
+            "17",
+            "--skip",
+            "42",
+            "--max-days",
+            "3",
+            "--max-notional-pct",
+            "15.0",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command:
+                    Some(PortfolioCommand::Transaction {
+                        command:
+                            PortfolioTransactionCommand::RepairPairs {
+                                dry_run,
+                                confirm,
+                                skip,
+                                max_days,
+                                max_notional_pct,
+                                json,
+                            },
+                    }),
+            }) => {
+                assert!(!dry_run);
+                assert!(confirm);
+                assert_eq!(skip, vec![17, 42]);
+                assert_eq!(max_days, 3);
+                assert!((max_notional_pct - 15.0).abs() < f64::EPSILON);
+                assert!(!json);
+            }
+            _ => panic!("expected portfolio transaction repair-pairs command"),
+        }
+    }
+
+    #[test]
+    fn parses_analytics_news_sources_accuracy_include_pre_deployment() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "news-sources",
+            "accuracy",
+            "--window-days",
+            "365",
+            "--include-pre-deployment",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::NewsSources {
+                    command:
+                        AnalyticsNewsSourcesCommand::Accuracy {
+                            window_days,
+                            include_pre_deployment,
+                            json,
+                            ..
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics news-sources accuracy command");
+        };
+        assert_eq!(window_days, Some(365));
+        assert!(include_pre_deployment);
+        assert!(json);
     }
 
     #[test]
@@ -9702,12 +9857,14 @@ mod tests {
                 search,
                 contract,
                 list,
+                auto_suggest,
                 json,
             }) => {
                 assert_eq!(scenario.as_deref(), Some("US Recession 2026"));
                 assert_eq!(search.as_deref(), Some("recession"));
                 assert!(contract.is_none());
                 assert!(!list);
+                assert!(!auto_suggest);
                 assert!(!json);
             }
             _ => panic!("expected map subcommand"),
@@ -9744,6 +9901,73 @@ mod tests {
                 assert_eq!(scenario.as_deref(), Some("Fed Cut April"));
                 assert_eq!(contract.as_deref(), Some("0xabc123"));
                 assert!(json);
+            }
+            _ => panic!("expected map subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_map_auto_suggest() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "map",
+            "--auto-suggest",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Map {
+                auto_suggest,
+                json,
+                scenario,
+                ..
+            }) => {
+                assert!(auto_suggest);
+                assert!(json);
+                assert!(scenario.is_none());
+            }
+            _ => panic!("expected map subcommand"),
+        }
+    }
+
+    #[test]
+    fn parse_data_predictions_map_contract_id_alias() {
+        // --contract-id is a visible alias for --contract per the TODO contract
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "map",
+            "--scenario",
+            "Fed Cut April",
+            "--contract-id",
+            "0xabc123",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Map {
+                scenario,
+                contract,
+                auto_suggest,
+                ..
+            }) => {
+                assert_eq!(scenario.as_deref(), Some("Fed Cut April"));
+                assert_eq!(contract.as_deref(), Some("0xabc123"));
+                assert!(!auto_suggest);
             }
             _ => panic!("expected map subcommand"),
         }

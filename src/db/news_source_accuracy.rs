@@ -1,3 +1,28 @@
+//! Per-source news prediction accuracy ledger.
+//!
+//! # Forward-only contract
+//!
+//! `news_source_accuracy` populates strictly forward from the moment the
+//! `source_article_id` column landed on `user_predictions`. Historical
+//! predictions written before that schema migration are NOT retroactively
+//! attributed to a source — fuzzy claim-vs-article matching is unreliable
+//! at scale and would silently corrupt the per-source hit-rate weights
+//! that downstream lesson-application reads.
+//!
+//! For an operator audit of older windows, run:
+//!
+//! ```text
+//! pftui analytics news-sources accuracy --window-days 365 \
+//!     --include-pre-deployment --json
+//! ```
+//!
+//! That flag emits a `pre_deployment_notice` field naming this contract so
+//! agents do not silently interpret sparse historical rows as "low source
+//! activity" when the truth is "this signal did not exist yet."
+//!
+//! See `pftui analytics news-sources rebuild-accuracy` for the idempotent
+//! re-replay of the post-deployment forward window.
+
 use anyhow::{bail, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
