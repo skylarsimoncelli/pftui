@@ -163,6 +163,7 @@ fn run_agent_journal(
                 inline,
                 preflight_threshold,
                 layer,
+                with_adversary,
                 json,
             } => {
                 let text = claim.or(value).ok_or_else(|| {
@@ -195,6 +196,26 @@ fn run_agent_journal(
                     accept_preflight,
                     inline,
                     preflight_threshold,
+                    with_adversary,
+                    json,
+                )
+            }
+            cli::JournalPredictionCommand::Adversary {
+                claim,
+                symbol,
+                timeframe,
+                conviction,
+                layer,
+                json,
+            } => {
+                let effective_layer = layer.clone().or_else(|| timeframe.clone());
+                commands::predict::run_adversary(
+                    backend,
+                    &claim,
+                    symbol.as_deref(),
+                    timeframe.as_deref(),
+                    conviction.as_deref(),
+                    effective_layer.as_deref(),
                     json,
                 )
             }

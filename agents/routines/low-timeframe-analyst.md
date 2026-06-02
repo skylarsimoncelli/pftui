@@ -252,13 +252,14 @@ Example prediction format:
 - "[Event/data] causes [effect on asset] today" (confidence: 0.7)
 - "[Technical level hold/break] leads to [momentum outcome]" (confidence: 0.5)
 
-Before every `prediction add`, run `prediction preflight --json` to surface the substrate's view of the draft (cluster, calibration, applicable fragments, top-3 similar past calls, co-failing cluster, scenario links). Read the preflight output, then either:
+Before every `prediction add`, run BOTH `prediction preflight --json` and `prediction adversary --json` to surface (a) the substrate's view of the draft (cluster, calibration, applicable fragments, top-3 similar past calls, co-failing cluster, scenario links) and (b) the deterministic "case against" the claim (anti-pattern fragments, top-3 lessons from the highest co-failing cluster, derived falsification triggers). Read both outputs, then either:
 - Edit the claim or confidence in response to the findings, or
-- Run `prediction add` without `--skip-preflight` and pass `--accept-preflight --inline` only when you have explicitly considered the warnings.
+- Run `prediction add` without `--skip-preflight` and pass `--accept-preflight --inline --with-adversary` only when you have explicitly considered the warnings. `--with-adversary` persists the adversary view to `adversary_views` linked to the new prediction id and appends a compact `[adversary] ...` summary to the prediction's resolution_criteria.
 
 ```bash
 pftui journal prediction preflight --claim "[cause] will [effect] today" --symbol [SYM] --timeframe low --conviction [level] --layer low --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --json
-pftui journal prediction add --claim "[cause] will [effect] today" --symbol [SYM] --target-date $(date +%Y-%m-%d) --conviction [level] --timeframe low --confidence [0.X] --source-agent low-agent --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]" --accept-preflight --inline
+pftui journal prediction adversary --claim "[cause] will [effect] today" --symbol [SYM] --timeframe low --conviction [level] --layer low --json
+pftui journal prediction add --claim "[cause] will [effect] today" --symbol [SYM] --target-date $(date +%Y-%m-%d) --conviction [level] --timeframe low --confidence [0.X] --source-agent low-agent --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]" --accept-preflight --inline --with-adversary
 ```
 If a sixth LOW prediction is genuinely necessary because a new high-mechanism setup appeared, pass `--override-cap` and explain the mechanism in the claim or notes.
 

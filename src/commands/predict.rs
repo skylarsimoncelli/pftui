@@ -2157,6 +2157,7 @@ pub fn run_add_with_preflight(
     accept_preflight: bool,
     inline: bool,
     preflight_threshold: Option<u32>,
+    with_adversary: bool,
     json_output: bool,
 ) -> Result<()> {
     // Validate inputs early so callers see the same errors regardless of
@@ -2237,13 +2238,43 @@ pub fn run_add_with_preflight(
         }
     }
 
-    let resolution_with_inline: Option<String> = match (resolution_criteria, inline_block.as_ref())
+    // Optional write-time adversary composition. Persisted AFTER the
+    // prediction is saved so the `adversary_views.prediction_id` FK lands
+    // on a real row. We compute the adversary view here (pre-save) so its
+    // short summary can be appended to `resolution_criteria` alongside the
+    // preflight inline block, keeping both views part of the prediction's
+    // permanent record.
+    let mut adversary_view_for_persist: Option<crate::db::adversary::AdversaryView> = None;
+    let mut adversary_inline_summary: Option<String> = None;
+    if with_adversary {
+        let conn = backend
+            .sqlite_native()
+            .ok_or_else(|| anyhow::anyhow!("--with-adversary requires the SQLite backend"))?;
+        let draft = crate::db::adversary::AdversaryDraft {
+            claim: claim.to_string(),
+            symbol: symbol.map(|s| s.to_string()),
+            timeframe: resolved_timeframe.clone(),
+            conviction: conviction.map(|s| s.to_string()),
+            layer: layer.map(|s| s.to_string()).or_else(|| resolved_timeframe.clone()),
+        };
+        let view = crate::db::adversary::compose(conn, &draft)?;
+        adversary_inline_summary = Some(view.inline_summary());
+        adversary_view_for_persist = Some(view);
+    }
+
+    let mut resolution_with_inline: Option<String> = match (resolution_criteria, inline_block.as_ref())
     {
         (Some(existing), Some(block)) => Some(format!("{}\n{}", existing, block)),
         (Some(existing), None) => Some(existing.to_string()),
         (None, Some(block)) => Some(block.clone()),
         (None, None) => None,
     };
+    if let Some(adv_summary) = adversary_inline_summary.as_ref() {
+        resolution_with_inline = Some(match resolution_with_inline {
+            Some(existing) => format!("{}\n{}", existing, adv_summary),
+            None => adv_summary.clone(),
+        });
+    }
 
     enforce_low_prediction_cap(
         backend,
@@ -2267,13 +2298,94 @@ pub fn run_add_with_preflight(
         source_article_id,
     )?;
 
+    let mut persisted_adversary_view_id: Option<i64> = None;
+    if let Some(view) = adversary_view_for_persist.as_ref() {
+        let conn = backend
+            .sqlite_native()
+            .ok_or_else(|| anyhow::anyhow!("--with-adversary requires the SQLite backend"))?;
+        let cluster_key = view
+            .cluster_key
+            .clone()
+            .unwrap_or_else(|| "unclassified".to_string());
+        let anti_pattern_args_json = serde_json::to_string(&view.anti_pattern_arguments)?;
+        let cofailure_warnings_json = serde_json::to_string(&view.cofailure_warnings)?;
+        let falsification_triggers_json = serde_json::to_string(&view.falsification_triggers)?;
+        let adversary_id = crate::db::adversary_views::insert(
+            conn,
+            Some(new_id),
+            &cluster_key,
+            &anti_pattern_args_json,
+            &cofailure_warnings_json,
+            &falsification_triggers_json,
+        )?;
+        persisted_adversary_view_id = Some(adversary_id);
+    }
+
     if json_output {
         let rows = user_predictions::list_predictions_backend(backend, None, None, None, None)?;
         if let Some(row) = rows.into_iter().find(|r| r.id == new_id) {
-            println!("{}", serde_json::to_string_pretty(&row)?);
+            let payload = serde_json::json!({
+                "prediction": row,
+                "adversary_view_id": persisted_adversary_view_id,
+                "adversary_view": adversary_view_for_persist,
+            });
+            println!("{}", serde_json::to_string_pretty(&payload)?);
         }
     } else {
         println!("Added prediction #{}", new_id);
+        if let Some(adv_id) = persisted_adversary_view_id {
+            println!("  + adversary_view #{} persisted", adv_id);
+        }
+    }
+    Ok(())
+}
+
+/// Compose and print the write-time adversary view for the supplied draft.
+/// Does not persist — callers that want persistence should use
+/// `prediction add --with-adversary`.
+#[allow(clippy::too_many_arguments)]
+pub fn run_adversary(
+    backend: &BackendConnection,
+    claim: &str,
+    symbol: Option<&str>,
+    timeframe: Option<&str>,
+    conviction: Option<&str>,
+    layer: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let conn = backend
+        .sqlite_native()
+        .ok_or_else(|| anyhow::anyhow!("prediction adversary requires the SQLite backend"))?;
+    let resolved_timeframe = match timeframe {
+        Some(tf) => Some(normalize_timeframe(tf)?),
+        None => None,
+    };
+    if let Some(c) = conviction {
+        validate_conviction(c)?;
+    }
+    let resolved_layer = layer.map(|s| s.to_string()).or_else(|| resolved_timeframe.clone());
+    let draft = crate::db::adversary::AdversaryDraft {
+        claim: claim.to_string(),
+        symbol: symbol.map(|s| s.to_string()),
+        timeframe: resolved_timeframe,
+        conviction: conviction.map(|s| s.to_string()),
+        layer: resolved_layer,
+    };
+    let view = crate::db::adversary::compose(conn, &draft)?;
+
+    if json_output {
+        // Spec: output a single JSON object with the three fields.
+        let payload = serde_json::json!({
+            "cluster_key": view.cluster_key,
+            "anti_pattern_arguments": view.anti_pattern_arguments,
+            "cofailure_warnings": view.cofailure_warnings,
+            "falsification_triggers": view.falsification_triggers,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+    for line in view.pretty_lines() {
+        println!("{}", line);
     }
     Ok(())
 }
@@ -3209,6 +3321,7 @@ mod tests {
             false, // accept_preflight
             false, // inline
             None,  // threshold (default 50)
+            false, // with_adversary
             false,
         );
         let err = result.unwrap_err();
@@ -3239,7 +3352,8 @@ mod tests {
             false, // accept_preflight
             false, // inline
             None,
-            true, // json (suppresses pretty)
+            false, // with_adversary
+            true,  // json (suppresses pretty)
         );
         assert!(result.is_ok(), "skip-preflight must bypass abort: {result:?}");
     }
@@ -3268,6 +3382,7 @@ mod tests {
             true,  // accept_preflight
             true,  // inline -> resolution_criteria appended
             None,
+            false, // with_adversary
             true,
         );
         assert!(result.is_ok(), "accept-preflight must commit: {result:?}");
@@ -3302,8 +3417,133 @@ mod tests {
             false,
             false,
             None,
+            false, // with_adversary
             true,
         );
         assert!(result.is_ok(), "low-score claim must commit: {result:?}");
+    }
+
+    #[test]
+    fn with_adversary_flag_persists_adversary_view_and_appends_inline_summary() {
+        // Seed substrate so the adversary view has anti-pattern + co-failure
+        // content to surface.
+        let conn = db::open_in_memory();
+        crate::db::reasoning_fragments::upsert_fragment(
+            &conn,
+            "options-gamma-pinning",
+            "Round-number strikes pin price intraday when OI > 50k",
+            "anti-pattern",
+            "options",
+            "high",
+            Some("OI at round strike > 50_000"),
+            false,
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, topic, outcome, lessons_applied) VALUES ('stub', 'SPY', 'medium', 'low', 'equities', 'pending', '[]')",
+            [],
+        )
+        .unwrap();
+        let pid: i64 = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO prediction_lessons (prediction_id, miss_type, what_predicted, what_happened, why_wrong, signal_misread, cluster_key)
+             VALUES (?1, 'directional', 'a', 'b', 'pinned at strike', NULL, 'options_gamma_pinning')",
+            rusqlite::params![pid],
+        )
+        .unwrap();
+        let lid: i64 = conn.last_insert_rowid();
+        crate::db::reasoning_fragments::upsert_edge(
+            &conn,
+            lid,
+            "options-gamma-pinning",
+            "primary",
+        )
+        .unwrap();
+        // Co-failure: tight_threshold_close_miss with a lesson on that side.
+        crate::db::failure_correlations::upsert(
+            &conn,
+            "options_gamma_pinning",
+            "tight_threshold_close_miss",
+            4,
+            6,
+            8,
+            0.66,
+            7,
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, topic, outcome, lessons_applied) VALUES ('stub2', 'SPY', 'medium', 'low', 'equities', 'pending', '[]')",
+            [],
+        )
+        .unwrap();
+        let pid2: i64 = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO prediction_lessons (prediction_id, miss_type, what_predicted, what_happened, why_wrong, signal_misread, cluster_key)
+             VALUES (?1, 'directional', 'a', 'b', 'close pinned within 0.5xATR', NULL, 'tight_threshold_close_miss')",
+            rusqlite::params![pid2],
+        )
+        .unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        let result = run_add_with_preflight(
+            &backend,
+            "SPY gamma pin at 700 by 0dte expiry",
+            Some("SPY"),
+            Some("medium"),
+            Some("low"),
+            Some(0.6),
+            Some("low-agent"),
+            None,
+            None,
+            None,
+            Some("equities"),
+            None,
+            true, // override_cap so the cap path doesn't get in the way
+            Some("low"),
+            true,  // skip_preflight so the adversary path is exercised in isolation
+            false, // accept_preflight
+            false, // inline (preflight)
+            None,
+            true,  // with_adversary
+            false, // pretty output
+        );
+        assert!(result.is_ok(), "with-adversary must commit: {result:?}");
+
+        // Find the newly inserted prediction.
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let saved = rows
+            .iter()
+            .find(|r| r.claim.contains("SPY gamma pin at 700"))
+            .expect("expected prediction row");
+        let crit = saved.resolution_criteria.clone().unwrap_or_default();
+        assert!(
+            crit.contains("[adversary]"),
+            "expected inline adversary block in resolution_criteria, got: {crit}"
+        );
+
+        // adversary_views row persisted and linked to the new prediction id.
+        let conn = backend.sqlite_native().unwrap();
+        let views = crate::db::adversary_views::list_for_prediction(conn, saved.id).unwrap();
+        assert_eq!(views.len(), 1, "expected one adversary_views row");
+        let view = &views[0];
+        assert_eq!(view.cluster_key, "options_gamma_pinning");
+        assert!(
+            view.anti_pattern_arguments.contains("options-gamma-pinning"),
+            "anti_pattern_arguments missing fragment id: {}",
+            view.anti_pattern_arguments
+        );
+        assert!(
+            view.cofailure_warnings.contains("tight_threshold_close_miss"),
+            "cofailure_warnings missing cluster: {}",
+            view.cofailure_warnings
+        );
+        assert!(
+            !view.falsification_triggers.is_empty()
+                && view.falsification_triggers != "[]",
+            "expected non-empty falsification_triggers, got: {}",
+            view.falsification_triggers
+        );
     }
 }

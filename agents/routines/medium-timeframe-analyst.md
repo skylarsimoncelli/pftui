@@ -301,11 +301,12 @@ State how backtest results influence this cycle's predictions.
 
 Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If a specific lesson changes, narrows, or blocks a new call, carry its lesson ID into the prediction with `--lessons`. If no lesson applies, omit the flag.
 
-Make 3-5 cause-and-effect predictions for the next 1-4 weeks. Run the pre-flight check first to surface the substrate's view of the draft, then commit only with `--accept-preflight --inline` after reading the findings.
+Make 3-5 cause-and-effect predictions for the next 1-4 weeks. Run BOTH the pre-flight check and the adversary composer first to surface the substrate's view of the draft AND the deterministic "case against" the claim (anti-pattern fragments, top-3 lessons from the highest co-failing cluster, falsification triggers). Then commit with `--accept-preflight --inline --with-adversary` after reading the findings; `--with-adversary` persists the adversary view to `adversary_views` linked to the new prediction id.
 
 ```bash
 pftui journal prediction preflight --claim "[cause] will [effect] [timeframe]" --symbol [SYM] --timeframe medium --conviction [level] --layer medium --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --json
-pftui journal prediction add --claim "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level] --timeframe medium --confidence [0.X] --source-agent medium-agent --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]" --accept-preflight --inline
+pftui journal prediction adversary --claim "[cause] will [effect] [timeframe]" --symbol [SYM] --timeframe medium --conviction [level] --layer medium --json
+pftui journal prediction add --claim "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level] --timeframe medium --confidence [0.X] --source-agent medium-agent --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]" --accept-preflight --inline --with-adversary
 ```
 
 ## Output to Evening Analyst
