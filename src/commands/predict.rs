@@ -2124,6 +2124,15 @@ fn render_preflight_pretty(findings: &crate::db::preflight::PreflightFindings) {
         );
         println!("    excerpt: {}", rule.claim_excerpt);
     }
+    if !findings.thesis_chains.is_empty() {
+        println!("  thesis_chains (touching this symbol):");
+        for c in &findings.thesis_chains {
+            println!(
+                "    - #{} [{}] {} --{}--> {}",
+                c.id, c.current_state, c.antecedent_text, c.relation, c.consequent_text,
+            );
+        }
+    }
 }
 
 /// Add a prediction with the auto-preflight gate. Wraps the legacy add path
