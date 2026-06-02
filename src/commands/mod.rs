@@ -41,6 +41,7 @@ pub mod evening_brief;
 pub mod export;
 pub mod fear_greed;
 pub mod fedwatch;
+pub mod flows;
 pub mod futures;
 pub mod global;
 pub mod guidance;

@@ -666,6 +666,37 @@ pub enum DataCommand {
         #[command(subcommand)]
         command: DataRealYieldsCommand,
     },
+    /// Capital flow tracking: ETF creation/redemption, 13F flows, crypto exchange flows (F59 scaffold)
+    #[command(after_help = "Capital-flows provider scaffold. Real ETF/13F data requires a paid\nprovider; the default `noop` provider returns zero flows so the\nschema, CLI, and DB plumbing stay in place. Select a provider via\nthe `PFTUI_FLOWS_PROVIDER` env var (`noop`, `etf_com_csv`, `sec_edgar_13f`).\n\nExamples:\n  pftui data flows refresh --json\n  pftui data flows refresh --asset SPY --json\n  pftui data flows show --since 30d --json\n  pftui data flows show --asset BTC --json")]
+    Flows {
+        #[command(subcommand)]
+        command: DataFlowsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DataFlowsCommand {
+    /// Refresh capital flows from the configured provider (env: PFTUI_FLOWS_PROVIDER)
+    Refresh {
+        /// Optional asset filter (e.g. SPY, BTC)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show cached capital flow rows
+    Show {
+        /// Optional asset filter (e.g. SPY, BTC)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Lookback window: NNd, NNw, NNm, or YYYY-MM-DD
+        #[arg(long)]
+        since: Option<String>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -4893,6 +4924,25 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
     Adversary {
         #[command(subcommand)]
         command: AnalyticsAdversaryCommand,
+    },
+    /// Capital flow aggregates: rolling-window net flow and top inflow/outflow per asset (F59 scaffold)
+    #[command(after_help = "Aggregates rows from the `capital_flows` table over a rolling\nwindow. Outflows and redemptions are signed negative.\n\nExamples:\n  pftui analytics flows summary --json\n  pftui analytics flows summary --since 30d --json\n\nSee also: pftui data flows refresh, pftui data flows show")]
+    Flows {
+        #[command(subcommand)]
+        command: AnalyticsFlowsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsFlowsCommand {
+    /// Per-asset rolling-window aggregate (net flow, top inflow/outflow)
+    Summary {
+        /// Lookback window: NNd, NNw, NNm, or YYYY-MM-DD. Default 7d.
+        #[arg(long, default_value = "7d")]
+        since: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
