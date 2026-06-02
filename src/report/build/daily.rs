@@ -90,6 +90,21 @@ pub struct BuildContext {
     /// assembler from `pftui analytics backtest layer-bias` when the regime
     /// classifier has recorded a non-neutral regime for the current day.
     pub private_regime_conditional: Option<PrivateRegimeConditionalSummary>,
+    /// 7-day rolling recommendation hit rate, surfaced in the public
+    /// Methodology section so the report carries its own accuracy
+    /// disclosure. Populated by `BuildContext::load` from
+    /// `recommendation_outcomes`; `None` means insufficient scored
+    /// outcomes (or no `recommendations` table on the active backend).
+    pub recommendation_accuracy_7d: Option<RecommendationAccuracySummary>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecommendationAccuracySummary {
+    pub window_days: i64,
+    pub scored: u32,
+    pub hits: u32,
+    pub hit_rate_pct: f64,
+    pub avg_score: f64,
 }
 
 /// Compact regime-aware calibration prior emitted by the Self-Retrospective
@@ -801,9 +816,23 @@ impl BuildContext {
     /// section renderers degrade to their documented empty-state output. The
     /// richer per-source loaders are tracked as separate TODO items so each
     /// landing stays focused.
-    pub fn load(_backend: &BackendConnection, report_date: &str) -> Result<Self> {
+    pub fn load(backend: &BackendConnection, report_date: &str) -> Result<Self> {
+        let recommendation_accuracy_7d = backend
+            .sqlite_native()
+            .and_then(|conn| {
+                crate::db::recommendations::rolling_hit_rate(conn, report_date, 7, 0.0).ok()
+            })
+            .flatten()
+            .map(|r| RecommendationAccuracySummary {
+                window_days: r.window_days,
+                scored: r.scored,
+                hits: r.hits,
+                hit_rate_pct: r.hit_rate_pct,
+                avg_score: r.avg_score,
+            });
         Ok(BuildContext {
             report_date: Some(report_date.to_string()),
+            recommendation_accuracy_7d,
             ..BuildContext::default()
         })
     }
@@ -1029,6 +1058,78 @@ pub fn assemble_private(ctx: &BuildContext) -> Result<String> {
     assemble_markdown(ctx, &plan)
 }
 
+/// Same as [`assemble_private`] but, before rendering, persists any decision
+/// cards to the `recommendations` table and annotates the rendered
+/// `private_decisions_pending` section with `<!-- rec_id: N -->` markers so
+/// every card resolves to a stable database row.
+pub fn assemble_private_with_persist(
+    ctx: &BuildContext,
+    backend: &crate::db::backend::BackendConnection,
+    report_date: &str,
+) -> Result<String> {
+    let cards = crate::report::sections::private_decisions_pending::build_cards(ctx);
+    let mut annotated = cards.clone();
+    if let Some(conn) = backend.sqlite_native() {
+        for card in annotated.iter_mut() {
+            let id = crate::db::recommendations::upsert_recommendation(
+                conn,
+                &crate::db::recommendations::RecommendationInsert {
+                    report_date,
+                    asset: Some(card.symbol.as_str()),
+                    recommendation_type: card.recommendation_type.as_str(),
+                    urgency: card.urgency.as_str(),
+                    rationale_summary: Some(card.context_lines.join(" | ").as_str()),
+                },
+            )?;
+            card.rec_id = Some(id);
+        }
+    }
+    let plan = private_section_plan();
+    let mut parts = Vec::with_capacity(plan.len());
+    for spec in plan.iter() {
+        let body = if spec.name == "private_decisions_pending" {
+            crate::report::sections::private_decisions_pending::render_private_decisions_pending_with_cards(&annotated)
+        } else {
+            render_section(spec.name, ctx)
+                .with_context(|| format!("failed to render section {}", spec.name))?
+        };
+        parts.push(body);
+    }
+    Ok(parts.join("\n\n"))
+}
+
+/// Persist every decision card derived from the context as a `recommendations`
+/// row. Idempotent: if a `(report_date, asset, recommendation_type)` row
+/// already exists, its id is returned without modification. The returned
+/// vector is parallel to the card order.
+pub fn persist_recommendations_from_context(
+    backend: &crate::db::backend::BackendConnection,
+    ctx: &BuildContext,
+    report_date: &str,
+) -> Result<Vec<i64>> {
+    let conn = match backend.sqlite_native() {
+        Some(c) => c,
+        None => return Ok(Vec::new()),
+    };
+    let cards = crate::report::sections::private_decisions_pending::build_cards(ctx);
+    let mut ids = Vec::with_capacity(cards.len());
+    for card in &cards {
+        let rationale = card.context_lines.join(" | ");
+        let id = crate::db::recommendations::upsert_recommendation(
+            conn,
+            &crate::db::recommendations::RecommendationInsert {
+                report_date,
+                asset: Some(card.symbol.as_str()),
+                recommendation_type: card.recommendation_type.as_str(),
+                urgency: card.urgency.as_str(),
+                rationale_summary: Some(rationale.as_str()),
+            },
+        )?;
+        ids.push(id);
+    }
+    Ok(ids)
+}
+
 /// Default public output directory: `<HOME>/pftui/reports`.
 pub fn default_public_out_dir() -> PathBuf {
     if let Some(home) = dirs::home_dir() {
@@ -1157,6 +1258,54 @@ pub fn render_dry_run(
 }
 
 /// Assemble + write the daily report(s) for the requested mode.
+///
+/// When `backend` is supplied AND points at a SQLite store, the private
+/// assembly persists each derived decision card to the `recommendations`
+/// table and inlines a `<!-- rec_id: N -->` marker per card. This is the
+/// mechanism that drives the Recommendation → action → outcome chain.
+pub fn assemble_with_backend(
+    ctx: &BuildContext,
+    mode: BuildMode,
+    date: &str,
+    public_out_dir: Option<&Path>,
+    private_out_dir: Option<&Path>,
+    backend: Option<&crate::db::backend::BackendConnection>,
+) -> Result<AssemblyOutcome> {
+    let plan = plan_assembly(mode, date, public_out_dir, private_out_dir);
+    let mut outcome = AssemblyOutcome {
+        public_written: None,
+        private_written: None,
+        bytes_written: 0,
+    };
+    if let Some(public_path) = plan.public_path.as_ref() {
+        let body = assemble_public(ctx)?;
+        if let Some(parent) = public_path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create public out-dir {}", parent.display()))?;
+        }
+        fs::write(public_path, &body)
+            .with_context(|| format!("failed to write {}", public_path.display()))?;
+        outcome.bytes_written += body.len();
+        outcome.public_written = Some(public_path.clone());
+    }
+    if let Some(private_path) = plan.private_path.as_ref() {
+        let body = match backend {
+            Some(b) => assemble_private_with_persist(ctx, b, date)?,
+            None => assemble_private(ctx)?,
+        };
+        if let Some(parent) = private_path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("failed to create private out-dir {}", parent.display())
+            })?;
+        }
+        fs::write(private_path, &body)
+            .with_context(|| format!("failed to write {}", private_path.display()))?;
+        outcome.bytes_written += body.len();
+        outcome.private_written = Some(private_path.clone());
+    }
+    Ok(outcome)
+}
+
 pub fn assemble(
     ctx: &BuildContext,
     mode: BuildMode,

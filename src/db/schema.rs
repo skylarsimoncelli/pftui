@@ -1626,6 +1626,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     crate::db::calibration_adjustments::ensure_table(conn)?;
     crate::db::failure_correlations::ensure_table(conn)?;
     crate::db::operator_replies::ensure_table(conn)?;
+    crate::db::recommendations::ensure_table(conn)?;
     crate::db::prediction_falsification_rules::ensure_table(conn)?;
     crate::db::regime_history::ensure_table(conn)?;
 

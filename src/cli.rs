@@ -4765,6 +4765,81 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         #[arg(long)]
         json: bool,
     },
+
+    /// Recommendation → action → outcome chain: list, score, accuracy, retroactive linking
+    #[command(
+        name = "recommendations",
+        after_help = "Closes the loop between system-generated decision cards, the operator's\nreply, the resulting transaction, and the price action that follows.\n\nSubcommands:\n  list                List recommendations with optional filters\n  score               Compute outcome scores from price_history\n  accuracy            Hit-rate breakdown by recommendation type\n  link                Manually link a reply or transaction to a recommendation\n  relink-historical   Retroactively link existing operator_replies and transactions\n\nExamples:\n  pftui analytics recommendations list --asset BTC --json\n  pftui analytics recommendations score --all --horizon 30 --json\n  pftui analytics recommendations score --id 42 --horizon 14 --json\n  pftui analytics recommendations accuracy --type add --since 90d --json\n  pftui analytics recommendations relink-historical --json"
+    )]
+    Recommendations {
+        #[command(subcommand)]
+        command: AnalyticsRecommendationsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsRecommendationsCommand {
+    /// List recommendations with optional filters.
+    List {
+        #[arg(long, help = "Filter by report date (YYYY-MM-DD).")]
+        date: Option<String>,
+        #[arg(long, help = "Filter by asset (e.g. BTC, GLD).")]
+        asset: Option<String>,
+        #[arg(long = "type", help = "Filter by recommendation type (add/trim/hold/...).")]
+        recommendation_type: Option<String>,
+        #[arg(long, help = "Filter to recommendations on or after this date (YYYY-MM-DD or e.g. 30d).")]
+        since: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Compute outcome scores for recommendations against price_history.
+    Score {
+        #[arg(long, help = "Score every recommendation that doesn't yet have an outcome.")]
+        all: bool,
+        #[arg(long, help = "Score a single recommendation by id.")]
+        id: Option<i64>,
+        #[arg(long, default_value = "30", help = "Days after report_date to evaluate (14/30/60 typical).")]
+        horizon: i64,
+        #[arg(long, help = "Restrict scoring to recommendations on or after this date.")]
+        since: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Hit-rate accuracy broken down by recommendation type and (optionally) asset.
+    Accuracy {
+        #[arg(long = "type", help = "Filter by recommendation type.")]
+        recommendation_type: Option<String>,
+        #[arg(long, help = "Filter by asset.")]
+        asset: Option<String>,
+        #[arg(long, default_value = "90d", help = "Lookback window (e.g. 30d, 90d, or YYYY-MM-DD).")]
+        since: String,
+        #[arg(long = "threshold", default_value = "0", help = "Score threshold for counting a hit.")]
+        threshold: f64,
+        #[arg(long = "by-asset")]
+        by_asset: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manually link an operator_reply or transaction to a recommendation.
+    Link {
+        #[arg(long, help = "Recommendation id.")]
+        id: i64,
+        #[arg(long = "reply", help = "operator_replies.id to link.")]
+        reply_id: Option<i64>,
+        #[arg(long = "transaction", help = "transactions.id to link.")]
+        transaction_id: Option<i64>,
+        #[arg(long, help = "Action status: accepted/rejected/partial/deferred/ignored")]
+        action_status: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Retroactively link existing operator_replies and transactions to open recommendations.
+    RelinkHistorical {
+        #[arg(long, default_value = "7", help = "Transaction-link window in days (default 7).")]
+        window: i64,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

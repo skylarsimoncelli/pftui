@@ -35,15 +35,24 @@ const URGENCY_NORMAL: &str = "normal";
 const URGENCY_LOW: &str = "low";
 
 #[derive(Debug, Clone, PartialEq)]
-struct DecisionCard {
-    symbol: String,
-    question: String,
-    context_lines: Vec<String>,
-    recommendation: String,
-    reference: String,
-    urgency: String,
+pub struct DecisionCard {
+    pub symbol: String,
+    pub question: String,
+    pub context_lines: Vec<String>,
+    pub recommendation: String,
+    pub reference: String,
+    pub urgency: String,
     /// Magnitude used for ordering ties at the same urgency.
-    gap: f64,
+    pub gap: f64,
+    /// Classified recommendation type: "add" | "trim" | "hold" | "catalyst" |
+    /// "outlook-refine" (target refresh stale). Populated alongside the card
+    /// so the recommendations table can persist a deterministic type without
+    /// re-parsing the rendered markdown.
+    pub recommendation_type: String,
+    /// Optional rec_id assigned after persistence — when set, render_card
+    /// emits a `<!-- rec_id: N -->` marker so downstream readers can resolve
+    /// the card to a row in `recommendations`.
+    pub rec_id: Option<i64>,
 }
 
 pub fn render_private_decisions_pending(ctx: &BuildContext) -> Result<String> {
@@ -65,7 +74,10 @@ pub fn render_private_decisions_pending(ctx: &BuildContext) -> Result<String> {
     Ok(output.trim_end().to_string())
 }
 
-fn build_cards(ctx: &BuildContext) -> Vec<DecisionCard> {
+/// Build the ordered, deduplicated list of decision cards for the given
+/// context. Exposed so the report assembler can persist each card to the
+/// `recommendations` table before final markdown render.
+pub fn build_cards(ctx: &BuildContext) -> Vec<DecisionCard> {
     let held = qualifying_positions(&ctx.private_positions);
     let mut cards: Vec<DecisionCard> = Vec::new();
 
@@ -217,6 +229,11 @@ fn build_allocation_card(
         views.len()
     );
 
+    let recommendation_type = match action {
+        Action::Add => "add".to_string(),
+        Action::Trim => "trim".to_string(),
+        Action::Hold => "hold".to_string(),
+    };
     Some(DecisionCard {
         symbol: position.symbol.clone(),
         question,
@@ -225,6 +242,8 @@ fn build_allocation_card(
         reference,
         urgency,
         gap,
+        recommendation_type,
+        rec_id: None,
     })
 }
 
@@ -273,6 +292,8 @@ fn build_stale_target_card(
         reference,
         urgency: URGENCY_LOW.to_string(),
         gap: (MIN_VIEWS_FOR_ACTION as f64 - view_count as f64).max(0.0),
+        recommendation_type: "outlook-refine".to_string(),
+        rec_id: None,
     })
 }
 
@@ -333,6 +354,8 @@ fn build_mismatch_card(
         reference,
         urgency: urgency.to_string(),
         gap,
+        recommendation_type: "meta".to_string(),
+        rec_id: None,
     })
 }
 
@@ -360,6 +383,8 @@ fn build_catalyst_card(catalyst: &BinaryCatalystSummary) -> Option<DecisionCard>
         urgency: URGENCY_HIGH.to_string(),
         // Catalyst urgency dominates within the high tier.
         gap: f64::INFINITY,
+        recommendation_type: "catalyst".to_string(),
+        rec_id: None,
     })
 }
 
@@ -522,7 +547,7 @@ fn render_card(card: &DecisionCard) -> String {
         format!("[{joined}]")
     };
     let response_arg = format!("[{}]", RESPONSE_FORMAT.to_vec().join(", "));
-    format!(
+    let body = format!(
         "{{decision_card(question={}, urgency={}, context={}, recommendation={}, response_format={}, reference={})}}",
         clean_arg(&card.question),
         clean_arg(&card.urgency),
@@ -530,7 +555,30 @@ fn render_card(card: &DecisionCard) -> String {
         clean_arg(&card.recommendation),
         response_arg,
         clean_arg(&card.reference),
-    )
+    );
+    if let Some(id) = card.rec_id {
+        format!("<!-- rec_id: {id} -->\n{body}")
+    } else {
+        body
+    }
+}
+
+/// Render the section using a pre-built ordered list of cards (typically
+/// produced by `build_cards` and then annotated with `rec_id`s from the
+/// `recommendations` table). Used by the assembler when persistence is on.
+pub fn render_private_decisions_pending_with_cards(cards: &[DecisionCard]) -> String {
+    let mut output = String::from("## Decisions Pending — Your Reply Requested\n\n");
+    if cards.is_empty() {
+        output.push_str(
+            "No pending decisions: derived actions, drift bands, mismatches, and catalysts are all within the no-reply-required envelope.",
+        );
+        return output;
+    }
+    for card in cards {
+        output.push_str(&render_card(card));
+        output.push('\n');
+    }
+    output.trim_end().to_string()
 }
 
 fn readable(value: &str) -> String {
@@ -659,6 +707,30 @@ mod tests {
     #[test]
     fn private_decisions_pending_is_private_only() {
         assert_eq!(SECTION_PRIVACY, "private");
+    }
+
+    #[test]
+    fn render_with_cards_emits_rec_id_marker() {
+        let mut cards = build_cards(&add_fixture());
+        assert!(!cards.is_empty());
+        for (i, card) in cards.iter_mut().enumerate() {
+            card.rec_id = Some(100 + i as i64);
+        }
+        let rendered = render_private_decisions_pending_with_cards(&cards);
+        assert!(rendered.contains("<!-- rec_id: 100 -->"));
+        assert!(rendered.contains("{decision_card(question=Add to BTC now"));
+    }
+
+    #[test]
+    fn build_cards_assigns_recommendation_type() {
+        let cards = build_cards(&add_fixture());
+        assert!(cards.iter().any(|c| c.recommendation_type == "add"));
+        let cards2 = build_cards(&trim_fixture());
+        assert!(cards2.iter().any(|c| c.recommendation_type == "trim"));
+        let cards3 = build_cards(&catalyst_only_fixture());
+        assert!(cards3.iter().any(|c| c.recommendation_type == "catalyst"));
+        let cards4 = build_cards(&stale_fixture());
+        assert!(cards4.iter().any(|c| c.recommendation_type == "outlook-refine"));
     }
 
     // ---- Fixtures -------------------------------------------------------

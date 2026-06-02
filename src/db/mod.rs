@@ -66,6 +66,7 @@ pub mod prediction_lessons;
 pub mod preflight;
 pub mod predictions_cache;
 pub mod predictions_history;
+pub mod recommendations;
 pub mod price_cache;
 pub mod price_history;
 pub mod query;
