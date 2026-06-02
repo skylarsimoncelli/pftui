@@ -563,22 +563,11 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Show options chain for an equity symbol (Yahoo free data)
+    /// Options chain viewer + GEX (gamma exposure) ingestion (Yahoo free data)
+    #[command(after_help = "Subcommands:\n  refresh   Fetch + persist chain snapshots and compute GEX summaries\n  show      Display the most recent cached chain (Yahoo free data viewer)")]
     Options {
-        /// Underlying symbol (e.g. AAPL, TSLA)
-        symbol: String,
-
-        /// Expiry date in YYYY-MM-DD (default: nearest expiry)
-        #[arg(long)]
-        expiry: Option<String>,
-
-        /// Number of strikes per side to show (default: 12)
-        #[arg(long, default_value = "12")]
-        limit: usize,
-
-        /// Output as JSON for agent/script consumption
-        #[arg(long)]
-        json: bool,
+        #[command(subcommand)]
+        command: DataOptionsCommand,
     },
     /// Show BTC ETF flow data (inflows/outflows by fund)
     #[command(name = "etf-flows")]
@@ -665,6 +654,49 @@ pub enum DataCommand {
     RealYields {
         #[command(subcommand)]
         command: DataRealYieldsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DataOptionsCommand {
+    /// Fetch the live options chain from Yahoo and persist a snapshot + GEX summary
+    Refresh {
+        /// Single symbol to refresh (default: SPY, QQQ, GLD, SLV with --all or no symbol)
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Refresh the full default symbol list (SPY, QQQ, GLD, SLV)
+        #[arg(long)]
+        all: bool,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Display the most recent cached options chain (latest fetched_at)
+    Show {
+        /// Underlying symbol (required)
+        #[arg(long)]
+        symbol: String,
+        /// Number of strikes per side to show (default: 12)
+        #[arg(long, default_value = "12")]
+        limit: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Live viewer: fetch from Yahoo without persisting (legacy interactive chain view)
+    View {
+        /// Underlying symbol (required)
+        #[arg(long)]
+        symbol: String,
+        /// Expiry date in YYYY-MM-DD (default: nearest expiry)
+        #[arg(long)]
+        expiry: Option<String>,
+        /// Number of strikes per side to show (default: 12)
+        #[arg(long, default_value = "12")]
+        limit: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -4313,6 +4345,14 @@ pub enum AnalyticsCommand {
     /// Full synthesized intelligence blob for a single asset
     Asset {
         /// Symbol to analyze (required)
+        symbol: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// GEX (Gamma Exposure) snapshot + gamma-neutral zone for a symbol
+    Gex {
+        /// Symbol to read (e.g. SPY, QQQ, GLD, SLV)
+        #[arg(long)]
         symbol: String,
         #[arg(long)]
         json: bool,

@@ -26,6 +26,7 @@ pub mod macro_alerts;
 pub mod onchain;
 #[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)
 pub mod polymarket;
+pub mod options;
 pub mod predictions;
 #[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
 pub mod rss;

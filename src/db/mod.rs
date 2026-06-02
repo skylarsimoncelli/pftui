@@ -57,6 +57,10 @@ pub mod news_topic_markets;
 pub mod lesson_citations;
 #[allow(dead_code)] // Infrastructure for F21.1+ consumers (on-chain panel, CLI)
 pub mod onchain_cache;
+#[allow(dead_code)] // Infrastructure for options/GEX ingestion (Yahoo options chain)
+pub mod options_chain_snapshots;
+#[allow(dead_code)] // Infrastructure for options/GEX summaries (gamma exposure)
+pub mod gex_snapshots;
 pub mod opportunity_cost;
 pub mod pg_runtime;
 pub mod power_flows;

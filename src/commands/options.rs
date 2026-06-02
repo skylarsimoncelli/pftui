@@ -1,8 +1,19 @@
-//! `pftui options` — Yahoo Finance options chain viewer.
+//! `pftui data options` — Yahoo Finance options chain viewer + GEX ingestion.
+//!
+//! Subcommands:
+//!   refresh — fetch chain(s) + persist + compute GEX (calls into `data::options`)
+//!   show    — read latest cached chain from SQLite
+//!   view    — legacy live-fetch viewer (kept for ad-hoc inspection)
 
 use anyhow::{anyhow, bail, Result};
 use chrono::NaiveDate;
 use serde_json::Value;
+
+use crate::data::options::{
+    compute_gex, fetch_options_chain, GexSummary, OptionsStrikeRow, DEFAULT_OPTIONS_SYMBOLS,
+};
+use crate::db::backend::BackendConnection;
+use crate::db::{gex_snapshots, options_chain_snapshots};
 
 #[derive(Debug, Clone)]
 struct OptionContract {
@@ -255,7 +266,8 @@ fn print_json(chain: &OptionsChain, limit: usize) -> Result<()> {
     Ok(())
 }
 
-pub fn run(symbol: &str, expiry: Option<&str>, limit: usize, json: bool) -> Result<()> {
+/// Legacy live-fetch viewer (used by `data options view`).
+pub fn run_view(symbol: &str, expiry: Option<&str>, limit: usize, json: bool) -> Result<()> {
     let expiry_ts = match expiry {
         Some(v) => Some(parse_expiry_to_timestamp(v)?),
         None => None,
@@ -270,6 +282,310 @@ pub fn run(symbol: &str, expiry: Option<&str>, limit: usize, json: bool) -> Resu
         print_terminal(&chain, limit.max(1));
     }
 
+    Ok(())
+}
+
+/// `data options refresh` — fetch chain(s) from Yahoo, persist
+/// per-strike snapshot rows, compute GEX summary, persist the
+/// summary. Returns a JSON result when `json` is true.
+pub fn run_refresh(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    all: bool,
+    json: bool,
+) -> Result<()> {
+    let symbols: Vec<String> = if all {
+        DEFAULT_OPTIONS_SYMBOLS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    } else if let Some(s) = symbol {
+        vec![s.to_uppercase()]
+    } else {
+        DEFAULT_OPTIONS_SYMBOLS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    };
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let mut per_symbol: Vec<serde_json::Value> = Vec::new();
+    let mut errors: Vec<(String, String)> = Vec::new();
+
+    for sym in &symbols {
+        match rt.block_on(fetch_options_chain(sym)) {
+            Ok(snapshot) => {
+                let gex = compute_gex(&snapshot);
+                if let Some(conn) = backend.sqlite_native() {
+                    options_chain_snapshots::insert_chain(
+                        conn,
+                        &snapshot.rows,
+                        &snapshot.fetched_at,
+                    )?;
+                    gex_snapshots::insert(conn, &gex)?;
+                }
+                per_symbol.push(serde_json::json!({
+                    "symbol": sym,
+                    "spot": snapshot.spot,
+                    "expiry": snapshot.expiry,
+                    "rows": snapshot.rows.len(),
+                    "gex_flip_strike": gex.gex_flip_strike,
+                    "max_pain": gex.max_pain,
+                    "total_gamma_call": gex.total_gamma_call,
+                    "total_gamma_put": gex.total_gamma_put,
+                }));
+            }
+            Err(e) => {
+                errors.push((sym.clone(), e.to_string()));
+            }
+        }
+    }
+
+    // BTC reminder per scope item (3) in TODO: Yahoo doesn't have BTC
+    // options; surface a hint when BTC is in the held universe.
+    let btc_held = backend.sqlite_native().is_some_and(|conn| {
+        conn.query_row(
+            "SELECT 1 FROM transactions WHERE symbol = 'BTC' LIMIT 1",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false)
+    });
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "refreshed": per_symbol,
+                "errors": errors.iter().map(|(s, e)| serde_json::json!({"symbol": s, "error": e})).collect::<Vec<_>>(),
+                "btc_hint": if btc_held { Some("BTC options not on Yahoo; deribit provider TBD") } else { None },
+            }))?
+        );
+    } else {
+        println!("Refreshed {} chain(s):", per_symbol.len());
+        for entry in &per_symbol {
+            println!(
+                "  {:<5} spot ${:.2} expiry {} rows={} flip={} max_pain={}",
+                entry["symbol"].as_str().unwrap_or("?"),
+                entry["spot"].as_f64().unwrap_or(0.0),
+                entry["expiry"].as_str().unwrap_or("?"),
+                entry["rows"].as_i64().unwrap_or(0),
+                entry["gex_flip_strike"]
+                    .as_f64()
+                    .map(|v| format!("${:.2}", v))
+                    .unwrap_or_else(|| "n/a".into()),
+                entry["max_pain"]
+                    .as_f64()
+                    .map(|v| format!("${:.2}", v))
+                    .unwrap_or_else(|| "n/a".into()),
+            );
+        }
+        for (sym, err) in &errors {
+            eprintln!("  {} failed: {}", sym, err);
+        }
+        if btc_held {
+            println!("Hint: BTC options not available on Yahoo; deribit provider TBD");
+        }
+    }
+    Ok(())
+}
+
+/// `data options show` — read the most-recent cached chain from
+/// SQLite (no network).
+pub fn run_show(
+    backend: &BackendConnection,
+    symbol: &str,
+    limit: usize,
+    json: bool,
+) -> Result<()> {
+    let Some(conn) = backend.sqlite_native() else {
+        bail!("`data options show` requires the SQLite backend");
+    };
+    let upper = symbol.to_uppercase();
+    let rows = options_chain_snapshots::latest_chain(conn, &upper)?;
+    let fetched_at = options_chain_snapshots::latest_fetched_at(conn, &upper)?;
+    let gex = gex_snapshots::latest(conn, &upper)?;
+
+    if rows.is_empty() {
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "symbol": upper,
+                    "rows": [],
+                    "note": "no cached chain — run `pftui data options refresh --symbol <s>`"
+                }))?
+            );
+        } else {
+            println!(
+                "No cached options chain for {}. Run `pftui data options refresh --symbol {}`.",
+                upper, upper
+            );
+        }
+        return Ok(());
+    }
+
+    let trimmed = trim_around_atm(&rows, gex.as_ref(), limit);
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "symbol": upper,
+                "fetched_at": fetched_at,
+                "gex": gex.as_ref().map(gex_to_value),
+                "rows": trimmed.iter().map(strike_to_value).collect::<Vec<_>>(),
+            }))?
+        );
+    } else {
+        println!(
+            "OPTIONS CHAIN (cached) {}  fetched {}",
+            upper,
+            fetched_at.as_deref().unwrap_or("unknown")
+        );
+        if let Some(g) = &gex {
+            println!(
+                "  GEX flip {}  max pain {}  net gamma call {:.0} put {:.0}",
+                g.gex_flip_strike
+                    .map(|v| format!("${:.2}", v))
+                    .unwrap_or_else(|| "n/a".into()),
+                g.max_pain
+                    .map(|v| format!("${:.2}", v))
+                    .unwrap_or_else(|| "n/a".into()),
+                g.total_gamma_call,
+                g.total_gamma_put,
+            );
+        }
+        println!(
+            "  strike  oi_calls   oi_puts  vol_calls  vol_puts  iv_atm    expiry  dte"
+        );
+        for r in &trimmed {
+            println!(
+                "  {:>6.2}  {:>8}  {:>8}  {:>9}  {:>8}  {:>6.3}  {}  {}",
+                r.strike,
+                r.oi_calls,
+                r.oi_puts,
+                r.vol_calls,
+                r.vol_puts,
+                r.iv_call.unwrap_or(0.0),
+                r.expiry,
+                r.dte,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn trim_around_atm(
+    rows: &[OptionsStrikeRow],
+    gex: Option<&GexSummary>,
+    limit: usize,
+) -> Vec<OptionsStrikeRow> {
+    if rows.is_empty() || limit == 0 {
+        return rows.to_vec();
+    }
+    // Center on flip strike if known; otherwise use median strike.
+    let center = gex
+        .and_then(|g| g.gex_flip_strike)
+        .unwrap_or_else(|| rows[rows.len() / 2].strike);
+    let mut sorted: Vec<OptionsStrikeRow> = rows.to_vec();
+    sorted.sort_by(|a, b| {
+        (a.strike - center)
+            .abs()
+            .partial_cmp(&(b.strike - center).abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    sorted.truncate(limit.max(1) * 2);
+    sorted.sort_by(|a, b| {
+        a.strike
+            .partial_cmp(&b.strike)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    sorted
+}
+
+fn strike_to_value(r: &OptionsStrikeRow) -> serde_json::Value {
+    serde_json::json!({
+        "symbol": r.symbol,
+        "strike": r.strike,
+        "expiry": r.expiry,
+        "dte": r.dte,
+        "oi_calls": r.oi_calls,
+        "oi_puts": r.oi_puts,
+        "vol_calls": r.vol_calls,
+        "vol_puts": r.vol_puts,
+        "iv_call": r.iv_call,
+    })
+}
+
+fn gex_to_value(g: &GexSummary) -> serde_json::Value {
+    serde_json::json!({
+        "symbol": g.symbol,
+        "gex_flip_strike": g.gex_flip_strike,
+        "total_gamma_call": g.total_gamma_call,
+        "total_gamma_put": g.total_gamma_put,
+        "max_pain": g.max_pain,
+        "fetched_at": g.fetched_at,
+        "gamma_neutral_zone": g.gamma_neutral_zone().map(|(lo, hi)| serde_json::json!([lo, hi])),
+    })
+}
+
+/// `analytics gex` — read the most-recent GEX summary from SQLite.
+pub fn run_analytics_gex(backend: &BackendConnection, symbol: &str, json: bool) -> Result<()> {
+    let Some(conn) = backend.sqlite_native() else {
+        bail!("`analytics gex` requires the SQLite backend");
+    };
+    let upper = symbol.to_uppercase();
+    let gex = gex_snapshots::latest(conn, &upper)?;
+
+    let Some(g) = gex else {
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "symbol": upper,
+                    "available": false,
+                    "note": "no cached GEX — run `pftui data options refresh --symbol <s>`"
+                }))?
+            );
+        } else {
+            println!(
+                "No cached GEX for {}. Run `pftui data options refresh --symbol {}`.",
+                upper, upper
+            );
+        }
+        return Ok(());
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&gex_to_value(&g))?);
+    } else {
+        let zone = g.gamma_neutral_zone();
+        println!("GEX snapshot for {} (asof {})", g.symbol, g.fetched_at);
+        println!(
+            "  flip strike: {}",
+            g.gex_flip_strike
+                .map(|v| format!("${:.2}", v))
+                .unwrap_or_else(|| "n/a".into())
+        );
+        println!(
+            "  max pain:    {}",
+            g.max_pain
+                .map(|v| format!("${:.2}", v))
+                .unwrap_or_else(|| "n/a".into())
+        );
+        println!(
+            "  total gamma: call {:.0}  put {:.0}  net {:.0}",
+            g.total_gamma_call,
+            g.total_gamma_put,
+            g.total_gamma_call - g.total_gamma_put
+        );
+        if let Some((lo, hi)) = zone {
+            println!("  gamma-neutral zone (5%): ${:.2} – ${:.2}", lo, hi);
+        } else {
+            println!("  gamma-neutral zone (5%): n/a");
+        }
+    }
     Ok(())
 }
 

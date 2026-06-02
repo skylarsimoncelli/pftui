@@ -1434,12 +1434,24 @@ fn run_cli(cli: Cli) -> Result<()> {
                 limit,
                 json,
             } => dispatch_predictions(&backend, command, category, search, limit, json),
-            cli::DataCommand::Options {
-                symbol,
-                expiry,
-                limit,
-                json,
-            } => commands::options::run(&symbol, expiry.as_deref(), limit, json),
+            cli::DataCommand::Options { command } => match command {
+                cli::DataOptionsCommand::Refresh {
+                    symbol,
+                    all,
+                    json,
+                } => commands::options::run_refresh(&backend, symbol.as_deref(), all, json),
+                cli::DataOptionsCommand::Show {
+                    symbol,
+                    limit,
+                    json,
+                } => commands::options::run_show(&backend, &symbol, limit, json),
+                cli::DataOptionsCommand::View {
+                    symbol,
+                    expiry,
+                    limit,
+                    json,
+                } => commands::options::run_view(&symbol, expiry.as_deref(), limit, json),
+            },
             cli::DataCommand::EtfFlows { days, fund, json } => {
                 commands::etf_flows::run(days, fund, json)
             }
@@ -2500,6 +2512,9 @@ fn run_cli(cli: Cli) -> Result<()> {
         Some(Command::Analytics { command }) => match command {
             cli::AnalyticsCommand::Asset { symbol, json } => {
                 commands::analytics::run_asset_intelligence(&backend, &symbol, json)
+            }
+            cli::AnalyticsCommand::Gex { symbol, json } => {
+                commands::options::run_analytics_gex(&backend, &symbol, json)
             }
             cli::AnalyticsCommand::Technicals {
                 symbol,

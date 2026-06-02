@@ -89,6 +89,7 @@ pub struct RefreshPlan {
     pub analytics: bool,
     pub alerts: bool,
     pub cleanup: bool,
+    pub options: bool,
 }
 
 impl RefreshPlan {
@@ -113,6 +114,7 @@ impl RefreshPlan {
         "analytics",
         "alerts",
         "cleanup",
+        "options",
     ];
 
     pub fn full() -> Self {
@@ -135,6 +137,7 @@ impl RefreshPlan {
             analytics: true,
             alerts: true,
             cleanup: true,
+            options: true,
         }
     }
 
@@ -159,6 +162,7 @@ impl RefreshPlan {
             analytics: false,
             alerts: false,
             cleanup: false,
+            options: false,
         }
     }
 
@@ -214,6 +218,7 @@ impl RefreshPlan {
             "analytics" => self.analytics = enabled,
             "alerts" => self.alerts = enabled,
             "cleanup" => self.cleanup = enabled,
+            "options" => self.options = enabled,
             _ => anyhow::bail!(
                 "Unknown refresh source '{}'. Valid sources: {}",
                 name,
@@ -278,6 +283,9 @@ impl RefreshPlan {
         }
         if self.cleanup {
             names.push("cleanup");
+        }
+        if self.options {
+            names.push("options");
         }
         names
     }
@@ -1566,6 +1574,9 @@ fn run_pipeline(
 
     // On-chain (synchronous)
     store_onchain_result(backend, verbose, plan.onchain, &mut dag_result);
+
+    // Options + GEX (synchronous)
+    store_options_result(backend, verbose, plan.options, &mut dag_result);
 
     if let Some(result) = maybe_stop_for_timeout(
         deadline,
@@ -4283,6 +4294,123 @@ fn store_onchain_result(
         });
     }
 }
+
+/// Refresh the Yahoo options chain + GEX snapshot for the default
+/// symbol set. SQLite-only; degrades silently on a Postgres backend.
+fn store_options_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    in_plan: bool,
+    dag_result: &mut RefreshResult,
+) {
+    let start = Instant::now();
+    if !in_plan {
+        info_ln!(verbose, "⊘ Options (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "options".to_string(),
+            label: "Options chain + GEX".to_string(),
+            status: SourceStatus::Deferred,
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
+        return;
+    }
+    let Some(conn) = backend.sqlite_native() else {
+        info_ln!(verbose, "⊘ Options (postgres backend; sqlite-only)");
+        dag_result.add(SourceResult {
+            name: "options".to_string(),
+            label: "Options chain + GEX".to_string(),
+            status: SourceStatus::Skipped,
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("postgres backend not yet supported".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
+        return;
+    };
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            warn_ln!(verbose, "Options refresh tokio build failed: {}", e);
+            return;
+        }
+    };
+
+    let mut count = 0;
+    let mut failed: Vec<String> = Vec::new();
+    for sym in crate::data::options::DEFAULT_OPTIONS_SYMBOLS {
+        match rt.block_on(crate::data::options::fetch_options_chain(sym)) {
+            Ok(snapshot) => {
+                let gex = crate::data::options::compute_gex(&snapshot);
+                if let Err(e) = crate::db::options_chain_snapshots::insert_chain(
+                    conn,
+                    &snapshot.rows,
+                    &snapshot.fetched_at,
+                ) {
+                    warn_ln!(verbose, "Options chain persist failed for {}: {}", sym, e);
+                    failed.push((*sym).to_string());
+                    continue;
+                }
+                if let Err(e) = crate::db::gex_snapshots::insert(conn, &gex) {
+                    warn_ln!(verbose, "GEX persist failed for {}: {}", sym, e);
+                    failed.push((*sym).to_string());
+                    continue;
+                }
+                count += 1;
+            }
+            Err(e) => {
+                warn_ln!(verbose, "Options fetch failed for {}: {}", sym, e);
+                failed.push((*sym).to_string());
+            }
+        }
+    }
+
+    let status = if count > 0 {
+        SourceStatus::Ok
+    } else {
+        SourceStatus::Failed
+    };
+    if count > 0 {
+        info_ln!(verbose, "✓ Options ({} chains)", count);
+    } else {
+        info_ln!(verbose, "✗ Options (no chains persisted)");
+    }
+    dag_result.add(SourceResult {
+        name: "options".to_string(),
+        label: "Options chain + GEX".to_string(),
+        status,
+        items_attempted: Some(crate::data::options::DEFAULT_OPTIONS_SYMBOLS.len()),
+        items_failed: Some(failed.len()),
+        failed_symbols: if failed.is_empty() {
+            None
+        } else {
+            Some(failed)
+        },
+        items_updated: Some(count),
+        duration_ms: start.elapsed().as_millis() as u64,
+        reason: None,
+        age_minutes: None,
+        error: None,
+        detail: None,
+    });
+}
+
 fn run_cleanup(backend: &BackendConnection, verbose: bool) {
     let mut parts = Vec::new();
 
@@ -5209,7 +5337,7 @@ mod tests {
         assert!(plan.worldbank);
         assert!(plan.analytics);
         assert!(plan.cleanup);
-        assert_eq!(plan.selected_task_names().len(), 18);
+        assert_eq!(plan.selected_task_names().len(), 19);
     }
 
     #[test]
@@ -5261,7 +5389,7 @@ mod tests {
         assert!(plan.predictions);
         assert!(!plan.worldbank);
         assert!(!plan.bls);
-        assert_eq!(plan.selected_task_names().len(), 16);
+        assert_eq!(plan.selected_task_names().len(), 17);
     }
 
     #[test]
