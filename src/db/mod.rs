@@ -91,6 +91,7 @@ pub mod technical_levels;
 pub mod technical_signals;
 pub mod technical_snapshots;
 pub mod thesis;
+pub mod thesis_chain_extract;
 pub mod thesis_dependencies;
 pub mod timeframe_signals;
 pub mod transactions;
