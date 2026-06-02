@@ -12,7 +12,8 @@ use serde::Serialize;
 use crate::db::backend::BackendConnection;
 use crate::db::{
     calibration_adjustments, clusters, event_annotations, failure_correlations, operator_replies,
-    prediction_falsification_rules, reasoning_fragments, sources_registry, thesis_dependencies,
+    prediction_falsification_rules, reasoning_fragments, sources_registry, thesis_chain_extract,
+    thesis_dependencies,
 };
 
 fn require_sqlite(backend: &BackendConnection) -> Result<&rusqlite::Connection> {
@@ -551,6 +552,116 @@ pub fn thesis_chains_add(
         "  {} --{}--> {}",
         chain.antecedent_text, chain.relation, chain.consequent_text
     );
+    Ok(())
+}
+
+/// Heuristic backfill for `thesis_dependencies`. Reads the chosen sources
+/// (thesis content / prediction_lessons.why_wrong / agent_messages.content),
+/// runs the regex extractor, and either prints proposed chains (`--dry-run`)
+/// or writes them via the existing `thesis_dependencies::insert` path
+/// (`--apply`).
+#[allow(clippy::too_many_arguments)]
+pub fn thesis_chains_extract(
+    backend: &BackendConnection,
+    from_thesis: bool,
+    from_lessons: bool,
+    from_messages: bool,
+    since: &str,
+    dry_run: bool,
+    apply: bool,
+    json: bool,
+) -> Result<()> {
+    use thesis_chain_extract::{
+        apply_proposed, collect_lesson_sources, collect_message_sources,
+        collect_thesis_sources, extract_from_text, ExtractBySource, ExtractSource,
+        ExtractSummary, ProposedChain,
+    };
+
+    let conn = require_sqlite(backend)?;
+
+    // Default to scanning all three sources when none are explicitly enabled.
+    let all_default = !from_thesis && !from_lessons && !from_messages;
+    let do_thesis = from_thesis || all_default;
+    let do_lessons = from_lessons || all_default;
+    let do_messages = from_messages || all_default;
+
+    // Apply implies non-dry-run; if both flags are set, `--apply` wins so
+    // operators don't accidentally drop the write.
+    let effective_apply = apply;
+    let _ = dry_run; // explicit dry-run is the default; flag exists for clarity.
+
+    let since_anchor = crate::db::alignment_score::parse_since_token(since)?;
+
+    let mut proposed: Vec<ProposedChain> = Vec::new();
+    let mut counts = ExtractBySource::default();
+
+    if do_thesis {
+        for (slug, content) in collect_thesis_sources(conn)? {
+            let chains = extract_from_text(&content, ExtractSource::Thesis, &slug);
+            counts.thesis += chains.len();
+            proposed.extend(chains);
+        }
+    }
+    if do_lessons {
+        for (id, why) in collect_lesson_sources(conn)? {
+            let chains = extract_from_text(&why, ExtractSource::Lessons, &id.to_string());
+            counts.lessons += chains.len();
+            proposed.extend(chains);
+        }
+    }
+    if do_messages {
+        for (id, content) in collect_message_sources(conn, &since_anchor)? {
+            let chains = extract_from_text(&content, ExtractSource::Messages, &id.to_string());
+            counts.messages += chains.len();
+            proposed.extend(chains);
+        }
+    }
+
+    let mut summary = ExtractSummary {
+        proposed: proposed.len(),
+        applied: 0,
+        deduped: 0,
+        by_source: counts,
+        chains: proposed.clone(),
+    };
+
+    if effective_apply {
+        for c in &proposed {
+            match apply_proposed(conn, c)? {
+                Some(_id) => summary.applied += 1,
+                None => summary.deduped += 1,
+            }
+        }
+    }
+
+    if json {
+        return print_json(&summary);
+    }
+
+    println!(
+        "thesis-chains extract: proposed={} applied={} deduped={}",
+        summary.proposed, summary.applied, summary.deduped
+    );
+    println!(
+        "  by source: thesis={} lessons={} messages={}",
+        summary.by_source.thesis, summary.by_source.lessons, summary.by_source.messages
+    );
+    if !effective_apply {
+        println!("  (dry-run — pass --apply to persist)");
+    }
+    for (i, c) in summary.chains.iter().enumerate().take(20) {
+        println!(
+            "  #{:>2}  [{}] {} --{}--> {}",
+            i + 1,
+            c.source.as_str(),
+            c.antecedent_text,
+            c.relation,
+            c.consequent_text
+        );
+    }
+    if summary.chains.len() > 20 {
+        println!("  ... and {} more", summary.chains.len() - 20);
+    }
     Ok(())
 }
 

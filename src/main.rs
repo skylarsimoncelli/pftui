@@ -5151,6 +5151,24 @@ fn run_cli(cli: Cli) -> Result<()> {
                         json,
                     )
                 }
+                cli::AnalyticsThesisChainsCommand::Extract {
+                    from_thesis,
+                    from_lessons,
+                    from_messages,
+                    since,
+                    dry_run,
+                    apply,
+                    json,
+                } => commands::analytics_enrichment::thesis_chains_extract(
+                    &backend,
+                    from_thesis,
+                    from_lessons,
+                    from_messages,
+                    &since,
+                    dry_run,
+                    apply,
+                    json,
+                ),
                 cli::AnalyticsThesisChainsCommand::Add {
                     antecedent,
                     consequent,
