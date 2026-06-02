@@ -26,28 +26,6 @@ Implementation: pure functions over a `&[Candle]` slice. Put them in `src/indica
 Naming: do NOT use vendor / indicator brand names anywhere. Use canonical TA terminology only.
 **Effort:** ~1 week.
 
-### [Claude-WIP 2026-06-02f — DO NOT PICK] Enhance `pftui analytics technicals` — signals subset (MTF RSI, Pi Cycle, MTF breakout, Bollinger reversal, RSI extreme)
-**Source:** Skylar (June 1). Split from the larger technicals expansion. Builds on the channels subset (extended module).
-**Why:** Continuation of the technicals expansion. These signal outputs add multi-timeframe alignment, cycle markers, and reversal/extreme flags the analysts need to reason about breakouts, exhaustion, and frothy conditions.
-**Scope:** Implement these as additional outputs from `pftui analytics technicals --symbols <SYM> [--include <feature>] [--json]`:
-
-(5) **Multi-timeframe RSI alignment**: compute RSI on the current timeframe and at 4 higher timeframes (auto-selected from current TF: 5min → [15,30,60,240]; 1h → [4h,1d,1w,1M]; etc). Output: per-TF RSI values + boolean flags `aligned_overbought` (all four HTFs > 70 + current > 70) and `aligned_oversold` (mirror).
-
-(6) **Pi Cycle Top/Bottom signal**: top = 350d SMA × 2 crossing under 111d SMA on daily close; bottom = 471d SMA × 0.745 crossing over 150d EMA. Output: latest crossover date + days-since per signal. Expose for any asset, document that the parameters were calibrated on BTC.
-
-(7) **Multi-timeframe breakout signal**: composite of three sub-signals — (a) MTF-RSI breakout: current RSI just exited a `oversold/overbought across 4 HTFs` zone; (b) 3-Line Strike pattern: 3 consecutive down-closes followed by an up-close that exceeds bar-1 open (mirror for bear); (c) Momentum exhaustion: 5+ closes greater than close[-4] with current close < open AND high >= 25-bar high (mirror for bottom). Output: per-signal boolean + `signal_count` (0-3) + cooldown-aware `breakout_state` (`bull-fresh` / `bull-armed` / `none` / `bear-armed` / `bear-fresh`). Cooldown: minimum 5 bars between signals (configurable).
-
-(8) **Bollinger reversal signals**: cross-under upper band → `top_reversal_signal`; cross-over lower band → `bottom_reversal_signal`. Multi-bar confirmations: `confirmation_1` (price stays below the reversal-bar low for the next 1 bar) and `confirmation_2` (sustains for 2 bars). Output: per-signal boolean + bar offsets where the signal fired.
-
-(9) **RSI extreme highlighting** as a derived flag: when current-TF RSI > 85 AND multi-timeframe alignment is `aligned_overbought` AND current bar makes a new 14-bar high → flag `rsi_extreme_high`. Mirror for low.
-
-CLI: each output selectable via `--include mtf-rsi,pi-cycle,mtf-breakout,bollinger-reversal,rsi-extreme` (or `--include all`).
-
-Implementation: extend the `src/indicators/extended.rs` module landed by the channels subset. Hook computations into `src/commands/technicals.rs`. Files: `src/indicators/extended.rs`, `src/commands/technicals.rs`, `src/cli.rs`, `AGENTS.md`. Tests: each function gets a synthetic-candle fixture test verifying computed values at known bars; integration test that `--include all --json` returns the expected JSON shape.
-
-Naming: canonical TA terminology only — no vendor / indicator brand names.
-**Effort:** ~1 week.
-
 ### `pftui report build daily` — umbrella tracker (do not pick directly)
 **Source:** Skylar (May 28). Depends on both `pftui report` scaffold and the chart-helper-port items above.
 **Why:** Once chart rendering is native, the next layer up is the report ASSEMBLY — pulling data, ordering sections, inlining charts, and writing the markdown that feeds the PDF renderer. Today that work lives in the Claude `/pftui-report` skill orchestration plus the ad-hoc Python build script generated per run. Making it a native `pftui report build daily` command means: (1) anyone (not just Claude) can build a daily report from a populated DB; (2) the assembly logic gets `cargo test` coverage; (3) the Claude skill becomes much thinner — it spawns analysts, then calls `pftui report build daily`, then PRs the output. (4) Removes the Python build script entirely from the steady-state pipeline.

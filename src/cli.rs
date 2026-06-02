@@ -4245,6 +4245,13 @@ pub enum AnalyticsCommand {
         timeframe: String,
         #[arg(long)]
         limit: Option<usize>,
+        /// Optional extended-indicator/signal subset to include in the output.
+        /// Comma-separated list. Signals subset values: `mtf-rsi`, `pi-cycle`,
+        /// `mtf-breakout`, `bollinger-reversal`, `rsi-extreme`. Pass `all` to
+        /// include every extended output. Default: legacy RSI/MACD/SMA/BB/ATR
+        /// set only.
+        #[arg(long)]
+        include: Option<String>,
         #[arg(long)]
         json: bool,
     },

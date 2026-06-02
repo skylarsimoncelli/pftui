@@ -6,6 +6,7 @@
 pub mod atr;
 pub mod bollinger;
 pub mod correlation;
+pub mod extended;
 pub mod macd;
 pub mod rsi;
 pub mod sma;
