@@ -129,6 +129,16 @@
 - **Update cadence:** Quarterly/Annual (cache heavily)
 - **pftui integration:** F25 (Economy tab global macro panel, CLI)
 
+### SEC EDGAR (13F-HR Institutional Holdings)
+- **URL:** `https://data.sec.gov/submissions/CIK{10-digit-cik}.json` (filer index) + `https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/index.json` (per-filing directory) + `infoTable.xml` (holdings)
+- **Auth:** None
+- **Rate limit:** 10 requests/second per [SEC fair-access guidelines](https://www.sec.gov/os/accessing-edgar-data) — pftui's quarterly cadence is well below this.
+- **Required header:** `User-Agent: pftui-bot/0.28 contact@example.com` — SEC EDGAR rejects requests that omit a `User-Agent` identifying the requester. The exact string lives in `src/data/flows.rs::EDGAR_USER_AGENT`; operators who want to attribute their pftui install can override it locally.
+- **Data:** Quarterly 13F-HR institutional holdings — issuer name, CUSIP, share value (in thousands of dollars pre-2023, whole dollars post-2023), share count, voting authority.
+- **Tracked filers:** Canonical roster in `src/data/flows.rs::TRACKED_CIKS` — Berkshire Hathaway (`0001067983`), Bridgewater Associates (`0001350694`), Renaissance Technologies (`0001037389`), Citadel Advisors (`0001423053`). Keep the list small to bound the network walk and the downstream `capital_flows` row count.
+- **Update cadence:** Quarterly — 13F-HR filings are due 45 days after each calendar-quarter end (Feb 14 / May 15 / Aug 14 / Nov 14). The `data refresh` hook enforces this via an 80-day throttle keyed on `MAX(capital_flows.fetched_at WHERE flow_type='institutional_13f')`; manual `data flows refresh` ignores the throttle.
+- **pftui integration:** F59 follow-up — `PFTUI_FLOWS_PROVIDER=sec_edgar_13f` enables the live provider. `pftui data flows show`, `pftui analytics flows summary`, and the per-asset daily-report renderer (`src/report/sections/capital_flows.rs`) all consume the resulting `capital_flows` rows.
+
 ### TradingEconomics Calendar (Scrape)
 - **URL:** `https://tradingeconomics.com/calendar`
 - **Auth:** None (public page)

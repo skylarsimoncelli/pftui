@@ -4455,6 +4455,49 @@ fn store_flows_result(
 
     let provider = crate::data::flows::provider_from_env();
     let provider_name = provider.name().to_string();
+
+    // Quarterly-cadence guard for the SEC EDGAR provider: 13F-HR
+    // filings only update once per quarter, so re-walking the
+    // submissions feed on every refresh is wasted bandwidth (and a
+    // good way to get a 429 from data.sec.gov). Skip when the most
+    // recent successful fetch landed within ~80 days.
+    if provider_name == "sec_edgar_13f" {
+        match crate::db::capital_flows::latest_fetched_at_for_type(
+            backend.sqlite(),
+            "institutional_13f",
+        ) {
+            Ok(Some(last)) => {
+                if let Some(age_days) = crate::data::flows::days_since_rfc3339(&last) {
+                    if age_days < 80 {
+                        let note = format!(
+                            "provider={provider_name}; throttled (last fetch {age_days}d ago, quarterly cadence)"
+                        );
+                        info_ln!(verbose, "⊘ flows ({note})");
+                        dag_result.add(SourceResult {
+                            name: "flows".to_string(),
+                            label: "Capital Flows".to_string(),
+                            status: SourceStatus::Skipped,
+                            items_attempted: Some(0),
+                            items_failed: Some(0),
+                            failed_symbols: None,
+                            items_updated: Some(0),
+                            duration_ms: start.elapsed().as_millis() as u64,
+                            reason: Some("quarterly-cadence throttle".to_string()),
+                            age_minutes: Some(age_days * 24 * 60),
+                            error: None,
+                            detail: Some(note),
+                        });
+                        return;
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                info_ln!(verbose, "flows cadence check failed (continuing): {e}");
+            }
+        }
+    }
+
     match provider.fetch(None) {
         Ok(result) => {
             let mut inserted = 0usize;

@@ -217,6 +217,27 @@ pub fn aggregate_by_asset(conn: &Connection, since: &str) -> Result<Vec<AssetFlo
     Ok(out)
 }
 
+/// Return the most-recent `fetched_at` (RFC3339) for any row matching
+/// `flow_type`, or `None` when the table has no such row. Used by the
+/// refresh hook to enforce per-provider cadence throttles (e.g.
+/// `sec_edgar_13f` is quarterly).
+pub fn latest_fetched_at_for_type(
+    conn: &Connection,
+    flow_type: &str,
+) -> Result<Option<String>> {
+    ensure_table(conn)?;
+    let mut stmt = conn.prepare(
+        "SELECT fetched_at FROM capital_flows WHERE flow_type = ?1
+         ORDER BY fetched_at DESC LIMIT 1",
+    )?;
+    let mut rows = stmt.query(params![flow_type])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(row.get::<_, String>(0)?))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Sign-apply the `amount_usd` based on whether the flow type indicates
 /// an outflow/redemption.
 fn signed_amount(row: &CapitalFlowRow) -> Result<Decimal> {
@@ -384,6 +405,32 @@ mod tests {
         assert_eq!(agg[1].asset, "SPY");
         let spy_net = Decimal::from_str(&agg[1].net_flow_usd).expect("spy net");
         assert_eq!(spy_net, dec!(2_500_000));
+    }
+
+    #[test]
+    fn latest_fetched_at_returns_none_for_empty_and_populated_for_match() {
+        let conn = fresh_conn();
+        assert!(
+            latest_fetched_at_for_type(&conn, "institutional_13f")
+                .expect("query empty")
+                .is_none()
+        );
+        insert(
+            &conn,
+            &mk_flow("AAPL_CUSIP", "institutional_13f", dec!(150_000_000), "2026-03-31"),
+        )
+        .expect("insert");
+        let latest = latest_fetched_at_for_type(&conn, "institutional_13f")
+            .expect("query populated");
+        let stamp = latest.expect("some value present");
+        // RFC3339 prefix sanity check.
+        assert!(stamp.len() >= 10);
+        // Other flow_types still see None.
+        assert!(
+            latest_fetched_at_for_type(&conn, "etf_creation")
+                .expect("query empty")
+                .is_none()
+        );
     }
 
     #[test]
