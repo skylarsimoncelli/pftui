@@ -1990,6 +1990,285 @@ pub fn run_add_lesson(
     Ok(())
 }
 
+/// Run the pre-flight check without persisting a prediction. Implements the
+/// `pftui journal prediction preflight` CLI surface.
+#[allow(clippy::too_many_arguments)]
+pub fn run_preflight(
+    backend: &BackendConnection,
+    claim: &str,
+    symbol: Option<&str>,
+    timeframe: Option<&str>,
+    conviction: Option<&str>,
+    layer: Option<&str>,
+    topic: Option<&str>,
+    inline: bool,
+    json_output: bool,
+) -> Result<()> {
+    let conn = backend
+        .sqlite_native()
+        .ok_or_else(|| anyhow::anyhow!("prediction preflight requires the SQLite backend"))?;
+    let resolved_timeframe = match timeframe {
+        Some(tf) => Some(normalize_timeframe(tf)?),
+        None => None,
+    };
+    if let Some(c) = conviction {
+        validate_conviction(c)?;
+    }
+    let resolved_layer = layer.map(|s| s.to_string()).or_else(|| resolved_timeframe.clone());
+    let draft = crate::db::preflight::PreflightDraft {
+        claim: claim.to_string(),
+        symbol: symbol.map(|s| s.to_string()),
+        timeframe: resolved_timeframe,
+        conviction: conviction.map(|s| s.to_string()),
+        layer: resolved_layer,
+        topic: topic.map(|s| s.to_string()),
+    };
+    let findings = crate::db::preflight::compute_preflight(conn, &draft)?;
+    if inline && !json_output {
+        println!("{}", findings.inline_summary());
+        return Ok(());
+    }
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&findings)?);
+        return Ok(());
+    }
+    render_preflight_pretty(&findings);
+    Ok(())
+}
+
+fn render_preflight_pretty(findings: &crate::db::preflight::PreflightFindings) {
+    println!("Preflight check");
+    println!("  claim: {}", findings.draft.claim);
+    if let Some(c) = &findings.cluster_key {
+        println!("  cluster_key: {}", c);
+    } else {
+        println!("  cluster_key: <unclassified>");
+    }
+    println!(
+        "  preflight_score: {}/100 (higher = riskier)",
+        findings.preflight_score
+    );
+    if !findings.risk_factors.is_empty() {
+        println!("  risk_factors:");
+        for f in &findings.risk_factors {
+            println!("    - {}", f);
+        }
+    }
+    if let Some(adj) = &findings.calibration_adjustment {
+        println!(
+            "  calibration: layer={} topic={} conviction={} direction={} adjustment={:+.0}pp ({}/{} scored, raw_hit_rate={:.0}%)",
+            adj.layer,
+            adj.topic,
+            adj.conviction,
+            adj.adjustment_direction,
+            adj.adjustment_pp,
+            adj.n_scored,
+            adj.n_scored,
+            adj.raw_hit_rate * 100.0,
+        );
+        if !adj.apply_note.is_empty() {
+            println!("    note: {}", adj.apply_note);
+        }
+    }
+    if let Some(stats) = &findings.cluster_hit_stats {
+        println!(
+            "  cluster_hit_rate: {:.0}% ({}/{} scored, n_total={})",
+            stats.hit_rate_pct, stats.n_correct, stats.n_scored, stats.n_total
+        );
+    }
+    if !findings.reasoning_fragments.is_empty() {
+        println!("  reasoning_fragments:");
+        for f in &findings.reasoning_fragments {
+            println!(
+                "    - {} [{}] topic={} conf={}",
+                f.canonical_id, f.fragment_type, f.topic, f.confidence
+            );
+        }
+    }
+    if let Some(co) = &findings.top_co_failing_cluster {
+        println!(
+            "  top_co_failing_cluster: {} <-> {} share={:.0}% (window={}d, n={})",
+            co.cluster_a,
+            co.cluster_b,
+            co.co_wrong_share * 100.0,
+            co.window_days,
+            co.co_wrong_count,
+        );
+    }
+    if !findings.similar_predictions.is_empty() {
+        println!("  similar_predictions (top {}):", findings.similar_predictions.len());
+        for p in &findings.similar_predictions {
+            println!(
+                "    - #{} [{}|{}] {}",
+                p.id,
+                p.symbol.clone().unwrap_or_else(|| "—".into()),
+                p.outcome,
+                p.claim
+            );
+        }
+    }
+    if !findings.scenario_link_distribution.is_empty() {
+        println!("  scenario_link_distribution:");
+        for s in &findings.scenario_link_distribution {
+            let label = s
+                .scenario_name
+                .clone()
+                .unwrap_or_else(|| format!("scenario#{}", s.scenario_id));
+            println!("    - {}: {} links", label, s.link_count);
+        }
+    }
+    if let Some(rule) = &findings.similar_falsification_rule {
+        println!(
+            "  most_similar_falsification_rule: id={} prediction={} type={} similarity={:.2}",
+            rule.id, rule.prediction_id, rule.rule_type, rule.similarity_score
+        );
+        println!("    excerpt: {}", rule.claim_excerpt);
+    }
+}
+
+/// Add a prediction with the auto-preflight gate. Wraps the legacy add path
+/// in `run` so existing callers without preflight semantics continue to work.
+#[allow(clippy::too_many_arguments)]
+pub fn run_add_with_preflight(
+    backend: &BackendConnection,
+    claim: &str,
+    symbol: Option<&str>,
+    conviction: Option<&str>,
+    timeframe: Option<&str>,
+    confidence: Option<f64>,
+    source_agent: Option<&str>,
+    target_date: Option<&str>,
+    resolution_criteria: Option<&str>,
+    lessons_applied: Option<&str>,
+    topic: Option<&str>,
+    source_article_id: Option<i64>,
+    override_cap: bool,
+    layer: Option<&str>,
+    skip_preflight: bool,
+    accept_preflight: bool,
+    inline: bool,
+    preflight_threshold: Option<u32>,
+    json_output: bool,
+) -> Result<()> {
+    // Validate inputs early so callers see the same errors regardless of
+    // preflight pathing.
+    if let Some(c) = conviction {
+        validate_conviction(c)?;
+    }
+    let resolved_timeframe = match timeframe {
+        Some(tf) => Some(normalize_timeframe(tf)?),
+        None => None,
+    };
+    if let Some(conf) = confidence {
+        if !(0.0..=1.0).contains(&conf) {
+            bail!("invalid confidence '{}'. Valid range: 0.0..=1.0", conf);
+        }
+    }
+
+    let threshold = preflight_threshold
+        .unwrap_or(crate::db::preflight::DEFAULT_PREFLIGHT_ABORT_THRESHOLD);
+
+    let mut inline_block: Option<String> = None;
+    if !skip_preflight {
+        let conn = backend
+            .sqlite_native()
+            .ok_or_else(|| anyhow::anyhow!("prediction preflight requires the SQLite backend"))?;
+        let resolved_layer = layer.map(|s| s.to_string()).or_else(|| resolved_timeframe.clone());
+        let draft = crate::db::preflight::PreflightDraft {
+            claim: claim.to_string(),
+            symbol: symbol.map(|s| s.to_string()),
+            timeframe: resolved_timeframe.clone(),
+            conviction: conviction.map(|s| s.to_string()),
+            layer: resolved_layer,
+            topic: topic.map(|s| s.to_string()),
+        };
+        let findings = crate::db::preflight::compute_preflight(conn, &draft)?;
+        let blocking = findings.is_blocking(threshold);
+
+        if blocking && !accept_preflight {
+            if json_output {
+                let payload = serde_json::json!({
+                    "aborted": true,
+                    "preflight_threshold": threshold,
+                    "findings": findings,
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+            } else {
+                eprintln!(
+                    "Prediction aborted by preflight (score {} >= threshold {}).",
+                    findings.preflight_score, threshold
+                );
+                eprintln!("Re-run with --accept-preflight to commit, or --skip-preflight to bypass entirely.");
+                eprintln!();
+                render_preflight_pretty(&findings);
+            }
+            bail!(
+                "preflight blocked save (score {} >= threshold {})",
+                findings.preflight_score,
+                threshold
+            );
+        }
+        if inline {
+            inline_block = Some(findings.inline_summary());
+        }
+        if !json_output {
+            println!(
+                "Preflight: cluster={} score={}/100{}",
+                findings
+                    .cluster_key
+                    .clone()
+                    .unwrap_or_else(|| "<unclassified>".into()),
+                findings.preflight_score,
+                if blocking {
+                    " (override via --accept-preflight)"
+                } else {
+                    ""
+                }
+            );
+        }
+    }
+
+    let resolution_with_inline: Option<String> = match (resolution_criteria, inline_block.as_ref())
+    {
+        (Some(existing), Some(block)) => Some(format!("{}\n{}", existing, block)),
+        (Some(existing), None) => Some(existing.to_string()),
+        (None, Some(block)) => Some(block.clone()),
+        (None, None) => None,
+    };
+
+    enforce_low_prediction_cap(
+        backend,
+        resolved_timeframe.as_deref(),
+        source_agent,
+        override_cap,
+    )?;
+    let lessons_applied_ids = parse_lessons_applied_arg(lessons_applied)?;
+    let new_id = user_predictions::add_prediction_backend_with_details(
+        backend,
+        claim,
+        symbol,
+        conviction,
+        resolved_timeframe.as_deref(),
+        confidence,
+        source_agent,
+        target_date,
+        resolution_with_inline.as_deref(),
+        &lessons_applied_ids,
+        topic,
+        source_article_id,
+    )?;
+
+    if json_output {
+        let rows = user_predictions::list_predictions_backend(backend, None, None, None, None)?;
+        if let Some(row) = rows.into_iter().find(|r| r.id == new_id) {
+            println!("{}", serde_json::to_string_pretty(&row)?);
+        }
+    } else {
+        println!("Added prediction #{}", new_id);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2832,5 +3111,190 @@ mod tests {
 
         let result = run_bulk_lessons(&backend, None, true, true, true, true);
         assert!(result.is_ok());
+    }
+
+    fn seed_high_risk_substrate(conn: &rusqlite::Connection) {
+        // Make the gold cluster look maximally risky so the preflight score
+        // for a gold/real-yield claim crosses the 50pt abort threshold.
+        crate::db::reasoning_fragments::upsert_fragment(
+            conn,
+            "realrates-dominates-gold",
+            "Real yields dominate gold direction",
+            "anti-pattern",
+            "gold",
+            "high",
+            None,
+            true,
+        )
+        .unwrap();
+        // Calibration row: layer=low / topic=commodities / conviction=high
+        // with a 17pp discount (drives the +25 risk).
+        crate::db::calibration_adjustments::upsert(
+            conn,
+            "low",
+            "commodities",
+            "high",
+            12,
+            0.55,
+            0.72,
+            -17.0,
+            "discount",
+            "Discount confidence by 17pp",
+        )
+        .unwrap();
+        // Failure correlation with 75% co-fail share triggers +20.
+        crate::db::failure_correlations::upsert(
+            conn,
+            "realrates_dominates_gold",
+            "btc_correlation_regime",
+            6,
+            8,
+            10,
+            0.75,
+            7,
+        )
+        .unwrap();
+        // Lesson under the cluster + edge so the fragment is reachable.
+        conn.execute(
+            "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, topic, outcome, lessons_applied) VALUES ('stub', 'GLD', 'high', 'medium', 'commodities', 'pending', '[]')",
+            [],
+        ).unwrap();
+        let pid: i64 = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO prediction_lessons
+                (prediction_id, miss_type, what_predicted, what_happened, why_wrong, signal_misread, cluster_key)
+             VALUES (?1, 'directional', 'a', 'b', 'c', NULL, 'realrates_dominates_gold')",
+            rusqlite::params![pid],
+        )
+        .unwrap();
+        let lid: i64 = conn.last_insert_rowid();
+        crate::db::reasoning_fragments::upsert_edge(conn, lid, "realrates-dominates-gold", "primary")
+            .unwrap();
+    }
+
+    fn realrates_gold_claim() -> &'static str {
+        "Real yield breakdown drives tips and breakeven repricing"
+    }
+
+    #[test]
+    fn preflight_add_blocks_high_score_without_accept_flag() {
+        let conn = db::open_in_memory();
+        seed_high_risk_substrate(&conn);
+        let backend = BackendConnection::Sqlite { conn };
+        let result = run_add_with_preflight(
+            &backend,
+            realrates_gold_claim(),
+            Some("GLD"),
+            Some("high"),
+            Some("medium"),
+            Some(0.7),
+            Some("medium-agent"),
+            None,
+            None,
+            None,
+            Some("commodities"),
+            None,
+            false,
+            Some("low"),
+            false, // skip_preflight
+            false, // accept_preflight
+            false, // inline
+            None,  // threshold (default 50)
+            false,
+        );
+        let err = result.unwrap_err();
+        assert!(format!("{err:#}").contains("preflight blocked save"));
+    }
+
+    #[test]
+    fn preflight_add_skip_flag_bypasses_substrate() {
+        let conn = db::open_in_memory();
+        seed_high_risk_substrate(&conn);
+        let backend = BackendConnection::Sqlite { conn };
+        let result = run_add_with_preflight(
+            &backend,
+            realrates_gold_claim(),
+            Some("GLD"),
+            Some("high"),
+            Some("medium"),
+            Some(0.7),
+            Some("medium-agent"),
+            None,
+            None,
+            None,
+            Some("commodities"),
+            None,
+            false,
+            Some("low"),
+            true,  // skip_preflight
+            false, // accept_preflight
+            false, // inline
+            None,
+            true, // json (suppresses pretty)
+        );
+        assert!(result.is_ok(), "skip-preflight must bypass abort: {result:?}");
+    }
+
+    #[test]
+    fn preflight_add_accept_flag_commits_blocking_score() {
+        let conn = db::open_in_memory();
+        seed_high_risk_substrate(&conn);
+        let backend = BackendConnection::Sqlite { conn };
+        let result = run_add_with_preflight(
+            &backend,
+            realrates_gold_claim(),
+            Some("GLD"),
+            Some("high"),
+            Some("medium"),
+            Some(0.7),
+            Some("medium-agent"),
+            None,
+            None,
+            None,
+            Some("commodities"),
+            None,
+            false,
+            Some("low"),
+            false, // skip_preflight
+            true,  // accept_preflight
+            true,  // inline -> resolution_criteria appended
+            None,
+            true,
+        );
+        assert!(result.is_ok(), "accept-preflight must commit: {result:?}");
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let saved = rows.iter().find(|r| r.claim == realrates_gold_claim()).unwrap();
+        let crit = saved.resolution_criteria.clone().unwrap_or_default();
+        assert!(crit.contains("[preflight]"), "expected inline preflight block in resolution_criteria, got: {crit}");
+    }
+
+    #[test]
+    fn preflight_add_low_score_commits_without_flag() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        let result = run_add_with_preflight(
+            &backend,
+            "Totally uncategorized text zzz",
+            None,
+            Some("medium"),
+            Some("medium"),
+            Some(0.5),
+            Some("medium-agent"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            false,
+            false,
+            false,
+            None,
+            true,
+        );
+        assert!(result.is_ok(), "low-score claim must commit: {result:?}");
     }
 }

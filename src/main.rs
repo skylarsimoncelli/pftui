@@ -158,6 +158,11 @@ fn run_agent_journal(
                 resolution_criteria,
                 lessons,
                 override_cap,
+                skip_preflight,
+                accept_preflight,
+                inline,
+                preflight_threshold,
+                layer,
                 json,
             } => {
                 let text = claim.or(value).ok_or_else(|| {
@@ -167,29 +172,52 @@ fn run_agent_journal(
                          pftui journal prediction add \"BTC above 70k\" --timeframe low"
                     )
                 })?;
-                commands::predict::run(
+                let effective_timeframe = timeframe
+                    .clone()
+                    .or_else(|| timeframe_pos.clone());
+                let effective_layer = layer.clone().or_else(|| effective_timeframe.clone());
+                commands::predict::run_add_with_preflight(
                     backend,
-                    "add",
-                    Some(&text),
-                    None,
+                    &text,
                     symbol.as_deref(),
                     conviction.as_deref(),
-                    timeframe.as_deref().or(timeframe_pos.as_deref()),
+                    effective_timeframe.as_deref(),
                     confidence.or(confidence_pos),
                     source_agent.as_deref(),
                     target_date.as_deref(),
                     resolution_criteria.as_deref(),
                     lessons.as_deref(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
                     topic.as_deref(),
                     source_article_id,
                     override_cap,
+                    effective_layer.as_deref(),
+                    skip_preflight,
+                    accept_preflight,
+                    inline,
+                    preflight_threshold,
+                    json,
+                )
+            }
+            cli::JournalPredictionCommand::Preflight {
+                claim,
+                symbol,
+                timeframe,
+                conviction,
+                layer,
+                topic,
+                inline,
+                json,
+            } => {
+                let effective_layer = layer.clone().or_else(|| timeframe.clone());
+                commands::predict::run_preflight(
+                    backend,
+                    &claim,
+                    symbol.as_deref(),
+                    timeframe.as_deref(),
+                    conviction.as_deref(),
+                    effective_layer.as_deref(),
+                    topic.as_deref(),
+                    inline,
                     json,
                 )
             }

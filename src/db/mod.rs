@@ -63,6 +63,7 @@ pub mod prediction_cache;
 pub mod prediction_contracts;
 pub mod prediction_falsification_rules;
 pub mod prediction_lessons;
+pub mod preflight;
 pub mod predictions_cache;
 pub mod predictions_history;
 pub mod price_cache;
