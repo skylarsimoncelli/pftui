@@ -5449,7 +5449,7 @@ mod tests {
         assert!(plan.worldbank);
         assert!(plan.analytics);
         assert!(plan.cleanup);
-        assert_eq!(plan.selected_task_names().len(), 19);
+        assert_eq!(plan.selected_task_names().len(), 20);
     }
 
     #[test]
@@ -5501,7 +5501,7 @@ mod tests {
         assert!(plan.predictions);
         assert!(!plan.worldbank);
         assert!(!plan.bls);
-        assert_eq!(plan.selected_task_names().len(), 17);
+        assert_eq!(plan.selected_task_names().len(), 18);
     }
 
     #[test]
