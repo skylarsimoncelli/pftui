@@ -1640,6 +1640,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     crate::db::adversary_views::ensure_table(conn)?;
     crate::db::adversary_synthesis_views::ensure_table(conn)?;
     crate::db::calibration_adjustments::ensure_table(conn)?;
+    crate::db::capital_flows::ensure_table(conn)?;
     crate::db::failure_correlations::ensure_table(conn)?;
     crate::db::thesis_dependencies::ensure_table(conn)?;
     crate::db::operator_replies::ensure_table(conn)?;

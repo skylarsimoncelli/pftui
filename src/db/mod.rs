@@ -5,6 +5,8 @@ pub mod agent_messages;
 pub mod alignment_score;
 pub mod analyst_views;
 pub mod calibration_adjustments;
+#[allow(dead_code)] // Infrastructure for F59 capital flow tracking (provider scaffold)
+pub mod capital_flows;
 pub mod event_annotations;
 pub mod failure_correlations;
 pub mod operator_replies;
