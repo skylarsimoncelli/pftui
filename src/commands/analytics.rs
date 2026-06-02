@@ -1783,11 +1783,17 @@ pub fn run_technicals_cmd(
 /// Canonical names for the extended `--include` subset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum IncludeFeature {
+    // signals subset (Agent V)
     MtfRsi,
     PiCycle,
     MtfBreakout,
     BollingerReversal,
     RsiExtreme,
+    // channels subset (Agent U)
+    GaussianChannel,
+    ZoneChannel,
+    VolatilityTrend,
+    DonchianTrend,
 }
 
 impl IncludeFeature {
@@ -1798,6 +1804,10 @@ impl IncludeFeature {
             IncludeFeature::MtfBreakout => "mtf-breakout",
             IncludeFeature::BollingerReversal => "bollinger-reversal",
             IncludeFeature::RsiExtreme => "rsi-extreme",
+            IncludeFeature::GaussianChannel => "gaussian-channel",
+            IncludeFeature::ZoneChannel => "zone-channel",
+            IncludeFeature::VolatilityTrend => "volatility-trend",
+            IncludeFeature::DonchianTrend => "donchian-trend",
         }
     }
 }
@@ -1814,6 +1824,10 @@ fn parse_include_flag(raw: Option<&str>) -> Vec<IncludeFeature> {
         IncludeFeature::MtfBreakout,
         IncludeFeature::BollingerReversal,
         IncludeFeature::RsiExtreme,
+        IncludeFeature::GaussianChannel,
+        IncludeFeature::ZoneChannel,
+        IncludeFeature::VolatilityTrend,
+        IncludeFeature::DonchianTrend,
     ];
     let mut out = Vec::new();
     for token in raw.split(',') {
@@ -1829,13 +1843,18 @@ fn parse_include_flag(raw: Option<&str>) -> Vec<IncludeFeature> {
             }
             continue;
         }
-        // signals subset (Agent V)
         let matched = match token.as_str() {
+            // signals subset (Agent V)
             "mtf-rsi" | "mtf_rsi" => Some(IncludeFeature::MtfRsi),
             "pi-cycle" | "pi_cycle" => Some(IncludeFeature::PiCycle),
             "mtf-breakout" | "mtf_breakout" => Some(IncludeFeature::MtfBreakout),
             "bollinger-reversal" | "bollinger_reversal" => Some(IncludeFeature::BollingerReversal),
             "rsi-extreme" | "rsi_extreme" => Some(IncludeFeature::RsiExtreme),
+            // channels subset (Agent U)
+            "gaussian-channel" | "gaussian_channel" => Some(IncludeFeature::GaussianChannel),
+            "zone-channel" | "zone_channel" => Some(IncludeFeature::ZoneChannel),
+            "volatility-trend" | "volatility_trend" => Some(IncludeFeature::VolatilityTrend),
+            "donchian-trend" | "donchian_trend" => Some(IncludeFeature::DonchianTrend),
             _ => None,
         };
         if let Some(f) = matched {
@@ -1843,8 +1862,7 @@ fn parse_include_flag(raw: Option<&str>) -> Vec<IncludeFeature> {
                 out.push(f);
             }
         }
-        // Unknown tokens are silently ignored: a future PR (Agent U)
-        // will add channels-subset tokens here without breaking parsing.
+        // Unknown tokens are silently ignored.
     }
     out
 }
@@ -1956,6 +1974,88 @@ fn compute_extended_for_symbol(
                     "rsi_extreme".to_string(),
                     serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
                 );
+            }
+            IncludeFeature::GaussianChannel => {
+                use crate::indicators::extended::{
+                    compute_gaussian_channel, GaussianChannelConfig,
+                };
+                let cfg = GaussianChannelConfig::default();
+                let value = match compute_gaussian_channel(&closes, &cfg) {
+                    Some(r) => serde_json::json!({
+                        "middle": r.middle,
+                        "upper": r.upper,
+                        "lower": r.lower,
+                        "band_state": r.band_state.as_str(),
+                    }),
+                    None => serde_json::Value::Null,
+                };
+                payload.insert("gaussian_channel".to_string(), value);
+            }
+            IncludeFeature::ZoneChannel => {
+                use crate::indicators::extended::{compute_zone_channel, ZoneChannelConfig};
+                let cfg = ZoneChannelConfig::default();
+                let value = match compute_zone_channel(&closes, &cfg) {
+                    Some(r) => serde_json::json!({
+                        "upper_outer": r.upper_outer,
+                        "upper_inner": r.upper_inner,
+                        "lower_inner": r.lower_inner,
+                        "lower_outer": r.lower_outer,
+                        "zone_position": r.zone_position.as_str(),
+                    }),
+                    None => serde_json::Value::Null,
+                };
+                payload.insert("zone_channel".to_string(), value);
+            }
+            IncludeFeature::VolatilityTrend => {
+                use crate::indicators::extended::{
+                    compute_volatility_trend, VolatilityTrendConfig,
+                };
+                let cfg = VolatilityTrendConfig::default();
+                let value = match compute_volatility_trend(&closes, &cfg) {
+                    Some(r) => serde_json::json!({
+                        "value": r.value,
+                        "slope": r.slope.as_str(),
+                        "trend_strength": r.trend_strength,
+                    }),
+                    None => serde_json::Value::Null,
+                };
+                payload.insert("volatility_trend".to_string(), value);
+            }
+            IncludeFeature::DonchianTrend => {
+                use crate::indicators::extended::{
+                    compute_donchian_trend, hybrid_trend_blend, DonchianTrendConfig,
+                    VolatilityTrendConfig,
+                };
+                let cfg = DonchianTrendConfig::default();
+                let highs_opt: Vec<Option<f64>> = highs.iter().map(|h| Some(*h)).collect();
+                let lows_opt: Vec<Option<f64>> = lows.iter().map(|l| Some(*l)).collect();
+                let value = match compute_donchian_trend(&closes, &highs_opt, &lows_opt, &cfg) {
+                    Some(r) => serde_json::json!({
+                        "value": r.value,
+                        "slope": r.slope.as_str(),
+                    }),
+                    None => serde_json::Value::Null,
+                };
+                payload.insert("donchian_trend".to_string(), value);
+
+                // Emit the hybrid blend when both volatility-trend and
+                // donchian-trend are requested — equal-weighted default.
+                if includes.contains(&IncludeFeature::VolatilityTrend) {
+                    let vol_cfg = VolatilityTrendConfig::default();
+                    let hybrid = hybrid_trend_blend(
+                        &closes, &highs_opt, &lows_opt, &vol_cfg, &cfg, 0.5,
+                    );
+                    let hybrid_value = match hybrid {
+                        Some(h) => serde_json::json!({
+                            "value": h.value,
+                            "slope": h.slope.as_str(),
+                            "volatility_weight": h.volatility_weight,
+                            "donchian_weight": h.donchian_weight,
+                        }),
+                        None => serde_json::Value::Null,
+                    };
+                    payload.insert("hybrid_trend".to_string(), hybrid_value);
+                }
             }
         }
     }

@@ -4245,8 +4245,9 @@ pub enum AnalyticsCommand {
         timeframe: String,
         #[arg(long)]
         limit: Option<usize>,
-        /// Optional extended-indicator/signal subset to include in the output.
-        /// Comma-separated list. Signals subset values: `mtf-rsi`, `pi-cycle`,
+        /// Comma-separated extended indicators/signals to include. Channels
+        /// subset: `gaussian-channel`, `zone-channel`, `volatility-trend`,
+        /// `donchian-trend`. Signals subset: `mtf-rsi`, `pi-cycle`,
         /// `mtf-breakout`, `bollinger-reversal`, `rsi-extreme`. Pass `all` to
         /// include every extended output. Default: legacy RSI/MACD/SMA/BB/ATR
         /// set only.
@@ -8805,6 +8806,34 @@ mod tests {
         };
 
         assert_eq!(symbol.as_deref(), Some("BTC,GC=F"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_technicals_include_channels() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "technicals",
+            "--symbols",
+            "TEST",
+            "--include",
+            "gaussian-channel,zone-channel,volatility-trend,donchian-trend",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Technicals { include, json, .. },
+        }) = cli.command
+        else {
+            panic!("expected analytics technicals command");
+        };
+
+        assert_eq!(
+            include.as_deref(),
+            Some("gaussian-channel,zone-channel,volatility-trend,donchian-trend")
+        );
         assert!(json);
     }
 

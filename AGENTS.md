@@ -303,6 +303,42 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui analytics signals --source timeframe --json` | Cross-timeframe alignment/divergence/transition signals only |
 | `pftui analytics signals --source technical --symbol BTC-USD --json` | Technical signals for a specific symbol |
 | `pftui analytics technicals [--symbol SYM] --json` | Latest persisted technical snapshot(s) — RSI, MACD, SMA, Bollinger, 52W position, volume regime |
+| `pftui analytics technicals --symbols SYM --include gaussian-channel,zone-channel,volatility-trend,donchian-trend --json` | Extended channels-subset indicators alongside the snapshot — Gaussian Channel (DEMA → Gaussian filter → SMMA + σ-bands + `band_state`), Zone EMA Channel (`zone_position` + four band values), Volatility-Weighted Trend (`value`, `slope`, `trend_strength` 0–3), Donchian Midline Trend (`value`, `slope`) + a hybrid blend when both volatility-trend and donchian-trend are included |
+
+### Channels subset (Gaussian, Zone EMA, Volatility, Donchian)
+
+The channels subset extends `pftui analytics technicals` with four channel/trend-line outputs. Selection is via `--include <tokens>` (comma-separated). `--include all` enables every extended indicator the CLI knows about.
+
+Indicator outputs:
+
+| Indicator | `--include` token | Output fields | Notes |
+|---|---|---|---|
+| Gaussian Channel band | `gaussian-channel` | `middle`, `upper`, `lower`, `band_state` (`above_upper` / `in_band` / `below_lower`) | Chain: DEMA → Gaussian filter → SMMA. Defaults DEMA 7, Gaussian length 4, σ 2.0, SMMA 12, SD lookback 30, upper/lower σ multipliers 2.5 / 1.8. |
+| Zone EMA Channel | `zone-channel` | `upper_outer`, `upper_inner`, `lower_inner`, `lower_outer`, `zone_position` (`upper-outer` / `upper-inner` / `lower-inner` / `lower-outer`) | Two EMAs (default 144 / 233). Outer bands extend inner bands by a configurable scale (default 1.5×). |
+| Volatility-Weighted Trend | `volatility-trend` | `value`, `slope` (`up` / `down` / `flat`), `trend_strength` (0–3 integer) | Smoothing constant α modulated by realised return volatility. Sensitivity Fast / Medium / Slow → length 9 / 18 / 27 (default Medium). |
+| Donchian Midline Trend | `donchian-trend` | `value`, `slope` | Mean of conversion-length (default 5) and baseline-length (default 26) Donchian midlines. |
+| Hybrid Trend Blend | `donchian-trend` + `volatility-trend` | `value`, `slope`, `volatility_weight`, `donchian_weight` | Emitted automatically when both volatility-trend and donchian-trend are requested. Default 50/50 blend. |
+
+Naming policy: canonical TA terminology only — no vendor / indicator brand names anywhere (table columns, JSON field names, CLI flags, comments). All math runs over the raw price-history closes (highs/lows for Donchian) — `f64` is acceptable here because these are indicator floats, not money / quantities.
+
+JSON shape (single symbol, `--include all`):
+
+```jsonc
+{
+  "timeframe": "1d",
+  "technicals": [/* existing snapshot rows */],
+  "count": 1,
+  "extended": {
+    "TEST": {
+      "gaussian_channel": { "middle": …, "upper": …, "lower": …, "band_state": "in_band" },
+      "zone_channel":     { "upper_outer": …, "upper_inner": …, "lower_inner": …, "lower_outer": …, "zone_position": "upper-inner" },
+      "volatility_trend": { "value": …, "slope": "up", "trend_strength": 2 },
+      "donchian_trend":   { "value": …, "slope": "up" },
+      "hybrid_trend":     { "value": …, "slope": "up", "volatility_weight": 0.5, "donchian_weight": 0.5 }
+    }
+  }
+}
+```
 | `pftui analytics technicals --symbols SYM --include mtf-rsi,pi-cycle,mtf-breakout,bollinger-reversal,rsi-extreme [--json]` | Extended signals subset: multi-timeframe RSI alignment, pi-cycle top/bottom crossover, multi-timeframe breakout composite, Bollinger reversal with multi-bar confirmation, RSI extreme highlighting. Pass `--include all` to enable every extended output known to the binary (channels + signals). |
 
 ### Utility
