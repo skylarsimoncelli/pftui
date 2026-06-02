@@ -165,6 +165,8 @@ Contract for predictions:
 | `pftui portfolio watchlist --json` | All watched symbols with prices, day change, 52W range |
 | `pftui analytics movers --json [--threshold N] [--overnight]` | Significant daily/overnight moves (default >3%) |
 | `pftui data predictions --json [--limit N]` | Polymarket prediction market odds |
+| `pftui data predictions map --auto-suggest [--scenario "<name>"] [--json]` | Auto-suggest top-3 scenario↔contract mapping candidates per active scenario, scored by keyword overlap and category fit. Restrict to one scenario with `--scenario`. |
+| `pftui data predictions map --scenario "<name>" --contract-id <id> [--json]` | Explicit mapping write: link a Polymarket contract to a scenario. `--contract-id` is a visible alias for `--contract`. |
 | `pftui data sentiment --json` | Crypto + traditional Fear & Greed, COT positioning |
 | `pftui data news --json [--limit N] [--filter-independence independent,wire]` | Financial news from RSS and Brave-backed cache, including `topic`, `bound_markets`, `source_tier`, and `source_independence` |
 | `pftui data news feeds list --json` | RSS feed health by feed, including status, failure counts, and last failure reason |

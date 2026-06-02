@@ -921,6 +921,7 @@ fn dispatch_predictions(
             search,
             contract,
             list,
+            auto_suggest,
             json: j,
         }) => commands::predictions_map::run_map(
             backend,
@@ -928,6 +929,7 @@ fn dispatch_predictions(
             search.as_deref(),
             contract.as_deref(),
             list,
+            auto_suggest,
             j || json,
         ),
         Some(cli::DataPredictionsCommand::SuggestMappings {
