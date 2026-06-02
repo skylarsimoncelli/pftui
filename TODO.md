@@ -35,11 +35,6 @@
 **Scope:** New `data flows` source pulling ETF flow data (ETF.com or similar), institutional 13F filings, and crypto exchange flow data. New table `capital_flows`. Integration into agent routines.
 **Effort:** 3–4 weeks.
 
-### [Claude-WIP 2026-06-02j — DO NOT PICK] Thesis dependency graph — LLM-assisted extraction backfill
-**Source:** Follow-up to the 2026-06-02 cross-asset thesis dependency graph PR. That PR landed the `thesis_dependencies` table, `pftui analytics thesis-chains list|show|validate|add`, the price-threshold validator, the `journal prediction preflight` integration, and a `report::sections::thesis_chains_macro::render_thesis_chains_block` renderer.
-**Why:** Chains are currently authored by hand via `thesis-chains add`. The fastest way to seed 30-60 high-quality chains is a one-shot Opus extraction pass over `thesis.content` + `prediction_lessons.why_wrong` + last-90d `agent_messages`.
-**Scope:** (1) Add an Opus subagent or `pftui agent` command that reads the three sources, emits JSONL `{antecedent_text, relation, consequent_text, conviction, source_lesson_ids, source_thesis_sections, evidence_count}` triples, and calls `analytics thesis-chains add` for each row. (2) Enrich the validator to handle additional predicate shapes (range thresholds, derived metrics like real_yield, DXY-spread). (3) Auto-wire the `thesis_chains_macro::render_thesis_chains_block` output into the daily-report Macro section assembler once the assembler exposes a chain-loading hook. (4) Tests: extraction produces valid triples; auto-wire respects the public-mode privacy guard (chains do not leak portfolio-specific framing).
-**Effort:** 1 week (mostly subagent prompt engineering + Opus call budget).
 
 ---
 ### [Claude-WIP 2026-06-02i — DO NOT PICK] Adversary pseudo-analyst layer — argue against the convergence
