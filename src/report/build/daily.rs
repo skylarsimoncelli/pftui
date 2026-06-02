@@ -1362,7 +1362,7 @@ mod assembler_tests {
     fn audit_public_markdown_rejects_skylar_token() {
         let body = "## Executive Summary\n\nSkylar's journal said the regime is shifting.";
         let violations = audit_public_markdown(body);
-        assert!(violations.iter().any(|v| v.token.to_ascii_lowercase() == "skylar"));
+        assert!(violations.iter().any(|v| v.token.eq_ignore_ascii_case("skylar")));
     }
 
     #[test]
