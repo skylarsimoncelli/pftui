@@ -4245,6 +4245,11 @@ pub enum AnalyticsCommand {
         timeframe: String,
         #[arg(long)]
         limit: Option<usize>,
+        /// Comma-separated extended indicators to include. Channels subset
+        /// values: gaussian-channel,zone-channel,volatility-trend,donchian-trend.
+        /// Use `all` to include every extended indicator the CLI knows about.
+        #[arg(long)]
+        include: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -8798,6 +8803,34 @@ mod tests {
         };
 
         assert_eq!(symbol.as_deref(), Some("BTC,GC=F"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_technicals_include_channels() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "technicals",
+            "--symbols",
+            "TEST",
+            "--include",
+            "gaussian-channel,zone-channel,volatility-trend,donchian-trend",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Technicals { include, json, .. },
+        }) = cli.command
+        else {
+            panic!("expected analytics technicals command");
+        };
+
+        assert_eq!(
+            include.as_deref(),
+            Some("gaussian-channel,zone-channel,volatility-trend,donchian-trend")
+        );
         assert!(json);
     }
 
