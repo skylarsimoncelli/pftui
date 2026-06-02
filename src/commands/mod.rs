@@ -82,6 +82,7 @@ pub mod predictions;
 pub mod predictions_map;
 pub mod prices;
 pub mod question;
+pub mod real_yields;
 pub mod rebalance;
 pub mod recommendations;
 pub mod refresh;

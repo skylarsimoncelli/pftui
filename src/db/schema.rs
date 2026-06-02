@@ -900,6 +900,20 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_alignment_score_history_date
             ON alignment_score_history(date DESC);
+
+        -- Real-yields curve ingestion (TIPS, breakevens, G10 sovereign 10Y).
+        -- Yields are basis-point-precision rates, not money, so REAL is OK here
+        -- per the code-standards exception for interest-rate series.
+        CREATE TABLE IF NOT EXISTS real_yields_history (
+            date TEXT NOT NULL,
+            series TEXT NOT NULL,
+            value REAL NOT NULL,
+            source TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (date, series)
+        );
+        CREATE INDEX IF NOT EXISTS idx_real_yields_history_series_date
+            ON real_yields_history(series, date DESC);
         ",
     )?;
 

@@ -50,6 +50,12 @@ pub struct BuildContext {
     pub precious_metals_analyst_views: Vec<AnalystViewSummary>,
     pub precious_metals_news: Vec<PreciousMetalsNewsSignal>,
     pub real_yield_context: Option<RealYieldSummary>,
+    /// Structured real-rates snapshot built from `real_yields_history`.
+    /// Populated when a macro/high analyst routine pre-stamps it (or via the
+    /// future assembler hook documented in AGENTS.md). The renderer in
+    /// `report::sections::real_rates_macro` reads this directly and emits an
+    /// empty string when the snapshot is absent.
+    pub real_rates_snapshot: Option<crate::commands::real_yields::MacroBlockSnapshot>,
     pub sovereign_gold_holdings: Vec<SovereignHoldingSummary>,
     pub equity_indices: Vec<EquityMarketRow>,
     pub equity_sectors: Vec<EquityMarketRow>,
