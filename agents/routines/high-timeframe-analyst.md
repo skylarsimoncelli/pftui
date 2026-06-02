@@ -91,7 +91,11 @@ pftui data economy --json                 # macro indicators with surprise detec
 pftui data consensus list --json          # analyst calls and targets
 pftui data news --hours 168 --json        # 7d news with source tiers, independence, topics, bound markets
 pftui analytics scenario list --json      # active scenarios for structural context
+pftui analytics real-rates differentials --json  # REQUIRED before writing gold or DXY views — US-vs-G10 real-rate spreads
+pftui data real-yields show --since 30d --json   # raw 10Y TIPS / breakeven / G10 sovereign curve
 ```
+
+**Real-rates contract:** before writing any gold or DXY view, call `pftui analytics real-rates differentials --json` and incorporate the US-vs-G10 average spread plus per-pair deltas into the reasoning. Stating a gold or DXY thesis without referencing real yields is a routine violation.
 
 ## Structural News Quality + Calibration Substrate
 

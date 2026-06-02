@@ -23,4 +23,5 @@ pub mod public_market_snapshot;
 pub mod public_methodology;
 pub mod public_news_catalysts;
 pub mod public_scenario_dashboard;
+pub mod real_rates_macro;
 pub mod thesis_chains_macro;

@@ -207,6 +207,9 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui data news topics set TOPIC --primary-market-id ID [--secondary-market-id ID] [--json]` | Bind a news topic such as `iran-hormuz` or `fed-policy` to current market contracts |
 | `pftui data news topics remove TOPIC [--json]` | Remove a news-topic market binding |
 | `pftui data supply --json` | COMEX gold/silver inventory |
+| `pftui data real-yields refresh [--days 90] [--json]` | Fetch US TIPS (`DFII5/10/30`), breakevens (`T5YIE`, `T10YIE`), the US 10Y anchor (`DGS10`), and G10 sovereign 10Y benchmarks (UK/DE/JP/CA) from FRED into `real_yields_history`. Degrades to a no-op when `fred_api_key` is absent or the network is unreachable. |
+| `pftui data real-yields show [--series DFII10] [--since 30d] [--json]` | Read cached real-yield rows; `--since` accepts NNd/NNw/NNm or YYYY-MM-DD. |
+| `pftui analytics real-rates differentials [--since 7d] [--json]` | Per-day US-vs-G10 differentials computed from `real_yields_history`: US 10Y nominal minus the simple average of GB/DE/JP/CA 10Y (in bp) plus each per-pair spread. **HIGH and MACRO timeframe analysts must call this before writing any gold or DXY view.** Daily report Macro hook lives in `src/report/sections/real_rates_macro.rs::render_real_rates_block`; the assembler populates `BuildContext::real_rates_snapshot` from `commands::real_yields::latest_macro_snapshot`. |
 | `pftui data dashboard global --json` | World Bank macro data (GDP, debt, reserves) |
 | `pftui data status --json` | Data source freshness plus daemon health — includes `daemon` heartbeat and `news_feeds` RSS health |
 

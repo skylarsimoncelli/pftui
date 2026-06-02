@@ -205,6 +205,7 @@ impl CadenceTracker {
             calendar: self.due("calendar", cadence.calendar_interval_secs),
             economy: self.due("economy", cadence.economy_interval_secs),
             fred: self.due("fred", cadence.fred_interval_secs),
+            real_yields: self.due("real_yields", cadence.fred_interval_secs),
             bls: self.due("bls", cadence.bls_interval_secs),
             worldbank: self.due("worldbank", cadence.worldbank_interval_secs),
             comex: self.due("comex", cadence.comex_interval_secs),

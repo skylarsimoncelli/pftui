@@ -29,6 +29,8 @@ pub mod polymarket;
 pub mod predictions;
 #[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
 pub mod rss;
+#[allow(dead_code)] // Infrastructure for real-yields curve ingestion (TIPS, breakevens, G10 spreads)
+pub mod real_yields;
 #[allow(dead_code)] // Infrastructure for F19.1+ consumers (sentiment gauges, Economy tab)
 pub mod sentiment;
 #[allow(dead_code)] // Infrastructure for P3 sovereign tracker command

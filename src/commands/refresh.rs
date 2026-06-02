@@ -12,8 +12,8 @@ use crate::analytics::technicals;
 use crate::commands::refresh_dag::{RefreshResult, SourceResult, SourceStatus};
 use crate::config::{Config, PortfolioMode};
 use crate::data::{
-    bls, brave, calendar, comex, cot, economic, fedwatch, fred, fx, ism, onchain, predictions, rss,
-    sentiment, worldbank,
+    bls, brave, calendar, comex, cot, economic, fedwatch, fred, fx, ism, onchain, predictions,
+    real_yields as real_yields_data, rss, sentiment, worldbank,
 };
 use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocations_backend};
 use crate::db::backend::BackendConnection;
@@ -81,6 +81,7 @@ pub struct RefreshPlan {
     pub calendar: bool,
     pub economy: bool,
     pub fred: bool,
+    pub real_yields: bool,
     pub bls: bool,
     pub worldbank: bool,
     pub comex: bool,
@@ -104,6 +105,7 @@ impl RefreshPlan {
         "calendar",
         "economy",
         "fred",
+        "real_yields",
         "bls",
         "worldbank",
         "comex",
@@ -125,6 +127,7 @@ impl RefreshPlan {
             calendar: true,
             economy: true,
             fred: true,
+            real_yields: true,
             bls: true,
             worldbank: true,
             comex: true,
@@ -148,6 +151,7 @@ impl RefreshPlan {
             calendar: false,
             economy: false,
             fred: false,
+            real_yields: false,
             bls: false,
             worldbank: false,
             comex: false,
@@ -202,6 +206,7 @@ impl RefreshPlan {
             "calendar" => self.calendar = enabled,
             "economy" => self.economy = enabled,
             "fred" => self.fred = enabled,
+            "real_yields" => self.real_yields = enabled,
             "bls" => self.bls = enabled,
             "worldbank" => self.worldbank = enabled,
             "comex" => self.comex = enabled,
@@ -249,6 +254,9 @@ impl RefreshPlan {
         }
         if self.fred {
             names.push("fred");
+        }
+        if self.real_yields {
+            names.push("real_yields");
         }
         if self.bls {
             names.push("bls");
@@ -1519,6 +1527,17 @@ fn run_pipeline(
         plan.fred,
         fred_api_key_str.is_some(),
         fred_data,
+        &mut dag_result,
+    );
+
+    // Real-yields curve (TIPS, breakevens, G10 sovereign 10Y) — synchronous,
+    // gracefully degrades when the FRED API key is absent or offline.
+    store_real_yields_result(
+        backend,
+        config,
+        verbose,
+        plan.real_yields,
+        &rt,
         &mut dag_result,
     );
 
@@ -3631,6 +3650,129 @@ fn store_fred_result(
     }
 }
 
+fn store_real_yields_result(
+    backend: &BackendConnection,
+    config: &Config,
+    verbose: bool,
+    in_plan: bool,
+    rt: &tokio::runtime::Runtime,
+    dag_result: &mut RefreshResult,
+) {
+    if !in_plan {
+        info_ln!(verbose, "⊘ real-yields (skipped)");
+        dag_result.add(SourceResult {
+            name: "real_yields".to_string(),
+            label: "Real Yields".to_string(),
+            status: SourceStatus::Skipped,
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("not in plan".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
+        return;
+    }
+
+    let start = Instant::now();
+    let api_key = config
+        .fred_api_key
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string();
+    if api_key.is_empty() {
+        info_ln!(verbose, "⊘ real-yields (no FRED key — degraded)");
+        dag_result.add(SourceResult {
+            name: "real_yields".to_string(),
+            label: "Real Yields".to_string(),
+            status: SourceStatus::Skipped,
+            items_attempted: None,
+            items_failed: None,
+            failed_symbols: None,
+            items_updated: None,
+            duration_ms: start.elapsed().as_millis() as u64,
+            reason: Some("fred_api_key absent".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
+        return;
+    }
+
+    let series_ids = real_yields_data::all_series_ids();
+    let mut all_obs: Vec<real_yields_data::RealYieldObservation> = Vec::new();
+    let mut series_with_data = 0usize;
+    for sid in &series_ids {
+        match rt.block_on(real_yields_data::fetch_series_history(&api_key, sid, 90)) {
+            Ok(obs) if !obs.is_empty() => {
+                series_with_data += 1;
+                all_obs.extend(obs);
+            }
+            _ => {}
+        }
+    }
+
+    match crate::db::real_yields_history::upsert_observations_backend(backend, &all_obs) {
+        Ok(()) => {
+            info_ln!(
+                verbose,
+                "✓ real-yields ({} obs, {}/{} series)",
+                all_obs.len(),
+                series_with_data,
+                series_ids.len()
+            );
+            dag_result.add(SourceResult {
+                name: "real_yields".to_string(),
+                label: "Real Yields".to_string(),
+                status: if series_with_data == 0 {
+                    SourceStatus::Failed
+                } else {
+                    SourceStatus::Ok
+                },
+                items_attempted: Some(series_ids.len()),
+                items_failed: Some(series_ids.len().saturating_sub(series_with_data)),
+                failed_symbols: None,
+                items_updated: Some(all_obs.len()),
+                duration_ms: start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: if series_with_data == 0 {
+                    Some("no observations returned".to_string())
+                } else {
+                    None
+                },
+                detail: Some(format!(
+                    "{}/{} series returned data; {} rows persisted",
+                    series_with_data,
+                    series_ids.len(),
+                    all_obs.len()
+                )),
+            });
+        }
+        Err(e) => {
+            info_ln!(verbose, "✗ real-yields (cache write failed: {})", e);
+            dag_result.add(SourceResult {
+                name: "real_yields".to_string(),
+                label: "Real Yields".to_string(),
+                status: SourceStatus::Failed,
+                items_attempted: Some(series_ids.len()),
+                items_failed: Some(series_ids.len()),
+                failed_symbols: None,
+                items_updated: None,
+                duration_ms: start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: Some(e.to_string()),
+                detail: None,
+            });
+        }
+    }
+}
+
 fn store_bls_result(
     backend: &BackendConnection,
     verbose: bool,
@@ -5067,7 +5209,7 @@ mod tests {
         assert!(plan.worldbank);
         assert!(plan.analytics);
         assert!(plan.cleanup);
-        assert_eq!(plan.selected_task_names().len(), 17);
+        assert_eq!(plan.selected_task_names().len(), 18);
     }
 
     #[test]
@@ -5119,7 +5261,7 @@ mod tests {
         assert!(plan.predictions);
         assert!(!plan.worldbank);
         assert!(!plan.bls);
-        assert_eq!(plan.selected_task_names().len(), 15);
+        assert_eq!(plan.selected_task_names().len(), 16);
     }
 
     #[test]

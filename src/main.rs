@@ -1515,6 +1515,21 @@ fn run_cli(cli: Cli) -> Result<()> {
                 };
                 commands::alerts::run(&backend, action, &args)
             }
+            cli::DataCommand::RealYields { command } => match command {
+                cli::DataRealYieldsCommand::Refresh { days, json } => {
+                    commands::real_yields::refresh(&backend, &config, days, json)
+                }
+                cli::DataRealYieldsCommand::Show {
+                    series,
+                    since,
+                    json,
+                } => commands::real_yields::show(
+                    &backend,
+                    series.as_deref(),
+                    Some(since.as_str()),
+                    json,
+                ),
+            },
         },
         Some(Command::System { command }) => match command {
             cli::SystemCommand::Daemon { command } => match command {
@@ -2950,6 +2965,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                 None,
                 json,
             ),
+            cli::AnalyticsCommand::RealRates { command } => match command {
+                cli::AnalyticsRealRatesCommand::Differentials { since, json } => {
+                    commands::real_yields::differentials(&backend, Some(since.as_str()), json)
+                }
+            },
             cli::AnalyticsCommand::Narrative { json } => commands::analytics::run(
                 &backend,
                 "narrative",

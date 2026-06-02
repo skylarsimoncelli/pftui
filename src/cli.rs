@@ -660,6 +660,37 @@ pub enum DataCommand {
         #[command(subcommand)]
         command: Option<DataAlertsRedirect>,
     },
+    /// Real-yields curve: US TIPS, breakevens, G10 sovereign 10Y (FRED)
+    #[command(name = "real-yields")]
+    RealYields {
+        #[command(subcommand)]
+        command: DataRealYieldsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DataRealYieldsCommand {
+    /// Fetch the configured FRED real-yield series and persist them
+    Refresh {
+        /// Number of days of history to fetch (default: 90)
+        #[arg(long, default_value = "90")]
+        days: u32,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read cached real-yield rows, optionally filtered by series and window
+    Show {
+        /// Filter to a single FRED series id (e.g. DFII10, T10YIE)
+        #[arg(long)]
+        series: Option<String>,
+        /// Window expressed as NNd/NNw/NNm or YYYY-MM-DD (default: 30d)
+        #[arg(long, default_value = "30d")]
+        since: String,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3380,6 +3411,19 @@ pub enum AnalyticsMacroCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsRealRatesCommand {
+    /// Compute US-vs-G10 sovereign 10Y differentials from cached real-yield rows
+    Differentials {
+        /// Window expressed as NNd/NNw/NNm or YYYY-MM-DD (default: 7d)
+        #[arg(long, default_value = "7d")]
+        since: String,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsScenarioSignalCommand {
     /// Add a signal (evidence or trigger) linked to a scenario
     Add {
@@ -4392,6 +4436,12 @@ pub enum AnalyticsCommand {
     Opportunities {
         #[arg(long)]
         json: bool,
+    },
+    /// Real-rates analytics: US-vs-G10 differentials and TIPS/breakeven spreads
+    #[command(name = "real-rates")]
+    RealRates {
+        #[command(subcommand)]
+        command: AnalyticsRealRatesCommand,
     },
     /// Structured analytical narrative: recap, key themes, and analytical memory
     Narrative {
