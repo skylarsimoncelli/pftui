@@ -29,7 +29,7 @@
 **Scope:** (1) Replace `crate::data::flows::EtfComCsvProvider::fetch` with a real implementation that downloads/parses the ETF.com CSV feed (or a substitute, e.g. the etfdb.com flows feed, ETF.com daily basket files, or NYSE/Cboe creation/redemption baskets). (2) Map each CSV row to a `CapitalFlow { asset, flow_type, amount_usd, period_start, period_end, source }`. (3) Add a freshness check (one-per-day cadence) and a synthetic CSV fixture under `tests/fixtures/flows/`. (4) Document any required credentials in `AGENTS.md` + `docs/API-SOURCES.md`.
 **Effort:** 1–2 weeks (most of which is provider selection + licensing).
 
-### F59 follow-up: real `sec_edgar_13f` capital-flow provider
+### [Claude-WIP 2026-06-02m — DO NOT PICK] F59 follow-up: real `sec_edgar_13f` capital-flow provider
 **Source:** F59 scaffold landed 2026-06-02 (Agent BB).
 **Why:** Institutional 13F holdings shift quarterly; pftui's analyst views currently have no visibility into "what large funds bought / sold last quarter" — the substrate is free via SEC EDGAR full-text JSON. The scaffold's `SecEdgar13fProvider::fetch` currently bails with "provider sec_edgar_13f not yet implemented".
 **Scope:** (1) Replace `crate::data::flows::SecEdgar13fProvider::fetch` with a real EDGAR ingest that walks recent 13F-HR filings, parses the holdings tables, and emits `CapitalFlow { flow_type: 'institutional_13f' }` rows per (asset, filer, quarter). (2) Persistence already exists; only the fetch path needs work. (3) Add fixture parsing tests against a synthetic 13F XML snippet. (4) Document the quarterly cadence in `AGENTS.md`.
