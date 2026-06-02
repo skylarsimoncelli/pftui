@@ -88,6 +88,7 @@ Canonical author identifiers:
 | `analyst-medium` | Medium-timeframe analyst routine (weeks–months) |
 | `analyst-high` | High-timeframe analyst routine (quarters–years) |
 | `analyst-macro` | Macro-timeframe analyst routine (Dalio/Fourth Turning) |
+| `analyst-adversary` | Synthesis-time adversary pseudo-layer (`agents/routines/adversary-analyst.md`) — argues against the four-layer convergence using only the same data |
 | `analyst-evening` | Evening analysis routine |
 | `analyst-morning` | Morning brief routine |
 | `analyst-newsletter` | Public daily newsletter routine |
