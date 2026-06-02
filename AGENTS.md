@@ -109,6 +109,22 @@ Contract for predictions:
 - Attach relevant lesson IDs or reasoning-fragment `canonical_id` values in the prediction reasoning.
 - Prefer concrete falsification criteria with dates and thresholds.
 
+#### Scenario-Conditional Backtest & Regime Presets
+
+`pftui analytics backtest scenario` filters `scenario_prediction_links` by per-scenario probability bands, joins to `user_predictions`, and reports the cohort's hit rate. `pftui analytics backtest layer-bias` returns the same shape as the calibration matrix but conditioned on the regime — surfacing rows like "LOW layer commodities hit rate was 65% during stagflation-iran-cool but 30% during crisis".
+
+Regime presets (priority order — the first matching preset wins; `neutral` is recorded if none match):
+
+| Preset | Exact filter | Intuition |
+|---|---|---|
+| `stagflation-iran-cool` | `Inflation Spike ≥ 85` AND `Iran-US ≤ 20` | Sticky inflation pressure with no kinetic escalation. |
+| `crisis` | `Hard Recession ≥ 40` AND `Iran-US ≥ 30` | Coincident growth break and geopolitical stress. |
+| `risk-on` | `Risk-On ≥ 40` | Liquidity-positive regime; soft landing odds dominant. |
+
+Each regime preset is also addressable via individual `--inflation-min/--inflation-max/--recession-min/--recession-max/--iran-min/--iran-max/--risk-on-min/--risk-on-max` flags. Flags **stack on top of** any preset chosen via `--regime`, so analysts can use a preset as a baseline and tighten or loosen any single band.
+
+The `regime_history` table records one classification per UTC date with the full `scenario_state_json` snapshot. Population is automatic during `pftui data refresh` (idempotent via `INSERT ... ON CONFLICT(date) DO UPDATE`). Analysts and report writers should treat `regime_history` as the authoritative regime timeline for any per-day conditional analysis.
+
 ---
 
 ## CLI Reference

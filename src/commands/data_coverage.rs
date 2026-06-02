@@ -46,6 +46,7 @@ const ENRICHMENT_TABLES: &[(&str, i64, &str)] = &[
     ("reasoning_fragments", 1, "lessons"),
     ("lesson_citations", 1, "lessons"),
     ("scenario_prediction_links", 1, "scenarios"),
+    ("regime_history", 1, "scenarios"),
     ("lesson_fragment_edges", 1, "lessons"),
     ("thesis_citations", 1, "lessons"),
     ("operator_replies", 1, "journal"),

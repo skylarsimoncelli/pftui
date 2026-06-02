@@ -2188,6 +2188,50 @@ fn run_pipeline(
         });
     }
 
+    // Idempotent: classify today's regime from the latest scenario state and
+    // upsert into `regime_history`. Safe to run multiple times per day; the
+    // most recent classification wins via `ON CONFLICT(date) DO UPDATE`.
+    let regime_start = Instant::now();
+    match crate::db::regime_history::record_today_backend(backend) {
+        Ok(Some(regime)) => {
+            info_ln!(verbose, "  ↳ Classified regime as '{}'", regime);
+            dag_result.add(SourceResult {
+                name: "regime_history".to_string(),
+                label: "Regime Classification".to_string(),
+                status: SourceStatus::Ok,
+                items_attempted: None,
+                items_failed: None,
+                failed_symbols: None,
+                items_updated: Some(1),
+                duration_ms: regime_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: Some(regime),
+            });
+        }
+        Ok(None) => {
+            // Postgres backend — skip silently.
+        }
+        Err(e) => {
+            info_ln!(verbose, "  ⚠ Regime classification failed: {}", e);
+            dag_result.add(SourceResult {
+                name: "regime_history".to_string(),
+                label: "Regime Classification".to_string(),
+                status: SourceStatus::Failed,
+                items_attempted: None,
+                items_failed: None,
+                failed_symbols: None,
+                items_updated: None,
+                duration_ms: regime_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: Some(e.to_string()),
+                detail: None,
+            });
+        }
+    }
+
     info_ln!(verbose, "\nRefresh complete.");
     dag_result.finalize(pipeline_start.elapsed());
     Ok(dag_result)
