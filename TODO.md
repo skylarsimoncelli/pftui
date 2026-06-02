@@ -23,6 +23,11 @@
 
 ## P3 - Long Term
 
+### [Claude-WIP 2026-06-02l — DO NOT PICK] F59: Capital Flow Tracking
+**Source:** Competitive research (NOFX institutional flow data).
+**Why:** Institutional fund flows, ETF creation/redemption, and open interest changes reveal positioning that price alone doesn't show.
+**Scope:** New `data flows` source pulling ETF flow data (ETF.com or similar), institutional 13F filings, and crypto exchange flow data. New table `capital_flows`. Integration into agent routines.
+**Effort:** 3–4 weeks.
 ### [Claude-WIP 2026-06-02k — DO NOT PICK] Options flow + GEX (gamma exposure) ingestion
 **Source:** Claude DB enrichment session (June 1). The single most-impactful missing data input identified across the substrate.
 **Why:** 27 lessons in the `tight_threshold_close_miss` cluster and 14+ predictions in `options-gamma-pinning` fragment territory all share a root cause that's invisible to the current ingest: options gamma concentration at round-number strikes mechanically pins prices. SPY $700, BTC $75k, gold $5000 — all repeated threshold misses where the prediction direction was right but the close pinned to the level. Without options-flow data, the `options-gamma-pinning` and `tight-threshold-coin-flip` fragments are heuristics applied retrospectively. With it, they become computed: "current SPY GEX puts gamma flip at 745; predictions through 745 need to clear by 1.5xATR + gamma-zone width." This is the single new ingest that would directly upgrade the most-recurring miss pattern.

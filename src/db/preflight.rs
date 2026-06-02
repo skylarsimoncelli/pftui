@@ -269,6 +269,32 @@ pub fn compute_preflight(conn: &Connection, draft: &PreflightDraft) -> Result<Pr
         }
     }
 
+    // Gamma-neutral zone warning: when a draft references a numeric
+    // target for a symbol whose latest GEX flip strike sits within
+    // 5% of that target, mark the cluster's pinning risk explicitly.
+    // Advisory only — does not bump preflight_score (analyst can
+    // still write the prediction; they just see the gamma-pin context).
+    if let Some(sym) = draft.symbol.as_deref() {
+        if table_exists(conn, "gex_snapshots")? {
+            if let Some(target) = extract_numeric_target(&draft.claim) {
+                if let Some(gex) =
+                    crate::db::gex_snapshots::latest(conn, sym).unwrap_or(None)
+                {
+                    if gex.strike_in_zone(target) {
+                        let flip = gex
+                            .gex_flip_strike
+                            .map(|v| format!("{:.2}", v))
+                            .unwrap_or_else(|| "n/a".to_string());
+                        risk_factors.push(format!(
+                            "gamma_neutral_zone:target_{:.2}_flip_{}",
+                            target, flip
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     Ok(PreflightFindings {
         draft: draft.clone(),
         cluster_key,
@@ -698,6 +724,57 @@ fn detect_falsification_columns(conn: &Connection) -> Result<Option<Falsificatio
     }))
 }
 
+/// Extract the first plausible price-target from a claim.
+///
+/// Looks for patterns like `$745`, `$5,000`, `5000`, `4.5k`, `4.5K`,
+/// `75k`. Returns the largest such value (predictions almost always
+/// embed exactly one target; the largest one is a robust default).
+pub(crate) fn extract_numeric_target(claim: &str) -> Option<f64> {
+    let mut best: Option<f64> = None;
+    let mut chars = claim.chars().peekable();
+    while let Some(c) = chars.next() {
+        let take_number = c == '$' || c.is_ascii_digit();
+        if !take_number {
+            continue;
+        }
+        let mut buf = String::new();
+        if c.is_ascii_digit() {
+            buf.push(c);
+        }
+        while let Some(&n) = chars.peek() {
+            if n.is_ascii_digit() || n == ',' || n == '.' {
+                buf.push(n);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        if buf.is_empty() {
+            continue;
+        }
+        let multiplier = match chars.peek() {
+            Some('k') | Some('K') => {
+                chars.next();
+                1_000.0
+            }
+            Some('m') | Some('M') => {
+                chars.next();
+                1_000_000.0
+            }
+            _ => 1.0,
+        };
+        let cleaned: String = buf.chars().filter(|c| *c != ',').collect();
+        if let Ok(val) = cleaned.parse::<f64>() {
+            let scaled = val * multiplier;
+            best = match best {
+                Some(b) if b >= scaled => best,
+                _ => Some(scaled),
+            };
+        }
+    }
+    best
+}
+
 fn tokenize(text: &str) -> std::collections::HashSet<String> {
     text.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
@@ -730,10 +807,96 @@ pub const DEFAULT_PREFLIGHT_ABORT_THRESHOLD: u32 = 50;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data::options::GexSummary;
+    use crate::db::gex_snapshots;
     use crate::db::reasoning_fragments::upsert_edge;
     use crate::db::{
         calibration_adjustments, failure_correlations, reasoning_fragments, schema,
     };
+
+    #[test]
+    fn extract_numeric_target_dollar() {
+        assert_eq!(extract_numeric_target("SPY through $745 in 2 weeks"), Some(745.0));
+    }
+
+    #[test]
+    fn extract_numeric_target_k_suffix() {
+        assert_eq!(extract_numeric_target("BTC to 75k"), Some(75_000.0));
+    }
+
+    #[test]
+    fn extract_numeric_target_commas() {
+        assert_eq!(extract_numeric_target("gold $5,000 by EOY"), Some(5_000.0));
+    }
+
+    #[test]
+    fn extract_numeric_target_none() {
+        assert_eq!(extract_numeric_target("no number here"), None);
+    }
+
+    #[test]
+    fn preflight_surfaces_gamma_neutral_zone_warning() {
+        let conn = Connection::open_in_memory().unwrap();
+        schema::run_migrations(&conn).unwrap();
+        let gex = GexSummary {
+            symbol: "SPY".into(),
+            gex_flip_strike: Some(745.0),
+            total_gamma_call: 1.0,
+            total_gamma_put: 1.0,
+            max_pain: Some(745.0),
+            fetched_at: "2026-06-02T00:00:00Z".into(),
+        };
+        gex_snapshots::insert(&conn, &gex).unwrap();
+        let draft = PreflightDraft {
+            claim: "SPY through $745 in 2 weeks".into(),
+            symbol: Some("SPY".into()),
+            timeframe: None,
+            conviction: None,
+            layer: None,
+            topic: None,
+        };
+        let findings = compute_preflight(&conn, &draft).unwrap();
+        assert!(
+            findings
+                .risk_factors
+                .iter()
+                .any(|r| r.starts_with("gamma_neutral_zone:")),
+            "risk_factors did not include gamma_neutral_zone warning: {:?}",
+            findings.risk_factors
+        );
+    }
+
+    #[test]
+    fn preflight_no_warning_when_target_outside_zone() {
+        let conn = Connection::open_in_memory().unwrap();
+        schema::run_migrations(&conn).unwrap();
+        let gex = GexSummary {
+            symbol: "SPY".into(),
+            gex_flip_strike: Some(745.0),
+            total_gamma_call: 1.0,
+            total_gamma_put: 1.0,
+            max_pain: Some(745.0),
+            fetched_at: "2026-06-02T00:00:00Z".into(),
+        };
+        gex_snapshots::insert(&conn, &gex).unwrap();
+        let draft = PreflightDraft {
+            claim: "SPY to $900".into(),
+            symbol: Some("SPY".into()),
+            timeframe: None,
+            conviction: None,
+            layer: None,
+            topic: None,
+        };
+        let findings = compute_preflight(&conn, &draft).unwrap();
+        assert!(
+            !findings
+                .risk_factors
+                .iter()
+                .any(|r| r.starts_with("gamma_neutral_zone:")),
+            "unexpected gamma_neutral_zone warning: {:?}",
+            findings.risk_factors
+        );
+    }
 
     fn fresh_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

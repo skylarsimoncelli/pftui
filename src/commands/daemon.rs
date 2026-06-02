@@ -214,6 +214,7 @@ impl CadenceTracker {
             analytics: self.due("analytics", cadence.analytics_interval_secs),
             alerts: self.due("alerts", cadence.alerts_interval_secs),
             cleanup: self.due("cleanup", cadence.cleanup_interval_secs),
+            options: self.due("options", cadence.comex_interval_secs),
         }
     }
 

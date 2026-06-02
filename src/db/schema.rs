@@ -1698,7 +1698,35 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             conviction_drift REAL NOT NULL DEFAULT 0.0,
             note TEXT,
             recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );",
+        );
+
+        CREATE TABLE IF NOT EXISTS options_chain_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            strike REAL NOT NULL,
+            expiry TEXT NOT NULL,
+            dte INTEGER NOT NULL,
+            oi_calls INTEGER NOT NULL,
+            oi_puts INTEGER NOT NULL,
+            vol_calls INTEGER NOT NULL,
+            vol_puts INTEGER NOT NULL,
+            iv_atm REAL,
+            fetched_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_options_chain_snapshots_symbol_fetched
+            ON options_chain_snapshots(symbol, fetched_at DESC);
+
+        CREATE TABLE IF NOT EXISTS gex_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            gex_flip_strike REAL,
+            total_gamma_call REAL NOT NULL,
+            total_gamma_put REAL NOT NULL,
+            max_pain REAL,
+            fetched_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_gex_snapshots_symbol_fetched
+            ON gex_snapshots(symbol, fetched_at DESC);",
     )?;
 
 
