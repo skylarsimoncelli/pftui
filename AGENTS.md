@@ -303,6 +303,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui analytics signals --source timeframe --json` | Cross-timeframe alignment/divergence/transition signals only |
 | `pftui analytics signals --source technical --symbol BTC-USD --json` | Technical signals for a specific symbol |
 | `pftui analytics technicals [--symbol SYM] --json` | Latest persisted technical snapshot(s) — RSI, MACD, SMA, Bollinger, 52W position, volume regime |
+| `pftui analytics technicals --symbols SYM --include mtf-rsi,pi-cycle,mtf-breakout,bollinger-reversal,rsi-extreme [--json]` | Extended signals subset: multi-timeframe RSI alignment, pi-cycle top/bottom crossover, multi-timeframe breakout composite, Bollinger reversal with multi-bar confirmation, RSI extreme highlighting. Pass `--include all` to enable every extended output known to the binary (channels + signals). |
 
 ### Utility
 
@@ -671,5 +672,23 @@ These are generic templates containing zero personal data. They define inputs, a
 | Alert Watchdog | Low-tier (Haiku, GPT-4o-mini, Flash) | Simple check, runs hourly |
 | Alert Investigator | Mid-tier | Needs judgment but runs rarely |
 | Dev Agent | Top-tier | Code generation + architecture decisions |
+
+---
+
+## Signals subset (MTF RSI, Pi Cycle, MTF breakout, Bollinger reversal, RSI extreme)
+
+The extended `--include` flag on `pftui analytics technicals` exposes five signal-family outputs designed for analyst routines. All five are pure functions over a price-history slice; none touch the persistent technical-snapshot cache. Default-off — the legacy RSI/MACD/SMA/BB/ATR set is unchanged when `--include` is omitted.
+
+| Token | Output key | What it computes |
+|---|---|---|
+| `mtf-rsi` | `mtf_rsi` | RSI on the current TF plus four higher-TF aggregates (default buckets per `default_htf_periods_for(timeframe)`). Reports `aligned_overbought` (all four HTFs + current > 70) and `aligned_oversold` (mirror). |
+| `pi-cycle` | `pi_cycle` | Daily-only cycle markers: 350-SMA × 2 crossing UNDER 111-SMA (top); 471-SMA × 0.745 crossing OVER 150-EMA (bottom). Returns latest crossover `bar_index`, `bars_since`, optional `date`. Parameters calibrated on BTC daily; function itself is asset-agnostic. |
+| `mtf-breakout` | `mtf_breakout` | Composite of three sub-signals: (a) MTF-RSI exit-of-alignment breakout, (b) 3-line strike pattern (bull + bear), (c) momentum exhaustion at 25-bar high/low. Reports each boolean plus `signal_count` (0..=3) and cooldown-aware `breakout_state` ∈ {`bull-fresh`, `bull-armed`, `none`, `bear-armed`, `bear-fresh`}. Default cooldown: 5 bars. |
+| `bollinger-reversal` | `bollinger_reversal` | Cross-under upper band → `top_reversal_signal`; cross-over lower band → `bottom_reversal_signal`. Each marker reports `bar_index`, `bars_since`, `confirmation_1` (next bar trades entirely below reversal-bar low for tops / above reversal-bar high for bottoms), `confirmation_2` (the rule sustains for two bars), and a `confirmation_count` in {0, 1, 2}. |
+| `rsi-extreme` | `rsi_extreme` | Derived flag. `rsi_extreme_high` fires when current-TF RSI > 85 AND MTF alignment is `aligned_overbought` AND the current bar is a new 14-bar high. Mirror for `rsi_extreme_low`. |
+
+`--include all` enables every extended output known to the binary (signals subset above plus the channels subset when Agent U's PR lands). Unknown tokens are silently ignored so older binaries don't break when newer routines pass extra tokens. All naming is canonical TA — no vendor / indicator brand names.
+
+Implementation lives under `src/indicators/extended/` (one sub-module per signal). Each sub-module ships its own synthetic-candle fixture tests verifying the computed value at a known bar. Hook into `pftui analytics technicals` via `commands::analytics::run_technicals_cmd` (the legacy `run_technicals` path is preserved for the default no-`--include` case).
 
 ---

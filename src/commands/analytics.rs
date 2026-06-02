@@ -1696,6 +1696,273 @@ fn run_gaps_symbol(backend: &BackendConnection, symbol: &str, json_output: bool)
     Ok(())
 }
 
+/// Public entry-point for `pftui analytics technicals` that supports the
+/// extended `--include` flag (channels + signals subsets).
+///
+/// Delegates to [`run_technicals`] for the legacy snapshot rendering and, when
+/// `include` is set, appends the requested extended outputs to the JSON
+/// payload (or pretty-prints a per-symbol summary).
+pub fn run_technicals_cmd(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    timeframe: &str,
+    limit: Option<usize>,
+    include: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    // Resolve which extended outputs are requested. When `--include` is
+    // omitted, fall back to the legacy renderer.
+    let includes = parse_include_flag(include);
+    if includes.is_empty() {
+        return run_technicals(backend, symbol, timeframe, limit, json_output);
+    }
+
+    // Build symbol list — either the requested set or "everything with
+    // history". We deliberately keep this scoped: the extended outputs are
+    // expensive and the caller almost always passes one or two symbols.
+    let symbols: Vec<String> = if let Some(filter) = symbol {
+        parse_symbol_filter(filter)
+    } else {
+        Vec::new()
+    };
+
+    let (legacy_rows, legacy_warning) =
+        technical_rows_with_warning(backend, symbol, timeframe, limit)?;
+    let snapshot_warning = legacy_warning.clone();
+
+    let mut extended_payload = serde_json::Map::new();
+    for sym in &symbols {
+        let history = crate::db::price_history::get_history_backend(backend, sym, 800)
+            .unwrap_or_default();
+        let extended = compute_extended_for_symbol(&history, &includes, timeframe);
+        extended_payload.insert(sym.clone(), extended);
+    }
+
+    if json_output {
+        let mut payload = serde_json::Map::new();
+        payload.insert("timeframe".to_string(), json!(timeframe));
+        payload.insert("technicals".to_string(), serde_json::to_value(&legacy_rows)?);
+        payload.insert("count".to_string(), json!(legacy_rows.len()));
+        payload.insert(
+            "includes".to_string(),
+            json!(includes.iter().map(|i| i.as_str()).collect::<Vec<_>>()),
+        );
+        payload.insert(
+            "extended".to_string(),
+            serde_json::Value::Object(extended_payload),
+        );
+        if let Some(warning) = &snapshot_warning {
+            payload.insert("warning".to_string(), json!(warning));
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::Value::Object(payload))?
+        );
+        return Ok(());
+    }
+
+    // Pretty path: print legacy snapshot table first, then per-symbol
+    // extended summaries.
+    run_technicals(backend, symbol, timeframe, limit, false)?;
+    println!();
+    println!("Extended outputs ({})", includes_summary(&includes));
+    println!("{}", "─".repeat(72));
+    for (sym, value) in extended_payload {
+        println!("  {sym}:");
+        // The pretty path emits the JSON object indented; agents are the
+        // real consumers of `--include` so we don't need a custom renderer.
+        let pretty = serde_json::to_string_pretty(&value).unwrap_or_default();
+        for line in pretty.lines() {
+            println!("    {line}");
+        }
+        println!();
+    }
+    Ok(())
+}
+
+/// Canonical names for the extended `--include` subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IncludeFeature {
+    MtfRsi,
+    PiCycle,
+    MtfBreakout,
+    BollingerReversal,
+    RsiExtreme,
+}
+
+impl IncludeFeature {
+    fn as_str(self) -> &'static str {
+        match self {
+            IncludeFeature::MtfRsi => "mtf-rsi",
+            IncludeFeature::PiCycle => "pi-cycle",
+            IncludeFeature::MtfBreakout => "mtf-breakout",
+            IncludeFeature::BollingerReversal => "bollinger-reversal",
+            IncludeFeature::RsiExtreme => "rsi-extreme",
+        }
+    }
+}
+
+fn parse_include_flag(raw: Option<&str>) -> Vec<IncludeFeature> {
+    let Some(raw) = raw else { return Vec::new() };
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    let all = vec![
+        IncludeFeature::MtfRsi,
+        IncludeFeature::PiCycle,
+        IncludeFeature::MtfBreakout,
+        IncludeFeature::BollingerReversal,
+        IncludeFeature::RsiExtreme,
+    ];
+    let mut out = Vec::new();
+    for token in raw.split(',') {
+        let token = token.trim().to_ascii_lowercase();
+        if token.is_empty() {
+            continue;
+        }
+        if token == "all" {
+            for f in &all {
+                if !out.contains(f) {
+                    out.push(*f);
+                }
+            }
+            continue;
+        }
+        // signals subset (Agent V)
+        let matched = match token.as_str() {
+            "mtf-rsi" | "mtf_rsi" => Some(IncludeFeature::MtfRsi),
+            "pi-cycle" | "pi_cycle" => Some(IncludeFeature::PiCycle),
+            "mtf-breakout" | "mtf_breakout" => Some(IncludeFeature::MtfBreakout),
+            "bollinger-reversal" | "bollinger_reversal" => Some(IncludeFeature::BollingerReversal),
+            "rsi-extreme" | "rsi_extreme" => Some(IncludeFeature::RsiExtreme),
+            _ => None,
+        };
+        if let Some(f) = matched {
+            if !out.contains(&f) {
+                out.push(f);
+            }
+        }
+        // Unknown tokens are silently ignored: a future PR (Agent U)
+        // will add channels-subset tokens here without breaking parsing.
+    }
+    out
+}
+
+fn includes_summary(includes: &[IncludeFeature]) -> String {
+    includes
+        .iter()
+        .map(|i| i.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Compute every requested extended output for a single symbol.
+fn compute_extended_for_symbol(
+    history: &[crate::models::price::HistoryRecord],
+    includes: &[IncludeFeature],
+    timeframe: &str,
+) -> serde_json::Value {
+    use serde_json::json;
+
+    if history.is_empty() {
+        return json!({ "warning": "no price history available" });
+    }
+
+    let closes: Vec<f64> = history
+        .iter()
+        .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        .collect();
+    let opens: Vec<f64> = history
+        .iter()
+        .map(|r| {
+            r.open
+                .as_ref()
+                .and_then(|d| d.to_string().parse::<f64>().ok())
+                .unwrap_or_else(|| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        })
+        .collect();
+    let highs: Vec<f64> = history
+        .iter()
+        .map(|r| {
+            r.high
+                .as_ref()
+                .and_then(|d| d.to_string().parse::<f64>().ok())
+                .unwrap_or_else(|| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        })
+        .collect();
+    let lows: Vec<f64> = history
+        .iter()
+        .map(|r| {
+            r.low
+                .as_ref()
+                .and_then(|d| d.to_string().parse::<f64>().ok())
+                .unwrap_or_else(|| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        })
+        .collect();
+    let dates: Vec<String> = history.iter().map(|r| r.date.clone()).collect();
+
+    let mut payload = serde_json::Map::new();
+
+    for inc in includes {
+        match inc {
+            IncludeFeature::MtfRsi => {
+                let r = crate::indicators::extended::compute_mtf_rsi(
+                    &closes,
+                    timeframe,
+                    &[],
+                    crate::indicators::extended::mtf_rsi::DEFAULT_RSI_PERIOD,
+                );
+                payload.insert(
+                    "mtf_rsi".to_string(),
+                    serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            IncludeFeature::PiCycle => {
+                let r = crate::indicators::extended::compute_pi_cycle(&closes, &dates);
+                payload.insert(
+                    "pi_cycle".to_string(),
+                    serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            IncludeFeature::MtfBreakout => {
+                let cfg = crate::indicators::extended::MtfBreakoutConfig::default();
+                let r = crate::indicators::extended::compute_mtf_breakout(
+                    &opens, &highs, &lows, &closes, timeframe, &cfg,
+                );
+                payload.insert(
+                    "mtf_breakout".to_string(),
+                    serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            IncludeFeature::BollingerReversal => {
+                let r = crate::indicators::extended::compute_bollinger_reversal(
+                    &highs,
+                    &lows,
+                    &closes,
+                    crate::indicators::extended::bollinger_reversal::DEFAULT_PERIOD,
+                    crate::indicators::extended::bollinger_reversal::DEFAULT_MULTIPLIER,
+                );
+                payload.insert(
+                    "bollinger_reversal".to_string(),
+                    serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            IncludeFeature::RsiExtreme => {
+                let r = crate::indicators::extended::compute_rsi_extreme(
+                    &highs, &lows, &closes, timeframe, &[],
+                );
+                payload.insert(
+                    "rsi_extreme".to_string(),
+                    serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
+                );
+            }
+        }
+    }
+
+    serde_json::Value::Object(payload)
+}
+
 fn run_technicals(
     backend: &BackendConnection,
     symbol: Option<&str>,
@@ -5835,5 +6102,109 @@ mod tests {
 
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].id, 3);
+    }
+
+    // ---- signals subset (Agent V) ----
+
+    #[test]
+    fn parse_include_flag_picks_signals_subset_tokens() {
+        let parsed = parse_include_flag(Some("mtf-rsi,pi-cycle,mtf-breakout,bollinger-reversal,rsi-extreme"));
+        assert_eq!(parsed.len(), 5);
+        assert!(parsed.contains(&IncludeFeature::MtfRsi));
+        assert!(parsed.contains(&IncludeFeature::PiCycle));
+        assert!(parsed.contains(&IncludeFeature::MtfBreakout));
+        assert!(parsed.contains(&IncludeFeature::BollingerReversal));
+        assert!(parsed.contains(&IncludeFeature::RsiExtreme));
+    }
+
+    #[test]
+    fn parse_include_flag_all_expands_to_full_signals_subset() {
+        let parsed = parse_include_flag(Some("all"));
+        // At minimum every signals-subset feature must be enabled. When
+        // Agent U lands the channels subset, that set should also be on; the
+        // assertion here is the floor.
+        assert!(parsed.contains(&IncludeFeature::MtfRsi));
+        assert!(parsed.contains(&IncludeFeature::PiCycle));
+        assert!(parsed.contains(&IncludeFeature::MtfBreakout));
+        assert!(parsed.contains(&IncludeFeature::BollingerReversal));
+        assert!(parsed.contains(&IncludeFeature::RsiExtreme));
+    }
+
+    #[test]
+    fn parse_include_flag_ignores_unknown_tokens_and_dedupes() {
+        let parsed = parse_include_flag(Some("mtf-rsi,bogus, mtf-rsi ,pi-cycle"));
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0], IncludeFeature::MtfRsi);
+        assert_eq!(parsed[1], IncludeFeature::PiCycle);
+    }
+
+    #[test]
+    fn parse_include_flag_returns_empty_when_unset_or_blank() {
+        assert!(parse_include_flag(None).is_empty());
+        assert!(parse_include_flag(Some("")).is_empty());
+        assert!(parse_include_flag(Some("  ")).is_empty());
+    }
+
+    fn synthetic_history(days: usize, gen: impl Fn(usize) -> f64) -> Vec<crate::models::price::HistoryRecord> {
+        use rust_decimal::Decimal;
+        (0..days)
+            .map(|i| {
+                let close = gen(i);
+                let dec = Decimal::from_f64_retain(close).unwrap_or_default();
+                crate::models::price::HistoryRecord {
+                    date: format!("2024-{:02}-{:02}", (i / 28 % 12) + 1, (i % 28) + 1),
+                    close: dec,
+                    volume: Some(1_000),
+                    open: Some(dec),
+                    high: Some(dec + rust_decimal_macros::dec!(1)),
+                    low: Some(dec - rust_decimal_macros::dec!(1)),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn compute_extended_returns_all_requested_keys() {
+        let history = synthetic_history(800, |i| 100.0 + i as f64 * 0.5);
+        let includes = vec![
+            IncludeFeature::MtfRsi,
+            IncludeFeature::PiCycle,
+            IncludeFeature::MtfBreakout,
+            IncludeFeature::BollingerReversal,
+            IncludeFeature::RsiExtreme,
+        ];
+        let v = compute_extended_for_symbol(&history, &includes, "1d");
+        let obj = v.as_object().expect("object");
+        for key in [
+            "mtf_rsi",
+            "pi_cycle",
+            "mtf_breakout",
+            "bollinger_reversal",
+            "rsi_extreme",
+        ] {
+            assert!(obj.contains_key(key), "missing key '{key}'");
+        }
+    }
+
+    #[test]
+    fn compute_extended_warns_on_empty_history() {
+        let v = compute_extended_for_symbol(&[], &[IncludeFeature::MtfRsi], "1d");
+        assert!(v.get("warning").is_some());
+    }
+
+    #[test]
+    fn compute_extended_shape_mtf_rsi() {
+        let history = synthetic_history(400, |i| 100.0 + i as f64);
+        let v = compute_extended_for_symbol(&history, &[IncludeFeature::MtfRsi], "1d");
+        let m = v.get("mtf_rsi").and_then(|x| x.as_object()).expect("mtf_rsi");
+        for key in [
+            "current_rsi",
+            "htf_bucket_sizes",
+            "htf_rsi_values",
+            "aligned_overbought",
+            "aligned_oversold",
+        ] {
+            assert!(m.contains_key(key), "mtf_rsi missing key '{key}'");
+        }
     }
 }
