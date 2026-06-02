@@ -4851,7 +4851,7 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
     },
     /// `thesis_dependencies` — formalized cross-asset if-then chains.
     /// List, show, validate, or manually add chains.
-    #[command(name = "thesis-chains", after_help = "Cross-asset thesis dependency graph: structured\nantecedent → consequent triples extracted from the thesis table,\nprediction_lessons, and agent_messages.\n\nExamples:\n  pftui analytics thesis-chains list --json\n  pftui analytics thesis-chains list --state confirmed --json\n  pftui analytics thesis-chains show 1 --json\n  pftui analytics thesis-chains validate 1 --json\n  pftui analytics thesis-chains add --antecedent \"XAU > 4500\" \\\n    --consequent \"BTC > 100000\" --relation implies --conviction high")]
+    #[command(name = "thesis-chains", after_help = "Cross-asset thesis dependency graph: structured\nantecedent → consequent triples extracted from the thesis table,\nprediction_lessons, and agent_messages.\n\nExamples:\n  pftui analytics thesis-chains list --json\n  pftui analytics thesis-chains list --state confirmed --json\n  pftui analytics thesis-chains show 1 --json\n  pftui analytics thesis-chains validate 1 --json\n  pftui analytics thesis-chains extract --dry-run --json\n  pftui analytics thesis-chains extract --from-thesis --from-lessons --apply --json\n  pftui analytics thesis-chains add --antecedent \"XAU > 4500\" \\\n    --consequent \"BTC > 100000\" --relation implies --conviction high")]
     ThesisChains {
         #[command(subcommand)]
         command: AnalyticsThesisChainsCommand,
@@ -5083,7 +5083,33 @@ pub enum AnalyticsThesisChainsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Manually add a chain (LLM-assisted extraction follow-up TODO)
+    /// Heuristic backfill: scan thesis.content, prediction_lessons.why_wrong,
+    /// and recent agent_messages for implication phrases and propose new
+    /// chains. Dry-run by default — pass `--apply` to write.
+    #[command(after_help = "Examples:\n  pftui analytics thesis-chains extract --dry-run --json\n  pftui analytics thesis-chains extract --from-thesis --from-lessons --since 90d --apply --json\n\nPatterns detected: 'if X then Y', 'when X, Y', 'X implies Y', 'X -> Y',\n'X drives/accelerates Y', 'X dampens/weakens Y', 'X contradicts Y',\n'X is contingent on Y'. De-dupes against existing chains.")]
+    Extract {
+        /// Read `thesis.content` rows
+        #[arg(long = "from-thesis")]
+        from_thesis: bool,
+        /// Read `prediction_lessons.why_wrong` rows
+        #[arg(long = "from-lessons")]
+        from_lessons: bool,
+        /// Read recent `agent_messages.content` rows
+        #[arg(long = "from-messages")]
+        from_messages: bool,
+        /// Lookback window for `agent_messages` (e.g. 30d, 12w, 3m or YYYY-MM-DD)
+        #[arg(long, default_value = "90d")]
+        since: String,
+        /// Show proposed chains without persisting (default)
+        #[arg(long = "dry-run", default_value = "false")]
+        dry_run: bool,
+        /// Persist proposed chains via `thesis_dependencies::insert`
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manually add a chain
     Add {
         /// Antecedent free-form text (e.g. "XAU > 4500")
         #[arg(long)]

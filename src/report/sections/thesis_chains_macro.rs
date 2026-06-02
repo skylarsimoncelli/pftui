@@ -16,10 +16,11 @@ use crate::db::thesis_dependencies::ThesisDependency;
 /// Returns an empty string when no chains qualify so callers can `push_str`
 /// the result unconditionally.
 ///
-/// The renderer is exposed for the daily-report Macro section. The
-/// assembler does not yet wire it in by default — see AGENTS.md for the
-/// integration hook documentation.
-#[allow(dead_code)]
+/// Wired into the private daily-report assembler as the
+/// `private_macro_thesis_chains` section (sits immediately after
+/// `private_macro_context`). Public mode never invokes this renderer because
+/// the chain text can carry portfolio-framed antecedents — the section is
+/// excluded from `public_section_plan` to preserve the privacy guard.
 pub fn render_thesis_chains_block(chains: &[ThesisDependency]) -> Result<String> {
     let confirmed: Vec<&ThesisDependency> = chains
         .iter()

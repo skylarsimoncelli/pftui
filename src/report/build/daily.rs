@@ -81,6 +81,12 @@ pub struct BuildContext {
     pub private_macro_scenarios: Vec<PrivateMacroScenarioRow>,
     pub private_macro_divergences: Vec<PrivateNarrativeMoneyDivergence>,
     pub private_macro_catalysts: Vec<PrivateMacroCatalyst>,
+    /// Cross-asset thesis-chain rows surfaced in the private Macro section
+    /// via [`crate::report::sections::thesis_chains_macro::render_thesis_chains_block`].
+    /// Populated by `BuildContext::load` from `thesis_dependencies::list`.
+    /// Public mode never reads this slot — chains are private-only because
+    /// some carry portfolio-framed antecedents.
+    pub private_thesis_chains: Vec<crate::db::thesis_dependencies::ThesisDependency>,
     pub private_asset_convergence: Vec<PrivateAssetConvergenceRow>,
     pub private_conviction_trajectories: Vec<PrivateConvictionTrajectoryRow>,
     pub private_outlooks: Vec<PrivateOutlookByHorizonRow>,
@@ -693,6 +699,10 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             visibility: SectionVisibility::Private,
         },
         SectionSpec {
+            name: "private_macro_thesis_chains",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
             name: "private_per_asset_convergence",
             visibility: SectionVisibility::Private,
         },
@@ -777,6 +787,9 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
             sections::private_portfolio_snapshot::render_private_portfolio_snapshot(ctx)
         }
         "private_macro_context" => sections::private_macro_context::render_private_macro_context(ctx),
+        "private_macro_thesis_chains" => {
+            sections::thesis_chains_macro::render_thesis_chains_block(&ctx.private_thesis_chains)
+        }
         "private_per_asset_convergence" => {
             sections::private_per_asset_convergence::render_private_per_asset_convergence(ctx)
         }
@@ -836,9 +849,17 @@ impl BuildContext {
                 hit_rate_pct: r.hit_rate_pct,
                 avg_score: r.avg_score,
             });
+        // Load all chains for the private Macro thesis-chains renderer. The
+        // renderer itself filters down to confirmed / disconfirmed rows, so
+        // we pass the full list here. Public mode never reads this slot.
+        let private_thesis_chains = backend
+            .sqlite_native()
+            .and_then(|conn| crate::db::thesis_dependencies::list(conn, None, None).ok())
+            .unwrap_or_default();
         Ok(BuildContext {
             report_date: Some(report_date.to_string()),
             recommendation_accuracy_7d,
+            private_thesis_chains,
             ..BuildContext::default()
         })
     }
@@ -1413,6 +1434,7 @@ mod assembler_tests {
             "private_bottom_line",
             "private_portfolio_snapshot",
             "private_macro_context",
+            "private_macro_thesis_chains",
             "private_per_asset_convergence",
             "private_conviction_trajectory",
             "private_outlook_by_horizon",
