@@ -378,16 +378,18 @@ Prediction discipline for macro calls:
 - If the thesis depends on silence, state why the topic should be covered and what future coverage would falsify the negative-space signal.
 - Where possible, pair long-horizon macro calls with shorter checkpoint predictions so the MACRO layer can accumulate calibration feedback.
 
-Make 1-2 MACRO predictions (6-24 month horizon) grounded in the frameworks. Run the pre-flight check before save so the substrate's view of the draft (calibration adjustments for the MACRO layer, applicable fragments, top co-failing cluster) is recorded.
+Make 1-2 MACRO predictions (6-24 month horizon) grounded in the frameworks. Run BOTH the pre-flight check and the adversary composer before save so the substrate's view of the draft (calibration adjustments for the MACRO layer, applicable fragments, top co-failing cluster) AND the deterministic "case against" the claim (anti-pattern fragments, top-3 lessons from the highest co-failing cluster, falsification triggers) are recorded. `--with-adversary` persists the adversary view to `adversary_views` linked to the new prediction id.
 
 ```bash
 pftui journal prediction preflight --claim "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
   --timeframe macro --conviction [level] --layer macro \
   --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --json
+pftui journal prediction adversary --claim "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
+  --timeframe macro --conviction [level] --layer macro --json
 pftui journal prediction add --claim "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
   --target-date [YYYY-MM-DD] --conviction [level] --timeframe macro --confidence [0.X] --source-agent macro-agent \
   --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]" \
-  --accept-preflight --inline
+  --accept-preflight --inline --with-adversary
 ```
 
 Score any MACRO predictions that accumulated enough evidence. For macro predictions, evidence direction matters more than binary resolution.

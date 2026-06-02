@@ -2249,6 +2249,43 @@ pub enum JournalPredictionCommand {
         /// timeframe when not provided.
         #[arg(long = "layer")]
         layer: Option<String>,
+        /// Compose a write-time adversary view from the substrate
+        /// (anti-pattern reasoning_fragments, top-3 lessons from the
+        /// highest co-failing cluster, derived falsification triggers),
+        /// persist it to `adversary_views` linked to the new prediction
+        /// id, and append a compact `[adversary] ...` summary line to the
+        /// prediction's resolution_criteria. Companion to --inline.
+        #[arg(long = "with-adversary")]
+        with_adversary: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Compose a write-time adversary "case against" the supplied draft
+    /// prediction. Classifies the claim into a `cluster_key`, then returns
+    /// the anti-pattern `reasoning_fragments` reachable from the cluster,
+    /// the top-3 lessons of the highest co-failing cluster, and derived
+    /// falsification triggers. No live LLM call.
+    ///
+    /// Examples:
+    ///   pftui journal prediction adversary --claim "SPY gamma pin at 700" \
+    ///     --symbol SPY --timeframe low --conviction medium --layer low --json
+    ///   pftui journal prediction adversary --claim "Gold above 4500 by July" \
+    ///     --symbol GLD --timeframe medium --conviction high --json
+    Adversary {
+        /// The draft prediction claim text
+        #[arg(long)]
+        claim: String,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        timeframe: Option<String>,
+        #[arg(long)]
+        conviction: Option<String>,
+        /// Analyst layer for symmetry with `preflight`. Carried through to
+        /// the persisted adversary view but does not change the composition
+        /// today.
+        #[arg(long)]
+        layer: Option<String>,
         #[arg(long)]
         json: bool,
     },
