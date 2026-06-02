@@ -1,3 +1,4 @@
+pub mod adversary_view;
 pub mod private_bottom_line;
 pub mod private_conviction_trajectory;
 pub mod private_decisions_pending;

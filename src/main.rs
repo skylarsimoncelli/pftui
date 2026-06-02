@@ -5251,6 +5251,47 @@ fn run_cli(cli: Cli) -> Result<()> {
                     commands::recommendations::relink_historical_cmd(&backend, window, json)
                 }
             },
+            cli::AnalyticsCommand::Adversary { command } => match command {
+                cli::AnalyticsAdversaryCommand::Synthesis { command } => match command {
+                    cli::AnalyticsAdversarySynthesisCommand::Add {
+                        asset,
+                        convergence,
+                        counter,
+                        evidence,
+                        falsification,
+                        fragility,
+                        recorded_at,
+                        json,
+                    } => commands::adversary_synthesis::synthesis_add(
+                        &backend,
+                        &asset,
+                        &convergence,
+                        &counter,
+                        &evidence,
+                        &falsification,
+                        fragility,
+                        recorded_at.as_deref(),
+                        json,
+                    ),
+                    cli::AnalyticsAdversarySynthesisCommand::Show {
+                        asset,
+                        since,
+                        json,
+                    } => commands::adversary_synthesis::synthesis_show(
+                        &backend,
+                        asset.as_deref(),
+                        since.as_deref(),
+                        json,
+                    ),
+                    cli::AnalyticsAdversarySynthesisCommand::FragilityRank { since, json } => {
+                        commands::adversary_synthesis::synthesis_fragility_rank(
+                            &backend,
+                            since.as_deref(),
+                            json,
+                        )
+                    }
+                },
+            },
         },
     };
 

@@ -614,6 +614,49 @@ pftui journal prediction add \
   --conviction medium --confidence 0.55 --source-agent analyst-macro --topic geopolitics
 ```
 
+### Synthesis-time Adversary (`analyst-adversary`)
+
+A fifth pseudo-analyst runs AFTER the four timeframe analysts finish
+writing for a run and BEFORE the synthesis agent reads them. The
+adversary uses ONLY the data the four analysts already saw. Its job is
+to argue against the dominant convergence — a structural counter-
+pressure on the four layers' shared priors (same bundles, same lesson
+book, same first-principles thesis context).
+
+| Agent | Schedule | Role | Routine |
+|---|---|---|---|
+| **Adversary Analyst** | After the four timeframe writes, before synthesis | Argues against the dominant convergence per asset; writes one row per asset to `adversary_synthesis_views` with a `fragility_score` 1..=5 | `agents/routines/adversary-analyst.md` |
+
+Data model: `adversary_synthesis_views (id, asset, current_convergence_summary, counter_case_summary, counter_case_evidence_points JSON, falsification_triggers JSON, fragility_score INTEGER CHECK BETWEEN 1 AND 5, recorded_at)`. Sister table to the write-time per-prediction `adversary_views`; the two are distinct because they cover different cardinalities (one row per prediction vs. one row per asset per run).
+
+Write/read CLI:
+
+```bash
+pftui analytics adversary synthesis add \
+  --asset BTC \
+  --convergence "<one sentence describing the four-layer agreement>" \
+  --counter "<one paragraph adversarial case; quoted verbatim into the report>" \
+  --evidence '["...","..."]' \
+  --falsification '["...","..."]' \
+  --fragility 4 \
+  --json
+pftui analytics adversary synthesis show --asset BTC --since 7d --json
+pftui analytics adversary synthesis fragility-rank --since 7d --json
+```
+
+**Synthesis-gating contract.** For any asset where the latest
+`adversary_synthesis_views` row has `fragility_score >= 3`, the
+synthesis agent (evening or morning) MUST address the counter-case in
+the daily report. The daily-report renderer in
+`src/report/sections/adversary_view.rs::render_adversary_view_block`
+quotes the recorded `counter_case_summary` VERBATIM into the per-asset
+section. The synthesis agent is responsible for either (a) explaining
+why the convergence still holds despite the counter-case, naming the
+data point that distinguishes the two, or (b) softening the
+convergence claim to reflect the fragility surfaced. This is a soft
+contract for the human / agent reading the report — there is no Rust
+runtime enforcement in v1.
+
 ### Delivery Agents (message the user)
 
 These agents synthesize outputs from all timeframe analysts and deliver to the user.
@@ -637,7 +680,9 @@ For real-time threshold monitoring between scheduled runs:
 ```
 LOW(3x/day) + MEDIUM(daily) + HIGH(2x/week) + MACRO(weekly)
          ↓                    ↓
-    evening-analysis ← reads all layers, synthesizes
+    analyst-adversary ← reads all four, argues against the convergence
+         ↓
+    evening-analysis ← reads all layers + adversary, synthesizes
          ↓
     morning-brief ← reads evening output + overnight data
          ↓

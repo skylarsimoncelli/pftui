@@ -102,6 +102,25 @@ pub struct BuildContext {
     /// `recommendation_outcomes`; `None` means insufficient scored
     /// outcomes (or no `recommendations` table on the active backend).
     pub recommendation_accuracy_7d: Option<RecommendationAccuracySummary>,
+    /// Latest-per-asset synthesis-time adversary views read from
+    /// `adversary_synthesis_views` by `BuildContext::load`. The
+    /// per-asset renderer in `report::sections::adversary_view::render_adversary_view_block`
+    /// only emits a block when an entry exists for `asset` AND that
+    /// entry's `fragility_score >= 3`. Empty when no rows match.
+    pub synthesis_adversary_views: Vec<AdversarySynthesisSummary>,
+}
+
+/// Compact per-asset row mirrored from `adversary_synthesis_views` for
+/// the daily-report renderer in `report::sections::adversary_view`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdversarySynthesisSummary {
+    pub asset: String,
+    pub current_convergence_summary: String,
+    pub counter_case_summary: String,
+    pub counter_case_evidence_points: Vec<String>,
+    pub falsification_triggers: Vec<String>,
+    pub fragility_score: i64,
+    pub recorded_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -836,9 +855,15 @@ impl BuildContext {
                 hit_rate_pct: r.hit_rate_pct,
                 avg_score: r.avg_score,
             });
+        let synthesis_adversary_views = backend
+            .sqlite_native()
+            .map(load_latest_synthesis_adversary_views)
+            .transpose()?
+            .unwrap_or_default();
         Ok(BuildContext {
             report_date: Some(report_date.to_string()),
             recommendation_accuracy_7d,
+            synthesis_adversary_views,
             ..BuildContext::default()
         })
     }
@@ -851,6 +876,40 @@ impl BuildContext {
             ..BuildContext::default()
         }
     }
+}
+
+/// Load the latest-per-asset synthesis-time adversary view from
+/// `adversary_synthesis_views`. JSON fields are decoded into `Vec<String>`;
+/// rows whose JSON arrays are malformed are skipped (the assembler
+/// degrades silently rather than failing the whole report build).
+fn load_latest_synthesis_adversary_views(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<AdversarySynthesisSummary>> {
+    crate::db::adversary_synthesis_views::ensure_table(conn)?;
+    // Pull every row ordered by recorded_at DESC; for each asset keep only
+    // the first (newest) we see. SQLite doesn't have window functions on
+    // every backend variant we ship; this Rust-side fold avoids that.
+    let rows = crate::db::adversary_synthesis_views::list(conn, None, None)?;
+    let mut out: Vec<AdversarySynthesisSummary> = Vec::new();
+    for r in rows {
+        if out.iter().any(|s| s.asset == r.asset) {
+            continue;
+        }
+        let evidence = serde_json::from_str::<Vec<String>>(&r.counter_case_evidence_points)
+            .unwrap_or_default();
+        let triggers = serde_json::from_str::<Vec<String>>(&r.falsification_triggers)
+            .unwrap_or_default();
+        out.push(AdversarySynthesisSummary {
+            asset: r.asset,
+            current_convergence_summary: r.current_convergence_summary,
+            counter_case_summary: r.counter_case_summary,
+            counter_case_evidence_points: evidence,
+            falsification_triggers: triggers,
+            fragility_score: r.fragility_score,
+            recorded_at: r.recorded_at,
+        });
+    }
+    Ok(out)
 }
 
 /// Snapshot of which data slots in a `BuildContext` are populated. Used by the

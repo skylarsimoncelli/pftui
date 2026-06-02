@@ -4877,6 +4877,92 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         #[command(subcommand)]
         command: AnalyticsRecommendationsCommand,
     },
+    /// Adversary pseudo-analyst layer — argue against the dominant convergence.
+    ///
+    /// The write-time adversary (per-prediction "case against" composed
+    /// deterministically from the substrate) lives under
+    /// `pftui journal prediction adversary`. THIS namespace covers the
+    /// synthesis-time adversary: a per-asset, per-run pseudo-analyst that
+    /// runs AFTER the four timeframe analysts have written their views
+    /// for a run, but BEFORE the synthesis (evening/morning) agent reads
+    /// them. See `agents/routines/adversary-analyst.md`.
+    #[command(
+        name = "adversary",
+        after_help = "Synthesis-time adversary layer (per-asset, per-run).\n\nSubcommands:\n  synthesis add               Record a counter-case for an asset\n  synthesis show              List recorded synthesis-time adversary views\n  synthesis fragility-rank    Rank assets by max fragility score\n\nSee also:\n  pftui journal prediction adversary   — write-time per-prediction adversary\n  agents/routines/adversary-analyst.md — pseudo-analyst routine"
+    )]
+    Adversary {
+        #[command(subcommand)]
+        command: AnalyticsAdversaryCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsAdversaryCommand {
+    /// Synthesis-time adversary views (per-asset, per-run)
+    Synthesis {
+        #[command(subcommand)]
+        command: AnalyticsAdversarySynthesisCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsAdversarySynthesisCommand {
+    /// Add a synthesis-time adversary view for an asset
+    Add {
+        /// Asset symbol (e.g. BTC, GLD, SPY)
+        #[arg(long)]
+        asset: String,
+        /// One-line summary of the dominant convergence across the
+        /// four timeframe analysts (what the adversary is arguing against)
+        #[arg(long = "convergence")]
+        convergence: String,
+        /// The strongest opposing case using only data the four
+        /// analysts already saw (quoted verbatim into the daily report
+        /// when fragility_score >= 3)
+        #[arg(long = "counter")]
+        counter: String,
+        /// JSON-encoded array of supporting evidence points, e.g.
+        /// `'["realized cap stalling","ETF flow tail risk"]'`. Pass `[]`
+        /// for none.
+        #[arg(long = "evidence")]
+        evidence: String,
+        /// JSON-encoded array of falsification triggers, e.g.
+        /// `'["BTC closes < 65k for 5 sessions"]'`. Pass `[]` for none.
+        #[arg(long = "falsification")]
+        falsification: String,
+        /// Fragility of the dominant convergence on a 1..=5 scale.
+        /// A score of 3 or higher triggers the synthesis-gating
+        /// contract documented in AGENTS.md.
+        #[arg(long = "fragility")]
+        fragility: i64,
+        /// Optional ISO-8601 override for `recorded_at` (defaults to now)
+        #[arg(long = "recorded-at")]
+        recorded_at: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show recorded synthesis-time adversary views
+    Show {
+        /// Filter to a single asset
+        #[arg(long)]
+        asset: Option<String>,
+        /// Restrict to rows recorded within the window (e.g. `7d`,
+        /// `24h`, or ISO-8601 `YYYY-MM-DD`)
+        #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Rank assets by their max synthesis-time fragility score
+    #[command(name = "fragility-rank")]
+    FragilityRank {
+        /// Restrict to rows recorded within the window (e.g. `7d`,
+        /// `24h`, or ISO-8601 `YYYY-MM-DD`)
+        #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
