@@ -378,12 +378,16 @@ Prediction discipline for macro calls:
 - If the thesis depends on silence, state why the topic should be covered and what future coverage would falsify the negative-space signal.
 - Where possible, pair long-horizon macro calls with shorter checkpoint predictions so the MACRO layer can accumulate calibration feedback.
 
-Make 1-2 MACRO predictions (6-24 month horizon) grounded in the frameworks:
+Make 1-2 MACRO predictions (6-24 month horizon) grounded in the frameworks. Run the pre-flight check before save so the substrate's view of the draft (calibration adjustments for the MACRO layer, applicable fragments, top co-failing cluster) is recorded.
 
 ```bash
-pftui journal prediction add "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
+pftui journal prediction preflight --claim "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
+  --timeframe macro --conviction [level] --layer macro \
+  --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --json
+pftui journal prediction add --claim "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
   --target-date [YYYY-MM-DD] --conviction [level] --timeframe macro --confidence [0.X] --source-agent macro-agent \
-  --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]"
+  --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]" \
+  --accept-preflight --inline
 ```
 
 Score any MACRO predictions that accumulated enough evidence. For macro predictions, evidence direction matters more than binary resolution.
@@ -404,11 +408,15 @@ Write each checkpoint with `--timeframe macro-checkpoint` and `--target-date = t
 
 ```bash
 TARGET="$(date -u -d '+90 days' +%Y-%m-%d 2>/dev/null || date -u -v +90d +%Y-%m-%d)"
+pftui journal prediction preflight \
+  --claim "[thesis=de-dollarisation] By $TARGET, IF central-bank gold purchases drop below 800t annualized, my de-dollarisation thesis is degraded" \
+  --timeframe macro-checkpoint --conviction medium --layer macro --topic geopolitics --json
 pftui journal prediction add \
   --claim "[thesis=de-dollarisation] By $TARGET, IF central-bank gold purchases drop below 800t annualized, my de-dollarisation thesis is degraded" \
   --timeframe macro-checkpoint --target-date "$TARGET" \
   --conviction medium --confidence 0.55 --source-agent analyst-macro \
-  --topic geopolitics --resolution-criteria "WGC quarterly CB gold purchase data, 4-quarter rolling sum"
+  --topic geopolitics --resolution-criteria "WGC quarterly CB gold purchase data, 4-quarter rolling sum" \
+  --accept-preflight --inline
 ```
 
 Rules:

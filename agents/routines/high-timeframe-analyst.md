@@ -325,12 +325,16 @@ Prediction discipline for source-attributed structural calls:
 - If narrative and money diverge, write the prediction as a conditional or lower-confidence call until money confirms.
 - If the source-history rank for the topic is weak or absent, say the evidence is unproven rather than treating tier alone as sufficient.
 
-Make 1-3 structural cause-and-effect predictions (3-12 month horizon):
+Make 1-3 structural cause-and-effect predictions (3-12 month horizon). Run the pre-flight check first so the substrate's view of the draft (calibration adjustments for the HIGH layer, applicable fragments, top-3 similar past calls, co-failing cluster) is recorded before commit.
 
 ```bash
-pftui journal prediction add "[structural cause] will [structural effect] by [date]" \
+pftui journal prediction preflight --claim "[structural cause] will [structural effect] by [date]" \
+  --timeframe high --conviction [level] --layer high \
+  --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --json
+pftui journal prediction add --claim "[structural cause] will [structural effect] by [date]" \
   --target-date [YYYY-MM-DD] --conviction [level] --timeframe high --confidence [0.X] --source-agent high-agent \
-  --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]"
+  --topic [fed|inflation|geopolitics|commodities|crypto|equities|other] --source-article-id [news.id if article-derived] --lessons "[ids]" \
+  --accept-preflight --inline
 ```
 
 ## Output to Evening Analyst

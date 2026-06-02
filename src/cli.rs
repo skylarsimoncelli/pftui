@@ -2224,6 +2224,67 @@ pub enum JournalPredictionCommand {
         /// Allow LOW analyst predictions beyond the soft 5-per-hour cap
         #[arg(long = "override-cap")]
         override_cap: bool,
+        /// Skip the auto-preflight check before save. By default `add` runs
+        /// `prediction preflight` and aborts when the score meets the
+        /// abort threshold (default 50). Pass --skip-preflight to bypass
+        /// entirely; pass --accept-preflight to acknowledge a blocking
+        /// score and commit anyway.
+        #[arg(long = "skip-preflight")]
+        skip_preflight: bool,
+        /// Accept a blocking preflight finding and commit the prediction
+        /// regardless. The preflight findings are still recorded when
+        /// `--inline` is also passed.
+        #[arg(long = "accept-preflight")]
+        accept_preflight: bool,
+        /// Append a one-line serialized preflight block to the prediction's
+        /// `resolution_criteria` so the substrate it was checked against is
+        /// a permanent part of the record.
+        #[arg(long = "inline")]
+        inline: bool,
+        /// Override the auto-preflight abort threshold (0..=100, default 50).
+        #[arg(long = "preflight-threshold")]
+        preflight_threshold: Option<u32>,
+        /// Analyst layer for the calibration_adjustments lookup
+        /// ("low" | "medium" | "high" | "macro"). Defaults to the resolved
+        /// timeframe when not provided.
+        #[arg(long = "layer")]
+        layer: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Pre-flight check: classify the draft prediction into a cluster and
+    /// surface the substrate's view (calibration_adjustments, applicable
+    /// reasoning_fragments, top-3 similar past predictions, top co-failing
+    /// cluster, scenario_prediction_links distribution, most-similar
+    /// falsification rule, and a 0..=100 preflight_score).
+    ///
+    /// Examples:
+    ///   pftui journal prediction preflight --claim "Gold above 4500 by July 15" \
+    ///     --symbol GLD --timeframe medium --conviction high --layer low --json
+    ///   pftui journal prediction preflight --claim "SPY 700 gamma pin" --inline
+    Preflight {
+        /// The draft prediction claim text
+        #[arg(long)]
+        claim: String,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        timeframe: Option<String>,
+        #[arg(long)]
+        conviction: Option<String>,
+        /// Analyst layer for the calibration_adjustments lookup
+        /// ("low" | "medium" | "high" | "macro"). Defaults to --timeframe.
+        #[arg(long)]
+        layer: Option<String>,
+        /// News topic for the calibration_adjustments lookup
+        /// ("fed","inflation","geopolitics","commodities","crypto","equities",
+        /// "other"). When omitted, falls back to a cluster-derived topic.
+        #[arg(long)]
+        topic: Option<String>,
+        /// Render a one-line preflight summary suitable for embedding into
+        /// a prediction's reasoning. Implies --json off.
+        #[arg(long)]
+        inline: bool,
         #[arg(long)]
         json: bool,
     },

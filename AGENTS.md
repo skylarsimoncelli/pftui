@@ -81,6 +81,7 @@ Native CLI surfaces for the enrichment substrate (all support `--json`):
 | `pftui analytics events add --event-date YYYY-MM-DD --category <c> --headline <h> [--detail <d>] [--magnitude 1..5] [--persistence transient\|days\|weeks\|structural] [--asset-impact a,b] [--related-scenario s1,s2] [--related-prediction 1,2] [--source <s>] [--notes <n>] [--json]` | Insert a new event annotation. |
 | `pftui analytics fragments list [--type <t>] [--topic <t>] [--cluster <c>] [--for-claim "<text>"] [--json]` | `reasoning_fragments` rows. `--for-claim` runs a keyword-based cluster classifier and returns fragments reachable via `lesson_fragment_edges`. |
 | `pftui analytics fragments show <canonical_id> [--json]` | One fragment + its lesson edges. |
+| `pftui journal prediction preflight --claim "<text>" [--symbol <s>] [--timeframe <tf>] [--conviction <c>] [--layer <l>] [--topic <t>] [--inline] [--json]` | Cross-table pre-flight check for a draft prediction. Classifies the claim into a `cluster_key`, then returns the matched `reasoning_fragments`, the `calibration_adjustments` row for (layer, topic, conviction), the top-3 similar past `user_predictions` in the cluster with scored outcomes, the highest-share co-failing cluster from `failure_correlations`, the `scenario_prediction_links` distribution for matching scenarios, the most-similar `prediction_falsification_rules` claim, and a 0..=100 `preflight_score` (higher = riskier). `--inline` emits a one-line `[preflight] ...` block for embedding into the prediction reasoning. |
 | `pftui analytics calibration-adjustments [--layer <l>] [--topic <t>] [--conviction <c>] [--json]` | `calibration_adjustments` — per-(layer, topic, conviction) discount/boost factors with `apply_note`. |
 | `pftui analytics failures correlations [--cluster <c>] [--min-share 0.5] [--json]` | `failure_correlations` — pairwise co-failure share between lesson clusters. |
 | `pftui analytics clusters list [--json]` | Distinct `cluster_key` values present on `prediction_lessons` with lesson counts. |
@@ -108,6 +109,7 @@ Contract for predictions:
 - Apply any confidence discount before saving.
 - Attach relevant lesson IDs or reasoning-fragment `canonical_id` values in the prediction reasoning.
 - Prefer concrete falsification criteria with dates and thresholds.
+- **Run `pftui journal prediction preflight --json` BEFORE every `prediction add`.** The preflight surfaces the cluster classification, applicable calibration discount, anti-pattern fragments, top-3 similar past predictions, and the highest-share co-failing cluster. By default `prediction add` auto-runs the preflight and ABORTS the save when `preflight_score >= 50` unless `--accept-preflight` is also passed. Routines must read the preflight findings, then either revise the draft or invoke `prediction add --accept-preflight --inline` so the substrate considered at write time becomes part of the prediction's permanent record (appended to `resolution_criteria`). Pass `--skip-preflight` only for emergency calls where the substrate is not available.
 
 ---
 
