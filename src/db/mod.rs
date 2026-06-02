@@ -1,3 +1,5 @@
+pub mod adversary;
+pub mod adversary_views;
 pub mod agent_messages;
 pub mod alignment_score;
 pub mod analyst_views;
