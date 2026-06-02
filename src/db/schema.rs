@@ -1627,6 +1627,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     crate::db::failure_correlations::ensure_table(conn)?;
     crate::db::operator_replies::ensure_table(conn)?;
     crate::db::prediction_falsification_rules::ensure_table(conn)?;
+    crate::db::regime_history::ensure_table(conn)?;
 
     // Additional live-DB enrichment tables that are not yet managed by
     // dedicated modules. The `pftui system data-coverage` audit references

@@ -9,6 +9,7 @@ pub mod analytics_enrichment;
 pub mod annotate;
 pub mod backfill;
 pub mod backtest;
+pub mod backtest_scenario;
 pub mod brief;
 pub mod brief_common;
 pub mod broker;

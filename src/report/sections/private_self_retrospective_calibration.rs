@@ -2,7 +2,9 @@
 
 use anyhow::Result;
 
-use crate::report::build::daily::{BuildContext, CalibrationReliabilityRow};
+use crate::report::build::daily::{
+    BuildContext, CalibrationReliabilityRow, PrivateRegimeConditionalSummary,
+};
 
 pub const SECTION_PRIVACY: &str = "private";
 
@@ -35,7 +37,24 @@ pub fn render_private_self_retrospective_calibration(ctx: &BuildContext) -> Resu
         output.push('\n');
     }
 
+    if let Some(regime) = &ctx.private_regime_conditional {
+        output.push('\n');
+        output.push_str(&render_regime_conditional(regime));
+        output.push('\n');
+    }
+
     Ok(output.trim_end().to_string())
+}
+
+fn render_regime_conditional(summary: &PrivateRegimeConditionalSummary) -> String {
+    format!(
+        "- Current regime is {regime}; under similar past regimes, the {layer} layer hit rate on {topic} was {hit:.0}% (n={n}).",
+        regime = summary.current_regime,
+        layer = summary.top_layer.to_uppercase(),
+        topic = summary.top_topic,
+        hit = summary.hit_rate_pct,
+        n = summary.sample_size,
+    )
 }
 
 fn largest_miscalibrations(rows: &[CalibrationReliabilityRow]) -> Vec<&CalibrationReliabilityRow> {
@@ -187,6 +206,24 @@ mod tests {
     #[test]
     fn private_self_retrospective_calibration_is_marked_private_only() {
         assert_eq!(SECTION_PRIVACY, "private");
+    }
+
+    #[test]
+    fn private_self_retrospective_calibration_appends_regime_conditional() {
+        let mut ctx = fixture_context();
+        ctx.private_regime_conditional = Some(PrivateRegimeConditionalSummary {
+            current_regime: "stagflation-iran-cool".to_string(),
+            top_layer: "low".to_string(),
+            top_topic: "commodities".to_string(),
+            hit_rate_pct: 65.0,
+            sample_size: 18,
+        });
+        let rendered = render_private_self_retrospective_calibration(&ctx).unwrap();
+        assert!(
+            rendered.contains("Current regime is stagflation-iran-cool"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("LOW layer hit rate on commodities was 65%"));
     }
 
     fn fixture_context() -> BuildContext {
