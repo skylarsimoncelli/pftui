@@ -6,45 +6,6 @@
 
 ## P2 - Coverage And Agent Consumption
 
-### [Claude-WIP 2026-06-02f — DO NOT PICK] Enhance `pftui analytics technicals` — signals subset (MTF RSI, Pi Cycle, MTF breakout, Bollinger reversal, RSI extreme)
-**Source:** Skylar (June 1). Split from the larger technicals expansion. Builds on the channels subset (extended module).
-**Why:** Continuation of the technicals expansion. These signal outputs add multi-timeframe alignment, cycle markers, and reversal/extreme flags the analysts need to reason about breakouts, exhaustion, and frothy conditions.
-**Scope:** Implement these as additional outputs from `pftui analytics technicals --symbols <SYM> [--include <feature>] [--json]`:
-
-(5) **Multi-timeframe RSI alignment**: compute RSI on the current timeframe and at 4 higher timeframes (auto-selected from current TF: 5min → [15,30,60,240]; 1h → [4h,1d,1w,1M]; etc). Output: per-TF RSI values + boolean flags `aligned_overbought` (all four HTFs > 70 + current > 70) and `aligned_oversold` (mirror).
-
-(6) **Pi Cycle Top/Bottom signal**: top = 350d SMA × 2 crossing under 111d SMA on daily close; bottom = 471d SMA × 0.745 crossing over 150d EMA. Output: latest crossover date + days-since per signal. Expose for any asset, document that the parameters were calibrated on BTC.
-
-(7) **Multi-timeframe breakout signal**: composite of three sub-signals — (a) MTF-RSI breakout: current RSI just exited a `oversold/overbought across 4 HTFs` zone; (b) 3-Line Strike pattern: 3 consecutive down-closes followed by an up-close that exceeds bar-1 open (mirror for bear); (c) Momentum exhaustion: 5+ closes greater than close[-4] with current close < open AND high >= 25-bar high (mirror for bottom). Output: per-signal boolean + `signal_count` (0-3) + cooldown-aware `breakout_state` (`bull-fresh` / `bull-armed` / `none` / `bear-armed` / `bear-fresh`). Cooldown: minimum 5 bars between signals (configurable).
-
-(8) **Bollinger reversal signals**: cross-under upper band → `top_reversal_signal`; cross-over lower band → `bottom_reversal_signal`. Multi-bar confirmations: `confirmation_1` (price stays below the reversal-bar low for the next 1 bar) and `confirmation_2` (sustains for 2 bars). Output: per-signal boolean + bar offsets where the signal fired.
-
-(9) **RSI extreme highlighting** as a derived flag: when current-TF RSI > 85 AND multi-timeframe alignment is `aligned_overbought` AND current bar makes a new 14-bar high → flag `rsi_extreme_high`. Mirror for low.
-
-CLI: each output selectable via `--include mtf-rsi,pi-cycle,mtf-breakout,bollinger-reversal,rsi-extreme` (or `--include all`).
-
-Implementation: extend the `src/indicators/extended.rs` module landed by the channels subset. Hook computations into `src/commands/technicals.rs`. Files: `src/indicators/extended.rs`, `src/commands/technicals.rs`, `src/cli.rs`, `AGENTS.md`. Tests: each function gets a synthetic-candle fixture test verifying computed values at known bars; integration test that `--include all --json` returns the expected JSON shape.
-
-Naming: canonical TA terminology only — no vendor / indicator brand names.
-### [Claude-WIP 2026-06-02e — DO NOT PICK] Enhance `pftui analytics technicals` — channels subset (Gaussian, Zone EMA, Volatility-weighted, Donchian)
-**Source:** Skylar (June 1). Split from the larger technicals expansion.
-**Why:** pftui's existing `analytics technicals` covers RSI, MACD, SMA, Bollinger Bands, and ATR — limited to single-timeframe indicators with simple parameterisation. The channel/trend-line additions below are well-established TA primitives that mature charting platforms compute; surfacing them via `--json` lets the analyst routines reason about trend strength and regime shifts without external visual indicators.
-**Scope:** Implement these as additional outputs from `pftui analytics technicals --symbols <SYM> [--include <feature>] [--json]`:
-
-(1) **Gaussian Channel band**: DEMA → multi-pass Gaussian filter → SMMA chain with σ-bands. Configurable: DEMA length (default 7), Gaussian length (default 4), Gaussian σ (default 2.0), SMMA length (default 12), SD length (default 30), upper/lower SD multipliers (default 2.5 / 1.8). Output: middle line + upper/lower bands + a derived `band_state` enum (`above_upper` / `in_band` / `below_lower`).
-
-(2) **Zone-based EMA channel** (companion to Gaussian): two EMAs (default 144 / 233 periods, timeframe-adapted) forming inner + outer zones with configurable scale and extension. Output: `zone_position` (`upper-outer` / `upper-inner` / `lower-inner` / `lower-outer`) and the four band values.
-
-(3) **Volatility-weighted trend line**: a smoothed momentum line whose smoothing constant is modulated by realised volatility (high-vol = faster reaction, low-vol = slower). Sensitivity: Fast / Medium / Slow → length 9 / 18 / 27. Output: trend value + slope direction + `trend_strength` integer 0-3.
-
-(4) **Donchian channel midline trend**: midline of conversion-length (default 5) Donchian + baseline-length (default 26) Donchian. Output: trend value + slope. Hybrid mode (configurable weight) blends Volatility-Weighted and Donchian trends.
-
-CLI: each output selectable via `--include gaussian-channel,zone-channel,volatility-trend,donchian-trend` (or `--include all`). Default for backward-compat: existing RSI/MACD/SMA/BB/ATR set only.
-
-Implementation: pure functions over a `&[Candle]` slice. Put them in `src/indicators/extended.rs` (new module). Hook into `src/commands/technicals.rs` (or wherever the existing `--symbols ... --json` handler lives). Files: `src/indicators/extended.rs` (new), `src/commands/technicals.rs`, `src/cli.rs`, `AGENTS.md`. Tests: each function gets a synthetic-candle fixture test verifying the computed value at a known bar; integration test that `--include all --json` returns the expected JSON shape.
-
-Naming: do NOT use vendor / indicator brand names anywhere. Use canonical TA terminology only.
-**Effort:** ~1 week.
 
 ### `pftui report build daily` — umbrella tracker (do not pick directly)
 **Source:** Skylar (May 28). Depends on both `pftui report` scaffold and the chart-helper-port items above.
@@ -74,13 +35,13 @@ Naming: do NOT use vendor / indicator brand names anywhere. Use canonical TA ter
 **Scope:** New `data flows` source pulling ETF flow data (ETF.com or similar), institutional 13F filings, and crypto exchange flow data. New table `capital_flows`. Integration into agent routines.
 **Effort:** 3–4 weeks.
 
-### Adversary pseudo-analyst layer — argue against the convergence
+### [Claude-WIP 2026-06-02i — DO NOT PICK] Adversary pseudo-analyst layer — argue against the convergence
 **Source:** Claude review (May 28, post-/pftui-report retrospective).
 **Why:** pftui's intelligence platform runs 4 timeframe analysts (LOW / MEDIUM / HIGH / MACRO) that produce "diverse" opinions per asset. In practice the four layers share priors: they read the same data bundle, the same lesson book, the same first-principles thesis context. They are more "the same lens at four focal lengths" than four independent lenses. When they appear to agree, the agreement may be confirmation of shared assumptions rather than independent corroboration. The system needs a structural counter-pressure: a fifth pseudo-layer whose explicit job is to argue against the current convergence using the same data, surface what each layer's assumptions exclude, and flag scenarios where consensus looks fragile. This is closer to a red-team than a fifth analyst. Today's report would have benefited: all four layers agreed today's hard-money capitulation is "positioning-driven, not structural." An adversary layer's job would be to write the strongest "actually, this IS structural" case using the same data, name the falsification triggers, and force the synthesis to address the counter-case explicitly.
 **Scope:** (1) Create `agents/routines/adversary-analyst.md` — prompt template instructing the model to read the same bundles + analyst writes from the current run, identify the dominant convergence, and write the strongest opposing case using only data from those bundles. (2) Add a new author identifier `analyst-adversary` to the canonical list in `CLAUDE.md`. (3) The adversary runs AFTER the 4 timeframe analysts on each `/pftui-report` invocation (so it has their writes as input) but BEFORE synthesis. The adversary writes to a new table `adversary_views` with `(asset, current_convergence_summary, counter_case_summary, counter_case_evidence_points JSON, falsification_triggers JSON, fragility_score_1_5, recorded_at)`. (4) Synthesis MUST address the adversary's counter-case for any asset where `fragility_score >= 3`. (5) New CLI: `pftui analytics adversary --asset <SYM> --json`, `pftui analytics adversary fragility-rank --json`. (6) Daily report adds an "Adversary view" sub-section per asset where the fragility score is high — quoted directly from the adversary's write, not paraphrased. (7) Skill update: the report skill spawns the adversary subagent as a 5th parallel call OR sequentially after the 4 layers. Files: new `agents/routines/adversary-analyst.md`, `src/db/schema.rs` (migration), `src/db/adversary_views.rs` (new), `src/commands/analytics.rs`, `src/cli.rs`, `CLAUDE.md`, the report skill. Tests: adversary write/read; synthesis rejects publishing a report where any `fragility_score >= 3` view lacks a counter-case address in the markdown.
 **Effort:** 2–3 weeks (substantial — touches the analytical pipeline core).
 
-### Thesis dependency graph — LLM-assisted extraction backfill
+### [Claude-WIP 2026-06-02j — DO NOT PICK] Thesis dependency graph — LLM-assisted extraction backfill
 **Source:** Follow-up to the 2026-06-02 cross-asset thesis dependency graph PR. That PR landed the `thesis_dependencies` table, `pftui analytics thesis-chains list|show|validate|add`, the price-threshold validator, the `journal prediction preflight` integration, and a `report::sections::thesis_chains_macro::render_thesis_chains_block` renderer.
 **Why:** Chains are currently authored by hand via `thesis-chains add`. The fastest way to seed 30-60 high-quality chains is a one-shot Opus extraction pass over `thesis.content` + `prediction_lessons.why_wrong` + last-90d `agent_messages`.
 **Scope:** (1) Add an Opus subagent or `pftui agent` command that reads the three sources, emits JSONL `{antecedent_text, relation, consequent_text, conviction, source_lesson_ids, source_thesis_sections, evidence_count}` triples, and calls `analytics thesis-chains add` for each row. (2) Enrich the validator to handle additional predicate shapes (range thresholds, derived metrics like real_yield, DXY-spread). (3) Auto-wire the `thesis_chains_macro::render_thesis_chains_block` output into the daily-report Macro section assembler once the assembler exposes a chain-loading hook. (4) Tests: extraction produces valid triples; auto-wire respects the public-mode privacy guard (chains do not leak portfolio-specific framing).
