@@ -26,6 +26,24 @@ CLI: each output selectable via `--include mtf-rsi,pi-cycle,mtf-breakout,bolling
 Implementation: extend the `src/indicators/extended.rs` module landed by the channels subset. Hook computations into `src/commands/technicals.rs`. Files: `src/indicators/extended.rs`, `src/commands/technicals.rs`, `src/cli.rs`, `AGENTS.md`. Tests: each function gets a synthetic-candle fixture test verifying computed values at known bars; integration test that `--include all --json` returns the expected JSON shape.
 
 Naming: canonical TA terminology only — no vendor / indicator brand names.
+### [Claude-WIP 2026-06-02e — DO NOT PICK] Enhance `pftui analytics technicals` — channels subset (Gaussian, Zone EMA, Volatility-weighted, Donchian)
+**Source:** Skylar (June 1). Split from the larger technicals expansion.
+**Why:** pftui's existing `analytics technicals` covers RSI, MACD, SMA, Bollinger Bands, and ATR — limited to single-timeframe indicators with simple parameterisation. The channel/trend-line additions below are well-established TA primitives that mature charting platforms compute; surfacing them via `--json` lets the analyst routines reason about trend strength and regime shifts without external visual indicators.
+**Scope:** Implement these as additional outputs from `pftui analytics technicals --symbols <SYM> [--include <feature>] [--json]`:
+
+(1) **Gaussian Channel band**: DEMA → multi-pass Gaussian filter → SMMA chain with σ-bands. Configurable: DEMA length (default 7), Gaussian length (default 4), Gaussian σ (default 2.0), SMMA length (default 12), SD length (default 30), upper/lower SD multipliers (default 2.5 / 1.8). Output: middle line + upper/lower bands + a derived `band_state` enum (`above_upper` / `in_band` / `below_lower`).
+
+(2) **Zone-based EMA channel** (companion to Gaussian): two EMAs (default 144 / 233 periods, timeframe-adapted) forming inner + outer zones with configurable scale and extension. Output: `zone_position` (`upper-outer` / `upper-inner` / `lower-inner` / `lower-outer`) and the four band values.
+
+(3) **Volatility-weighted trend line**: a smoothed momentum line whose smoothing constant is modulated by realised volatility (high-vol = faster reaction, low-vol = slower). Sensitivity: Fast / Medium / Slow → length 9 / 18 / 27. Output: trend value + slope direction + `trend_strength` integer 0-3.
+
+(4) **Donchian channel midline trend**: midline of conversion-length (default 5) Donchian + baseline-length (default 26) Donchian. Output: trend value + slope. Hybrid mode (configurable weight) blends Volatility-Weighted and Donchian trends.
+
+CLI: each output selectable via `--include gaussian-channel,zone-channel,volatility-trend,donchian-trend` (or `--include all`). Default for backward-compat: existing RSI/MACD/SMA/BB/ATR set only.
+
+Implementation: pure functions over a `&[Candle]` slice. Put them in `src/indicators/extended.rs` (new module). Hook into `src/commands/technicals.rs` (or wherever the existing `--symbols ... --json` handler lives). Files: `src/indicators/extended.rs` (new), `src/commands/technicals.rs`, `src/cli.rs`, `AGENTS.md`. Tests: each function gets a synthetic-candle fixture test verifying the computed value at a known bar; integration test that `--include all --json` returns the expected JSON shape.
+
+Naming: do NOT use vendor / indicator brand names anywhere. Use canonical TA terminology only.
 **Effort:** ~1 week.
 
 ### `pftui report build daily` — umbrella tracker (do not pick directly)

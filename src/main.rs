@@ -2471,7 +2471,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 limit,
                 include,
                 json,
-            } => commands::analytics::run_technicals_with_includes(
+            } => commands::analytics::run_technicals_cmd(
                 &backend,
                 symbol.as_deref(),
                 &timeframe,

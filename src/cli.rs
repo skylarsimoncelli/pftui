@@ -4245,9 +4245,12 @@ pub enum AnalyticsCommand {
         timeframe: String,
         #[arg(long)]
         limit: Option<usize>,
-        /// Comma-separated extended indicators to include. Channels subset
-        /// values: gaussian-channel,zone-channel,volatility-trend,donchian-trend.
-        /// Use `all` to include every extended indicator the CLI knows about.
+        /// Comma-separated extended indicators/signals to include. Channels
+        /// subset: `gaussian-channel`, `zone-channel`, `volatility-trend`,
+        /// `donchian-trend`. Signals subset: `mtf-rsi`, `pi-cycle`,
+        /// `mtf-breakout`, `bollinger-reversal`, `rsi-extreme`. Pass `all` to
+        /// include every extended output. Default: legacy RSI/MACD/SMA/BB/ATR
+        /// set only.
         #[arg(long)]
         include: Option<String>,
         #[arg(long)]

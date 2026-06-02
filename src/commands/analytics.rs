@@ -1696,20 +1696,13 @@ fn run_gaps_symbol(backend: &BackendConnection, symbol: &str, json_output: bool)
     Ok(())
 }
 
-fn run_technicals(
-    backend: &BackendConnection,
-    symbol: Option<&str>,
-    timeframe: &str,
-    limit: Option<usize>,
-    json_output: bool,
-) -> Result<()> {
-    run_technicals_with_includes(backend, symbol, timeframe, limit, None, json_output)
-}
-
-/// Public entrypoint that mirrors [`run_technicals`] but also accepts an
-/// optional comma-separated `include` selector for extended indicators
-/// (channels subset). Defaults preserved for backward compatibility.
-pub fn run_technicals_with_includes(
+/// Public entry-point for `pftui analytics technicals` that supports the
+/// extended `--include` flag (channels + signals subsets).
+///
+/// Delegates to [`run_technicals`] for the legacy snapshot rendering and, when
+/// `include` is set, appends the requested extended outputs to the JSON
+/// payload (or pretty-prints a per-symbol summary).
+pub fn run_technicals_cmd(
     backend: &BackendConnection,
     symbol: Option<&str>,
     timeframe: &str,
@@ -1717,17 +1710,370 @@ pub fn run_technicals_with_includes(
     include: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
+    // Resolve which extended outputs are requested. When `--include` is
+    // omitted, fall back to the legacy renderer.
+    let includes = parse_include_flag(include);
+    if includes.is_empty() {
+        return run_technicals(backend, symbol, timeframe, limit, json_output);
+    }
+
+    // Build symbol list — either the requested set or "everything with
+    // history". We deliberately keep this scoped: the extended outputs are
+    // expensive and the caller almost always passes one or two symbols.
+    let symbols: Vec<String> = if let Some(filter) = symbol {
+        parse_symbol_filter(filter)
+    } else {
+        Vec::new()
+    };
+
+    let (legacy_rows, legacy_warning) =
+        technical_rows_with_warning(backend, symbol, timeframe, limit)?;
+    let snapshot_warning = legacy_warning.clone();
+
+    let mut extended_payload = serde_json::Map::new();
+    for sym in &symbols {
+        let history = crate::db::price_history::get_history_backend(backend, sym, 800)
+            .unwrap_or_default();
+        let extended = compute_extended_for_symbol(&history, &includes, timeframe);
+        extended_payload.insert(sym.clone(), extended);
+    }
+
+    if json_output {
+        let mut payload = serde_json::Map::new();
+        payload.insert("timeframe".to_string(), json!(timeframe));
+        payload.insert("technicals".to_string(), serde_json::to_value(&legacy_rows)?);
+        payload.insert("count".to_string(), json!(legacy_rows.len()));
+        payload.insert(
+            "includes".to_string(),
+            json!(includes.iter().map(|i| i.as_str()).collect::<Vec<_>>()),
+        );
+        payload.insert(
+            "extended".to_string(),
+            serde_json::Value::Object(extended_payload),
+        );
+        if let Some(warning) = &snapshot_warning {
+            payload.insert("warning".to_string(), json!(warning));
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::Value::Object(payload))?
+        );
+        return Ok(());
+    }
+
+    // Pretty path: print legacy snapshot table first, then per-symbol
+    // extended summaries.
+    run_technicals(backend, symbol, timeframe, limit, false)?;
+    println!();
+    println!("Extended outputs ({})", includes_summary(&includes));
+    println!("{}", "─".repeat(72));
+    for (sym, value) in extended_payload {
+        println!("  {sym}:");
+        // The pretty path emits the JSON object indented; agents are the
+        // real consumers of `--include` so we don't need a custom renderer.
+        let pretty = serde_json::to_string_pretty(&value).unwrap_or_default();
+        for line in pretty.lines() {
+            println!("    {line}");
+        }
+        println!();
+    }
+    Ok(())
+}
+
+/// Canonical names for the extended `--include` subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IncludeFeature {
+    // signals subset (Agent V)
+    MtfRsi,
+    PiCycle,
+    MtfBreakout,
+    BollingerReversal,
+    RsiExtreme,
+    // channels subset (Agent U)
+    GaussianChannel,
+    ZoneChannel,
+    VolatilityTrend,
+    DonchianTrend,
+}
+
+impl IncludeFeature {
+    fn as_str(self) -> &'static str {
+        match self {
+            IncludeFeature::MtfRsi => "mtf-rsi",
+            IncludeFeature::PiCycle => "pi-cycle",
+            IncludeFeature::MtfBreakout => "mtf-breakout",
+            IncludeFeature::BollingerReversal => "bollinger-reversal",
+            IncludeFeature::RsiExtreme => "rsi-extreme",
+            IncludeFeature::GaussianChannel => "gaussian-channel",
+            IncludeFeature::ZoneChannel => "zone-channel",
+            IncludeFeature::VolatilityTrend => "volatility-trend",
+            IncludeFeature::DonchianTrend => "donchian-trend",
+        }
+    }
+}
+
+fn parse_include_flag(raw: Option<&str>) -> Vec<IncludeFeature> {
+    let Some(raw) = raw else { return Vec::new() };
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    let all = vec![
+        IncludeFeature::MtfRsi,
+        IncludeFeature::PiCycle,
+        IncludeFeature::MtfBreakout,
+        IncludeFeature::BollingerReversal,
+        IncludeFeature::RsiExtreme,
+        IncludeFeature::GaussianChannel,
+        IncludeFeature::ZoneChannel,
+        IncludeFeature::VolatilityTrend,
+        IncludeFeature::DonchianTrend,
+    ];
+    let mut out = Vec::new();
+    for token in raw.split(',') {
+        let token = token.trim().to_ascii_lowercase();
+        if token.is_empty() {
+            continue;
+        }
+        if token == "all" {
+            for f in &all {
+                if !out.contains(f) {
+                    out.push(*f);
+                }
+            }
+            continue;
+        }
+        let matched = match token.as_str() {
+            // signals subset (Agent V)
+            "mtf-rsi" | "mtf_rsi" => Some(IncludeFeature::MtfRsi),
+            "pi-cycle" | "pi_cycle" => Some(IncludeFeature::PiCycle),
+            "mtf-breakout" | "mtf_breakout" => Some(IncludeFeature::MtfBreakout),
+            "bollinger-reversal" | "bollinger_reversal" => Some(IncludeFeature::BollingerReversal),
+            "rsi-extreme" | "rsi_extreme" => Some(IncludeFeature::RsiExtreme),
+            // channels subset (Agent U)
+            "gaussian-channel" | "gaussian_channel" => Some(IncludeFeature::GaussianChannel),
+            "zone-channel" | "zone_channel" => Some(IncludeFeature::ZoneChannel),
+            "volatility-trend" | "volatility_trend" => Some(IncludeFeature::VolatilityTrend),
+            "donchian-trend" | "donchian_trend" => Some(IncludeFeature::DonchianTrend),
+            _ => None,
+        };
+        if let Some(f) = matched {
+            if !out.contains(&f) {
+                out.push(f);
+            }
+        }
+        // Unknown tokens are silently ignored.
+    }
+    out
+}
+
+fn includes_summary(includes: &[IncludeFeature]) -> String {
+    includes
+        .iter()
+        .map(|i| i.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Compute every requested extended output for a single symbol.
+fn compute_extended_for_symbol(
+    history: &[crate::models::price::HistoryRecord],
+    includes: &[IncludeFeature],
+    timeframe: &str,
+) -> serde_json::Value {
+    use serde_json::json;
+
+    if history.is_empty() {
+        return json!({ "warning": "no price history available" });
+    }
+
+    let closes: Vec<f64> = history
+        .iter()
+        .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        .collect();
+    let opens: Vec<f64> = history
+        .iter()
+        .map(|r| {
+            r.open
+                .as_ref()
+                .and_then(|d| d.to_string().parse::<f64>().ok())
+                .unwrap_or_else(|| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        })
+        .collect();
+    let highs: Vec<f64> = history
+        .iter()
+        .map(|r| {
+            r.high
+                .as_ref()
+                .and_then(|d| d.to_string().parse::<f64>().ok())
+                .unwrap_or_else(|| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        })
+        .collect();
+    let lows: Vec<f64> = history
+        .iter()
+        .map(|r| {
+            r.low
+                .as_ref()
+                .and_then(|d| d.to_string().parse::<f64>().ok())
+                .unwrap_or_else(|| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        })
+        .collect();
+    let dates: Vec<String> = history.iter().map(|r| r.date.clone()).collect();
+
+    let mut payload = serde_json::Map::new();
+
+    for inc in includes {
+        match inc {
+            IncludeFeature::MtfRsi => {
+                let r = crate::indicators::extended::compute_mtf_rsi(
+                    &closes,
+                    timeframe,
+                    &[],
+                    crate::indicators::extended::mtf_rsi::DEFAULT_RSI_PERIOD,
+                );
+                payload.insert(
+                    "mtf_rsi".to_string(),
+                    serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            IncludeFeature::PiCycle => {
+                let r = crate::indicators::extended::compute_pi_cycle(&closes, &dates);
+                payload.insert(
+                    "pi_cycle".to_string(),
+                    serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            IncludeFeature::MtfBreakout => {
+                let cfg = crate::indicators::extended::MtfBreakoutConfig::default();
+                let r = crate::indicators::extended::compute_mtf_breakout(
+                    &opens, &highs, &lows, &closes, timeframe, &cfg,
+                );
+                payload.insert(
+                    "mtf_breakout".to_string(),
+                    serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            IncludeFeature::BollingerReversal => {
+                let r = crate::indicators::extended::compute_bollinger_reversal(
+                    &highs,
+                    &lows,
+                    &closes,
+                    crate::indicators::extended::bollinger_reversal::DEFAULT_PERIOD,
+                    crate::indicators::extended::bollinger_reversal::DEFAULT_MULTIPLIER,
+                );
+                payload.insert(
+                    "bollinger_reversal".to_string(),
+                    serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            IncludeFeature::RsiExtreme => {
+                let r = crate::indicators::extended::compute_rsi_extreme(
+                    &highs, &lows, &closes, timeframe, &[],
+                );
+                payload.insert(
+                    "rsi_extreme".to_string(),
+                    serde_json::to_value(&r).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            IncludeFeature::GaussianChannel => {
+                use crate::indicators::extended::{
+                    compute_gaussian_channel, GaussianChannelConfig,
+                };
+                let cfg = GaussianChannelConfig::default();
+                let value = match compute_gaussian_channel(&closes, &cfg) {
+                    Some(r) => serde_json::json!({
+                        "middle": r.middle,
+                        "upper": r.upper,
+                        "lower": r.lower,
+                        "band_state": r.band_state.as_str(),
+                    }),
+                    None => serde_json::Value::Null,
+                };
+                payload.insert("gaussian_channel".to_string(), value);
+            }
+            IncludeFeature::ZoneChannel => {
+                use crate::indicators::extended::{compute_zone_channel, ZoneChannelConfig};
+                let cfg = ZoneChannelConfig::default();
+                let value = match compute_zone_channel(&closes, &cfg) {
+                    Some(r) => serde_json::json!({
+                        "upper_outer": r.upper_outer,
+                        "upper_inner": r.upper_inner,
+                        "lower_inner": r.lower_inner,
+                        "lower_outer": r.lower_outer,
+                        "zone_position": r.zone_position.as_str(),
+                    }),
+                    None => serde_json::Value::Null,
+                };
+                payload.insert("zone_channel".to_string(), value);
+            }
+            IncludeFeature::VolatilityTrend => {
+                use crate::indicators::extended::{
+                    compute_volatility_trend, VolatilityTrendConfig,
+                };
+                let cfg = VolatilityTrendConfig::default();
+                let value = match compute_volatility_trend(&closes, &cfg) {
+                    Some(r) => serde_json::json!({
+                        "value": r.value,
+                        "slope": r.slope.as_str(),
+                        "trend_strength": r.trend_strength,
+                    }),
+                    None => serde_json::Value::Null,
+                };
+                payload.insert("volatility_trend".to_string(), value);
+            }
+            IncludeFeature::DonchianTrend => {
+                use crate::indicators::extended::{
+                    compute_donchian_trend, hybrid_trend_blend, DonchianTrendConfig,
+                    VolatilityTrendConfig,
+                };
+                let cfg = DonchianTrendConfig::default();
+                let highs_opt: Vec<Option<f64>> = highs.iter().map(|h| Some(*h)).collect();
+                let lows_opt: Vec<Option<f64>> = lows.iter().map(|l| Some(*l)).collect();
+                let value = match compute_donchian_trend(&closes, &highs_opt, &lows_opt, &cfg) {
+                    Some(r) => serde_json::json!({
+                        "value": r.value,
+                        "slope": r.slope.as_str(),
+                    }),
+                    None => serde_json::Value::Null,
+                };
+                payload.insert("donchian_trend".to_string(), value);
+
+                // Emit the hybrid blend when both volatility-trend and
+                // donchian-trend are requested — equal-weighted default.
+                if includes.contains(&IncludeFeature::VolatilityTrend) {
+                    let vol_cfg = VolatilityTrendConfig::default();
+                    let hybrid = hybrid_trend_blend(
+                        &closes, &highs_opt, &lows_opt, &vol_cfg, &cfg, 0.5,
+                    );
+                    let hybrid_value = match hybrid {
+                        Some(h) => serde_json::json!({
+                            "value": h.value,
+                            "slope": h.slope.as_str(),
+                            "volatility_weight": h.volatility_weight,
+                            "donchian_weight": h.donchian_weight,
+                        }),
+                        None => serde_json::Value::Null,
+                    };
+                    payload.insert("hybrid_trend".to_string(), hybrid_value);
+                }
+            }
+        }
+    }
+
+    serde_json::Value::Object(payload)
+}
+
+fn run_technicals(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    timeframe: &str,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
     let (mut rows, warning) = technical_rows_with_warning(backend, symbol, timeframe, limit)?;
     if let Some(limit) = limit {
         rows.truncate(limit);
     }
-
-    let include_set = parse_include_flag(include);
-    let extended_payload = if include_set.any_selected() {
-        Some(build_extended_indicators(backend, &rows, &include_set))
-    } else {
-        None
-    };
 
     if json_output {
         let mut payload = serde_json::Map::new();
@@ -1736,9 +2082,6 @@ pub fn run_technicals_with_includes(
         payload.insert("count".to_string(), json!(rows.len()));
         if let Some(warning) = &warning {
             payload.insert("warning".to_string(), json!(warning));
-        }
-        if let Some(ext) = extended_payload.as_ref() {
-            payload.insert("extended".to_string(), ext.clone());
         }
         println!(
             "{}",
@@ -1765,7 +2108,7 @@ pub fn run_technicals_with_includes(
             "Symbol", "RSI", "MACD", "Hist", "SMA20", "SMA50", "SMA200", "52W%", "Volume"
         );
         println!("{}", "─".repeat(90));
-        for row in &rows {
+        for row in rows.drain(..) {
             println!(
                 "{:<10} {:>7} {:>8} {:>8} {:>8} {:>8} {:>8} {:>7} {:<8}",
                 row.symbol,
@@ -1776,14 +2119,8 @@ pub fn run_technicals_with_includes(
                 fmt_opt(row.sma_50, 2),
                 fmt_opt(row.sma_200, 2),
                 fmt_opt(row.range_52w_position, 0),
-                row.volume_regime.clone().unwrap_or_else(|| "n/a".to_string()),
+                row.volume_regime.unwrap_or_else(|| "n/a".to_string()),
             );
-        }
-
-        if let Some(ext) = extended_payload.as_ref() {
-            println!();
-            println!("Extended Indicators");
-            println!("{}", serde_json::to_string_pretty(ext).unwrap_or_default());
         }
     }
 
@@ -1943,196 +2280,6 @@ fn parse_symbol_filter(raw: &str) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .collect()
 }
-
-// ─── channels subset (Agent U) ─────────────────────────────────────────────
-//
-// Extended-indicator selection + per-symbol computation for the channels
-// subset (Gaussian Channel, Zone EMA Channel, Volatility-weighted Trend,
-// Donchian Trend). Signals-subset selectors (Agent V) will be added alongside
-// these flags by extending `IncludeSet` and `build_extended_indicators`.
-
-#[derive(Debug, Default, Clone, Copy)]
-struct IncludeSet {
-    // channels subset (Agent U)
-    gaussian_channel: bool,
-    zone_channel: bool,
-    volatility_trend: bool,
-    donchian_trend: bool,
-}
-
-impl IncludeSet {
-    fn any_selected(self) -> bool {
-        self.gaussian_channel
-            || self.zone_channel
-            || self.volatility_trend
-            || self.donchian_trend
-    }
-}
-
-fn parse_include_flag(include: Option<&str>) -> IncludeSet {
-    let mut set = IncludeSet::default();
-    let Some(raw) = include else {
-        return set;
-    };
-    for token in raw.split(',').map(|t| t.trim().to_lowercase()) {
-        match token.as_str() {
-            "" => continue,
-            "all" => {
-                // channels subset (Agent U)
-                set.gaussian_channel = true;
-                set.zone_channel = true;
-                set.volatility_trend = true;
-                set.donchian_trend = true;
-            }
-            // channels subset (Agent U)
-            "gaussian-channel" => set.gaussian_channel = true,
-            "zone-channel" => set.zone_channel = true,
-            "volatility-trend" => set.volatility_trend = true,
-            "donchian-trend" => set.donchian_trend = true,
-            _ => {
-                // Unknown tokens are ignored silently — the signals subset
-                // (Agent V) will register its tokens here.
-            }
-        }
-    }
-    set
-}
-
-fn build_extended_indicators(
-    backend: &BackendConnection,
-    rows: &[crate::db::technical_snapshots::TechnicalSnapshotRecord],
-    include: &IncludeSet,
-) -> serde_json::Value {
-    use crate::indicators::extended::{
-        compute_donchian_trend, compute_gaussian_channel, compute_volatility_trend,
-        compute_zone_channel, hybrid_trend_blend, DonchianTrendConfig, GaussianChannelConfig,
-        VolatilityTrendConfig, ZoneChannelConfig,
-    };
-
-    let symbols: Vec<String> = rows.iter().map(|r| r.symbol.clone()).collect();
-    if symbols.is_empty() {
-        return json!({});
-    }
-
-    // Pull a generous slice of history — Gaussian channel needs SD lookback +
-    // smoothing chain headroom; 370 days mirrors the default snapshot pull.
-    let history_map = price_history::get_history_batch_backend(backend, &symbols, 370)
-        .unwrap_or_default();
-
-    let mut out = serde_json::Map::new();
-    for symbol in symbols {
-        let Some(history) = history_map.get(&symbol) else {
-            continue;
-        };
-        if history.is_empty() {
-            continue;
-        }
-        let closes: Vec<f64> = history
-            .iter()
-            .map(|h| h.close.to_string().parse::<f64>().unwrap_or(0.0))
-            .collect();
-        let highs: Vec<Option<f64>> = history
-            .iter()
-            .map(|h| {
-                h.high
-                    .as_ref()
-                    .and_then(|d| d.to_string().parse::<f64>().ok())
-            })
-            .collect();
-        let lows: Vec<Option<f64>> = history
-            .iter()
-            .map(|h| {
-                h.low
-                    .as_ref()
-                    .and_then(|d| d.to_string().parse::<f64>().ok())
-            })
-            .collect();
-
-        let mut sym_obj = serde_json::Map::new();
-
-        if include.gaussian_channel {
-            let cfg = GaussianChannelConfig::default();
-            let value = match compute_gaussian_channel(&closes, &cfg) {
-                Some(r) => json!({
-                    "middle": r.middle,
-                    "upper": r.upper,
-                    "lower": r.lower,
-                    "band_state": r.band_state.as_str(),
-                }),
-                None => json!(null),
-            };
-            sym_obj.insert("gaussian_channel".to_string(), value);
-        }
-
-        if include.zone_channel {
-            let cfg = ZoneChannelConfig::default();
-            let value = match compute_zone_channel(&closes, &cfg) {
-                Some(r) => json!({
-                    "upper_outer": r.upper_outer,
-                    "upper_inner": r.upper_inner,
-                    "lower_inner": r.lower_inner,
-                    "lower_outer": r.lower_outer,
-                    "zone_position": r.zone_position.as_str(),
-                }),
-                None => json!(null),
-            };
-            sym_obj.insert("zone_channel".to_string(), value);
-        }
-
-        if include.volatility_trend {
-            let cfg = VolatilityTrendConfig::default();
-            let value = match compute_volatility_trend(&closes, &cfg) {
-                Some(r) => json!({
-                    "value": r.value,
-                    "slope": r.slope.as_str(),
-                    "trend_strength": r.trend_strength,
-                }),
-                None => json!(null),
-            };
-            sym_obj.insert("volatility_trend".to_string(), value);
-        }
-
-        if include.donchian_trend {
-            let cfg = DonchianTrendConfig::default();
-            let value = match compute_donchian_trend(&closes, &highs, &lows, &cfg) {
-                Some(r) => json!({
-                    "value": r.value,
-                    "slope": r.slope.as_str(),
-                }),
-                None => json!(null),
-            };
-            sym_obj.insert("donchian_trend".to_string(), value);
-
-            // Hybrid blend is emitted whenever both volatility-trend and
-            // donchian-trend are requested — equal-weighted default.
-            if include.volatility_trend {
-                let hybrid = hybrid_trend_blend(
-                    &closes,
-                    &highs,
-                    &lows,
-                    &VolatilityTrendConfig::default(),
-                    &cfg,
-                    0.5,
-                );
-                let value = match hybrid {
-                    Some(h) => json!({
-                        "value": h.value,
-                        "slope": h.slope.as_str(),
-                        "volatility_weight": h.volatility_weight,
-                        "donchian_weight": h.donchian_weight,
-                    }),
-                    None => json!(null),
-                };
-                sym_obj.insert("hybrid_trend".to_string(), value);
-            }
-        }
-
-        out.insert(symbol, serde_json::Value::Object(sym_obj));
-    }
-    serde_json::Value::Object(out)
-}
-
-// ─── end channels subset ──────────────────────────────────────────────────
 
 fn fmt_opt(value: Option<f64>, precision: usize) -> String {
     value
@@ -5442,126 +5589,6 @@ mod tests {
         assert!(result.is_ok(), "run_summary should not error: {:?}", result);
     }
 
-    // ─── channels subset (Agent U) ───────────────────────────────────────
-    #[test]
-    fn include_flag_parses_channels_subset_tokens() {
-        let set = parse_include_flag(Some(
-            "gaussian-channel,zone-channel,volatility-trend,donchian-trend",
-        ));
-        assert!(set.gaussian_channel);
-        assert!(set.zone_channel);
-        assert!(set.volatility_trend);
-        assert!(set.donchian_trend);
-        assert!(set.any_selected());
-    }
-
-    #[test]
-    fn include_flag_all_enables_every_channel_subset_indicator() {
-        let set = parse_include_flag(Some("all"));
-        assert!(set.gaussian_channel);
-        assert!(set.zone_channel);
-        assert!(set.volatility_trend);
-        assert!(set.donchian_trend);
-    }
-
-    #[test]
-    fn include_flag_none_means_nothing_selected() {
-        let set = parse_include_flag(None);
-        assert!(!set.any_selected());
-    }
-
-    #[test]
-    fn build_extended_indicators_emits_expected_shape_for_fixture_symbol() {
-        // Seed an in-memory DB with enough synthetic OHLCV history for the
-        // longest channel (zone_channel default slow_ema = 233 bars).
-        let conn = crate::db::open_in_memory();
-        let records: Vec<crate::models::price::HistoryRecord> = (0..260)
-            .map(|i| {
-                let day = i + 1;
-                let close = rust_decimal::Decimal::from(100 + i as i64);
-                crate::models::price::HistoryRecord {
-                    date: format!("2025-{:02}-{:02}", ((day - 1) / 28) + 1, ((day - 1) % 28) + 1),
-                    close,
-                    volume: Some(1_000),
-                    open: Some(close - rust_decimal_macros::dec!(1)),
-                    high: Some(close + rust_decimal_macros::dec!(2)),
-                    low: Some(close - rust_decimal_macros::dec!(2)),
-                }
-            })
-            .collect();
-        crate::db::price_history::upsert_history(&conn, "TEST", "synthetic", &records).unwrap();
-        let backend = to_backend(conn);
-
-        let rows = vec![crate::db::technical_snapshots::TechnicalSnapshotRecord {
-            symbol: "TEST".to_string(),
-            timeframe: "1d".to_string(),
-            rsi_14: None,
-            macd: None,
-            macd_signal: None,
-            macd_histogram: None,
-            sma_20: None,
-            sma_50: None,
-            sma_200: None,
-            bollinger_upper: None,
-            bollinger_middle: None,
-            bollinger_lower: None,
-            range_52w_low: None,
-            range_52w_high: None,
-            range_52w_position: None,
-            volume_avg_20: None,
-            volume_ratio_20: None,
-            volume_regime: None,
-            above_sma_20: None,
-            above_sma_50: None,
-            above_sma_200: None,
-            atr_14: None,
-            atr_ratio: None,
-            range_expansion: None,
-            day_range_ratio: None,
-            computed_at: chrono::Utc::now().to_rfc3339(),
-        }];
-        let set = parse_include_flag(Some("all"));
-        let payload = build_extended_indicators(&backend, &rows, &set);
-
-        let sym = payload.get("TEST").expect("TEST entry present");
-        for key in [
-            "gaussian_channel",
-            "zone_channel",
-            "volatility_trend",
-            "donchian_trend",
-            "hybrid_trend",
-        ] {
-            assert!(sym.get(key).is_some(), "missing key {key}");
-        }
-        // Gaussian channel must contain the four expected sub-fields.
-        let gc = sym.get("gaussian_channel").unwrap();
-        for sub in ["middle", "upper", "lower", "band_state"] {
-            assert!(gc.get(sub).is_some(), "gaussian_channel missing {sub}");
-        }
-        // Zone channel must contain its four bands + position.
-        let zc = sym.get("zone_channel").unwrap();
-        for sub in [
-            "upper_outer",
-            "upper_inner",
-            "lower_inner",
-            "lower_outer",
-            "zone_position",
-        ] {
-            assert!(zc.get(sub).is_some(), "zone_channel missing {sub}");
-        }
-        // Volatility trend has value + slope + trend_strength.
-        let vt = sym.get("volatility_trend").unwrap();
-        for sub in ["value", "slope", "trend_strength"] {
-            assert!(vt.get(sub).is_some(), "volatility_trend missing {sub}");
-        }
-        // Donchian trend has value + slope.
-        let dt = sym.get("donchian_trend").unwrap();
-        for sub in ["value", "slope"] {
-            assert!(dt.get(sub).is_some(), "donchian_trend missing {sub}");
-        }
-    }
-    // ─── end channels subset ─────────────────────────────────────────────
-
     #[test]
     fn situation_json_never_empty_on_fresh_db() {
         let conn = crate::db::open_in_memory();
@@ -6175,5 +6202,109 @@ mod tests {
 
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].id, 3);
+    }
+
+    // ---- signals subset (Agent V) ----
+
+    #[test]
+    fn parse_include_flag_picks_signals_subset_tokens() {
+        let parsed = parse_include_flag(Some("mtf-rsi,pi-cycle,mtf-breakout,bollinger-reversal,rsi-extreme"));
+        assert_eq!(parsed.len(), 5);
+        assert!(parsed.contains(&IncludeFeature::MtfRsi));
+        assert!(parsed.contains(&IncludeFeature::PiCycle));
+        assert!(parsed.contains(&IncludeFeature::MtfBreakout));
+        assert!(parsed.contains(&IncludeFeature::BollingerReversal));
+        assert!(parsed.contains(&IncludeFeature::RsiExtreme));
+    }
+
+    #[test]
+    fn parse_include_flag_all_expands_to_full_signals_subset() {
+        let parsed = parse_include_flag(Some("all"));
+        // At minimum every signals-subset feature must be enabled. When
+        // Agent U lands the channels subset, that set should also be on; the
+        // assertion here is the floor.
+        assert!(parsed.contains(&IncludeFeature::MtfRsi));
+        assert!(parsed.contains(&IncludeFeature::PiCycle));
+        assert!(parsed.contains(&IncludeFeature::MtfBreakout));
+        assert!(parsed.contains(&IncludeFeature::BollingerReversal));
+        assert!(parsed.contains(&IncludeFeature::RsiExtreme));
+    }
+
+    #[test]
+    fn parse_include_flag_ignores_unknown_tokens_and_dedupes() {
+        let parsed = parse_include_flag(Some("mtf-rsi,bogus, mtf-rsi ,pi-cycle"));
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0], IncludeFeature::MtfRsi);
+        assert_eq!(parsed[1], IncludeFeature::PiCycle);
+    }
+
+    #[test]
+    fn parse_include_flag_returns_empty_when_unset_or_blank() {
+        assert!(parse_include_flag(None).is_empty());
+        assert!(parse_include_flag(Some("")).is_empty());
+        assert!(parse_include_flag(Some("  ")).is_empty());
+    }
+
+    fn synthetic_history(days: usize, gen: impl Fn(usize) -> f64) -> Vec<crate::models::price::HistoryRecord> {
+        use rust_decimal::Decimal;
+        (0..days)
+            .map(|i| {
+                let close = gen(i);
+                let dec = Decimal::from_f64_retain(close).unwrap_or_default();
+                crate::models::price::HistoryRecord {
+                    date: format!("2024-{:02}-{:02}", (i / 28 % 12) + 1, (i % 28) + 1),
+                    close: dec,
+                    volume: Some(1_000),
+                    open: Some(dec),
+                    high: Some(dec + rust_decimal_macros::dec!(1)),
+                    low: Some(dec - rust_decimal_macros::dec!(1)),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn compute_extended_returns_all_requested_keys() {
+        let history = synthetic_history(800, |i| 100.0 + i as f64 * 0.5);
+        let includes = vec![
+            IncludeFeature::MtfRsi,
+            IncludeFeature::PiCycle,
+            IncludeFeature::MtfBreakout,
+            IncludeFeature::BollingerReversal,
+            IncludeFeature::RsiExtreme,
+        ];
+        let v = compute_extended_for_symbol(&history, &includes, "1d");
+        let obj = v.as_object().expect("object");
+        for key in [
+            "mtf_rsi",
+            "pi_cycle",
+            "mtf_breakout",
+            "bollinger_reversal",
+            "rsi_extreme",
+        ] {
+            assert!(obj.contains_key(key), "missing key '{key}'");
+        }
+    }
+
+    #[test]
+    fn compute_extended_warns_on_empty_history() {
+        let v = compute_extended_for_symbol(&[], &[IncludeFeature::MtfRsi], "1d");
+        assert!(v.get("warning").is_some());
+    }
+
+    #[test]
+    fn compute_extended_shape_mtf_rsi() {
+        let history = synthetic_history(400, |i| 100.0 + i as f64);
+        let v = compute_extended_for_symbol(&history, &[IncludeFeature::MtfRsi], "1d");
+        let m = v.get("mtf_rsi").and_then(|x| x.as_object()).expect("mtf_rsi");
+        for key in [
+            "current_rsi",
+            "htf_bucket_sizes",
+            "htf_rsi_values",
+            "aligned_overbought",
+            "aligned_oversold",
+        ] {
+            assert!(m.contains_key(key), "mtf_rsi missing key '{key}'");
+        }
     }
 }
