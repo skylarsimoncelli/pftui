@@ -13,11 +13,10 @@
 **Implementation plan:** All section TODOs and the assembler are landed. Remaining work is the skill migration below.
 **Effort:** Complete except for the skill migration item.
 
-### Migrate `/pftui-report` Claude skill to use native `pftui report` commands
-**Source:** Skylar (May 28). Depends on `pftui report build daily` (above) being landed.
-**Why:** Now that `pftui report build daily` exists end-to-end, the Claude skill at `~/.claude/skills/pftui-report.md` can be substantially simplified: no ad-hoc Python build script per run, no per-step data-gathering bash blocks that prepare chart inputs. The skill's responsibilities shrink to: Step 0 health collection + blocker fixes, Step 1 data refresh, Step 3 spawning the four analyst subagents, then calling `pftui report build daily --mode <m>`, then the privacy audit / PDF render / website registry / PR steps.
-**Scope:** (1) Rewrite the relevant sections of `~/.claude/skills/pftui-report.md` (Step 2 CLI bundle, Step 2b deep bundle, Step 2c thesis/lessons fetch, Step 4 synthesis, Step 5a public markdown, Step 5b private markdown) to call `pftui report build daily` instead of doing data collection + assembly in skill bash + Python. The bundles can still be staged for the analysts (they need them as input), but the synthesis-and-write step becomes a single CLI call. (2) Decommission `~/pftui-operator/charts.py` once all charts are ported and used by zero remaining code paths — leave the file but mark it deprecated in a header comment and remove the skill's `sys.path.insert` line. (3) Update the skill's failure-modes section: `pftui report build daily` errors should be diagnosed by reading the command's stderr; the skill's responsibility is to surface those errors, not to debug section assembly. (4) Run `/pftui-report` end-to-end at least twice on the new code path before considering this item done; compare the resulting markdown + PDFs against the prior Python-orchestrated outputs and confirm parity. Files: `~/.claude/skills/pftui-report.md` (substantial rewrite), `~/pftui-operator/charts.py` (deprecation header). Tests: not applicable in pftui (skill-side change); verification is the parity comparison.
-**Effort:** 4–7 days (mostly skill testing + iteration).
+### Migrate `/pftui-report` Claude skill — VALIDATION PENDING
+**Source:** Skylar (May 28). Rewrite landed in this session (2026-06-03). `~/.claude/commands/pftui-report.md` shrunk from 1430 → 1025 lines: Step 4 now does only targeted web research; Step 5 is a single `pftui report build daily` invocation; the giant in-skill section template was retired. Privacy audit (Step 6), PDF render (Step 7a/b), website registry (Step 8), and PR/auto-merge (Step 9) unchanged.
+**Remaining validation:** Run `/pftui-report --mode both` end-to-end at least twice. Diff the produced markdown + PDFs against the prior Python-orchestrated outputs (allow byte-level whitespace/ordering diffs; flag content discrepancies as TODOs against the assembler, not the skill). Once validated, drop this entry.
+**`~/pftui-operator/charts.py` deprecation:** still pending — leave for a separate pass once parity is confirmed.
 
 ---
 
