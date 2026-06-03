@@ -1358,7 +1358,11 @@ const EQUITY_SECTOR_ASSETS: &[(&str, &str)] = &[
 // table. Matching is case-insensitive against the `analyst_views.asset` column.
 const MACRO_ASSETS: &[&str] = &["DXY", "DX-Y.NYB", "USD", "^VIX", "SPY"];
 const BITCOIN_ASSETS: &[&str] = &["BTC", "BTC-USD", "MSTR", "COIN"];
-const METALS_ASSETS: &[&str] = &["GC=F", "GLD", "GLC", "SI=F", "SLV", "PSLV", "HG=F"];
+// Public silver/gold proxies only. Deliberately excludes niche vehicles a
+// specific operator might personally trade (e.g. PSLV) — the public newsletter
+// uses the standard SLV / SI=F / GLD proxies so the per-asset view table never
+// mirrors an individual's personal asset universe (privacy gate, 2026-06-03).
+const METALS_ASSETS: &[&str] = &["GC=F", "GLD", "GLC", "SI=F", "SLV", "HG=F"];
 const EQUITY_ASSETS: &[&str] = &["SPY", "GOOG", "HOOD", "RKLB", "CCJ"];
 
 // News topics routed to each per-asset "What to Watch" block.
