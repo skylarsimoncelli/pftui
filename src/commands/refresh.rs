@@ -4424,9 +4424,13 @@ fn store_options_result(
 /// Persist capital-flow observations from the configured provider (F59 scaffold).
 ///
 /// Defaults to the `NoopProvider`, which logs "capital flows provider not
-/// configured" and inserts zero rows. The stub `etf_com_csv` and
-/// `sec_edgar_13f` providers return a hard error today; their failures are
-/// surfaced via the DAG result rather than panicking.
+/// configured" and inserts zero rows. The live `etf_com_csv` (HTML
+/// scraper) and `sec_edgar_13f` providers each enforce their own
+/// cadence throttle: `etf_com_csv` skips when a row sourced from
+/// `etf.com/` was inserted within the last 12 hours; `sec_edgar_13f`
+/// skips when an `institutional_13f` row was inserted within the last
+/// 80 days. Provider failures are surfaced via the DAG result rather
+/// than panicking.
 fn store_flows_result(
     backend: &BackendConnection,
     verbose: bool,
@@ -4461,6 +4465,47 @@ fn store_flows_result(
     // submissions feed on every refresh is wasted bandwidth (and a
     // good way to get a 429 from data.sec.gov). Skip when the most
     // recent successful fetch landed within ~80 days.
+    // Daily-cadence guard for the ETF.com HTML scraper: re-running
+    // within 12 hours produces effectively the same daily row and
+    // wastes bandwidth on a fragile public page. Skip when the most
+    // recent successful fetch landed within 12 hours.
+    if provider_name == "etf_com_csv" {
+        match crate::db::capital_flows::latest_fetched_at_for_source_prefix(
+            backend.sqlite(),
+            "etf.com/",
+        ) {
+            Ok(Some(last)) => {
+                if let Some(age_hours) = crate::data::flows::hours_since_rfc3339(&last) {
+                    if age_hours < 12 {
+                        let note = format!(
+                            "provider={provider_name}; cadence deferred (last fetch {age_hours}h ago, 12h throttle)"
+                        );
+                        info_ln!(verbose, "⊘ flows ({note})");
+                        dag_result.add(SourceResult {
+                            name: "flows".to_string(),
+                            label: "Capital Flows".to_string(),
+                            status: SourceStatus::Skipped,
+                            items_attempted: Some(0),
+                            items_failed: Some(0),
+                            failed_symbols: None,
+                            items_updated: Some(0),
+                            duration_ms: start.elapsed().as_millis() as u64,
+                            reason: Some("daily-cadence throttle".to_string()),
+                            age_minutes: Some(age_hours * 60),
+                            error: None,
+                            detail: Some(note),
+                        });
+                        return;
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                info_ln!(verbose, "flows cadence check failed (continuing): {e}");
+            }
+        }
+    }
+
     if provider_name == "sec_edgar_13f" {
         match crate::db::capital_flows::latest_fetched_at_for_type(
             backend.sqlite(),

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<!--
+  Synthetic fixture for the ETF.com fund-flows HTML scraper. This is
+  intentionally a stripped-down version of the real
+  https://www.etf.com/etfanalytics/etf-fund-flows-tool table — it carries
+  only the columns the parser actually consumes, plus an unrelated decoy
+  table to verify table-discovery via header content. NEVER paste real
+  scraped HTML here; data security policy forbids personal data in
+  fixtures.
+-->
+<html>
+  <head><title>ETF Fund Flows (synthetic)</title></head>
+  <body>
+    <!-- Decoy table the parser must skip. -->
+    <table id="not-flows">
+      <thead><tr><th>Ticker</th><th>Price</th></tr></thead>
+      <tbody>
+        <tr><td>SPY</td><td>500.00</td></tr>
+      </tbody>
+    </table>
+
+    <!-- The real flows table. -->
+    <table class="etf-flows-table">
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Fund Name</th>
+          <th>Issuer</th>
+          <th>AUM</th>
+          <th>Net Flow (1D)</th>
+          <th>Net Flow (1W)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>SPY</td>
+          <td>SPDR S&amp;P 500 ETF Trust</td>
+          <td>State Street</td>
+          <td>$500.00B</td>
+          <td>$1,234,567,890.00</td>
+          <td>$2,345,678,901.00</td>
+        </tr>
+        <tr>
+          <td>QQQ</td>
+          <td>Invesco QQQ Trust</td>
+          <td>Invesco</td>
+          <td>$250.00B</td>
+          <td>-$987,654,321.00</td>
+          <td>-$1,500,000,000.00</td>
+        </tr>
+        <tr>
+          <td>IBIT</td>
+          <td>iShares Bitcoin Trust</td>
+          <td>BlackRock</td>
+          <td>$25.00B</td>
+          <td>$45,250,000.00</td>
+          <td>$120,000,000.00</td>
+        </tr>
+        <tr>
+          <td>IWM</td>
+          <td>iShares Russell 2000 ETF</td>
+          <td>BlackRock</td>
+          <td>$60.00B</td>
+          <td></td>
+          <td>$310,500,000.00</td>
+        </tr>
+        <!-- Malformed row: missing ticker. Parser must drop without erroring. -->
+        <tr>
+          <td></td>
+          <td>Bogus Fund</td>
+          <td>--</td>
+          <td>$0</td>
+          <td>$1.00</td>
+          <td>$1.00</td>
+        </tr>
+        <!-- Malformed row: unparseable flow. -->
+        <tr>
+          <td>BOGUS</td>
+          <td>Bogus Fund 2</td>
+          <td>--</td>
+          <td>$0</td>
+          <td>n/a</td>
+          <td>n/a</td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>

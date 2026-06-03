@@ -139,6 +139,16 @@
 - **Update cadence:** Quarterly — 13F-HR filings are due 45 days after each calendar-quarter end (Feb 14 / May 15 / Aug 14 / Nov 14). The `data refresh` hook enforces this via an 80-day throttle keyed on `MAX(capital_flows.fetched_at WHERE flow_type='institutional_13f')`; manual `data flows refresh` ignores the throttle.
 - **pftui integration:** F59 follow-up — `PFTUI_FLOWS_PROVIDER=sec_edgar_13f` enables the live provider. `pftui data flows show`, `pftui analytics flows summary`, and the per-asset daily-report renderer (`src/report/sections/capital_flows.rs`) all consume the resulting `capital_flows` rows.
 
+### ETF.com Fund Flows (Scrape)
+- **URL:** `https://www.etf.com/etfanalytics/etf-fund-flows-tool` — public HTML page (NOT a CSV download and NOT a paid API; the legacy provider name `etf_com_csv` is kept for env-var compatibility but the upstream is HTML).
+- **Auth:** None
+- **Required header:** `User-Agent: pftui-bot/0.28 https://github.com/skylarsimoncelli/pftui` — polite scraper UA with a contact URL so ETF.com operators can identify pftui if needed. The exact string lives in `src/data/flows.rs::ETF_COM_USER_AGENT`. Also send `Accept: text/html`.
+- **Data:** ETF-level net fund flows by ticker — daily, weekly, monthly, 3-month, YTD columns. pftui's scraper consumes the daily column (with the weekly column as fallback when daily is blank). Positive flow → `flow_type = "etf_creation"`; negative → `flow_type = "etf_redemption"`. `amount_usd` is the absolute value.
+- **Discovery:** The flows table is located by header content (first `<table>` whose header row contains both "Ticker" and "Net Flow" cells, case-insensitive). Column indices for ticker/daily/weekly are then resolved by header name, not by position.
+- **Scraping is fragile:** ETF.com's HTML layout can change without notice. Each cell extraction is wrapped in `.ok()` and malformed rows are silently dropped. If ZERO rows parse, the provider returns an error so the refresh DAG records `Failed` (rather than `Ok` with zero rows) — that's the "page structure changed" signal.
+- **Update cadence:** Daily. The `data refresh` hook enforces a 12-hour throttle keyed on `MAX(capital_flows.fetched_at WHERE source LIKE 'etf.com/%')`; manual `data flows refresh` ignores the throttle.
+- **pftui integration:** F59 follow-up — `PFTUI_FLOWS_PROVIDER=etf_com_csv` enables the live provider. `pftui data flows show`, `pftui analytics flows summary`, and the per-asset daily-report renderer (`src/report/sections/capital_flows.rs`) all consume the resulting `capital_flows` rows. Synthetic test fixture lives at `tests/fixtures/flows/etf_com_flows_sample.html`.
+
 ### TradingEconomics Calendar (Scrape)
 - **URL:** `https://tradingeconomics.com/calendar`
 - **Auth:** None (public page)

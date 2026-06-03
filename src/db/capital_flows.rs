@@ -238,6 +238,29 @@ pub fn latest_fetched_at_for_type(
     }
 }
 
+/// Return the most-recent `fetched_at` (RFC3339) for any row whose
+/// `source` column starts with `source_prefix`, or `None` when the
+/// table has no such row. Used by the refresh hook to enforce the
+/// daily-cadence throttle for the ETF.com scraper (which keys on
+/// `source LIKE 'etf.com/%'`).
+pub fn latest_fetched_at_for_source_prefix(
+    conn: &Connection,
+    source_prefix: &str,
+) -> Result<Option<String>> {
+    ensure_table(conn)?;
+    let mut stmt = conn.prepare(
+        "SELECT fetched_at FROM capital_flows WHERE source LIKE ?1
+         ORDER BY fetched_at DESC LIMIT 1",
+    )?;
+    let like = format!("{source_prefix}%");
+    let mut rows = stmt.query(params![like])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(row.get::<_, String>(0)?))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Sign-apply the `amount_usd` based on whether the flow type indicates
 /// an outflow/redemption.
 fn signed_amount(row: &CapitalFlowRow) -> Result<Decimal> {
