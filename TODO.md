@@ -23,10 +23,4 @@
 
 ## P3 - Long Term
 
-### [Claude-WIP 2026-06-03a — DO NOT PICK] F59 follow-up: real `etf_com_csv` capital-flow provider
-**Source:** F59 scaffold landed 2026-06-02 (Agent BB).
-**Why:** The scaffold ships a working `NoopProvider` and a stub `EtfComCsvProvider` that bails with "provider etf_com_csv not yet implemented". A real ETF.com CSV ingest would populate `capital_flows.flow_type = 'etf_creation'/'etf_redemption'` for the equity-ETF book (SPY, QQQ, IWM, etc.) and crypto ETFs (IBIT, FBTC, GBTC etc.). The schema + CLI + DB + refresh wiring are already in place.
-**Scope:** (1) Replace `crate::data::flows::EtfComCsvProvider::fetch` with a real implementation that downloads/parses the ETF.com CSV feed (or a substitute, e.g. the etfdb.com flows feed, ETF.com daily basket files, or NYSE/Cboe creation/redemption baskets). (2) Map each CSV row to a `CapitalFlow { asset, flow_type, amount_usd, period_start, period_end, source }`. (3) Add a freshness check (one-per-day cadence) and a synthetic CSV fixture under `tests/fixtures/flows/`. (4) Document any required credentials in `AGENTS.md` + `docs/API-SOURCES.md`.
-**Effort:** 1–2 weeks (most of which is provider selection + licensing).
-
 ---

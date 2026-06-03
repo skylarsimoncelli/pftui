@@ -1,10 +1,11 @@
 //! Capital-flow ingestion provider scaffold (F59).
 //!
-//! Real ETF flow data lives behind paid providers and is still a TODO
-//! follow-up. The SEC EDGAR 13F path is implemented against the free
-//! public submissions JSON + per-filing infoTable XML. This module ships
-//! the provider contract, the working `NoopProvider`, the stub
-//! `EtfComCsvProvider`, and the live `SecEdgar13fProvider`.
+//! The SEC EDGAR 13F path is implemented against the free public
+//! submissions JSON + per-filing infoTable XML. The ETF.com flow path
+//! is implemented against the public fund-flows-tool HTML table
+//! (scraped). This module ships the provider contract, the working
+//! `NoopProvider`, the live `EtfComCsvProvider` (HTML scraper despite
+//! the historical name), and the live `SecEdgar13fProvider`.
 //!
 //! Selection contract
 //! ------------------
@@ -14,8 +15,19 @@
 //!
 //! - `noop` (default) — no-op provider, logs "capital flows provider not
 //!   configured" and returns zero flows. Always safe.
-//! - `etf_com_csv` — stub. Returns `bail!("provider etf_com_csv not yet
-//!   implemented — see TODO follow-up")` until the real CSV ingest lands.
+//! - `etf_com_csv` — live ETF.com fund-flows HTML scraper. Pulls the
+//!   public `https://www.etf.com/etfanalytics/etf-fund-flows-tool` page,
+//!   discovers the flows table by header content ("Ticker" + "Net
+//!   Flow"), and emits one `CapitalFlow` row per ETF using the daily
+//!   net-flow column (falling back to the weekly column when daily is
+//!   blank). Positive net flow → `flow_type = "etf_creation"`; negative
+//!   → `flow_type = "etf_redemption"`. `amount_usd` is the absolute
+//!   value (sign is implicit in flow_type). Malformed rows are silently
+//!   dropped; the provider only `bail!`s when ZERO rows parse. The
+//!   refresh hook enforces a 12-hour cadence throttle keyed on
+//!   `MAX(capital_flows.fetched_at WHERE source LIKE 'etf.com/%')`.
+//!   Scraping is fragile — the table structure can change without
+//!   notice; treat failed runs as a "page changed" signal and inspect.
 //! - `sec_edgar_13f` — live SEC EDGAR ingest. Walks a SMALL canonical
 //!   list of well-known filers (`TRACKED_CIKS`), pulls each filer's most
 //!   recent 13F-HR filing via the public `data.sec.gov` submissions
@@ -36,11 +48,12 @@
 
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
-use chrono::{DateTime, NaiveDate, Utc};
+use anyhow::{anyhow, bail, Context, Result};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use rust_decimal::Decimal;
+use scraper::{ElementRef, Html, Selector};
 use serde::{Deserialize, Serialize};
 
 /// Allowed values for the `capital_flows.flow_type` column.
@@ -57,6 +70,22 @@ pub const FLOW_TYPES: &[&str] = &[
 /// Generic placeholder contact — operators who want to attribute their
 /// pftui install can override by editing this string locally.
 pub const EDGAR_USER_AGENT: &str = "pftui-bot/0.28 contact@example.com";
+
+/// Polite `User-Agent` for the ETF.com fund-flows HTML scraper. Includes
+/// a contact URL per scraper etiquette so the etf.com operators can
+/// identify pftui if they need to.
+pub const ETF_COM_USER_AGENT: &str =
+    "pftui-bot/0.28 https://github.com/skylarsimoncelli/pftui";
+
+/// Public fund-flows-tool page on ETF.com. Renders an HTML table of
+/// daily/weekly/monthly net flows per ETF.
+pub const ETF_COM_FLOWS_URL: &str =
+    "https://www.etf.com/etfanalytics/etf-fund-flows-tool";
+
+/// Canonical `source` string written to `capital_flows.source` for rows
+/// originating from the ETF.com scraper. Used by the refresh hook to
+/// detect prior-fetch freshness for the 12-hour cadence throttle.
+pub const ETF_COM_SOURCE: &str = "etf.com/etfanalytics";
 
 /// Small canonical roster of well-known 13F filers. Tuples are
 /// `(CIK as 10-digit zero-padded string, human-readable filer name)`.
@@ -121,7 +150,18 @@ impl FlowProvider for NoopProvider {
     }
 }
 
-/// ETF.com CSV provider stub. Real implementation is a TODO follow-up.
+/// Live ETF.com fund-flows provider.
+///
+/// Despite the legacy name (`etf_com_csv`), the upstream source is the
+/// public HTML fund-flows-tool page rather than a CSV download. Each
+/// row is mapped to one [`CapitalFlow`] keyed on the ETF's ticker, with
+/// `flow_type` set from the sign of the net-flow column and
+/// `amount_usd` carrying the absolute USD magnitude.
+///
+/// The fetch logic is intentionally defensive: malformed rows are
+/// silently dropped, and the provider only returns an error when ZERO
+/// rows parse (so the refresh DAG can distinguish "page changed" from
+/// "no flows today"). Use `PFTUI_FLOWS_PROVIDER=etf_com_csv` to enable.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct EtfComCsvProvider;
 
@@ -130,9 +170,290 @@ impl FlowProvider for EtfComCsvProvider {
         "etf_com_csv"
     }
 
-    fn fetch(&self, _asset_filter: Option<&str>) -> Result<FlowFetchResult> {
-        bail!("provider etf_com_csv not yet implemented — see TODO follow-up");
+    fn fetch(&self, asset_filter: Option<&str>) -> Result<FlowFetchResult> {
+        let html = fetch_etf_com_flows_html()?;
+        let mut flows = parse_etf_com_flows(&html)?;
+        if let Some(filter) = asset_filter {
+            flows.retain(|flow| flow.asset.eq_ignore_ascii_case(filter));
+        }
+        let note = format!(
+            "etf.com/etfanalytics: {} rows (daily/weekly net flow scrape)",
+            flows.len()
+        );
+        Ok(FlowFetchResult { flows, note })
     }
+}
+
+/// GET the ETF.com fund-flows-tool page using the polite scraper User-Agent.
+fn fetch_etf_com_flows_html() -> Result<String> {
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(ETF_COM_USER_AGENT)
+        .timeout(Duration::from_secs(20))
+        .build()
+        .context("build ETF.com HTTP client")?;
+    client
+        .get(ETF_COM_FLOWS_URL)
+        .header("Accept", "text/html")
+        .send()
+        .with_context(|| format!("GET {ETF_COM_FLOWS_URL}"))?
+        .error_for_status()
+        .with_context(|| format!("ETF.com HTTP error for {ETF_COM_FLOWS_URL}"))?
+        .text()
+        .context("read ETF.com response body")
+}
+
+/// Parse the ETF.com fund-flows-tool HTML page into [`CapitalFlow`] rows.
+///
+/// Pure function — no I/O, no panics. Safe to call from tests against a
+/// fixture file. The scraper is intentionally defensive:
+///
+/// 1. The flows table is located by scanning for the first `<table>`
+///    whose header row contains BOTH "Ticker" and "Net Flow" cells
+///    (case-insensitive). This survives most CSS class renames.
+/// 2. The column indices for ticker, daily net flow, and weekly net
+///    flow are resolved from the header row by name, not by position,
+///    so column reordering does not silently corrupt data.
+/// 3. Each row's cell extraction is wrapped in `.ok()` — malformed rows
+///    are dropped without aborting the whole scrape.
+/// 4. Per-row net flow defaults to the daily column; the weekly column
+///    is used only when daily is blank/unparseable.
+/// 5. If ZERO rows parse, the function returns `Err(...)` so the
+///    refresh DAG records a Failed (rather than Ok-with-zero-rows)
+///    result — this is the "page structure changed" signal.
+///
+/// `period_start`/`period_end` are `today` for daily flows, or the
+/// most-recent Monday → today for weekly fallback flows.
+pub fn parse_etf_com_flows(html: &str) -> Result<Vec<CapitalFlow>> {
+    let today = Utc::now().date_naive();
+    parse_etf_com_flows_at(html, today)
+}
+
+/// Date-injected variant of [`parse_etf_com_flows`] used by tests so
+/// `period_start`/`period_end` are deterministic.
+pub fn parse_etf_com_flows_at(html: &str, today: NaiveDate) -> Result<Vec<CapitalFlow>> {
+    let document = Html::parse_document(html);
+    let table_sel =
+        Selector::parse("table").map_err(|e| anyhow!("invalid table selector: {e:?}"))?;
+    let row_sel = Selector::parse("tr").map_err(|e| anyhow!("invalid row selector: {e:?}"))?;
+    let header_cell_sel =
+        Selector::parse("th, td").map_err(|e| anyhow!("invalid header-cell selector: {e:?}"))?;
+    let body_cell_sel =
+        Selector::parse("td").map_err(|e| anyhow!("invalid body-cell selector: {e:?}"))?;
+
+    let table = locate_flows_table(&document, &table_sel, &row_sel, &header_cell_sel)
+        .context("no ETF.com flows table found (page structure changed?)")?;
+
+    let rows: Vec<ElementRef<'_>> = table.select(&row_sel).collect();
+    let header_cells: Vec<String> = rows
+        .first()
+        .map(|r| {
+            r.select(&header_cell_sel)
+                .map(|c| cell_text(&c))
+                .collect()
+        })
+        .unwrap_or_default();
+    let columns = resolve_columns(&header_cells)
+        .context("ETF.com flows header missing Ticker / Net Flow column")?;
+
+    let today_iso = today.format("%Y-%m-%d").to_string();
+    let monday_iso = most_recent_monday(today).format("%Y-%m-%d").to_string();
+
+    let mut flows: Vec<CapitalFlow> = Vec::new();
+    for row in rows.iter().skip(1) {
+        if let Some(flow) =
+            parse_row(row, &body_cell_sel, &columns, &today_iso, &monday_iso).ok().flatten()
+        {
+            flows.push(flow);
+        }
+    }
+
+    if flows.is_empty() {
+        bail!(
+            "etf.com flows scrape returned zero rows — page structure may have changed (URL: {})",
+            ETF_COM_FLOWS_URL
+        );
+    }
+    Ok(flows)
+}
+
+/// Column-index resolution for the flows table. Position-by-name so a
+/// future column reorder does not silently corrupt data.
+#[derive(Debug, Clone, Copy)]
+struct ColumnLayout {
+    ticker: usize,
+    daily: Option<usize>,
+    weekly: Option<usize>,
+}
+
+fn resolve_columns(header_cells: &[String]) -> Result<ColumnLayout> {
+    let ticker = header_cells
+        .iter()
+        .position(|cell| cell.eq_ignore_ascii_case("ticker"))
+        .context("no 'Ticker' header cell")?;
+    let daily = header_cells.iter().position(|cell| {
+        let lower = cell.to_ascii_lowercase();
+        lower.contains("net flow") && (lower.contains("1d") || lower.contains("daily"))
+    });
+    let weekly = header_cells.iter().position(|cell| {
+        let lower = cell.to_ascii_lowercase();
+        lower.contains("net flow") && (lower.contains("1w") || lower.contains("week"))
+    });
+    if daily.is_none() && weekly.is_none() {
+        bail!("no 'Net Flow' daily or weekly column found");
+    }
+    Ok(ColumnLayout {
+        ticker,
+        daily,
+        weekly,
+    })
+}
+
+/// Scan every `<table>` in the document for the one whose header row
+/// contains BOTH "Ticker" and "Net Flow" cells (case-insensitive).
+fn locate_flows_table<'a>(
+    document: &'a Html,
+    table_sel: &Selector,
+    row_sel: &Selector,
+    header_cell_sel: &Selector,
+) -> Option<ElementRef<'a>> {
+    for table in document.select(table_sel) {
+        let Some(header_row) = table.select(row_sel).next() else {
+            continue;
+        };
+        let headers: Vec<String> = header_row
+            .select(header_cell_sel)
+            .map(|c| cell_text(&c).to_ascii_lowercase())
+            .collect();
+        let has_ticker = headers.iter().any(|h| h == "ticker");
+        let has_net_flow = headers.iter().any(|h| h.contains("net flow"));
+        if has_ticker && has_net_flow {
+            return Some(table);
+        }
+    }
+    None
+}
+
+/// Parse a single table row into a [`CapitalFlow`], or `Ok(None)` if
+/// the row should be dropped (e.g. malformed cells, blank ticker).
+/// Returns `Err` only for unexpected selector failures — the caller
+/// drops both `Err` and `Ok(None)`.
+fn parse_row(
+    row: &ElementRef<'_>,
+    body_cell_sel: &Selector,
+    columns: &ColumnLayout,
+    today_iso: &str,
+    monday_iso: &str,
+) -> Result<Option<CapitalFlow>> {
+    let cells: Vec<String> = row.select(body_cell_sel).map(|c| cell_text(&c)).collect();
+    if cells.is_empty() {
+        return Ok(None);
+    }
+    let Some(ticker_raw) = cells.get(columns.ticker) else {
+        return Ok(None);
+    };
+    let ticker = ticker_raw.trim().to_ascii_uppercase();
+    if ticker.is_empty() || ticker == "--" {
+        return Ok(None);
+    }
+
+    let daily_flow = columns
+        .daily
+        .and_then(|idx| cells.get(idx))
+        .and_then(|raw| parse_flow_usd(raw));
+    let weekly_flow = columns
+        .weekly
+        .and_then(|idx| cells.get(idx))
+        .and_then(|raw| parse_flow_usd(raw));
+
+    let (amount_signed, period_start, period_end) = match (daily_flow, weekly_flow) {
+        (Some(daily), _) => (daily, today_iso.to_string(), today_iso.to_string()),
+        (None, Some(weekly)) => (weekly, monday_iso.to_string(), today_iso.to_string()),
+        (None, None) => return Ok(None),
+    };
+
+    let flow_type = if amount_signed.is_sign_negative() {
+        "etf_redemption"
+    } else {
+        "etf_creation"
+    };
+    Ok(Some(CapitalFlow {
+        asset: ticker,
+        flow_type: flow_type.to_string(),
+        amount_usd: amount_signed.abs(),
+        period_start,
+        period_end,
+        source: ETF_COM_SOURCE.to_string(),
+    }))
+}
+
+/// Collapse all text descendants of an element to a single space-joined
+/// string. Mirrors the helper used by other scrapers in `src/data/`.
+fn cell_text(element: &ElementRef<'_>) -> String {
+    let raw: String = element.text().collect::<Vec<_>>().join(" ");
+    raw.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Parse a dollar-formatted net-flow cell like `"$1,234,567.89"`,
+/// `"-$987,654,321.00"`, `"($45,000)"`, or `"45.2M"` into a signed
+/// `Decimal`. Returns `None` on any parse failure so the caller can
+/// silently drop the row.
+pub fn parse_flow_usd(raw: &str) -> Option<Decimal> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "--" || trimmed == "n/a" || trimmed.eq_ignore_ascii_case("na")
+    {
+        return None;
+    }
+    // Accounting-style negatives: "($45,000)" → "-45000".
+    let (negated_by_parens, body) = if trimmed.starts_with('(') && trimmed.ends_with(')') {
+        (true, &trimmed[1..trimmed.len() - 1])
+    } else {
+        (false, trimmed)
+    };
+
+    let mut sign = if negated_by_parens { -1i64 } else { 1i64 };
+    let mut chars = body.chars().peekable();
+    if let Some(&c) = chars.peek() {
+        if c == '-' {
+            sign *= -1;
+            chars.next();
+        } else if c == '+' {
+            chars.next();
+        }
+    }
+    let rest: String = chars.collect();
+    let rest = rest.trim().trim_start_matches('$').trim();
+
+    // Magnitude suffix (K/M/B/T) — common on ETF.com summary rows.
+    let mut multiplier = Decimal::new(1, 0);
+    let mut numeric_str = rest.to_string();
+    if let Some(last) = rest.chars().last() {
+        let mult = match last.to_ascii_uppercase() {
+            'K' => Some(Decimal::new(1_000, 0)),
+            'M' => Some(Decimal::new(1_000_000, 0)),
+            'B' => Some(Decimal::new(1_000_000_000, 0)),
+            'T' => Some(Decimal::new(1_000_000_000_000, 0)),
+            _ => None,
+        };
+        if let Some(m) = mult {
+            multiplier = m;
+            numeric_str = rest[..rest.len() - last.len_utf8()].trim().to_string();
+        }
+    }
+
+    let cleaned: String = numeric_str.chars().filter(|c| *c != ',' && *c != ' ').collect();
+    if cleaned.is_empty() {
+        return None;
+    }
+    let magnitude = Decimal::from_str_exact(&cleaned).ok()?;
+    let signed = magnitude * multiplier;
+    Some(if sign < 0 { -signed } else { signed })
+}
+
+/// The most recent Monday on or before `today`. Used for the weekly
+/// flow `period_start` when daily data is unavailable.
+fn most_recent_monday(today: NaiveDate) -> NaiveDate {
+    let offset = today.weekday().num_days_from_monday() as i64;
+    today - chrono::Duration::days(offset)
 }
 
 /// Live SEC EDGAR 13F-HR provider. Walks the canonical filer roster in
@@ -552,6 +873,17 @@ pub fn days_since_rfc3339(rfc3339: &str) -> Option<i64> {
     Some(delta.num_days().max(0))
 }
 
+/// Compute the elapsed whole hours between `now` and the supplied
+/// RFC3339 timestamp. Returns `None` when the input fails to parse.
+/// Used by the refresh hook's daily-cadence throttle for the ETF.com
+/// scraper.
+pub fn hours_since_rfc3339(rfc3339: &str) -> Option<i64> {
+    let parsed = DateTime::parse_from_rfc3339(rfc3339).ok()?;
+    let now = Utc::now();
+    let delta = now.signed_duration_since(parsed.with_timezone(&Utc));
+    Some(delta.num_hours().max(0))
+}
+
 /// Resolve the configured provider from the environment.
 ///
 /// Reads `PFTUI_FLOWS_PROVIDER`; defaults to `noop`. Unknown values fall
@@ -601,13 +933,106 @@ mod tests {
     }
 
     #[test]
-    fn etf_com_csv_provider_bails_with_followup_message() {
-        let err = EtfComCsvProvider
-            .fetch(None)
-            .expect_err("stub provider must bail");
-        let message = format!("{err}");
-        assert!(message.contains("etf_com_csv"));
-        assert!(message.contains("not yet implemented"));
+    fn etf_com_csv_provider_advertises_canonical_name() {
+        // The live provider's name is part of the env-var contract and
+        // must remain `etf_com_csv` even though the upstream switched
+        // from CSV to HTML scraping.
+        assert_eq!(EtfComCsvProvider.name(), "etf_com_csv");
+    }
+
+    #[test]
+    fn parse_etf_com_flows_extracts_synthetic_rows() {
+        let html = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/flows/etf_com_flows_sample.html"),
+        )
+        .expect("read fixture");
+        let today = NaiveDate::from_ymd_opt(2026, 6, 3).expect("date");
+        let flows = parse_etf_com_flows_at(&html, today).expect("parse fixture");
+        // 4 well-formed ETFs (SPY, QQQ, IBIT, IWM) plus 2 malformed rows
+        // dropped (blank ticker + n/a flows).
+        assert_eq!(flows.len(), 4, "expected 4 well-formed rows, got {flows:?}");
+
+        // SPY: positive 1D flow → creation, today's window.
+        let spy = flows.iter().find(|f| f.asset == "SPY").expect("SPY row");
+        assert_eq!(spy.flow_type, "etf_creation");
+        assert_eq!(spy.amount_usd, dec!(1_234_567_890));
+        assert_eq!(spy.period_start, "2026-06-03");
+        assert_eq!(spy.period_end, "2026-06-03");
+        assert_eq!(spy.source, "etf.com/etfanalytics");
+
+        // QQQ: negative 1D flow → redemption with absolute amount.
+        let qqq = flows.iter().find(|f| f.asset == "QQQ").expect("QQQ row");
+        assert_eq!(qqq.flow_type, "etf_redemption");
+        assert_eq!(qqq.amount_usd, dec!(987_654_321));
+
+        // IBIT: small positive flow.
+        let ibit = flows.iter().find(|f| f.asset == "IBIT").expect("IBIT row");
+        assert_eq!(ibit.flow_type, "etf_creation");
+        assert_eq!(ibit.amount_usd, dec!(45_250_000));
+
+        // IWM: 1D blank → weekly fallback; period_start = most-recent
+        // Monday before 2026-06-03 (which is a Wednesday) → 2026-06-01.
+        let iwm = flows.iter().find(|f| f.asset == "IWM").expect("IWM row");
+        assert_eq!(iwm.flow_type, "etf_creation");
+        assert_eq!(iwm.amount_usd, dec!(310_500_000));
+        assert_eq!(iwm.period_start, "2026-06-01");
+        assert_eq!(iwm.period_end, "2026-06-03");
+    }
+
+    #[test]
+    fn parse_etf_com_flows_bails_when_zero_rows() {
+        // Page-structure-changed signal: no table with matching headers.
+        let html = "<html><body><p>no flows table here</p></body></html>";
+        let err = parse_etf_com_flows(html).expect_err("must bail on missing table");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("no ETF.com flows table") || msg.contains("page structure"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_etf_com_flows_bails_when_table_present_but_all_rows_malformed() {
+        // The table exists with the right headers but every body row is
+        // malformed (no parseable flow). Must bail rather than return
+        // empty so the refresh DAG records Failed.
+        let html = r#"
+            <html><body>
+              <table>
+                <tr><th>Ticker</th><th>Net Flow (1D)</th></tr>
+                <tr><td></td><td>$1.00</td></tr>
+                <tr><td>BOGUS</td><td>n/a</td></tr>
+              </table>
+            </body></html>"#;
+        let err = parse_etf_com_flows(html).expect_err("must bail on zero rows");
+        assert!(format!("{err:#}").contains("zero rows"));
+    }
+
+    #[test]
+    fn parse_flow_usd_handles_dollar_formats() {
+        assert_eq!(parse_flow_usd("$1,234.56"), Some(dec!(1234.56)));
+        assert_eq!(parse_flow_usd("-$1,000,000"), Some(dec!(-1000000)));
+        assert_eq!(parse_flow_usd("($45,000)"), Some(dec!(-45000)));
+        assert_eq!(parse_flow_usd("45.2M"), Some(dec!(45200000)));
+        assert_eq!(parse_flow_usd("$1.5B"), Some(dec!(1_500_000_000)));
+        assert_eq!(parse_flow_usd(""), None);
+        assert_eq!(parse_flow_usd("--"), None);
+        assert_eq!(parse_flow_usd("n/a"), None);
+        assert_eq!(parse_flow_usd("not a number"), None);
+    }
+
+    #[test]
+    fn most_recent_monday_handles_each_weekday() {
+        // 2026-06-03 is a Wednesday → expect Monday 2026-06-01.
+        let wed = NaiveDate::from_ymd_opt(2026, 6, 3).expect("date");
+        assert_eq!(most_recent_monday(wed), NaiveDate::from_ymd_opt(2026, 6, 1).unwrap());
+        // 2026-06-01 is itself Monday → unchanged.
+        let mon = NaiveDate::from_ymd_opt(2026, 6, 1).expect("date");
+        assert_eq!(most_recent_monday(mon), mon);
+        // 2026-06-07 is Sunday → roll back to 2026-06-01.
+        let sun = NaiveDate::from_ymd_opt(2026, 6, 7).expect("date");
+        assert_eq!(most_recent_monday(sun), NaiveDate::from_ymd_opt(2026, 6, 1).unwrap());
     }
 
     #[test]
