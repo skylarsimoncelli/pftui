@@ -535,26 +535,24 @@ fn urgency_rank(urgency: &str) -> u8 {
 }
 
 fn render_card(card: &DecisionCard) -> String {
-    let context_arg = if card.context_lines.is_empty() {
-        "[]".to_string()
-    } else {
-        let joined = card
-            .context_lines
-            .iter()
-            .map(|line| clean_arg(line))
-            .collect::<Vec<_>>()
-            .join("; ");
-        format!("[{joined}]")
-    };
-    let response_arg = format!("[{}]", RESPONSE_FORMAT.to_vec().join(", "));
-    let body = format!(
-        "{{decision_card(question={}, urgency={}, context={}, recommendation={}, response_format={}, reference={})}}",
-        clean_arg(&card.question),
-        clean_arg(&card.urgency),
-        context_arg,
-        clean_arg(&card.recommendation),
-        response_arg,
-        clean_arg(&card.reference),
+    let body = crate::report::charts::decision_card::render_html(
+        &crate::report::charts::decision_card::DecisionCardInput {
+            question: card.question.clone(),
+            context_lines: card.context_lines.clone(),
+            recommendation: if card.recommendation.is_empty() {
+                None
+            } else {
+                Some(card.recommendation.clone())
+            },
+            response_format: Some(RESPONSE_FORMAT.iter().map(|s| s.to_string()).collect()),
+            reference: if card.reference.is_empty() {
+                None
+            } else {
+                Some(card.reference.clone())
+            },
+            urgency: card.urgency.clone(),
+            width: None,
+        },
     );
     if let Some(id) = card.rec_id {
         format!("<!-- rec_id: {id} -->\n{body}")
@@ -614,55 +612,62 @@ mod tests {
         assert!(!rendered.contains("{decision_card("));
     }
 
+    // After the chart-substitution rewrite, decision cards render as HTML
+    // (not the `{decision_card(...)}` token). Urgency is encoded as a
+    // border-left accent color rather than a literal "urgency=" string:
+    //   high   -> #f38ba8 (bear)
+    //   normal -> #89dceb (cyan)
+    //   low    -> #6e7681 (muted)
+    const URGENCY_HIGH_ACCENT: &str = "#f38ba8";
+    const URGENCY_LOW_ACCENT: &str = "#6e7681";
+
     #[test]
     fn private_decisions_pending_action_derives_from_convergence_formula() {
         // BTC convergent-bull below band -> ADD. Card must cite the convergence summary.
         let rendered = render_private_decisions_pending(&add_fixture()).unwrap();
-        assert!(rendered.contains("{decision_card(question=Add to BTC now"));
+        assert!(rendered.contains("Add to BTC now"));
         assert!(rendered.contains("Analyst convergence: strong convergent bull"));
-        assert!(rendered.contains("urgency=high"));
+        assert!(rendered.contains(URGENCY_HIGH_ACCENT));
         assert!(rendered.contains("Per-Asset Convergence card for BTC"));
+        assert!(
+            !rendered.contains("{decision_card("),
+            "must not leak token placeholder"
+        );
     }
 
     #[test]
     fn private_decisions_pending_trim_when_convergent_bear_above_band() {
         let rendered = render_private_decisions_pending(&trim_fixture()).unwrap();
-        assert!(rendered.contains("{decision_card(question=Trim QQQ now"));
+        assert!(rendered.contains("Trim QQQ now"));
         assert!(rendered.contains("Analyst convergence: convergent bear"));
     }
 
     #[test]
     fn private_decisions_pending_response_format_tokens_are_short() {
         let rendered = render_private_decisions_pending(&add_fixture()).unwrap();
-        assert!(rendered.contains("response_format=[yes, yes-if, no, wait, other]"));
+        // Each response token now appears as its own chip in the HTML.
         for token in RESPONSE_FORMAT {
             assert!(token.len() <= 6, "response token too long: {token}");
+            assert!(
+                rendered.contains(token),
+                "expected response chip '{token}' in: {rendered}"
+            );
         }
     }
 
     #[test]
     fn private_decisions_pending_no_imperative_without_evidence_reference() {
         let rendered = render_private_decisions_pending(&full_fixture()).unwrap();
-        for line in rendered.lines() {
-            if !line.contains("{decision_card(") {
-                continue;
-            }
-            // Every imperative card must include a non-empty reference= field.
-            assert!(line.contains("reference="));
-            // Strip trailing brace from reference value.
-            let reference_value = line
-                .split("reference=")
-                .nth(1)
-                .expect("reference= field present");
+        // Every rendered card includes a reference line marked by the "↑ "
+        // prefix that the chart helper emits. Every reference points at a
+        // "See X card …" evidence pointer.
+        let ref_chunks: Vec<&str> = rendered.split("↑ ").skip(1).collect();
+        assert!(!ref_chunks.is_empty(), "expected at least one card");
+        for chunk in ref_chunks {
+            // Each reference line should cite evidence ("See …").
             assert!(
-                !reference_value.starts_with(')') && !reference_value.starts_with("})"),
-                "decision card has empty reference: {line}"
-            );
-            // No bare imperative verb without an evidence-citing reference
-            // (which always contains "See ").
-            assert!(
-                reference_value.contains("See "),
-                "decision card reference missing evidence pointer: {line}"
+                chunk.starts_with("See "),
+                "decision card reference missing evidence pointer: {chunk}"
             );
         }
     }
@@ -670,22 +675,23 @@ mod tests {
     #[test]
     fn private_decisions_pending_orders_by_urgency_then_gap() {
         let rendered = render_private_decisions_pending(&ordering_fixture()).unwrap();
-        let lines: Vec<&str> = rendered
-            .lines()
-            .filter(|l| l.contains("{decision_card("))
-            .collect();
-        assert!(lines.len() >= 2, "expected multiple cards");
-        // First card should be high urgency (catalyst or large mismatch); the
-        // last card should be low urgency (stale target).
-        assert!(lines.first().unwrap().contains("urgency=high"));
-        assert!(lines.last().unwrap().contains("urgency=low"));
+        // Cards are emitted in order; the first should carry the high-urgency
+        // accent color and the last should carry the low-urgency accent color.
+        let first_high = rendered.find(URGENCY_HIGH_ACCENT);
+        let last_low = rendered.rfind(URGENCY_LOW_ACCENT);
+        assert!(first_high.is_some(), "expected high-urgency card to render");
+        assert!(last_low.is_some(), "expected low-urgency card to render");
+        assert!(
+            first_high.unwrap() < last_low.unwrap(),
+            "expected high-urgency card before low-urgency: {rendered}"
+        );
     }
 
     #[test]
     fn private_decisions_pending_stale_target_low_urgency_with_reference() {
         let rendered = render_private_decisions_pending(&stale_fixture()).unwrap();
         assert!(rendered.contains("Refresh the allocation target for GLD"));
-        assert!(rendered.contains("urgency=low"));
+        assert!(rendered.contains(URGENCY_LOW_ACCENT));
         assert!(rendered.contains("Per-Asset Convergence card for GLD"));
     }
 
@@ -693,7 +699,7 @@ mod tests {
     fn private_decisions_pending_catalyst_renders_high_urgency_card() {
         let rendered = render_private_decisions_pending(&catalyst_only_fixture()).unwrap();
         assert!(rendered.contains("Pre-position for FOMC decision on 2026-06-03"));
-        assert!(rendered.contains("urgency=high"));
+        assert!(rendered.contains(URGENCY_HIGH_ACCENT));
         assert!(rendered.contains("Macro Context catalyst row"));
     }
 
@@ -718,7 +724,11 @@ mod tests {
         }
         let rendered = render_private_decisions_pending_with_cards(&cards);
         assert!(rendered.contains("<!-- rec_id: 100 -->"));
-        assert!(rendered.contains("{decision_card(question=Add to BTC now"));
+        assert!(rendered.contains("Add to BTC now"));
+        assert!(
+            !rendered.contains("{decision_card("),
+            "must not leak token placeholder"
+        );
     }
 
     #[test]

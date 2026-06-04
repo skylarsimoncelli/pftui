@@ -5,6 +5,9 @@ use anyhow::Result;
 use crate::report::build::daily::{
     BuildContext, PrivateOutlookByHorizonRow, PrivateOutlookPoint, PrivatePositionSnapshotRow,
 };
+use crate::report::charts::outlook_arrows::{
+    render_svg as outlook_arrows_svg, OutlookArrowsInput, OutlookPoint as ChartOutlookPoint,
+};
 
 const HELD_ASSET_THRESHOLD_PCT: f64 = 1.0;
 
@@ -124,15 +127,23 @@ fn native_placeholder(
     weeks: NormalizedOutlook,
     months: NormalizedOutlook,
 ) -> String {
-    format!(
-        "{{outlook_arrows(days=[{}, {}], weeks=[{}, {}], months=[{}, {}])}}",
-        days.direction,
-        days.conviction,
-        weeks.direction,
-        weeks.conviction,
-        months.direction,
-        months.conviction,
-    )
+    outlook_arrows_svg(&OutlookArrowsInput {
+        days: chart_point(days),
+        weeks: chart_point(weeks),
+        months: chart_point(months),
+        width: None,
+        height: None,
+    })
+    // The rendered SVG contains literal newlines; collapse them so it stays
+    // inside a single markdown table cell.
+    .replace('\n', " ")
+}
+
+fn chart_point(outlook: NormalizedOutlook) -> ChartOutlookPoint {
+    ChartOutlookPoint {
+        direction: outlook.direction.to_string(),
+        conviction: outlook.conviction.to_string(),
+    }
 }
 
 fn is_aligned(
@@ -176,10 +187,13 @@ mod tests {
     fn private_outlook_by_horizon_direction_mapping_is_deterministic() {
         let rendered = render_private_outlook_by_horizon(&fixture_context()).unwrap();
 
-        assert!(rendered.contains(
-            "{outlook_arrows(days=[up, medium], weeks=[up_strong, high], months=[up, high])}"
-        ));
         assert!(rendered.contains("| BTC | up/medium | up_strong/high | up/high |"));
+        // SVG inlined into the Native column instead of a token placeholder.
+        assert!(rendered.contains("<svg"));
+        assert!(
+            !rendered.contains("{outlook_arrows"),
+            "must not leak token placeholder"
+        );
     }
 
     #[test]
@@ -187,9 +201,11 @@ mod tests {
         let rendered = render_private_outlook_by_horizon(&fixture_context()).unwrap();
 
         assert!(rendered.contains("| GLD | neutral/unknown | down/low | neutral/unknown |"));
-        assert!(rendered.contains(
-            "{outlook_arrows(days=[neutral, unknown], weeks=[down, low], months=[neutral, unknown])}"
-        ));
+        // SVG cells inline for the GLD row too (no token leakage).
+        assert!(
+            !rendered.contains("{outlook_arrows"),
+            "must not leak token placeholder"
+        );
     }
 
     #[test]

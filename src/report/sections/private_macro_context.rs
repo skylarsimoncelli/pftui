@@ -6,6 +6,10 @@ use crate::report::build::daily::{
     BuildContext, PrivateMacroCatalyst, PrivateMacroRegimeQuadrant, PrivateMacroScenarioRow,
     PrivateNarrativeMoneyDivergence, PrivateRegimeTrailPoint,
 };
+use crate::report::charts::prob_bar::{render_svg as prob_bar_svg, ProbBarInput};
+use crate::report::charts::regime_quadrant::{
+    render_svg as regime_quadrant_svg, RegimeQuadrantInput, RegimeTrailPoint,
+};
 
 const NORMALIZED_TOTAL: f64 = 100.0;
 const EPSILON: f64 = 0.05;
@@ -27,23 +31,36 @@ fn render_chart_placeholders(ctx: &BuildContext) -> String {
         .private_macro_regime
         .as_ref()
         .map(render_regime_quadrant)
-        .unwrap_or_else(|| "{regime_quadrant(unavailable)}".to_string());
+        .unwrap_or_default();
     let bars = render_probability_bars(&ctx.private_macro_scenarios);
-    format!("{regime}\n{bars}")
+    let mut parts = Vec::new();
+    if !regime.is_empty() {
+        parts.push(regime);
+    }
+    if !bars.is_empty() {
+        parts.push(bars);
+    }
+    parts.join("\n")
 }
 
 fn render_regime_quadrant(row: &PrivateMacroRegimeQuadrant) -> String {
-    format!(
-        "{{regime_quadrant(growth={}, inflation={}, trail={})}}",
-        format_axis(row.growth),
-        format_axis(row.inflation),
-        format_trail(&row.trail),
-    )
+    let trail = row
+        .trail
+        .iter()
+        .map(|point| RegimeTrailPoint(point.growth, point.inflation))
+        .collect();
+    regime_quadrant_svg(&RegimeQuadrantInput {
+        growth: row.growth,
+        inflation: row.inflation,
+        trail,
+        width: None,
+        height: None,
+    })
 }
 
 fn render_probability_bars(rows: &[PrivateMacroScenarioRow]) -> String {
     if rows.is_empty() {
-        return "{prob_bar(no_active_scenarios, current=0, prior_7d=0)}".to_string();
+        return String::new();
     }
 
     let mut sorted = rows.iter().collect::<Vec<_>>();
@@ -56,12 +73,15 @@ fn render_probability_bars(rows: &[PrivateMacroScenarioRow]) -> String {
     sorted
         .into_iter()
         .map(|row| {
-            format!(
-                "{{prob_bar({}, current={}, prior_7d={})}}",
-                clean_arg(&row.name),
-                format_pct_arg(row.probability),
-                format_pct_arg(row.prior_7d),
-            )
+            prob_bar_svg(&ProbBarInput {
+                name: row.name.clone(),
+                current: row.probability,
+                prior_7d: row.prior_7d,
+                color: "cyan".to_string(),
+                max_pct: None,
+                width: None,
+                height: None,
+            })
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -219,12 +239,20 @@ mod tests {
         let rendered = render_private_macro_context(&fixture_context()).unwrap();
 
         assert!(rendered.starts_with("## Macro Context\n\n"));
-        assert!(rendered.contains(
-            "{regime_quadrant(growth=-0.35, inflation=0.70, trail=[(-0.20, 0.40), (-0.35, 0.70)])}"
-        ));
-        assert!(rendered.contains("{prob_bar(Hard Landing, current=35, prior_7d=30)}"));
-        assert!(rendered.contains("{prob_bar(Inflation Reacceleration, current=25, prior_7d=20)}"));
-        assert!(rendered.contains("{prob_bar(Soft Landing, current=30, prior_7d=35)}"));
+        // Charts now render as inline SVG, not as token placeholders.
+        assert!(
+            !rendered.contains("{regime_quadrant("),
+            "must not leak the regime_quadrant token: {rendered}"
+        );
+        assert!(
+            !rendered.contains("{prob_bar("),
+            "must not leak the prob_bar token: {rendered}"
+        );
+        assert!(rendered.contains("<svg"), "expected inline SVG charts");
+        // Scenario names are present in the rendered SVG.
+        assert!(rendered.contains("Hard Landing"));
+        assert!(rendered.contains("Inflation Reacceleration"));
+        assert!(rendered.contains("Soft Landing"));
         assert!(rendered.contains("named rows sum to 90%, leaving 10% in Other / Unmodelled"));
     }
 

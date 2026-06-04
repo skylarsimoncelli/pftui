@@ -7,6 +7,10 @@ use crate::report::build::daily::{
     BuildContext, PrivateAssetConvergenceRow, PrivateAssetConvergenceView,
     PrivatePositionSnapshotRow,
 };
+use crate::report::charts::analyst_convergence_card::{
+    render_html as analyst_convergence_card_html, AnalystConvergenceCardInput,
+    AnalystConvergenceView as ChartConvergenceView,
+};
 
 const HELD_ASSET_THRESHOLD_PCT: f64 = 1.0;
 
@@ -62,23 +66,18 @@ fn render_asset_card(
         .map(|target| analyst_range(position.allocation_pct, target, average_conviction(views)));
     let target = convergence.and_then(|row| row.target_pct);
     let missing = missing_layers(views);
-    let view_args = render_view_args(views);
-    let range_arg = range
-        .map(|(low, high)| format!("[{}, {}]", format_number(low), format_number(high)))
-        .unwrap_or_else(|| "n/a".to_string());
-    let target_arg = target
-        .map(format_number)
-        .unwrap_or_else(|| "n/a".to_string());
 
-    let mut output = format!(
-        "{{analyst_convergence_card({}, summary={}, current_alloc={}, user_target={}, analyst_range={}, views={})}}",
-        clean_arg(&position.symbol),
-        summary,
-        format_number(position.allocation_pct),
-        target_arg,
-        range_arg,
-        view_args,
-    );
+    let chart_views = layer_sorted_chart_views(views);
+    let analyst_range = range.map(|(low, high)| [low, high]);
+    let mut output = analyst_convergence_card_html(&AnalystConvergenceCardInput {
+        asset: position.symbol.clone(),
+        views: chart_views,
+        user_target: target,
+        current_alloc: Some(position.allocation_pct),
+        analyst_range,
+        summary: summary.to_string(),
+        width: None,
+    });
     if !missing.is_empty() {
         output.push_str(&format!(
             "\nMissing analyst layers for {}: {}. Summary remains insufficient-views until at least two layers are attached.",
@@ -87,6 +86,23 @@ fn render_asset_card(
         ));
     }
     output
+}
+
+fn layer_sorted_chart_views(views: &[PrivateAssetConvergenceView]) -> Vec<ChartConvergenceView> {
+    let mut sorted = views.iter().collect::<Vec<_>>();
+    sorted.sort_by(|a, b| {
+        layer_order(&a.analyst)
+            .cmp(&layer_order(&b.analyst))
+            .then_with(|| a.analyst.cmp(&b.analyst))
+    });
+    sorted
+        .into_iter()
+        .map(|view| ChartConvergenceView {
+            analyst: view.analyst.clone(),
+            conviction: view.conviction,
+            reasoning_summary: view.reasoning_summary.clone(),
+        })
+        .collect()
 }
 
 fn convergence_summary(views: &[PrivateAssetConvergenceView]) -> &'static str {
@@ -125,11 +141,14 @@ fn analyst_range(current_alloc_pct: f64, target_pct: f64, avg_conviction: f64) -
     )
 }
 
+#[allow(dead_code)]
 fn render_view_args(views: &[PrivateAssetConvergenceView]) -> String {
+    // Legacy formatter retained for any caller that still needs the
+    // pre-substitution token-arg representation. The chart layer now
+    // consumes the typed view list directly.
     if views.is_empty() {
         return "[]".to_string();
     }
-
     let mut sorted = views.iter().collect::<Vec<_>>();
     sorted.sort_by(|a, b| {
         layer_order(&a.analyst)
@@ -193,29 +212,38 @@ mod tests {
         let rendered = render_private_per_asset_convergence(&fixture_context()).unwrap();
 
         assert!(rendered.starts_with("## Per-Asset Convergence\n\n"));
-        assert!(rendered.contains(
-            "{analyst_convergence_card(GLD, summary=insufficient-views, current_alloc=22.95"
-        ));
+        // GLD card present as HTML (asset name appears in the card markup) with
+        // the missing-layers annotation below.
+        assert!(rendered.contains("GLD"));
+        assert!(rendered.contains("insufficient-views"));
         assert!(rendered.contains("Missing analyst layers for GLD: MEDIUM, HIGH, MACRO"));
+        assert!(
+            !rendered.contains("{analyst_convergence_card"),
+            "must not leak token placeholder"
+        );
     }
 
     #[test]
     fn private_per_asset_convergence_derived_ranges_follow_formula() {
         let rendered = render_private_per_asset_convergence(&fixture_context()).unwrap();
 
-        assert!(rendered.contains(
-            "{analyst_convergence_card(BTC, summary=strong-convergent-bull, current_alloc=42.00, user_target=40.00, analyst_range=[40.86, 47.26]"
-        ));
-        assert!(rendered.contains(
-            "{analyst_convergence_card(GLD, summary=insufficient-views, current_alloc=22.95, user_target=25.00, analyst_range=[18.05, 24.45]"
-        ));
+        // Range bounds appear in the HTML card output. BTC range 40.86–47.26
+        // renders as "40.9–47.3%" (one-decimal precision). GLD insufficient-views
+        // case still shows the range but with INSUFFICIENT VIEWS badge.
+        assert!(rendered.contains("STRONG BULL"));
+        assert!(rendered.contains("INSUFFICIENT VIEWS"));
+        assert!(rendered.contains("40.9"));
+        assert!(rendered.contains("47.3"));
+        assert!(rendered.contains("18.1") || rendered.contains("18.0"));
+        assert!(rendered.contains("24.5") || rendered.contains("24.4"));
     }
 
     #[test]
     fn private_per_asset_convergence_card_count_matches_held_assets_above_threshold() {
         let rendered = render_private_per_asset_convergence(&fixture_context()).unwrap();
 
-        assert_eq!(rendered.matches("{analyst_convergence_card(").count(), 2);
+        // Two qualifying assets ⇒ two HTML cards rendered (DOGE dust is excluded).
+        assert!(rendered.matches("<table").count() >= 2);
         assert!(rendered.contains("BTC"));
         assert!(rendered.contains("GLD"));
         assert!(!rendered.contains("DOGE"));

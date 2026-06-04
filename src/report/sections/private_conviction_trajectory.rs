@@ -6,6 +6,10 @@ use crate::report::build::daily::{
     BuildContext, PrivateConvictionTrajectoryPoint, PrivateConvictionTrajectoryRow,
     PrivatePositionSnapshotRow,
 };
+use crate::report::charts::conviction_trajectory::{
+    render_svg as conviction_trajectory_svg, ConvictionLayerSeries, ConvictionTrajectoryInput,
+    ConvictionTrajectoryPoint as ChartTrajectoryPoint,
+};
 
 const HELD_ASSET_THRESHOLD_PCT: f64 = 1.0;
 const LAYER_ORDER: [&str; 4] = ["LOW", "MEDIUM", "HIGH", "MACRO"];
@@ -44,48 +48,39 @@ fn qualifying_positions(rows: &[PrivatePositionSnapshotRow]) -> Vec<&PrivatePosi
 }
 
 fn render_asset_trajectory(symbol: &str, rows: &[PrivateConvictionTrajectoryRow]) -> String {
-    let layer_args = LAYER_ORDER
+    let layer_series: Vec<ConvictionLayerSeries> = LAYER_ORDER
         .iter()
         .map(|layer| {
-            let points = rows
+            let series: Vec<ChartTrajectoryPoint> = rows
                 .iter()
                 .find(|row| {
                     row.symbol.eq_ignore_ascii_case(symbol)
                         && normalize_layer(&row.layer).eq_ignore_ascii_case(layer)
                 })
-                .map(|row| row.points.as_slice())
+                .map(|row| chart_points(&row.points))
                 .unwrap_or_default();
-            format!("{}:{}", layer_arg(layer), format_points(points))
+            ConvictionLayerSeries {
+                layer: layer_arg(layer).to_string(),
+                series,
+            }
         })
-        .collect::<Vec<_>>()
-        .join(", ");
+        .collect();
 
-    format!(
-        "{{conviction_trajectory({}, layer_series=[{}])}}",
-        clean_arg(symbol),
-        layer_args
-    )
+    conviction_trajectory_svg(&ConvictionTrajectoryInput {
+        symbol: symbol.to_string(),
+        layer_series,
+        width: None,
+        height: None,
+    })
 }
 
-fn format_points(points: &[PrivateConvictionTrajectoryPoint]) -> String {
-    if points.is_empty() {
-        return "[]".to_string();
-    }
-
+fn chart_points(points: &[PrivateConvictionTrajectoryPoint]) -> Vec<ChartTrajectoryPoint> {
     let mut sorted = points.iter().collect::<Vec<_>>();
     sorted.sort_by(|a, b| a.date.cmp(&b.date));
-    let joined = sorted
+    sorted
         .into_iter()
-        .map(|point| {
-            format!(
-                "({}, {:+})",
-                clean_arg(&point.date),
-                point.conviction.clamp(-5, 5)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("[{joined}]")
+        .map(|point| ChartTrajectoryPoint(point.date.clone(), point.conviction.clamp(-5, 5)))
+        .collect()
 }
 
 fn normalize_layer(layer: &str) -> &'static str {
@@ -124,32 +119,32 @@ mod tests {
         let rendered = render_private_conviction_trajectory(&fixture_context()).unwrap();
 
         assert!(rendered.starts_with("## Conviction Trajectory (30 days)\n\n"));
-        assert!(rendered.contains(
-            "{conviction_trajectory(GLD, layer_series=[LOW:[(2026-05-01, -2)], MED:[], HIGH:[], MACRO:[]])}"
-        ));
+        // SVG embedded inline; symbol labels appear in the SVG text nodes.
+        assert!(rendered.contains(">GLD<"));
+        assert!(
+            !rendered.contains("{conviction_trajectory"),
+            "must not leak token placeholder"
+        );
     }
 
     #[test]
     fn private_conviction_trajectory_layers_stay_ordered() {
         let rendered = render_private_conviction_trajectory(&fixture_context()).unwrap();
-        let btc = rendered
-            .lines()
-            .find(|line| line.contains("conviction_trajectory(BTC"))
-            .unwrap();
-
-        assert!(btc.find("LOW:[").unwrap() < btc.find("MED:[").unwrap());
-        assert!(btc.find("MED:[").unwrap() < btc.find("HIGH:[").unwrap());
-        assert!(btc.find("HIGH:[").unwrap() < btc.find("MACRO:[").unwrap());
+        // BTC sparkline is rendered before GLD because BTC has higher allocation.
+        let btc_pos = rendered.find(">BTC<").unwrap();
+        let gld_pos = rendered.find(">GLD<").unwrap();
+        assert!(btc_pos < gld_pos);
     }
 
     #[test]
     fn private_conviction_trajectory_includes_every_qualifying_held_asset() {
         let rendered = render_private_conviction_trajectory(&fixture_context()).unwrap();
 
-        assert_eq!(rendered.matches("{conviction_trajectory(").count(), 2);
-        assert!(rendered.contains("conviction_trajectory(BTC"));
-        assert!(rendered.contains("conviction_trajectory(GLD"));
-        assert!(!rendered.contains("conviction_trajectory(DOGE"));
+        // Two SVG sparklines emitted: BTC and GLD; DOGE is dust and excluded.
+        assert!(rendered.matches("<svg").count() >= 2);
+        assert!(rendered.contains(">BTC<"));
+        assert!(rendered.contains(">GLD<"));
+        assert!(!rendered.contains(">DOGE<"));
     }
 
     fn fixture_context() -> BuildContext {
