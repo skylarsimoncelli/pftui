@@ -5,6 +5,9 @@ use anyhow::Result;
 use crate::report::build::daily::{
     BinaryCatalystSummary, BuildContext, DerivedActionSummary, PrivatePortfolioSnapshotSummary,
 };
+use crate::report::charts::what_changed_strip::{
+    render_svg as what_changed_strip_svg, WhatChangedDelta, WhatChangedStripInput,
+};
 
 pub fn render_private_bottom_line(ctx: &BuildContext) -> Result<String> {
     let mut bullets = vec![
@@ -30,8 +33,11 @@ pub fn render_private_bottom_line(ctx: &BuildContext) -> Result<String> {
     for bullet in bullets.into_iter().take(5) {
         output.push_str(&format!("- {}\n", sentence_fragment(&bullet)));
     }
-    output.push_str("\n<!-- what_changed_strip - diff vs prior report -->\n");
-    output.push_str("{what_changed_strip(deltas)}");
+    let strip_svg = render_what_changed_strip(ctx);
+    if !strip_svg.is_empty() {
+        output.push_str("\n<!-- what_changed_strip - diff vs prior report -->\n");
+        output.push_str(&strip_svg);
+    }
 
     Ok(output.trim_end().to_string())
 }
@@ -147,6 +153,26 @@ fn clean_text(value: &str) -> String {
     value.replace('|', "/").trim().to_string()
 }
 
+fn render_what_changed_strip(ctx: &BuildContext) -> String {
+    if ctx.private_what_changed_deltas.is_empty() {
+        return String::new();
+    }
+    let deltas = ctx
+        .private_what_changed_deltas
+        .iter()
+        .map(|row| WhatChangedDelta {
+            label: row.label.clone(),
+            delta_str: row.delta.clone(),
+            direction: row.direction.clone(),
+        })
+        .collect();
+    what_changed_strip_svg(&WhatChangedStripInput {
+        deltas,
+        width: None,
+        height: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,7 +203,24 @@ mod tests {
         let rendered = render_private_bottom_line(&fixture_context()).unwrap();
 
         assert!(rendered.contains("<!-- what_changed_strip - diff vs prior report -->"));
-        assert!(rendered.contains("{what_changed_strip(deltas)}"));
+        // Renderer now emits inline SVG, not the {what_changed_strip(deltas)} token.
+        assert!(
+            !rendered.contains("{what_changed_strip"),
+            "must not leak the token placeholder: {rendered}"
+        );
+        assert!(
+            rendered.contains("<svg"),
+            "expected inline SVG for the what-changed strip: {rendered}"
+        );
+    }
+
+    #[test]
+    fn private_bottom_line_omits_strip_when_no_deltas() {
+        let mut ctx = fixture_context();
+        ctx.private_what_changed_deltas = vec![];
+        let rendered = render_private_bottom_line(&ctx).unwrap();
+        assert!(!rendered.contains("<!-- what_changed_strip"));
+        assert!(!rendered.contains("<svg"));
     }
 
     #[test]

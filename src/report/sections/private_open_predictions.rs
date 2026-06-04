@@ -5,6 +5,10 @@ use anyhow::Result;
 use crate::report::build::daily::{
     BuildContext, PrivateOpenPredictionRow, PrivateOpenPredictionsCalibration,
 };
+use crate::report::charts::open_predictions_table::{
+    render_html as open_predictions_table_html, OpenPredictionRow as ChartPredictionRow,
+    OpenPredictionsTableInput,
+};
 
 const PENDING_WINDOW_DAYS: i64 = 7;
 
@@ -18,9 +22,12 @@ pub fn render_private_open_predictions(ctx: &BuildContext) -> Result<String> {
         return Ok(output);
     }
 
-    output.push_str(&render_table_call(&pending));
+    output.push_str(&render_table_html(&pending));
     output.push_str("\n\n");
-    output.push_str(&render_interpretation(&pending, ctx.private_open_predictions_calibration.as_ref()));
+    output.push_str(&render_interpretation(
+        &pending,
+        ctx.private_open_predictions_calibration.as_ref(),
+    ));
 
     Ok(output.trim_end().to_string())
 }
@@ -30,7 +37,7 @@ fn pending_window_rows(rows: &[PrivateOpenPredictionRow]) -> Vec<&PrivateOpenPre
         .iter()
         .filter(|row| row.days_remaining >= 0 && row.days_remaining <= PENDING_WINDOW_DAYS)
         .collect::<Vec<_>>();
-    // Stable ordering: by target_date asc, then by id asc (with None last), then by symbol.
+    // Stable ordering: by target_date asc, then by days_remaining asc, then by id (None last), then by symbol.
     filtered.sort_by(|a, b| {
         a.target_date
             .cmp(&b.target_date)
@@ -46,30 +53,22 @@ fn pending_window_rows(rows: &[PrivateOpenPredictionRow]) -> Vec<&PrivateOpenPre
     filtered
 }
 
-fn render_table_call(rows: &[&PrivateOpenPredictionRow]) -> String {
-    let entries = rows
+fn render_table_html(rows: &[&PrivateOpenPredictionRow]) -> String {
+    let predictions: Vec<ChartPredictionRow> = rows
         .iter()
-        .map(|row| {
-            let id_part = row
-                .id
-                .map(|id| format!("id={id}, "))
-                .unwrap_or_default();
-            let direction = row
-                .direction
-                .as_deref()
-                .map(clean_arg)
-                .unwrap_or_else(|| "neutral".to_string());
-            format!(
-                "({id_part}asset={asset}, claim={claim}, days_remaining={days}, confidence={confidence}, direction={direction})",
-                asset = clean_arg(&row.symbol),
-                claim = clean_arg(&row.claim),
-                days = row.days_remaining,
-                confidence = format_confidence(row.confidence),
-            )
+        .map(|row| ChartPredictionRow {
+            id: row.id,
+            claim: row.claim.clone(),
+            asset: row.symbol.clone(),
+            days_remaining: row.days_remaining,
+            confidence: row.confidence,
+            direction: row.direction.clone(),
         })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("{{open_predictions_table(predictions_from_db=[{entries}])}}")
+        .collect();
+    open_predictions_table_html(&OpenPredictionsTableInput {
+        predictions,
+        width: None,
+    })
 }
 
 fn render_interpretation(
@@ -91,10 +90,7 @@ fn render_interpretation(
                     "; {} calibration over the trailing window shows {:.0}% predicted vs {:.0}% observed (n={})",
                     layer, predicted, observed, cal.sample_size
                 ),
-                _ => format!(
-                    "; {} calibration sample size is {}",
-                    layer, cal.sample_size
-                ),
+                _ => format!("; {} calibration sample size is {}", layer, cal.sample_size),
             }
         }
         _ => "; no calibration context is attached".to_string(),
@@ -121,24 +117,8 @@ fn average_confidence(rows: &[&PrivateOpenPredictionRow]) -> Option<f64> {
     }
 }
 
-fn format_confidence(value: Option<f64>) -> String {
-    match value {
-        Some(v) => format!("{v:.2}"),
-        None => "none".to_string(),
-    }
-}
-
 fn clean_text(value: &str) -> String {
     value.replace('|', "/").trim().to_string()
-}
-
-fn clean_arg(value: &str) -> String {
-    clean_text(value)
-        .replace(['[', ']', '{', '}', '(', ')'], " ")
-        .replace(',', " ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 fn sentence(value: &str) -> String {
@@ -159,14 +139,23 @@ mod tests {
         let rendered = render_private_open_predictions(&fixture_context()).unwrap();
 
         assert!(rendered.starts_with("## Open Predictions Resolving in Next 7 Days\n\n"));
-        // In-window predictions present.
-        assert!(rendered.contains("id=101"));
-        assert!(rendered.contains("id=102"));
-        assert!(rendered.contains("id=103"));
+        // In-window predictions present in HTML — claim text appears.
+        assert!(rendered.contains("SPY trades below"));
+        assert!(rendered.contains("BTC closes above"));
+        assert!(rendered.contains("Gold range 4400"));
         // Out-of-window predictions excluded.
-        assert!(!rendered.contains("id=200"), "30d-out prediction must be excluded: {rendered}");
-        assert!(!rendered.contains("id=201"), "expired prediction must be excluded: {rendered}");
-        assert!(!rendered.contains("id=202"), "8d-out prediction must be excluded: {rendered}");
+        assert!(
+            !rendered.contains("DXY breaks 105"),
+            "expired prediction must be excluded: {rendered}"
+        );
+        assert!(
+            !rendered.contains("WTI closes above"),
+            "8d-out prediction must be excluded: {rendered}"
+        );
+        assert!(
+            !rendered.contains("TLT trades over"),
+            "30d-out prediction must be excluded: {rendered}"
+        );
     }
 
     #[test]
@@ -176,12 +165,12 @@ mod tests {
         let rendered_b = render_private_open_predictions(&ctx).unwrap();
         assert_eq!(rendered_a, rendered_b);
 
-        // Order: id=101 (target 2026-06-02), id=102 (2026-06-04), id=103 (2026-06-07).
-        let p101 = rendered_a.find("id=101").unwrap();
-        let p102 = rendered_a.find("id=102").unwrap();
-        let p103 = rendered_a.find("id=103").unwrap();
-        assert!(p101 < p102, "{rendered_a}");
-        assert!(p102 < p103, "{rendered_a}");
+        // Order: SPY (target 2026-06-02), BTC (2026-06-04), GLD (2026-06-07).
+        let spy = rendered_a.find("SPY trades below").unwrap();
+        let btc = rendered_a.find("BTC closes above").unwrap();
+        let gld = rendered_a.find("Gold range").unwrap();
+        assert!(spy < btc, "{rendered_a}");
+        assert!(btc < gld, "{rendered_a}");
     }
 
     #[test]
@@ -192,14 +181,19 @@ mod tests {
         assert!(rendered.starts_with("## Open Predictions Resolving in Next 7 Days\n\n"));
         assert!(rendered.contains("No pending predictions resolve in the next 7 days."));
         assert!(!rendered.contains("{open_predictions_table"));
+        assert!(!rendered.contains("<table"));
     }
 
     #[test]
-    fn private_open_predictions_emits_native_chart_call() {
+    fn private_open_predictions_emits_html_table() {
         let rendered = render_private_open_predictions(&fixture_context()).unwrap();
         assert!(
-            rendered.contains("{open_predictions_table(predictions_from_db=["),
-            "expected native chart helper call in: {rendered}"
+            rendered.contains("<table"),
+            "expected rendered HTML table, not a token placeholder: {rendered}"
+        );
+        assert!(
+            !rendered.contains("{open_predictions_table"),
+            "must not leak the token placeholder: {rendered}"
         );
     }
 
@@ -225,13 +219,61 @@ mod tests {
         BuildContext {
             private_open_predictions: vec![
                 // In-window — out of order on input, must sort by target_date.
-                prediction(103, "GLD", "Gold range 4400-4700 holds through PCE", "2026-06-07", 6, Some(0.58), Some("neutral")),
-                prediction(101, "SPY", "SPY trades below $745 on PCE day", "2026-06-02", 1, Some(0.40), Some("bear")),
-                prediction(102, "BTC", "BTC closes above 100k", "2026-06-04", 3, Some(0.62), Some("bull")),
+                prediction(
+                    103,
+                    "GLD",
+                    "Gold range 4400-4700 holds through PCE",
+                    "2026-06-07",
+                    6,
+                    Some(0.58),
+                    Some("neutral"),
+                ),
+                prediction(
+                    101,
+                    "SPY",
+                    "SPY trades below $745 on PCE day",
+                    "2026-06-02",
+                    1,
+                    Some(0.40),
+                    Some("bear"),
+                ),
+                prediction(
+                    102,
+                    "BTC",
+                    "BTC closes above 100k",
+                    "2026-06-04",
+                    3,
+                    Some(0.62),
+                    Some("bull"),
+                ),
                 // Out of window — past, on-boundary-out, and far future.
-                prediction(201, "DXY", "DXY breaks 105", "2026-05-30", -2, Some(0.55), Some("bear")),
-                prediction(202, "WTI", "WTI closes above $90", "2026-06-09", 8, Some(0.45), Some("bull")),
-                prediction(200, "TLT", "TLT trades over 95", "2026-07-01", 30, Some(0.70), Some("bull")),
+                prediction(
+                    201,
+                    "DXY",
+                    "DXY breaks 105",
+                    "2026-05-30",
+                    -2,
+                    Some(0.55),
+                    Some("bear"),
+                ),
+                prediction(
+                    202,
+                    "WTI",
+                    "WTI closes above $90",
+                    "2026-06-09",
+                    8,
+                    Some(0.45),
+                    Some("bull"),
+                ),
+                prediction(
+                    200,
+                    "TLT",
+                    "TLT trades over 95",
+                    "2026-07-01",
+                    30,
+                    Some(0.70),
+                    Some("bull"),
+                ),
             ],
             private_open_predictions_calibration: Some(PrivateOpenPredictionsCalibration {
                 layer: Some("low".to_string()),

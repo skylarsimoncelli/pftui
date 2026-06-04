@@ -2,14 +2,23 @@
 
 use anyhow::Result;
 
+use crate::models::asset::AssetCategory;
 use crate::report::build::daily::{BuildContext, PrivateDriftRow, PrivatePositionSnapshotRow};
+use crate::report::charts::drift_bar::{render_svg as drift_bar_svg, DriftBarInput};
+use crate::report::charts::stacked_bar::{
+    render_svg as stacked_bar_svg, StackedBarInput, StackedBarSegment,
+};
+use crate::report::palette;
 
 const DUST_THRESHOLD_PCT: f64 = 0.10;
 
 pub fn render_private_portfolio_snapshot(ctx: &BuildContext) -> Result<String> {
     let mut output = String::from("## Portfolio Snapshot\n\n");
-    output.push_str("<!-- stacked_bar - allocation overview -->\n");
-    output.push_str("{stacked_bar(segments)}\n\n");
+    if let Some(svg) = build_stacked_bar(&ctx.private_positions) {
+        output.push_str("<!-- stacked_bar - allocation overview -->\n");
+        output.push_str(&svg);
+        output.push_str("\n\n");
+    }
     output.push_str(&render_positions_table(&ctx.private_positions));
     output.push_str("\n\n");
     if let Some(dust) = render_dust_note(&ctx.private_positions) {
@@ -21,6 +30,48 @@ pub fn render_private_portfolio_snapshot(ctx: &BuildContext) -> Result<String> {
     output.push_str(&render_drift_bars(&ctx.private_drift_rows));
 
     Ok(output.trim_end().to_string())
+}
+
+fn build_stacked_bar(rows: &[PrivatePositionSnapshotRow]) -> Option<String> {
+    let visible = visible_positions(rows);
+    if visible.is_empty() {
+        return None;
+    }
+    let segments: Vec<StackedBarSegment> = visible
+        .iter()
+        .map(|row| StackedBarSegment {
+            label: row.symbol.clone(),
+            value: row.allocation_pct,
+            color: palette::asset_color(&row.symbol, classify_symbol(&row.symbol)).to_string(),
+        })
+        .collect();
+    let svg = stacked_bar_svg(&StackedBarInput {
+        segments,
+        width: None,
+        height: None,
+    });
+    if svg.is_empty() {
+        None
+    } else {
+        Some(svg)
+    }
+}
+
+/// Best-effort symbol → category mapping for chart palette colouring.
+/// Conservative defaults: anything unrecognised falls back to Equity.
+fn classify_symbol(symbol: &str) -> AssetCategory {
+    let upper = symbol.to_ascii_uppercase();
+    match upper.as_str() {
+        "USD" | "EUR" | "GBP" | "JPY" | "CHF" | "AUD" | "CAD" | "NZD" | "CASH" => {
+            AssetCategory::Cash
+        }
+        "BTC" | "ETH" | "DOGE" | "SOL" | "XBT" | "BTC-USD" | "ETH-USD" => AssetCategory::Crypto,
+        "GC=F" | "SI=F" | "CL=F" | "NG=F" | "HG=F" | "PA=F" | "PL=F" | "GOLD" | "SILVER" => {
+            AssetCategory::Commodity
+        }
+        s if s.starts_with("DX") => AssetCategory::Forex,
+        _ => AssetCategory::Equity,
+    }
 }
 
 fn render_positions_table(rows: &[PrivatePositionSnapshotRow]) -> String {
@@ -88,13 +139,15 @@ fn render_drift_bars(rows: &[PrivateDriftRow]) -> String {
     sorted
         .into_iter()
         .map(|row| {
-            format!(
-                "{{drift_bar({}, target={}, actual={}, band={})}}",
-                clean_cell(&row.symbol),
-                format_number(row.target_pct),
-                format_number(row.actual_pct),
-                format_number(row.band_pct),
-            )
+            drift_bar_svg(&DriftBarInput {
+                symbol: row.symbol.clone(),
+                target_pct: row.target_pct,
+                actual_pct: row.actual_pct,
+                band_pct: row.band_pct,
+                max_pct: None,
+                width: None,
+                height: None,
+            })
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -102,10 +155,6 @@ fn render_drift_bars(rows: &[PrivateDriftRow]) -> String {
 
 fn format_pct(value: f64) -> String {
     format!("{value:.2}%")
-}
-
-fn format_number(value: f64) -> String {
-    format!("{value:.2}")
 }
 
 fn clean_cell(value: &str) -> String {
@@ -121,7 +170,7 @@ mod tests {
         let rendered = render_private_portfolio_snapshot(&fixture_context()).unwrap();
 
         assert!(rendered.starts_with("## Portfolio Snapshot\n\n"));
-        assert!(rendered.contains("{stacked_bar(segments)}"));
+        assert!(rendered.contains("<svg"));
         assert!(rendered.contains("| BTC | 65000 | +2.10% | 42.00% | +12000 |"));
         assert!(rendered.contains("| USD | 1 | n/a | 35.00% | n/a |"));
         assert!(rendered.contains("| GLD | 225 | -0.50% | 22.95% | +3400 |"));
@@ -140,9 +189,25 @@ mod tests {
     fn private_portfolio_snapshot_drift_bars_match_fixture_values() {
         let rendered = render_private_portfolio_snapshot(&fixture_context()).unwrap();
 
-        assert!(rendered.contains("{drift_bar(BTC, target=40.00, actual=42.00, band=5.00)}"));
-        assert!(rendered.contains("{drift_bar(GLD, target=25.00, actual=22.95, band=3.00)}"));
-        assert!(rendered.contains("{drift_bar(USD, target=35.00, actual=35.00, band=5.00)}"));
+        // Drift bars now render as inline SVG; check that all three symbols are mentioned.
+        assert!(rendered.contains(">BTC<"));
+        assert!(rendered.contains(">GLD<"));
+        assert!(rendered.contains(">USD<"));
+        // And the SVG was emitted at least three times for the three rows.
+        assert!(rendered.matches("<svg").count() >= 3);
+    }
+
+    #[test]
+    fn private_portfolio_snapshot_empty_positions_skips_stacked_bar() {
+        let ctx = BuildContext {
+            private_positions: vec![],
+            private_drift_rows: vec![],
+            ..BuildContext::default()
+        };
+        let rendered = render_private_portfolio_snapshot(&ctx).unwrap();
+        assert!(!rendered.contains("<svg"));
+        assert!(rendered.contains("No held-position rows are attached to this build."));
+        assert!(rendered.contains("No allocation target drift rows are attached to this build."));
     }
 
     fn fixture_context() -> BuildContext {
