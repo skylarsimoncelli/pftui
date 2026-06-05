@@ -1471,6 +1471,73 @@ impl BuildContext {
                 })
                 .unwrap_or_default();
 
+        // -----------------------------------------------------------------
+        // W4 loaders: news, calibration, lessons, conviction trajectories,
+        // and per-horizon outlooks. Every loader degrades to empty/None.
+        // -----------------------------------------------------------------
+
+        // Held-asset universe drives the private-news + trajectories +
+        // outlooks loaders. Use the freshly computed positions from above if
+        // available; otherwise fall back to the unique symbols on the
+        // transactions list. Symbols are uppercased for case-insensitive
+        // matching against news symbol_tags and analyst_views.asset.
+        let held_symbols: Vec<String> = {
+            let mut from_txs: std::collections::BTreeSet<String> = transactions
+                .iter()
+                .map(|t| t.symbol.to_uppercase())
+                .collect();
+            // Drop synthetic cash placeholders (e.g. "$CASH") — they have no
+            // analyst views, news, or convictions worth surfacing.
+            from_txs.retain(|s| !s.starts_with('$'));
+            from_txs.into_iter().collect()
+        };
+
+        // 1. private_news_events — last 24h news mentioning a held asset
+        //    via symbol_tag. Reuses the same news_cache loader as the public
+        //    news pipeline, narrowed to a 24h window.
+        let news_24h = backend
+            .sqlite_native()
+            .and_then(|conn| {
+                crate::db::news_cache::get_latest_news(conn, 200, None, None, None, Some(24)).ok()
+            })
+            .unwrap_or_default();
+        ctx.private_news_events =
+            private_news_events_for_held(&news_24h, &held_symbols);
+
+        // 2. private_news_silence — run the silence analyzer the same way
+        //    the CLI does; map its entries onto NewsVolumeSignal.
+        ctx.private_news_silence = crate::commands::news_silence::build_report_backend(backend, 28)
+            .map(|rep| {
+                rep.entries
+                    .into_iter()
+                    .map(|e| NewsVolumeSignal {
+                        topic: e.topic,
+                        current_count: e.observed_count.max(0) as u32,
+                        baseline_count: Some(e.median_count),
+                        status: e.status,
+                        caveat: (!e.label.is_empty()).then_some(e.label),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // 3. private_macro_divergences — narrative-vs-money divergence per
+        //    scenario. Material when |divergence z-score| > 1.0 (the spec's
+        //    "one sigma" gate).
+        ctx.private_macro_divergences =
+            crate::commands::narrative_divergence::build_report_backend(backend, 48, 1.0)
+                .map(|rep| {
+                    rep.entries
+                        .into_iter()
+                        .map(|e| PrivateNarrativeMoneyDivergence {
+                            scenario: e.scenario_name,
+                            summary: e.label,
+                            material: e.divergence_score.abs() > 1.0,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
         let target_records: std::collections::HashMap<
             String,
             crate::db::allocation_targets::AllocationTarget,
@@ -1588,6 +1655,44 @@ impl BuildContext {
                         trail,
                     })
                 });
+
+        // 5 + 6. Calibration matrix rows. Public surface keeps every row;
+        //        private surface filters to held-asset topics.
+        ctx.public_calibration = backend
+            .sqlite_native()
+            .and_then(|conn| load_calibration_rows(conn).ok())
+            .unwrap_or_default();
+        ctx.private_calibration = backend
+            .sqlite_native()
+            .and_then(|conn| load_calibration_rows_for_held(conn, &held_symbols).ok())
+            .unwrap_or_default();
+
+        // 4. private_open_predictions_calibration — pick the most populous
+        //    (layer, topic, conviction_band) tuple from calibration_matrix
+        //    that matches the dominant layer of the pending predictions, so
+        //    the report can show "you've been X% calibrated at this layer".
+        ctx.private_open_predictions_calibration = backend
+            .sqlite_native()
+            .and_then(|conn| load_open_predictions_calibration(conn, &ctx.private_open_predictions).ok())
+            .flatten();
+
+        // 7. public_lessons_applied — reuse the lessons-applied report
+        //    over the trailing 24h window, mapped to the public summary.
+        ctx.public_lessons_applied = backend
+            .sqlite_native()
+            .and_then(|conn| load_public_lessons_applied(conn).ok())
+            .unwrap_or_default();
+
+        // 8. private_conviction_trajectories — last 30 days of conviction
+        //    points per (held asset, analyst layer). Uses analyst_view_history.
+        ctx.private_conviction_trajectories = backend
+            .sqlite_native()
+            .and_then(|conn| load_conviction_trajectories(conn, &held_symbols, 30).ok())
+            .unwrap_or_default();
+
+        // 9. private_outlooks — collapse the four analyst-views layers onto
+        //    days/weeks/months horizons per held asset.
+        ctx.private_outlooks = outlooks_for_held(&all_views, &held_symbols);
 
         Ok(ctx)
     }
@@ -2455,6 +2560,412 @@ fn scan_leading_move(
         }
     }
     best
+}
+
+// ---------------------------------------------------------------------------
+// W4 loader helpers: news / calibration / lessons / trajectories / outlooks
+// ---------------------------------------------------------------------------
+
+/// Pick the news entries whose `symbol_tag` matches any held symbol
+/// (case-insensitive) and map them to the per-asset catalyst struct. The list
+/// is already newest-first from `news_cache::get_latest_news`.
+fn private_news_events_for_held(
+    news: &[crate::db::news_cache::NewsEntry],
+    held: &[String],
+) -> Vec<PrivateNewsCatalyst> {
+    if held.is_empty() {
+        return Vec::new();
+    }
+    let held_set: std::collections::HashSet<String> =
+        held.iter().map(|s| s.to_uppercase()).collect();
+    news.iter()
+        .filter_map(|n| {
+            let tag = n.symbol_tag.as_deref()?;
+            let matched: Vec<String> = tag
+                .split([',', ';', ' '])
+                .map(|s| s.trim().to_uppercase())
+                .filter(|s| !s.is_empty() && held_set.contains(s))
+                .collect();
+            if matched.is_empty() {
+                return None;
+            }
+            Some(PrivateNewsCatalyst {
+                headline: n.title.clone(),
+                what_happened: (!n.description.is_empty()).then(|| n.description.clone()),
+                money_moved: None,
+                who_benefits: None,
+                what_it_means: None,
+                domain: n.source_domain.clone(),
+                source_tier: Some(n.source_tier as u8),
+                independence: Some(independence_label(n.source_independence)),
+                topic: (!n.topic.is_empty()).then(|| n.topic.clone()),
+                related_assets: matched,
+                related_scenarios: Vec::new(),
+                impact_score: news_impact_score(n),
+            })
+        })
+        .take(12)
+        .collect()
+}
+
+/// Read every row from `calibration_matrix` and project onto the renderer's
+/// reliability shape. Latest snapshot per (layer, conviction_band) wins.
+fn load_calibration_rows(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<CalibrationReliabilityRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT layer, COALESCE(topic, ''), COALESCE(conviction_band, ''),
+                n, hit_rate, COALESCE(stated_confidence, 0.0), recorded_at
+         FROM calibration_matrix
+         ORDER BY recorded_at DESC",
+    )?;
+    let mut rows = stmt.query([])?;
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut out: Vec<CalibrationReliabilityRow> = Vec::new();
+    while let Some(r) = rows.next()? {
+        let layer: String = r.get::<_, Option<String>>(0)?.unwrap_or_default();
+        let _topic: String = r.get(1)?;
+        let band: String = r.get(2)?;
+        let n: i64 = r.get(3)?;
+        let hit_rate: f64 = r.get(4)?;
+        let stated: f64 = r.get(5)?;
+        let key = (layer.clone(), band.clone());
+        if !seen.insert(key) {
+            continue;
+        }
+        out.push(CalibrationReliabilityRow {
+            layer: layer.to_uppercase(),
+            conviction_band: band,
+            predicted_pct: round1(stated * 100.0),
+            observed_pct: round1(hit_rate * 100.0),
+            sample_size: n.max(0) as u32,
+        });
+    }
+    Ok(out)
+}
+
+/// Same as `load_calibration_rows`, but only return rows whose `topic` matches
+/// a held-asset symbol (case-insensitive). When held is empty the result is
+/// empty — private calibration with no portfolio is undefined.
+fn load_calibration_rows_for_held(
+    conn: &rusqlite::Connection,
+    held: &[String],
+) -> Result<Vec<CalibrationReliabilityRow>> {
+    if held.is_empty() {
+        return Ok(Vec::new());
+    }
+    let held_set: std::collections::HashSet<String> =
+        held.iter().map(|s| s.to_uppercase()).collect();
+    let mut stmt = conn.prepare(
+        "SELECT layer, COALESCE(topic, ''), COALESCE(conviction_band, ''),
+                n, hit_rate, COALESCE(stated_confidence, 0.0), recorded_at
+         FROM calibration_matrix
+         ORDER BY recorded_at DESC",
+    )?;
+    let mut rows = stmt.query([])?;
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut out: Vec<CalibrationReliabilityRow> = Vec::new();
+    while let Some(r) = rows.next()? {
+        let layer: String = r.get::<_, Option<String>>(0)?.unwrap_or_default();
+        let topic: String = r.get(1)?;
+        let band: String = r.get(2)?;
+        let n: i64 = r.get(3)?;
+        let hit_rate: f64 = r.get(4)?;
+        let stated: f64 = r.get(5)?;
+        if topic.is_empty() || !held_set.contains(&topic.to_uppercase()) {
+            continue;
+        }
+        let key = (layer.clone(), band.clone());
+        if !seen.insert(key) {
+            continue;
+        }
+        out.push(CalibrationReliabilityRow {
+            layer: layer.to_uppercase(),
+            conviction_band: band,
+            predicted_pct: round1(stated * 100.0),
+            observed_pct: round1(hit_rate * 100.0),
+            sample_size: n.max(0) as u32,
+        });
+    }
+    Ok(out)
+}
+
+/// Pick the calibration_matrix row most relevant to the dominant layer of the
+/// currently open predictions. "Dominant" = the prediction layer with the most
+/// pending rows; tie-breaks alphabetically. Returns `None` when either side is
+/// empty. Layer mapping mirrors `commands::calibration::normalize_layer`.
+fn load_open_predictions_calibration(
+    conn: &rusqlite::Connection,
+    open: &[PrivateOpenPredictionRow],
+) -> Result<Option<PrivateOpenPredictionsCalibration>> {
+    if open.is_empty() {
+        return Ok(None);
+    }
+    // Pull every open prediction's source_agent/timeframe to count by layer.
+    let predictions =
+        crate::db::user_predictions::list_predictions(conn, Some("pending"), None, None, None)?;
+    if predictions.is_empty() {
+        return Ok(None);
+    }
+    let mut layer_counts: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
+    for p in &predictions {
+        let layer = p
+            .timeframe
+            .as_deref()
+            .and_then(normalize_pred_layer)
+            .or_else(|| {
+                p.source_agent
+                    .as_deref()
+                    .and_then(normalize_pred_layer)
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        *layer_counts.entry(layer).or_default() += 1;
+    }
+    let Some((dominant_layer, _)) = layer_counts
+        .into_iter()
+        .max_by(|(la, ca), (lb, cb)| ca.cmp(cb).then_with(|| lb.cmp(la)))
+    else {
+        return Ok(None);
+    };
+    if dominant_layer == "unknown" {
+        return Ok(None);
+    }
+    // Pick the calibration_matrix row matching that layer with the largest n.
+    let mut stmt = conn.prepare(
+        "SELECT layer, COALESCE(topic, ''), COALESCE(conviction_band, ''),
+                n, hit_rate, COALESCE(stated_confidence, 0.0)
+         FROM calibration_matrix
+         WHERE LOWER(COALESCE(layer, '')) = LOWER(?1)
+         ORDER BY n DESC, recorded_at DESC
+         LIMIT 1",
+    )?;
+    let mut rows = stmt.query(rusqlite::params![dominant_layer])?;
+    let Some(r) = rows.next()? else {
+        return Ok(Some(PrivateOpenPredictionsCalibration {
+            layer: Some(dominant_layer),
+            sample_size: 0,
+            predicted_pct: None,
+            observed_pct: None,
+        }));
+    };
+    let layer: String = r.get::<_, Option<String>>(0)?.unwrap_or(dominant_layer);
+    let _topic: String = r.get(1)?;
+    let _band: String = r.get(2)?;
+    let n: i64 = r.get(3)?;
+    let hit_rate: f64 = r.get(4)?;
+    let stated: f64 = r.get(5)?;
+    Ok(Some(PrivateOpenPredictionsCalibration {
+        layer: Some(layer),
+        sample_size: n.max(0) as u32,
+        predicted_pct: Some(round1(stated * 100.0)),
+        observed_pct: Some(round1(hit_rate * 100.0)),
+    }))
+}
+
+/// Reuse the lessons-applied report over the trailing 24h, mapped to the
+/// public LessonAppliedSummary shape: lesson_id is rendered as its numeric
+/// value, summary is the lesson's miss-type-prefixed why_wrong (already
+/// computed by the report), and applied_to lists how many predictions cited
+/// the lesson in the window.
+fn load_public_lessons_applied(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<LessonAppliedSummary>> {
+    let predictions =
+        crate::db::user_predictions::list_predictions(conn, None, None, None, None)?;
+    let lessons = crate::db::prediction_lessons::list_lessons(conn, None, None)?;
+    let lesson_by_id: std::collections::HashMap<i64, &crate::db::prediction_lessons::PredictionLesson> =
+        lessons.iter().map(|l| (l.id, l)).collect();
+
+    // 24h window cutoff in the same UTC form predictions use.
+    let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
+    let mut counts: std::collections::BTreeMap<i64, u32> = std::collections::BTreeMap::new();
+    for p in &predictions {
+        if p.lessons_applied.is_empty() {
+            continue;
+        }
+        // Best-effort created_at parse. Skip if unparseable.
+        let is_recent = chrono::DateTime::parse_from_rfc3339(&p.created_at)
+            .ok()
+            .map(|dt| dt.with_timezone(&chrono::Utc) >= cutoff)
+            .or_else(|| {
+                chrono::NaiveDateTime::parse_from_str(&p.created_at, "%Y-%m-%d %H:%M:%S")
+                    .ok()
+                    .map(|naive| {
+                        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive, chrono::Utc) >= cutoff
+                    })
+            })
+            .unwrap_or(false);
+        if !is_recent {
+            continue;
+        }
+        let unique: std::collections::BTreeSet<i64> = p.lessons_applied.iter().copied().collect();
+        for id in unique {
+            *counts.entry(id).or_default() += 1;
+        }
+    }
+    let mut out: Vec<LessonAppliedSummary> = counts
+        .into_iter()
+        .map(|(id, n)| {
+            let summary = lesson_by_id
+                .get(&id)
+                .map(|l| {
+                    if l.why_wrong.trim().is_empty() {
+                        l.what_predicted.clone()
+                    } else {
+                        format!("{}: {}", l.miss_type, first_sentence(&l.why_wrong))
+                    }
+                })
+                .unwrap_or_else(|| format!("Lesson #{id}"));
+            LessonAppliedSummary {
+                lesson_id: format!("L{id}"),
+                summary,
+                applied_to: Some(format!("{n} prediction{}", if n == 1 { "" } else { "s" })),
+            }
+        })
+        .collect();
+    // Most-referenced first, then by id ascending for stability.
+    out.sort_by(|a, b| {
+        let a_n = a
+            .applied_to
+            .as_deref()
+            .and_then(|s| s.split_whitespace().next())
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        let b_n = b
+            .applied_to
+            .as_deref()
+            .and_then(|s| s.split_whitespace().next())
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        b_n.cmp(&a_n).then_with(|| a.lesson_id.cmp(&b.lesson_id))
+    });
+    out.truncate(10);
+    Ok(out)
+}
+
+/// Last `days` of conviction values per (held symbol, analyst layer) from
+/// `analyst_view_history`. Only emits rows where at least one history point
+/// exists. Layer is upper-cased to match `AnalystViewSummary::layer`.
+fn load_conviction_trajectories(
+    conn: &rusqlite::Connection,
+    held: &[String],
+    days: i64,
+) -> Result<Vec<PrivateConvictionTrajectoryRow>> {
+    if held.is_empty() {
+        return Ok(Vec::new());
+    }
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(days))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    let held_upper: std::collections::HashSet<String> =
+        held.iter().map(|s| s.to_uppercase()).collect();
+    let mut stmt = conn.prepare(
+        "SELECT analyst, asset, conviction, recorded_at
+         FROM analyst_view_history
+         WHERE recorded_at >= ?1
+         ORDER BY recorded_at ASC",
+    )?;
+    let mut rows = stmt.query(rusqlite::params![cutoff])?;
+    let mut grouped: std::collections::BTreeMap<(String, String), Vec<PrivateConvictionTrajectoryPoint>> =
+        std::collections::BTreeMap::new();
+    while let Some(r) = rows.next()? {
+        let analyst: String = r.get(0)?;
+        let asset: String = r.get(1)?;
+        let conviction: i64 = r.get(2)?;
+        let recorded_at: String = r.get(3)?;
+        let asset_upper = asset.to_uppercase();
+        if !held_upper.contains(&asset_upper) {
+            continue;
+        }
+        let date = short_date(&recorded_at);
+        grouped
+            .entry((asset_upper, analyst.to_uppercase()))
+            .or_default()
+            .push(PrivateConvictionTrajectoryPoint { date, conviction });
+    }
+    Ok(grouped
+        .into_iter()
+        .map(|((symbol, layer), points)| PrivateConvictionTrajectoryRow {
+            symbol,
+            layer,
+            points,
+        })
+        .collect())
+}
+
+/// Per-held-asset outlook by horizon, derived from the latest analyst_views.
+/// Mapping: LOW → days, MEDIUM → weeks, HIGH → months, MACRO → months (long-
+/// range). When both HIGH and MACRO are present we keep HIGH; MACRO is only
+/// surfaced when there is no HIGH view, to avoid double-counting months.
+fn outlooks_for_held(
+    views: &[crate::db::analyst_views::AnalystView],
+    held: &[String],
+) -> Vec<PrivateOutlookByHorizonRow> {
+    if held.is_empty() {
+        return Vec::new();
+    }
+    let held_upper: Vec<String> = held.iter().map(|s| s.to_uppercase()).collect();
+    let mut rows: Vec<PrivateOutlookByHorizonRow> = Vec::new();
+    for symbol in &held_upper {
+        let mut days: Option<PrivateOutlookPoint> = None;
+        let mut weeks: Option<PrivateOutlookPoint> = None;
+        let mut months: Option<PrivateOutlookPoint> = None;
+        let mut macro_fallback: Option<PrivateOutlookPoint> = None;
+        for v in views {
+            if !v.asset.eq_ignore_ascii_case(symbol) {
+                continue;
+            }
+            let point = PrivateOutlookPoint {
+                direction: v.direction.clone(),
+                conviction: v.conviction.to_string(),
+            };
+            match v.analyst.to_ascii_lowercase().as_str() {
+                "low" if days.is_none() => days = Some(point),
+                "medium" if weeks.is_none() => weeks = Some(point),
+                "high" if months.is_none() => months = Some(point),
+                "macro" if macro_fallback.is_none() => macro_fallback = Some(point),
+                _ => {}
+            }
+        }
+        if months.is_none() {
+            months = macro_fallback;
+        }
+        if days.is_none() && weeks.is_none() && months.is_none() {
+            continue;
+        }
+        rows.push(PrivateOutlookByHorizonRow {
+            symbol: symbol.clone(),
+            days,
+            weeks,
+            months,
+        });
+    }
+    rows
+}
+
+/// Round to one decimal place.
+fn round1(v: f64) -> f64 {
+    (v * 10.0).round() / 10.0
+}
+
+/// Mirror of `commands::calibration::normalize_layer`, kept local so this
+/// loader doesn't depend on a private helper.
+fn normalize_pred_layer(value: &str) -> Option<String> {
+    let v = value.trim().to_ascii_lowercase();
+    if v == "macro-checkpoint" || v.contains("macro-checkpoint") {
+        Some("macro-checkpoint".to_string())
+    } else if v.contains("low") || v == "short" {
+        Some("low".to_string())
+    } else if v.contains("medium") || v == "med" {
+        Some("medium".to_string())
+    } else if v.contains("high") || v == "long" {
+        Some("high".to_string())
+    } else if v.contains("macro") {
+        Some("macro".to_string())
+    } else {
+        None
+    }
 }
 
 /// Snapshot of which data slots in a `BuildContext` are populated. Used by the
@@ -4317,5 +4828,350 @@ mod todays_analyst_synthesis_tests {
         for row in &ctx.private_what_changed_deltas {
             assert!(["bull", "bear", "info"].contains(&row.direction.as_str()));
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// W4 loader unit tests (synthetic fixtures, no real-DB dependency).
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod loader_w4_tests {
+    use super::*;
+    use crate::db::analyst_views::AnalystView;
+    use crate::db::news_cache::{NewsEntry, NewsSourceIndependence};
+
+    fn synthetic_news(id: i64, title: &str, symbol_tag: Option<&str>) -> NewsEntry {
+        NewsEntry {
+            id,
+            title: title.to_string(),
+            url: format!("https://example.com/{id}"),
+            source: "Example".to_string(),
+            source_type: "rss".to_string(),
+            symbol_tag: symbol_tag.map(|s| s.to_string()),
+            source_domain: "example.com".to_string(),
+            source_tier: 1,
+            source_tier_inferred: false,
+            source_independence: NewsSourceIndependence::Independent,
+            description: format!("Body for {title}"),
+            extra_snippets: Vec::new(),
+            category: "news".to_string(),
+            topic: "equities".to_string(),
+            published_at: 0,
+            fetched_at: "2026-06-02T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn private_news_events_match_held_symbol_tag_case_insensitive() {
+        let news = vec![
+            synthetic_news(1, "BTC rallies on flows", Some("BTC")),
+            synthetic_news(2, "Oil pumps", Some("XOM")),
+            synthetic_news(3, "Compound symbol_tag list", Some("gld,slv")),
+            synthetic_news(4, "No tag", None),
+        ];
+        let held = vec!["BTC".to_string(), "GLD".to_string()];
+        let out = private_news_events_for_held(&news, &held);
+        // Two entries match: BTC headline and the GLD,SLV combined tag.
+        assert_eq!(out.len(), 2);
+        assert!(out.iter().any(|c| c.headline == "BTC rallies on flows"));
+        assert!(out
+            .iter()
+            .any(|c| c.headline == "Compound symbol_tag list"
+                && c.related_assets.iter().any(|a| a == "GLD")));
+        // Domain and tier flow through.
+        assert!(out.iter().all(|c| c.domain == "example.com"));
+        assert!(out.iter().all(|c| c.source_tier == Some(1)));
+    }
+
+    #[test]
+    fn private_news_events_empty_when_no_held_assets() {
+        let news = vec![synthetic_news(1, "BTC up", Some("BTC"))];
+        let out = private_news_events_for_held(&news, &[]);
+        assert!(out.is_empty());
+    }
+
+    fn synthetic_view(analyst: &str, asset: &str, conviction: i64, direction: &str) -> AnalystView {
+        AnalystView {
+            id: 0,
+            analyst: analyst.to_string(),
+            asset: asset.to_string(),
+            direction: direction.to_string(),
+            conviction,
+            reasoning_summary: format!("{analyst} view of {asset}"),
+            key_evidence: None,
+            blind_spots: None,
+            allocation_bias: None,
+            updated_at: "2026-06-02T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn outlooks_for_held_maps_layers_to_horizons() {
+        let views = vec![
+            synthetic_view("low", "BTC", 3, "bull"),
+            synthetic_view("medium", "BTC", 2, "bull"),
+            synthetic_view("high", "BTC", -1, "bear"),
+            synthetic_view("macro", "BTC", 4, "bull"),
+            // GLD only has a macro view — months falls back to it.
+            synthetic_view("macro", "GLD", 3, "bull"),
+        ];
+        let held = vec!["BTC".to_string(), "GLD".to_string()];
+        let rows = outlooks_for_held(&views, &held);
+        assert_eq!(rows.len(), 2);
+        let btc = rows.iter().find(|r| r.symbol == "BTC").unwrap();
+        assert_eq!(btc.days.as_ref().unwrap().direction, "bull");
+        assert_eq!(btc.weeks.as_ref().unwrap().direction, "bull");
+        // HIGH wins over MACRO for the months slot.
+        assert_eq!(btc.months.as_ref().unwrap().direction, "bear");
+        let gld = rows.iter().find(|r| r.symbol == "GLD").unwrap();
+        assert!(gld.days.is_none());
+        assert!(gld.weeks.is_none());
+        // MACRO fallback fills months.
+        assert_eq!(gld.months.as_ref().unwrap().direction, "bull");
+    }
+
+    #[test]
+    fn outlooks_for_held_skips_assets_with_no_views() {
+        let views = vec![synthetic_view("low", "BTC", 2, "bull")];
+        let held = vec!["BTC".to_string(), "ZZZ".to_string()];
+        let rows = outlooks_for_held(&views, &held);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].symbol, "BTC");
+    }
+
+    fn open_db() -> rusqlite::Connection {
+        let conn = crate::db::open_in_memory();
+        // analyst_view_history is created lazily by the analyst_views module;
+        // create it directly here so the trajectory loader has a table to read.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS analyst_view_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                analyst TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                conviction INTEGER NOT NULL,
+                reasoning_summary TEXT NOT NULL,
+                key_evidence TEXT,
+                blind_spots TEXT,
+                allocation_bias TEXT,
+                recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+        // Suppress foreign-key check from prediction_lessons.prediction_id
+        // so loader tests can insert lessons without first creating a
+        // matching prediction row. Real callers always go through the
+        // higher-level CRUD which enforces the link.
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        conn
+    }
+
+    #[test]
+    fn load_calibration_rows_dedupes_to_latest_per_layer_band() {
+        let conn = open_db();
+        conn.execute(
+            "INSERT INTO calibration_matrix
+             (layer, topic, conviction_band, n, hit_rate, stated_confidence, recorded_at)
+             VALUES ('low', 'BTC', 'high', 12, 0.6, 0.7, '2026-05-30 00:00:00')",
+            [],
+        )
+        .unwrap();
+        // Newer row for the same (layer, band) should win.
+        conn.execute(
+            "INSERT INTO calibration_matrix
+             (layer, topic, conviction_band, n, hit_rate, stated_confidence, recorded_at)
+             VALUES ('low', 'BTC', 'high', 20, 0.5, 0.65, '2026-06-01 00:00:00')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO calibration_matrix
+             (layer, topic, conviction_band, n, hit_rate, stated_confidence, recorded_at)
+             VALUES ('medium', 'GLD', 'medium', 8, 0.4, 0.5, '2026-05-29 00:00:00')",
+            [],
+        )
+        .unwrap();
+        let rows = load_calibration_rows(&conn).unwrap();
+        assert_eq!(rows.len(), 2);
+        let low_high = rows
+            .iter()
+            .find(|r| r.layer == "LOW" && r.conviction_band == "high")
+            .unwrap();
+        assert_eq!(low_high.sample_size, 20);
+        assert!((low_high.observed_pct - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn load_calibration_rows_for_held_filters_topics_to_portfolio() {
+        let conn = open_db();
+        conn.execute(
+            "INSERT INTO calibration_matrix
+             (layer, topic, conviction_band, n, hit_rate, stated_confidence, recorded_at)
+             VALUES ('low', 'BTC', 'high', 10, 0.6, 0.7, '2026-06-01 00:00:00')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO calibration_matrix
+             (layer, topic, conviction_band, n, hit_rate, stated_confidence, recorded_at)
+             VALUES ('medium', 'XOM', 'medium', 12, 0.5, 0.55, '2026-06-01 00:00:00')",
+            [],
+        )
+        .unwrap();
+        let held = vec!["BTC".to_string()];
+        let rows = load_calibration_rows_for_held(&conn, &held).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].layer, "LOW");
+    }
+
+    #[test]
+    fn load_open_predictions_calibration_picks_dominant_layer() {
+        let conn = open_db();
+        // Two pending 'low' predictions, one pending 'high' prediction.
+        for _ in 0..2 {
+            conn.execute(
+                "INSERT INTO user_predictions
+                 (claim, symbol, conviction, timeframe, topic, confidence, outcome, lessons_applied, created_at)
+                 VALUES ('c', 'BTC', 'high', 'low', 'crypto', 0.7, 'pending', '[]', '2026-06-02 00:00:00')",
+                [],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO user_predictions
+             (claim, symbol, conviction, timeframe, topic, confidence, outcome, lessons_applied, created_at)
+             VALUES ('c', 'BTC', 'high', 'high', 'crypto', 0.6, 'pending', '[]', '2026-06-02 00:00:00')",
+            [],
+        )
+        .unwrap();
+        // Calibration rows for both layers; 'low' has the bigger sample.
+        conn.execute(
+            "INSERT INTO calibration_matrix
+             (layer, topic, conviction_band, n, hit_rate, stated_confidence, recorded_at)
+             VALUES ('low', 'BTC', 'high', 30, 0.55, 0.6, '2026-06-01 00:00:00')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO calibration_matrix
+             (layer, topic, conviction_band, n, hit_rate, stated_confidence, recorded_at)
+             VALUES ('high', 'BTC', 'high', 5, 0.4, 0.7, '2026-06-01 00:00:00')",
+            [],
+        )
+        .unwrap();
+        // Synthetic open list so the early-out doesn't fire.
+        let open = vec![PrivateOpenPredictionRow {
+            id: Some(1),
+            symbol: "BTC".to_string(),
+            claim: "c".to_string(),
+            target_date: "2026-06-30".to_string(),
+            days_remaining: 28,
+            confidence: Some(0.7),
+            conviction: None,
+            direction: None,
+        }];
+        let cal = load_open_predictions_calibration(&conn, &open)
+            .unwrap()
+            .expect("calibration row");
+        assert_eq!(cal.layer.as_deref(), Some("low"));
+        assert_eq!(cal.sample_size, 30);
+    }
+
+    #[test]
+    fn load_conviction_trajectories_collects_history_for_held_assets() {
+        let conn = open_db();
+        // Two history points for BTC/low, one for BTC/macro, one for GLD/low
+        // (not held). Recent dates so the 30d cutoff includes them.
+        let recent_ts = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        for (analyst, asset, conviction) in [
+            ("low", "BTC", 2i64),
+            ("low", "BTC", 3i64),
+            ("macro", "BTC", 4i64),
+            ("low", "ZZZ", 1i64),
+        ] {
+            conn.execute(
+                "INSERT INTO analyst_view_history
+                 (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+                 VALUES (?1, ?2, 'bull', ?3, '', ?4)",
+                rusqlite::params![analyst, asset, conviction, recent_ts],
+            )
+            .unwrap();
+        }
+        let held = vec!["BTC".to_string()];
+        let traj = load_conviction_trajectories(&conn, &held, 30).unwrap();
+        // Two groups: BTC/LOW (2 points) and BTC/MACRO (1 point).
+        assert_eq!(traj.len(), 2);
+        let btc_low = traj
+            .iter()
+            .find(|r| r.symbol == "BTC" && r.layer == "LOW")
+            .unwrap();
+        assert_eq!(btc_low.points.len(), 2);
+        let btc_macro = traj
+            .iter()
+            .find(|r| r.symbol == "BTC" && r.layer == "MACRO")
+            .unwrap();
+        assert_eq!(btc_macro.points.len(), 1);
+    }
+
+    #[test]
+    fn load_public_lessons_applied_counts_recent_lesson_references() {
+        let conn = open_db();
+        // Two recent predictions cite lesson #1; one older prediction also cites it.
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let old = (chrono::Utc::now() - chrono::Duration::days(5))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        conn.execute(
+            "INSERT INTO prediction_lessons
+             (prediction_id, miss_type, what_predicted, what_happened, why_wrong, signal_misread, created_at)
+             VALUES (1, 'timing', 'BTC up', 'BTC down', 'misread liquidity. fwiw.', 'low vol', '2026-05-01 00:00:00')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO user_predictions
+             (claim, symbol, conviction, timeframe, topic, confidence, outcome, lessons_applied, created_at)
+             VALUES ('c', 'BTC', 'high', 'low', 'crypto', 0.7, 'pending', '[1]', ?1)",
+            rusqlite::params![now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO user_predictions
+             (claim, symbol, conviction, timeframe, topic, confidence, outcome, lessons_applied, created_at)
+             VALUES ('c', 'BTC', 'high', 'low', 'crypto', 0.7, 'pending', '[1]', ?1)",
+            rusqlite::params![now],
+        )
+        .unwrap();
+        // Older prediction citing lesson 1 — outside 24h window.
+        conn.execute(
+            "INSERT INTO user_predictions
+             (claim, symbol, conviction, timeframe, topic, confidence, outcome, lessons_applied, created_at)
+             VALUES ('c', 'BTC', 'high', 'low', 'crypto', 0.7, 'pending', '[1]', ?1)",
+            rusqlite::params![old],
+        )
+        .unwrap();
+        let rows = load_public_lessons_applied(&conn).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].lesson_id, "L1");
+        assert!(rows[0].summary.contains("timing"));
+        assert!(rows[0].applied_to.as_deref().unwrap().contains('2'));
+    }
+
+    #[test]
+    fn normalize_pred_layer_maps_common_aliases() {
+        assert_eq!(normalize_pred_layer("LOW").as_deref(), Some("low"));
+        assert_eq!(normalize_pred_layer("medium").as_deref(), Some("medium"));
+        assert_eq!(normalize_pred_layer("macro-checkpoint").as_deref(), Some("macro-checkpoint"));
+        assert_eq!(normalize_pred_layer("macro").as_deref(), Some("macro"));
+        assert_eq!(normalize_pred_layer("short").as_deref(), Some("low"));
+        assert!(normalize_pred_layer("weird").is_none());
+    }
+
+    #[test]
+    fn round1_rounds_to_one_decimal() {
+        assert_eq!(round1(12.34), 12.3);
+        assert_eq!(round1(12.36), 12.4);
+        // Rust's `round()` rounds half away from zero.
+        assert_eq!(round1(-1.25), -1.3);
     }
 }
