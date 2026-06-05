@@ -2797,7 +2797,14 @@ fn load_lessons_applied(conn: &rusqlite::Connection) -> Result<Option<PrivateLes
                 summary: lesson
                     .map(|l| first_sentence(&l.what_predicted))
                     .filter(|s| !s.is_empty())
-                    .unwrap_or_else(|| format!("Lesson #{id}")),
+                    // When the lesson row is missing (the prediction references
+                    // an out-of-range ID — symptom of mixing prediction_id and
+                    // lesson.id in the prompt-time lesson book), surface that
+                    // explicitly so the reader sees it isn't a real lesson cite
+                    // rather than a bare "Lesson #N" line.
+                    .unwrap_or_else(|| {
+                        format!("Lesson #{id} (no matching row in prediction_lessons — likely a prompt-time ID drift; check that the lesson book uses lessons.id, not prediction_id)")
+                    }),
             }
         })
         .collect();
@@ -3950,12 +3957,32 @@ fn parse_parallels_json(raw: &str) -> Vec<ParallelsResult> {
     results
         .iter()
         .map(|r| {
-            let pct = |key: &str| -> Option<f64> {
-                r.get(key).and_then(|v| v.as_f64()).or_else(|| {
-                    r.get("forward_returns")
-                        .and_then(|fr| fr.get(key))
-                        .and_then(|v| v.as_f64())
-                })
+            // The engine emits a nested `forward_distributions_pct` whose
+            // values are objects (`{ n, median, mean, p25, p75, hit_rate_up }`)
+            // not bare numbers. The original parser read raw f64s, so every
+            // horizon collapsed to None and the table rendered "—" in every
+            // cell despite N>0 matches — repro of the 2026-06-05 weekly run.
+            let horizon_median = |key: &str, legacy: &str| -> Option<f64> {
+                r.get("forward_distributions_pct")
+                    .and_then(|fr| fr.get(key))
+                    .and_then(|h| h.get("median"))
+                    .and_then(|v| v.as_f64())
+                    // Backwards-compat: older bundle shapes used the bare
+                    // number under `forward_returns` or at the row level
+                    // (`median_30d_pct`).
+                    .or_else(|| {
+                        r.get("forward_returns")
+                            .and_then(|fr| fr.get(key))
+                            .and_then(|v| v.as_f64())
+                    })
+                    .or_else(|| r.get(legacy).and_then(|v| v.as_f64()))
+            };
+            let horizon_hit = |key: &str, legacy: &str| -> Option<f64> {
+                r.get("forward_distributions_pct")
+                    .and_then(|fr| fr.get(key))
+                    .and_then(|h| h.get("hit_rate_up"))
+                    .and_then(|v| v.as_f64())
+                    .or_else(|| r.get(legacy).and_then(|v| v.as_f64()))
             };
             ParallelsResult {
                 id: r
@@ -3963,8 +3990,12 @@ fn parse_parallels_json(raw: &str) -> Vec<ParallelsResult> {
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string(),
+                // The engine writes the human-readable set label as
+                // `condition_set_name`. Keep `name` as a fallback for
+                // legacy bundle shapes.
                 name: r
-                    .get("name")
+                    .get("condition_set_name")
+                    .or_else(|| r.get("name"))
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string(),
@@ -3983,12 +4014,12 @@ fn parse_parallels_json(raw: &str) -> Vec<ParallelsResult> {
                     .or_else(|| r.get("n_matches"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as u32,
-                median_5d_pct: pct("median_5d_pct").or_else(|| pct("5d")),
-                median_30d_pct: pct("median_30d_pct").or_else(|| pct("30d")),
-                median_90d_pct: pct("median_90d_pct").or_else(|| pct("90d")),
-                median_180d_pct: pct("median_180d_pct").or_else(|| pct("180d")),
-                hit_rate_30d_pct: pct("hit_rate_30d_pct").or_else(|| pct("hit_rate_30d")),
-                hit_rate_90d_pct: pct("hit_rate_90d_pct").or_else(|| pct("hit_rate_90d")),
+                median_5d_pct: horizon_median("5d", "median_5d_pct"),
+                median_30d_pct: horizon_median("30d", "median_30d_pct"),
+                median_90d_pct: horizon_median("90d", "median_90d_pct"),
+                median_180d_pct: horizon_median("180d", "median_180d_pct"),
+                hit_rate_30d_pct: horizon_hit("30d", "hit_rate_30d_pct"),
+                hit_rate_90d_pct: horizon_hit("90d", "hit_rate_90d_pct"),
                 error: r
                     .get("error")
                     .and_then(|v| v.as_str())
@@ -4587,6 +4618,42 @@ mod assembler_tests {
         assert_eq!(results[0].match_count, 8);
         assert_eq!(results[0].median_5d_pct, Some(0.5));
         assert_eq!(results[0].median_30d_pct, Some(-1.0));
+    }
+
+    #[test]
+    fn parse_parallels_json_supports_engine_native_distribution_shape() {
+        // Repro of the 2026-06-05 bug: engine emits forward_distributions_pct
+        // whose values are objects (n / median / mean / p25 / p75 /
+        // hit_rate_up) plus a top-level condition_set_name. The parser must
+        // extract median + hit_rate_up so the table renders non-empty.
+        let raw = r#"{
+            "results": [
+                {
+                    "id": "btc-mayer-undervalued",
+                    "condition_set_name": "BTC Mayer Multiple < 0.85",
+                    "symbol": "BTC-USD",
+                    "narrative": "Mayer's accumulation zone.",
+                    "n_matches": 25,
+                    "forward_distributions_pct": {
+                        "5d":   { "n": 25, "median":  1.43, "hit_rate_up": 64.0 },
+                        "30d":  { "n": 25, "median": -0.36, "hit_rate_up": 48.0 },
+                        "90d":  { "n": 24, "median": 12.62, "hit_rate_up": 58.3 },
+                        "180d": { "n": 23, "median": 11.15, "hit_rate_up": 60.9 }
+                    }
+                }
+            ]
+        }"#;
+        let results = parse_parallels_json(raw);
+        assert_eq!(results.len(), 1);
+        let r = &results[0];
+        assert_eq!(r.name, "BTC Mayer Multiple < 0.85");
+        assert_eq!(r.match_count, 25);
+        assert_eq!(r.median_5d_pct, Some(1.43));
+        assert_eq!(r.median_30d_pct, Some(-0.36));
+        assert_eq!(r.median_90d_pct, Some(12.62));
+        assert_eq!(r.median_180d_pct, Some(11.15));
+        assert_eq!(r.hit_rate_30d_pct, Some(48.0));
+        assert_eq!(r.hit_rate_90d_pct, Some(58.3));
     }
 
     #[test]
