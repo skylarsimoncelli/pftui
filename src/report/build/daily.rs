@@ -1140,21 +1140,36 @@ impl BuildContext {
 
         // Economic calendar — upcoming high/medium-impact events from the
         // report date forward.
-        ctx.economic_calendar =
-            crate::db::calendar_cache::get_upcoming_events_backend(backend, report_date, 12)
-                .map(|events| {
-                    events
-                        .into_iter()
-                        .take(12)
-                        .map(|e| EconomicCalendarEvent {
-                            date: e.date,
-                            event: e.name,
-                            importance: Some(e.impact),
-                            market_relevance: e.forecast.map(|f| format!("forecast {f}")),
-                        })
-                        .collect()
-                })
+        let upcoming_events =
+            crate::db::calendar_cache::get_upcoming_events_backend(backend, report_date, 60)
                 .unwrap_or_default();
+        ctx.economic_calendar = upcoming_events
+            .iter()
+            .take(12)
+            .map(|e| EconomicCalendarEvent {
+                date: e.date.clone(),
+                event: e.name.clone(),
+                importance: Some(e.impact.clone()),
+                market_relevance: e.forecast.as_ref().map(|f| format!("forecast {f}")),
+            })
+            .collect();
+
+        // Macro catalysts (private, broader horizon) and binary catalysts
+        // (private, decision-grade — narrowed to high-impact events in the
+        // next two weeks). Both derive from the same upcoming-events list to
+        // keep the report internally consistent.
+        ctx.private_macro_catalysts = calendar_to_macro_catalysts(&upcoming_events, 10);
+        ctx.private_binary_catalysts =
+            calendar_to_binary_catalysts(&upcoming_events, report_date, 14, 6);
+
+        // Bitcoin ETF flows: aggregate `capital_flows` rows for asset='BTC'
+        // with etf_creation/etf_redemption flow_types into 1d / 7d / 30d
+        // net buckets. Empty when the table has no rows.
+        ctx.bitcoin_etf_flows = load_bitcoin_etf_flow_summaries(backend, report_date);
+
+        // Bitcoin on-chain context: latest cached network + exchange-reserve
+        // metrics from `onchain_cache`. Empty when neither metric is present.
+        ctx.bitcoin_onchain = load_bitcoin_onchain_summaries(backend);
 
         // Macro indicators — latest economic-data cache rows (BLS/FRED).
         ctx.macro_indicators = backend
@@ -2317,6 +2332,276 @@ fn load_real_yield_context(backend: &BackendConnection) -> Option<RealYieldSumma
         interpretation: Some(interpretation.to_string()),
         freshness: Some(short_date(&row.date)),
     })
+}
+
+/// Aggregate BTC ETF flow rows from `capital_flows` into 1d / 7d / 30d
+/// net-flow summaries. The 1d window uses `period_end == report_date - 1d`;
+/// 7d and 30d sum every row whose `period_end` falls within the window.
+/// Degrades to an empty Vec when the table is absent or empty.
+fn load_bitcoin_etf_flow_summaries(
+    backend: &BackendConnection,
+    report_date: &str,
+) -> Vec<BitcoinEtfFlowSummary> {
+    use chrono::{Duration, NaiveDate};
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    let parsed = NaiveDate::parse_from_str(report_date, "%Y-%m-%d").ok();
+    let conn = match backend.sqlite_native() {
+        Some(c) => c,
+        None => return Vec::new(),
+    };
+    let since = parsed
+        .map(|d| (d - Duration::days(30)).format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| "1970-01-01".to_string());
+    let filter = crate::db::capital_flows::FlowFilter {
+        asset: Some("BTC"),
+        since: Some(&since),
+        flow_type: None,
+    };
+    let rows = match crate::db::capital_flows::list(conn, &filter) {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let etf_rows: Vec<_> = rows
+        .into_iter()
+        .filter(|r| {
+            r.flow_type == "etf_creation" || r.flow_type == "etf_redemption"
+        })
+        .collect();
+    if etf_rows.is_empty() {
+        return Vec::new();
+    }
+
+    let signed = |row: &crate::db::capital_flows::CapitalFlowRow| -> Option<Decimal> {
+        let amount = Decimal::from_str(&row.amount_usd).ok()?;
+        if row.flow_type == "etf_redemption" {
+            Some(-amount)
+        } else {
+            Some(amount)
+        }
+    };
+
+    let window_sum = |days: i64| -> (Decimal, usize, Option<String>) {
+        let cutoff = parsed.map(|d| d - Duration::days(days));
+        let mut net = Decimal::ZERO;
+        let mut count = 0usize;
+        let mut newest_fetched: Option<String> = None;
+        for r in &etf_rows {
+            if let Some(c) = cutoff {
+                let end = NaiveDate::parse_from_str(&r.period_end, "%Y-%m-%d").ok();
+                if end.is_none_or(|e| e < c) {
+                    continue;
+                }
+            }
+            if let Some(s) = signed(r) {
+                net += s;
+                count += 1;
+                match &newest_fetched {
+                    None => newest_fetched = Some(r.fetched_at.clone()),
+                    Some(existing) if r.fetched_at > *existing => {
+                        newest_fetched = Some(r.fetched_at.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        (net, count, newest_fetched)
+    };
+
+    let mut out = Vec::new();
+    for (label, days) in [("1d", 1i64), ("7d", 7), ("30d", 30)] {
+        let (net, count, newest) = window_sum(days);
+        if count == 0 {
+            continue;
+        }
+        let net_flow = Some(format_usd_compact(net));
+        let detail = Some(format!(
+            "{} fund-day flow row{}",
+            count,
+            if count == 1 { "" } else { "s" }
+        ));
+        let freshness = newest.map(|s| short_date(&s));
+        out.push(BitcoinEtfFlowSummary {
+            period: label.to_string(),
+            net_flow,
+            detail,
+            freshness,
+        });
+    }
+    out
+}
+
+/// Render a signed USD amount compactly (e.g. `+$245.3M`, `-$1.20B`).
+fn format_usd_compact(amount: rust_decimal::Decimal) -> String {
+    use rust_decimal::Decimal;
+    let sign = if amount.is_sign_negative() { "-" } else { "+" };
+    let abs = amount.abs();
+    let billion = Decimal::from(1_000_000_000u64);
+    let million = Decimal::from(1_000_000u64);
+    let thousand = Decimal::from(1_000u64);
+    if abs >= billion {
+        format!("{}${:.2}B", sign, dec_to_f64(abs / billion))
+    } else if abs >= million {
+        format!("{}${:.1}M", sign, dec_to_f64(abs / million))
+    } else if abs >= thousand {
+        format!("{}${:.0}K", sign, dec_to_f64(abs / thousand))
+    } else {
+        format!("{}${}", sign, abs.normalize())
+    }
+}
+
+/// Pull the latest cached BTC on-chain metrics from `onchain_cache` and
+/// shape them for the report's "On-chain and exchange-reserve context"
+/// table. Empty when neither metric has any rows.
+fn load_bitcoin_onchain_summaries(backend: &BackendConnection) -> Vec<BitcoinOnChainSummary> {
+    let mut out = Vec::new();
+
+    // Network: hash rate is the most-stable cross-cycle signal we have. The
+    // raw value stored is the hash rate in EH/s (best-effort numeric).
+    if let Ok(latest) = crate::db::onchain_cache::get_metrics_by_type_backend(backend, "network", 1)
+    {
+        if let Some(row) = latest.first() {
+            let value = format_hash_rate(&row.value);
+            out.push(BitcoinOnChainSummary {
+                metric: "Network hash rate".to_string(),
+                value: Some(value),
+                interpretation: Some(
+                    "Higher hash rate = stronger miner conviction / network security".to_string(),
+                ),
+                freshness: Some(short_date(&row.fetched_at)),
+            });
+        }
+    }
+
+    // Exchange reserve proxy — the refresh hook stuffs 7d / 30d flow figures
+    // in the metric metadata JSON, so surface those alongside the headline
+    // reserve number when present.
+    if let Ok(latest) = crate::db::onchain_cache::get_metrics_by_type_backend(
+        backend,
+        "exchange_reserve_proxy_btc",
+        1,
+    ) {
+        if let Some(row) = latest.first() {
+            let (flow_7d, flow_30d) = onchain_flow_from_metadata(row.metadata.as_deref());
+            let mut interp = "Exchange reserve proxy — falling balance is bullish (coins moving to cold storage)".to_string();
+            if let Some(net7) = flow_7d {
+                interp.push_str(&format!(" · 7d net flow {:+.0} BTC", net7));
+            }
+            if let Some(net30) = flow_30d {
+                interp.push_str(&format!(" · 30d net flow {:+.0} BTC", net30));
+            }
+            out.push(BitcoinOnChainSummary {
+                metric: "Exchange reserve (proxy)".to_string(),
+                value: Some(format!("{} BTC", row.value)),
+                interpretation: Some(interp),
+                freshness: Some(short_date(&row.fetched_at)),
+            });
+        }
+    }
+
+    out
+}
+
+/// Format a stored hash-rate value into a readable EH/s string. The cache
+/// stores raw numerics, so trim long decimals and append the unit.
+fn format_hash_rate(raw: &str) -> String {
+    if let Ok(v) = raw.parse::<f64>() {
+        // Heuristic: stored values are typically in EH/s already (current
+        // network is ~600 EH/s as of 2025-2026), so format with one decimal.
+        if v >= 1.0 {
+            return format!("{:.1} EH/s", v);
+        }
+    }
+    raw.to_string()
+}
+
+/// Pull the `flow_7d_btc` and `flow_30d_btc` fields out of an
+/// exchange-reserve metric's JSON metadata, if present.
+fn onchain_flow_from_metadata(metadata: Option<&str>) -> (Option<f64>, Option<f64>) {
+    let json = match metadata.and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok()) {
+        Some(v) => v,
+        None => return (None, None),
+    };
+    let flow_7d = json.get("flow_7d_btc").and_then(|v| v.as_f64());
+    let flow_30d = json.get("flow_30d_btc").and_then(|v| v.as_f64());
+    (flow_7d, flow_30d)
+}
+
+/// Map a sorted upcoming-events list into the macro catalyst rows surfaced
+/// in the private Macro Context section. Keep medium + high impact only;
+/// catalyst readers expect actionable rather than exhaustive.
+fn calendar_to_macro_catalysts(
+    events: &[crate::db::calendar_cache::CalendarEvent],
+    limit: usize,
+) -> Vec<PrivateMacroCatalyst> {
+    events
+        .iter()
+        .filter(|e| {
+            e.event_type == "economic"
+                && matches!(e.impact.to_lowercase().as_str(), "high" | "medium")
+        })
+        .take(limit)
+        .map(|e| PrivateMacroCatalyst {
+            date: e.date.clone(),
+            event: e.name.clone(),
+            impact: catalyst_impact_label(e),
+        })
+        .collect()
+}
+
+/// Map the upcoming-events list into the binary catalyst rows that drive
+/// the private Decisions-Pending and Bottom-Line catalyst card. Only
+/// high-impact economic events within `horizon_days` of `report_date`
+/// qualify — the section asks "what binary print could move the book?",
+/// not "what's coming up in general?".
+fn calendar_to_binary_catalysts(
+    events: &[crate::db::calendar_cache::CalendarEvent],
+    report_date: &str,
+    horizon_days: i64,
+    limit: usize,
+) -> Vec<BinaryCatalystSummary> {
+    use chrono::{Duration, NaiveDate};
+    let from = match NaiveDate::parse_from_str(report_date, "%Y-%m-%d") {
+        Ok(d) => d,
+        Err(_) => return Vec::new(),
+    };
+    let cutoff = from + Duration::days(horizon_days);
+    events
+        .iter()
+        .filter(|e| e.event_type == "economic" && e.impact.eq_ignore_ascii_case("high"))
+        .filter(|e| {
+            NaiveDate::parse_from_str(&e.date, "%Y-%m-%d")
+                .map(|d| d >= from && d <= cutoff)
+                .unwrap_or(false)
+        })
+        .take(limit)
+        .map(|e| BinaryCatalystSummary {
+            date: e.date.clone(),
+            event: e.name.clone(),
+            impact: catalyst_impact_label(e),
+        })
+        .collect()
+}
+
+/// Compose a human-readable impact sentence for a catalyst row. We blend the
+/// raw impact bucket with the forecast / previous values when present so the
+/// catalyst card has context rather than just "high".
+fn catalyst_impact_label(event: &crate::db::calendar_cache::CalendarEvent) -> String {
+    let impact_lower = event.impact.to_lowercase();
+    let bucket = match impact_lower.as_str() {
+        "high" => "High-impact",
+        "medium" => "Medium-impact",
+        "low" => "Low-impact",
+        _ => impact_lower.as_str(),
+    };
+    let context = match (event.forecast.as_deref(), event.previous.as_deref()) {
+        (Some(f), Some(p)) => format!(" (forecast {f}, prior {p})"),
+        (Some(f), None) => format!(" (forecast {f})"),
+        (None, Some(p)) => format!(" (prior {p})"),
+        (None, None) => String::new(),
+    };
+    format!("{bucket} {}{context}", event.event_type)
 }
 
 /// Build the private "lessons applied" summary directly from the prediction +
@@ -4486,6 +4771,180 @@ mod assembler_tests {
             derive_actions(&ctx.private_asset_convergence, &ctx.private_drift_rows);
         assert_eq!(ctx.private_derived_actions.len(), 1);
         assert_eq!(ctx.private_derived_actions[0].action, "ADD");
+    }
+
+    // ---------------------------------------------------------------
+    // Loader tests for BTC ETF flows, on-chain context, and catalysts
+    // (agent W3 — flow + catalyst loaders)
+    // ---------------------------------------------------------------
+
+    use crate::db::calendar_cache::CalendarEvent;
+    use std::str::FromStr;
+
+    fn evt(date: &str, name: &str, impact: &str, ty: &str) -> CalendarEvent {
+        CalendarEvent {
+            id: 0,
+            date: date.to_string(),
+            name: name.to_string(),
+            impact: impact.to_string(),
+            previous: None,
+            forecast: None,
+            event_type: ty.to_string(),
+            symbol: None,
+            fetched_at: "2026-06-05T12:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn calendar_to_macro_catalysts_keeps_high_and_medium_economic_only() {
+        let events = vec![
+            evt("2026-06-10", "FOMC Decision", "high", "economic"),
+            evt("2026-06-11", "NFP", "high", "economic"),
+            evt("2026-06-12", "Building Permits", "low", "economic"),
+            evt("2026-06-13", "AAPL Earnings", "high", "earnings"),
+            evt("2026-06-14", "CPI", "medium", "economic"),
+        ];
+        let rows = calendar_to_macro_catalysts(&events, 10);
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().any(|r| r.event == "FOMC Decision"));
+        assert!(rows.iter().any(|r| r.event == "CPI"));
+        // Low impact and earnings excluded.
+        assert!(rows.iter().all(|r| r.event != "Building Permits"));
+        assert!(rows.iter().all(|r| r.event != "AAPL Earnings"));
+    }
+
+    #[test]
+    fn calendar_to_binary_catalysts_filters_to_high_impact_within_horizon() {
+        let events = vec![
+            evt("2026-06-06", "FOMC", "high", "economic"),
+            evt("2026-06-07", "CPI", "high", "economic"),
+            evt("2026-06-25", "PCE", "high", "economic"), // outside 14d
+            evt("2026-06-08", "Retail Sales", "medium", "economic"),
+        ];
+        let rows = calendar_to_binary_catalysts(&events, "2026-06-05", 14, 6);
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|r| r.event == "FOMC"));
+        assert!(rows.iter().any(|r| r.event == "CPI"));
+        assert!(rows.iter().all(|r| r.event != "PCE"));
+        assert!(rows.iter().all(|r| r.event != "Retail Sales"));
+    }
+
+    #[test]
+    fn calendar_to_binary_catalysts_returns_empty_on_unparseable_date() {
+        let events = vec![evt("2026-06-06", "FOMC", "high", "economic")];
+        let rows = calendar_to_binary_catalysts(&events, "not-a-date", 14, 6);
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn catalyst_impact_label_includes_forecast_when_present() {
+        let mut e = evt("2026-06-10", "CPI", "high", "economic");
+        e.forecast = Some("3.1%".to_string());
+        e.previous = Some("3.0%".to_string());
+        let label = catalyst_impact_label(&e);
+        assert!(label.contains("High-impact"));
+        assert!(label.contains("3.1%"));
+        assert!(label.contains("3.0%"));
+    }
+
+    #[test]
+    fn format_usd_compact_renders_with_sign_and_unit() {
+        use rust_decimal::Decimal;
+        assert_eq!(format_usd_compact(Decimal::from_str("245300000").unwrap()), "+$245.3M");
+        assert_eq!(format_usd_compact(Decimal::from_str("-1200000000").unwrap()), "-$1.20B");
+        assert_eq!(format_usd_compact(Decimal::from_str("0").unwrap()), "+$0");
+    }
+
+    #[test]
+    fn onchain_flow_from_metadata_extracts_btc_fields() {
+        let meta = r#"{"reserve_usd": 12345.0, "flow_7d_btc": -123.4, "flow_30d_btc": -567.8}"#;
+        let (f7, f30) = onchain_flow_from_metadata(Some(meta));
+        assert!((f7.unwrap() + 123.4).abs() < f64::EPSILON);
+        assert!((f30.unwrap() + 567.8).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn onchain_flow_from_metadata_returns_none_on_missing_or_invalid() {
+        assert_eq!(onchain_flow_from_metadata(None), (None, None));
+        assert_eq!(onchain_flow_from_metadata(Some("not json")), (None, None));
+    }
+
+    #[test]
+    fn load_bitcoin_etf_flow_summaries_aggregates_creation_redemption_by_window() {
+        let backend = in_memory_backend();
+        let conn = backend.sqlite_native().expect("sqlite backend");
+        // Seed three flow rows: two creations and one redemption within
+        // 1d / 7d windows. 30d should pick up all three.
+        for (flow_type, amount, period_end) in [
+            ("etf_creation", "200000000", "2026-06-04"),  // 1d
+            ("etf_redemption", "50000000", "2026-06-01"), // within 7d
+            ("etf_creation", "100000000", "2026-05-20"),  // within 30d
+        ] {
+            crate::db::capital_flows::insert(
+                conn,
+                &crate::data::flows::CapitalFlow {
+                    asset: "BTC".to_string(),
+                    flow_type: flow_type.to_string(),
+                    amount_usd: rust_decimal::Decimal::from_str(amount).unwrap(),
+                    period_start: period_end.to_string(),
+                    period_end: period_end.to_string(),
+                    source: "fixture".to_string(),
+                },
+            )
+            .expect("insert flow");
+        }
+        let rows = load_bitcoin_etf_flow_summaries(&backend, "2026-06-05");
+        assert_eq!(rows.len(), 3, "1d / 7d / 30d windows");
+        assert_eq!(rows[0].period, "1d");
+        assert_eq!(rows[1].period, "7d");
+        assert_eq!(rows[2].period, "30d");
+        // 1d window picks up the +$200M creation only.
+        assert!(rows[0].net_flow.as_deref().unwrap().contains("+$200"));
+        // 7d window nets the creation against the redemption: +$150M.
+        assert!(rows[1].net_flow.as_deref().unwrap().contains("+$150"));
+        // 30d window: 200 - 50 + 100 = +$250M.
+        assert!(rows[2].net_flow.as_deref().unwrap().contains("+$250"));
+    }
+
+    #[test]
+    fn load_bitcoin_etf_flow_summaries_returns_empty_when_no_btc_etf_rows() {
+        let backend = in_memory_backend();
+        let rows = load_bitcoin_etf_flow_summaries(&backend, "2026-06-05");
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn load_bitcoin_onchain_summaries_pulls_network_and_reserve_when_present() {
+        let backend = in_memory_backend();
+        let conn = backend.sqlite_native().expect("sqlite backend");
+        crate::db::onchain_cache::upsert_metric(
+            conn,
+            &crate::db::onchain_cache::OnchainMetric {
+                metric: "network".to_string(),
+                date: "2026-06-04".to_string(),
+                value: "620.5".to_string(),
+                metadata: None,
+                fetched_at: "2026-06-04T12:00:00Z".to_string(),
+            },
+        )
+        .expect("upsert");
+        crate::db::onchain_cache::upsert_metric(
+            conn,
+            &crate::db::onchain_cache::OnchainMetric {
+                metric: "exchange_reserve_proxy_btc".to_string(),
+                date: "2026-06-04".to_string(),
+                value: "1850000".to_string(),
+                metadata: Some(
+                    r#"{"flow_7d_btc": -1200.0, "flow_30d_btc": -3400.0}"#.to_string(),
+                ),
+                fetched_at: "2026-06-04T12:00:00Z".to_string(),
+            },
+        )
+        .expect("upsert");
+        let rows = load_bitcoin_onchain_summaries(&backend);
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].value.as_deref().unwrap().contains("620.5 EH/s"));
+        assert!(rows[1].interpretation.as_deref().unwrap().contains("7d net flow -1200"));
     }
 }
 
