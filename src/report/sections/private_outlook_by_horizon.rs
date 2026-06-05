@@ -25,8 +25,13 @@ pub fn render_private_outlook_by_horizon(ctx: &BuildContext) -> Result<String> {
         return Ok(output);
     }
 
-    output.push_str("| Asset | Days | Weeks | Months | Native |\n");
-    output.push_str("|---|---|---|---|---|\n");
+    // Single Outlook column rendering an SVG-arrow chart per row keeps the
+    // table compact. The prior layout duplicated the data in 4 columns
+    // (Days/Weeks/Months text labels + a Native SVG chart that already
+    // labelled its own axes), producing visually noisy "neutral/unknown"
+    // repetition in every cell of the 2026-06-05 weekly run.
+    output.push_str("| Asset | Outlook |\n");
+    output.push_str("|---|---|\n");
 
     let mut alignments = Vec::new();
     for position in held {
@@ -37,11 +42,8 @@ pub fn render_private_outlook_by_horizon(ctx: &BuildContext) -> Result<String> {
         alignments.push(is_aligned(days, weeks, months));
 
         output.push_str(&format!(
-            "| {} | {} | {} | {} | {} |\n",
+            "| {} | {} |\n",
             clean_cell(&position.symbol),
-            display_point(days),
-            display_point(weeks),
-            display_point(months),
             native_placeholder(days, weeks, months),
         ));
     }
@@ -118,10 +120,6 @@ fn normalize_conviction(conviction: &str) -> &'static str {
     }
 }
 
-fn display_point(point: NormalizedOutlook) -> String {
-    format!("{}/{}", point.direction, point.conviction)
-}
-
 fn native_placeholder(
     days: NormalizedOutlook,
     weeks: NormalizedOutlook,
@@ -187,8 +185,8 @@ mod tests {
     fn private_outlook_by_horizon_direction_mapping_is_deterministic() {
         let rendered = render_private_outlook_by_horizon(&fixture_context()).unwrap();
 
-        assert!(rendered.contains("| BTC | up/medium | up_strong/high | up/high |"));
-        // SVG inlined into the Native column instead of a token placeholder.
+        // The Outlook column carries the per-horizon arrow chart inline.
+        assert!(rendered.contains("| BTC |"));
         assert!(rendered.contains("<svg"));
         assert!(
             !rendered.contains("{outlook_arrows"),
@@ -197,11 +195,11 @@ mod tests {
     }
 
     #[test]
-    fn private_outlook_by_horizon_missing_data_renders_neutral_unknown() {
+    fn private_outlook_by_horizon_missing_data_still_renders_row() {
         let rendered = render_private_outlook_by_horizon(&fixture_context()).unwrap();
 
-        assert!(rendered.contains("| GLD | neutral/unknown | down/low | neutral/unknown |"));
-        // SVG cells inline for the GLD row too (no token leakage).
+        // GLD missing-horizon row still renders its asset cell + SVG chart.
+        assert!(rendered.contains("| GLD |"));
         assert!(
             !rendered.contains("{outlook_arrows"),
             "must not leak token placeholder"

@@ -82,7 +82,11 @@ fn render_deeper_analysis(blob: &AssetIntelligenceBlob) -> String {
     }
 
     if let Some(pos) = blob.range_52w_position {
-        bullets.push(format!("52w range position: {:.1}%", pos * 100.0));
+        // `range_52w_position` is already stored as a 0-100 percentage by
+        // `analytics::technicals` (see the `* 100.0` in
+        // src/analytics/technicals.rs:58). Don't multiply again — that
+        // produced 4-digit "5396%" values in the 2026-06-05 weekly run.
+        bullets.push(format!("52w range position: {pos:.1}%"));
     }
 
     if blob.scenario_count > 0 || blob.open_predictions_count > 0 {
@@ -407,7 +411,7 @@ mod tests {
             trend: Some("above 50/200 SMA (uptrend)".to_string()),
             nearest_support: Some("$65,000.00".to_string()),
             nearest_resistance: Some("$70,000.00".to_string()),
-            range_52w_position: Some(0.78),
+            range_52w_position: Some(78.0),
             scenario_count: 3,
             open_predictions_count: 4,
             structural_context: Some("Above both 50/200 SMA — structural uptrend".to_string()),
@@ -448,7 +452,7 @@ mod tests {
             trend: Some("above 50/200 SMA".to_string()),
             nearest_support: Some("$60k".to_string()),
             nearest_resistance: Some("$70k".to_string()),
-            range_52w_position: Some(0.5),
+            range_52w_position: Some(50.0),
             scenario_count: 2,
             open_predictions_count: 1,
             structural_context: Some("structural uptrend".to_string()),

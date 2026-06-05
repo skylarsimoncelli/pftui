@@ -71,7 +71,78 @@ fn collect_events(ctx: &BuildContext) -> Vec<CalendarEntry> {
         entries.push(from_binary(catalyst));
     }
 
-    entries
+    // Dedup on (date, normalized event name). Both economic_calendar and
+    // private_binary_catalysts derive from the same upcoming-events list
+    // and from multi-feed sources with slightly different naming
+    // ("Non Farm Payrolls" vs "Non-Farm Payrolls" vs "Nonfarm Payrolls
+    // Private"). Without normalization the same release renders 3-4
+    // times with conflicting forecast numbers, as it did in the
+    // 2026-06-05 weekly run. Preference order keeps the binary-catalyst
+    // entry (richer impact label) over the economic-calendar entry when
+    // both refer to the same release.
+    let mut seen: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+    let mut deduped: Vec<CalendarEntry> = Vec::with_capacity(entries.len());
+    entries.sort_by_key(|e| match e.category {
+        "binary" => 0,
+        _ => 1,
+    });
+    for entry in entries {
+        let key = (entry.date.clone(), canonical_event_key(&entry.headline));
+        if seen.insert(key) {
+            deduped.push(entry);
+        }
+    }
+    deduped
+}
+
+/// Collapse common feed variants onto a single canonical key so
+/// "Non Farm Payrolls", "Non-Farm Payrolls", and "Nonfarm Payrolls
+/// Private" (all referring to the same monthly release) dedup to one
+/// entry. Returns the lowercased, punctuation-stripped, single-spaced
+/// head of the event name with known synonym families collapsed.
+fn canonical_event_key(headline: &str) -> String {
+    let lower = headline
+        .to_lowercase()
+        .replace(['-', '_'], " ");
+    let collapsed: String = lower
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect();
+    let normalized = collapsed
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    // Family collapses — left side: any matching variant, right side: canonical key.
+    const FAMILIES: &[(&str, &str)] = &[
+        ("non farm payrolls private", "nfp"),
+        ("nonfarm payrolls private", "nfp"),
+        ("non farm payrolls", "nfp"),
+        ("nonfarm payrolls", "nfp"),
+        ("nfp", "nfp"),
+        ("average hourly earnings mom", "avg-hourly-earnings-mom"),
+        ("average hourly earnings yoy", "avg-hourly-earnings-yoy"),
+        ("core cpi yoy", "core-cpi-yoy"),
+        ("core cpi mom", "core-cpi-mom"),
+        ("cpi yoy", "cpi-yoy"),
+        ("cpi mom", "cpi-mom"),
+        ("core pce price index", "core-pce"),
+        ("core pce", "core-pce"),
+        ("pce price index", "pce"),
+        ("fomc", "fomc"),
+        ("federal funds rate", "fomc"),
+        ("interest rate decision", "fomc"),
+        ("u 6 unemployment rate", "u6-unemployment"),
+        ("u6 unemployment rate", "u6-unemployment"),
+        ("unemployment rate", "unemployment-rate"),
+    ];
+    for (variant, canonical) in FAMILIES {
+        if normalized.contains(variant) {
+            return (*canonical).to_string();
+        }
+    }
+    normalized
 }
 
 fn from_economic(event: &EconomicCalendarEvent) -> CalendarEntry {
