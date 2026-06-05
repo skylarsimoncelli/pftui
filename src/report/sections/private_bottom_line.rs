@@ -3,19 +3,51 @@
 use anyhow::Result;
 
 use crate::report::build::daily::{
-    BinaryCatalystSummary, BuildContext, DerivedActionSummary, PrivatePortfolioSnapshotSummary,
+    BinaryCatalystSummary, BuildContext, DerivedActionSummary, MaterialMove,
+    PrivatePortfolioSnapshotSummary,
 };
 use crate::report::charts::what_changed_strip::{
     render_svg as what_changed_strip_svg, WhatChangedDelta, WhatChangedStripInput,
 };
 
 pub fn render_private_bottom_line(ctx: &BuildContext) -> Result<String> {
+    let synthesis = ctx.todays_analyst_synthesis.as_ref();
+    // First bullet: rich analyst-written leading-move line when present;
+    // otherwise the legacy regime bullet so the section never goes silent.
+    let first_bullet = synthesis
+        .and_then(|s| s.leading_move.as_ref())
+        .map(render_leading_move_bullet)
+        .unwrap_or_else(|| render_regime_bullet(ctx));
+
+    // Third bullet: synthesis-bound action summary when present; otherwise
+    // the legacy derived-actions bullet.
+    let third_bullet = synthesis
+        .and_then(|s| s.action_summary.as_deref())
+        .map(|summary| format!("Action: {}", sentence_fragment(summary)))
+        .unwrap_or_else(|| render_actions_bullet(&ctx.private_derived_actions));
+
     let mut bullets = vec![
-        render_regime_bullet(ctx),
+        first_bullet,
         render_portfolio_bullet(ctx.private_portfolio_snapshot.as_ref()),
-        render_actions_bullet(&ctx.private_derived_actions),
+        third_bullet,
         render_catalyst_bullet(&ctx.private_binary_catalysts),
     ];
+
+    // Append per-analyst headline excerpts as separate bullets when the
+    // synthesis exposes them. Each is already truncated to ~200 chars by
+    // the loader.
+    if let Some(s) = synthesis {
+        for (label, headline) in [
+            ("LOW", s.headline_low.as_deref()),
+            ("MEDIUM", s.headline_medium.as_deref()),
+            ("HIGH", s.headline_high.as_deref()),
+            ("MACRO", s.headline_macro.as_deref()),
+        ] {
+            if let Some(text) = headline.filter(|t| !t.trim().is_empty()) {
+                bullets.push(format!("{label}: {}", sentence_fragment(text)));
+            }
+        }
+    }
 
     if !ctx.private_what_changed_deltas.is_empty() {
         bullets.push(format!(
@@ -30,7 +62,12 @@ pub fn render_private_bottom_line(ctx: &BuildContext) -> Result<String> {
     }
 
     let mut output = String::from("## Bottom Line\n\n");
-    for bullet in bullets.into_iter().take(5) {
+    // When the analyst synthesis is present the section can carry up to 4
+    // extra headline bullets (one per timeframe layer) on top of the four
+    // core bullets — keep them all so the lead doesn't drop substantive
+    // analyst content.
+    let bullet_cap = if synthesis.is_some() { 9 } else { 5 };
+    for bullet in bullets.into_iter().take(bullet_cap) {
         output.push_str(&format!("- {}\n", sentence_fragment(&bullet)));
     }
     let strip_svg = render_what_changed_strip(ctx);
@@ -40,6 +77,26 @@ pub fn render_private_bottom_line(ctx: &BuildContext) -> Result<String> {
     }
 
     Ok(output.trim_end().to_string())
+}
+
+fn render_leading_move_bullet(mv: &MaterialMove) -> String {
+    let cum = mv
+        .cumulative_pct
+        .map(|c| format!(" (cum {c:+.1}% from baseline)"))
+        .unwrap_or_default();
+    let note = clean_text(&mv.note);
+    let note_part = if note.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", sentence(&note))
+    };
+    format!(
+        "**{} {:+.1}%**{}.{}",
+        clean_text(&mv.asset),
+        mv.move_pct,
+        cum,
+        note_part
+    )
 }
 
 fn render_regime_bullet(ctx: &BuildContext) -> String {
@@ -176,7 +233,10 @@ fn render_what_changed_strip(ctx: &BuildContext) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::report::build::daily::{RegimeSummary, SynthesisSnapshot, WhatChangedDeltaSummary};
+    use crate::report::build::daily::{
+        MaterialMove, RegimeSummary, SynthesisSnapshot, TodaysAnalystSynthesis,
+        WhatChangedDeltaSummary,
+    };
 
     #[test]
     fn private_bottom_line_bullets_cover_regime_action_and_catalyst() {
@@ -221,6 +281,67 @@ mod tests {
         let rendered = render_private_bottom_line(&ctx).unwrap();
         assert!(!rendered.contains("<!-- what_changed_strip"));
         assert!(!rendered.contains("<svg"));
+    }
+
+    #[test]
+    fn private_bottom_line_surfaces_todays_analyst_synthesis() {
+        let mut ctx = fixture_context();
+        ctx.todays_analyst_synthesis = Some(TodaysAnalystSynthesis {
+            headline_low: Some(
+                "BTC -7% to $62,447 cum -14% from May 28; ETF -$671M, COT 92.3 pctile flush"
+                    .to_string(),
+            ),
+            headline_medium: Some("Weekly: rates pricing eases but credit spreads widen".to_string()),
+            headline_high: None,
+            headline_macro: Some("Macro: dollar squeeze through quarter-end is the dominant tape".to_string()),
+            leading_move: Some(MaterialMove {
+                asset: "BTC".to_string(),
+                move_pct: -7.0,
+                cumulative_pct: Some(-14.0),
+                note: "ETF -$671M, COT 92.3 pctile flush".to_string(),
+            }),
+            action_summary: Some("Trim BTC exposure into strength; raise stop to $61.5k".to_string()),
+        });
+
+        let rendered = render_private_bottom_line(&ctx).unwrap();
+
+        assert!(
+            rendered.contains("**BTC -7.0%**"),
+            "leading move bullet missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("cum -14.0% from baseline"),
+            "cumulative framing missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("- Action: Trim BTC exposure into strength"),
+            "action summary missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("- LOW: BTC -7% to $62,447"),
+            "LOW headline excerpt missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("- MEDIUM: Weekly: rates pricing eases"),
+            "MEDIUM headline excerpt missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("- MACRO: Macro: dollar squeeze"),
+            "MACRO headline excerpt missing: {rendered}"
+        );
+        // Synthesis must NOT clobber the catalyst/portfolio fallback bullets.
+        assert!(rendered.contains("- Portfolio: total 100,000 USD"));
+        assert!(rendered.contains("- Catalyst: FOMC decision"));
+    }
+
+    #[test]
+    fn private_bottom_line_falls_back_when_synthesis_absent() {
+        let mut ctx = fixture_context();
+        ctx.todays_analyst_synthesis = None;
+        let rendered = render_private_bottom_line(&ctx).unwrap();
+        // Legacy regime + actions bullets still present.
+        assert!(rendered.contains("- Regime: defensive liquidity."));
+        assert!(rendered.contains("- Actions: ADD BTC [today]"));
     }
 
     #[test]
