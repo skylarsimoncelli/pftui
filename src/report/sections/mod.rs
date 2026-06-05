@@ -3,6 +3,8 @@ pub mod gex;
 pub mod capital_flows;
 pub mod private_bottom_line;
 pub mod private_conviction_trajectory;
+pub mod private_cross_layer_signals;
+pub mod private_parallels;
 pub mod private_decisions_pending;
 pub mod private_lessons_applied;
 pub mod private_macro_context;

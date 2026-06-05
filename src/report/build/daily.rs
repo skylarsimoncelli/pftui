@@ -114,6 +114,88 @@ pub struct BuildContext {
     /// only emits a block when an entry exists for `asset` AND that
     /// entry's `fragility_score >= 3`. Empty when no rows match.
     pub synthesis_adversary_views: Vec<AdversarySynthesisSummary>,
+    /// Forward-return distributions from the parallels catalog runner
+    /// (`~/.local/bin/pftui-parallels-run`). Loaded from
+    /// `/tmp/pftui-parallels-<REPORT_DATE>.json` when present; empty when
+    /// the JSON file is missing or malformed. Surfaced by the new
+    /// `private_parallels` section as a per-set table of median forward
+    /// returns and hit rates.
+    pub parallels_results: Vec<ParallelsResult>,
+    /// Cross-layer signals destined for the synthesis layer, sourced from
+    /// the `agent_messages` table filtered to `to='synthesis'` on the
+    /// report date with priority `high` or `normal`. Surfaced by the new
+    /// `private_cross_layer_signals` section.
+    pub cross_layer_signals: Vec<CrossLayerSignal>,
+    /// Per-symbol synthesised asset-intelligence blobs derived from the
+    /// same substrate as `pftui analytics asset <SYMBOL>`. Populated for
+    /// each held private position. Used by the per-asset convergence
+    /// renderer to append a "Deeper Analysis" sub-section.
+    pub private_asset_intelligence: std::collections::HashMap<String, AssetIntelligenceBlob>,
+    /// Pre-synthesised morning-brief summary used by the public Executive
+    /// Summary to prepend a headline + central-tension lead. Populated
+    /// from the same substrate the `pftui analytics morning-brief --json`
+    /// command emits. `None` when the brief is unavailable for the
+    /// report date.
+    pub morning_brief: Option<MorningBriefSummary>,
+}
+
+/// One parallel-set result mirrored from `/tmp/pftui-parallels-<DATE>.json`.
+/// The catalog runner produces one entry per set whose `auto_run_when`
+/// predicate matches today's market state.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ParallelsResult {
+    pub id: String,
+    pub name: String,
+    pub symbol: String,
+    pub narrative: String,
+    pub match_count: u32,
+    pub median_5d_pct: Option<f64>,
+    pub median_30d_pct: Option<f64>,
+    pub median_90d_pct: Option<f64>,
+    pub median_180d_pct: Option<f64>,
+    pub hit_rate_30d_pct: Option<f64>,
+    pub hit_rate_90d_pct: Option<f64>,
+    pub error: Option<String>,
+}
+
+/// One inbound cross-layer signal pulled from `agent_messages` where
+/// `to_agent = 'synthesis'` for the report date.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrossLayerSignal {
+    pub from_layer: String,
+    pub to_layer: String,
+    pub priority: String,
+    pub category: String,
+    pub summary: String,
+}
+
+/// Compact synthesised asset-intelligence blob persisted per-asset in the
+/// `BuildContext`. Mirrors the most operator-relevant subset of the
+/// `pftui analytics asset <SYM>` JSON output without duplicating the full
+/// blob.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AssetIntelligenceBlob {
+    pub symbol: String,
+    pub spot_price: Option<String>,
+    pub daily_change_pct: Option<f64>,
+    pub rsi_14: Option<f64>,
+    pub rsi_signal: Option<String>,
+    pub trend: Option<String>,
+    pub nearest_support: Option<String>,
+    pub nearest_resistance: Option<String>,
+    pub range_52w_position: Option<f64>,
+    pub scenario_count: u32,
+    pub open_predictions_count: u32,
+    pub structural_context: Option<String>,
+}
+
+/// Compact morning-brief summary used to prepend the public Executive
+/// Summary. Captures only the most-actionable lead fields; the full
+/// brief remains available via `pftui analytics morning-brief --json`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MorningBriefSummary {
+    pub headline: Option<String>,
+    pub central_tension: Option<String>,
 }
 
 /// Compact per-asset row mirrored from `adversary_synthesis_views` for
@@ -762,6 +844,14 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             visibility: SectionVisibility::Private,
         },
         SectionSpec {
+            name: "private_cross_layer_signals",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
+            name: "private_parallels",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
             name: "private_decisions_pending",
             visibility: SectionVisibility::Private,
         },
@@ -838,6 +928,12 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         }
         "private_self_retrospective_calibration" => {
             sections::private_self_retrospective_calibration::render_private_self_retrospective_calibration(ctx)
+        }
+        "private_cross_layer_signals" => {
+            sections::private_cross_layer_signals::render_private_cross_layer_signals(ctx)
+        }
+        "private_parallels" => {
+            sections::private_parallels::render_private_parallels(ctx)
         }
         "private_decisions_pending" => {
             sections::private_decisions_pending::render_private_decisions_pending(ctx)
@@ -1262,6 +1358,33 @@ impl BuildContext {
             .sqlite_native()
             .and_then(|conn| load_lessons_applied(conn).ok())
             .flatten();
+
+        // Parallels — read the catalog runner's per-date JSON from /tmp.
+        ctx.parallels_results = load_parallels_results(report_date);
+
+        // Cross-layer signals — agent_messages addressed to synthesis on the
+        // report date with high/normal priority.
+        ctx.cross_layer_signals = load_cross_layer_signals(backend, report_date);
+
+        // Per-asset synthesised intelligence blobs — one per held position.
+        if !ctx.private_positions.is_empty() {
+            let symbols: Vec<String> = ctx
+                .private_positions
+                .iter()
+                .map(|p| p.symbol.clone())
+                .collect();
+            for sym in symbols {
+                if let Some(blob) = load_asset_intelligence_blob(backend, &sym) {
+                    ctx.private_asset_intelligence.insert(sym, blob);
+                }
+            }
+        }
+
+        // Morning-brief lead — pulled from the latest narrative snapshot if
+        // we have one (same substrate the `morning-brief` command surfaces
+        // for the headline/tension fields). We deliberately reuse the
+        // narrative we already fetched above for the regime synthesis.
+        ctx.morning_brief = narrative.as_ref().and_then(load_morning_brief_summary);
 
         Ok(ctx)
     }
@@ -1835,6 +1958,13 @@ pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
         vec_row!("private_positions", ctx.private_positions),
         vec_row!("private_open_predictions", ctx.private_open_predictions),
         opt_row!("private_lessons_applied", ctx.private_lessons_applied),
+        vec_row!("parallels_results", ctx.parallels_results),
+        vec_row!("cross_layer_signals", ctx.cross_layer_signals),
+        DataAvailabilityRow {
+            field: "private_asset_intelligence",
+            populated: !ctx.private_asset_intelligence.is_empty(),
+        },
+        opt_row!("morning_brief", ctx.morning_brief),
     ]
 }
 
@@ -2294,6 +2424,281 @@ pub fn assemble(
     Ok(outcome)
 }
 
+/// Read `/tmp/pftui-parallels-<date>.json` and decode it into the compact
+/// `ParallelsResult` shape. Returns an empty Vec when the file is missing
+/// or malformed — the assembler must never abort because the parallels
+/// runner did not execute (it's a best-effort enrichment pass run from
+/// the report skill, not a hard dependency).
+pub fn load_parallels_results(report_date: &str) -> Vec<ParallelsResult> {
+    let path = format!("/tmp/pftui-parallels-{report_date}.json");
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    parse_parallels_json(&raw)
+}
+
+/// Parse the parallels bundle JSON into the compact `ParallelsResult` shape.
+/// Defensive: every field is optional and missing keys default to empty/
+/// `None` so a partial run still surfaces what landed.
+fn parse_parallels_json(raw: &str) -> Vec<ParallelsResult> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    let Some(results) = value.get("results").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    results
+        .iter()
+        .map(|r| {
+            let pct = |key: &str| -> Option<f64> {
+                r.get(key).and_then(|v| v.as_f64()).or_else(|| {
+                    r.get("forward_returns")
+                        .and_then(|fr| fr.get(key))
+                        .and_then(|v| v.as_f64())
+                })
+            };
+            ParallelsResult {
+                id: r
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                name: r
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                symbol: r
+                    .get("symbol")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                narrative: r
+                    .get("narrative")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                match_count: r
+                    .get("match_count")
+                    .or_else(|| r.get("n_matches"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32,
+                median_5d_pct: pct("median_5d_pct").or_else(|| pct("5d")),
+                median_30d_pct: pct("median_30d_pct").or_else(|| pct("30d")),
+                median_90d_pct: pct("median_90d_pct").or_else(|| pct("90d")),
+                median_180d_pct: pct("median_180d_pct").or_else(|| pct("180d")),
+                hit_rate_30d_pct: pct("hit_rate_30d_pct").or_else(|| pct("hit_rate_30d")),
+                hit_rate_90d_pct: pct("hit_rate_90d_pct").or_else(|| pct("hit_rate_90d")),
+                error: r
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            }
+        })
+        .collect()
+}
+
+/// Pull `agent_messages` rows for the report date whose `to_agent` is
+/// `synthesis` and whose `priority` is `high` or `normal`. Lower
+/// priorities are intentionally dropped — the cross-layer signal table
+/// is meant to be scannable, not exhaustive.
+fn load_cross_layer_signals(
+    backend: &BackendConnection,
+    report_date: &str,
+) -> Vec<CrossLayerSignal> {
+    let since = format!("{report_date}T00:00:00");
+    let messages = crate::db::agent_messages::list_messages_backend(
+        backend,
+        None,
+        Some("synthesis"),
+        None,
+        false,
+        Some(&since),
+        None,
+        Some(100),
+    )
+    .unwrap_or_default();
+    messages
+        .into_iter()
+        .filter(|m| {
+            let p = m.priority.to_ascii_lowercase();
+            p == "high" || p == "normal"
+        })
+        .filter(|m| m.created_at.starts_with(report_date))
+        .map(|m| CrossLayerSignal {
+            from_layer: m.from_agent,
+            to_layer: m.to_agent.unwrap_or_else(|| "synthesis".to_string()),
+            priority: m.priority,
+            category: m.category.unwrap_or_default(),
+            summary: first_sentence(&m.content).replace('|', "/"),
+        })
+        .collect()
+}
+
+/// Build a compact `AssetIntelligenceBlob` for a single held symbol,
+/// drawing from the same per-asset substrate `pftui analytics asset`
+/// surfaces. We intentionally avoid invoking `run_asset_intelligence`
+/// directly because it prints to stdout; instead we re-query the
+/// underlying tables and assemble the summary fields the renderer needs.
+fn load_asset_intelligence_blob(
+    backend: &BackendConnection,
+    symbol: &str,
+) -> Option<AssetIntelligenceBlob> {
+    let sym = symbol.to_uppercase();
+    let spot =
+        crate::db::price_cache::get_cached_price_backend(backend, &sym, "USD")
+            .ok()
+            .flatten();
+
+    let history = crate::db::price_history::get_history_backend(backend, &sym, 30)
+        .unwrap_or_default();
+    let daily_change_pct = if history.len() >= 2 {
+        let prev = history[history.len() - 2].close;
+        let curr = history[history.len() - 1].close;
+        if prev > rust_decimal::Decimal::ZERO {
+            Some(dec_to_f64(
+                ((curr - prev) / prev * rust_decimal::Decimal::from(100)).round_dp(2),
+            ))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let snap = crate::db::technical_snapshots::get_latest_snapshot_backend(
+        backend, &sym, "1d",
+    )
+    .ok()
+    .flatten();
+
+    let rsi_14 = snap.as_ref().and_then(|s| s.rsi_14);
+    let rsi_signal = rsi_14.map(|r| {
+        if r > 70.0 {
+            "overbought".to_string()
+        } else if r < 30.0 {
+            "oversold".to_string()
+        } else {
+            "neutral".to_string()
+        }
+    });
+    let trend = trend_signal(backend, &sym);
+
+    let levels =
+        crate::db::technical_levels::get_levels_for_symbol_backend(backend, &sym)
+            .unwrap_or_default();
+    let (nearest_support, nearest_resistance) = if let Some(price) = spot.as_ref().map(|q| q.price)
+    {
+        if let Ok(p) = price.to_string().parse::<f64>() {
+            let pair = crate::analytics::levels::nearest_actionable_levels(&levels, p);
+            (
+                pair.support.map(|l| format!("${:.2}", l.price)),
+                pair.resistance.map(|l| format!("${:.2}", l.price)),
+            )
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
+
+    let range_52w_position = snap.as_ref().and_then(|s| s.range_52w_position);
+
+    let scenarios = crate::db::scenarios::list_scenarios_backend(backend, Some("active"))
+        .unwrap_or_default();
+    let scenario_count = scenarios
+        .iter()
+        .filter(|s| {
+            let haystack = format!(
+                "{} {} {} {}",
+                s.name,
+                s.asset_impact.as_deref().unwrap_or(""),
+                s.description.as_deref().unwrap_or(""),
+                s.triggers.as_deref().unwrap_or("")
+            )
+            .to_uppercase();
+            haystack.contains(&sym)
+        })
+        .count() as u32;
+
+    let open_predictions_count = backend
+        .sqlite_native()
+        .and_then(|conn| {
+            crate::db::user_predictions::list_predictions(conn, Some("pending"), None, None, None)
+                .ok()
+        })
+        .map(|preds| {
+            preds
+                .into_iter()
+                .filter(|p| {
+                    p.symbol
+                        .as_deref()
+                        .map(|s| s.eq_ignore_ascii_case(&sym))
+                        .unwrap_or(false)
+                })
+                .count() as u32
+        })
+        .unwrap_or(0);
+
+    let structural_context = snap.as_ref().and_then(|s| {
+        match (s.above_sma_50, s.above_sma_200) {
+            (Some(true), Some(true)) => Some("Above both 50/200 SMA — structural uptrend".to_string()),
+            (Some(false), Some(false)) => Some("Below both 50/200 SMA — structural downtrend".to_string()),
+            (Some(true), Some(false)) => Some("Above 50 SMA, below 200 SMA — mixed".to_string()),
+            (Some(false), Some(true)) => Some("Below 50 SMA, above 200 SMA — fragile".to_string()),
+            _ => None,
+        }
+    });
+
+    if spot.is_none()
+        && snap.is_none()
+        && levels.is_empty()
+        && scenario_count == 0
+        && open_predictions_count == 0
+    {
+        return None;
+    }
+
+    Some(AssetIntelligenceBlob {
+        symbol: sym,
+        spot_price: spot.as_ref().map(|q| format_price(q.price)),
+        daily_change_pct,
+        rsi_14,
+        rsi_signal,
+        trend,
+        nearest_support,
+        nearest_resistance,
+        range_52w_position,
+        scenario_count,
+        open_predictions_count,
+        structural_context,
+    })
+}
+
+/// Derive a `MorningBriefSummary` from the latest narrative snapshot. The
+/// snapshot already carries the `headline` + `subtitle` substrate the
+/// morning-brief command surfaces for the Executive Summary lead.
+fn load_morning_brief_summary(narrative: &serde_json::Value) -> Option<MorningBriefSummary> {
+    let headline = narrative
+        .get("headline")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string());
+    let central_tension = narrative
+        .get("subtitle")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string());
+    if headline.is_none() && central_tension.is_none() {
+        return None;
+    }
+    Some(MorningBriefSummary {
+        headline,
+        central_tension,
+    })
+}
+
 #[cfg(test)]
 mod assembler_tests {
     use super::*;
@@ -2363,6 +2768,8 @@ mod assembler_tests {
             "private_open_predictions",
             "private_lessons_applied",
             "private_self_retrospective_calibration",
+            "private_cross_layer_signals",
+            "private_parallels",
             "private_decisions_pending",
         ];
         let pub_actual: Vec<&str> = public_section_plan()
@@ -2622,6 +3029,129 @@ mod assembler_tests {
             Some(Path::new("/tmp/dry")),
         );
         assert!(summary.privacy_audit_status.contains("skipped"));
+    }
+
+    #[test]
+    fn parse_parallels_json_handles_empty_or_malformed() {
+        assert!(parse_parallels_json("").is_empty());
+        assert!(parse_parallels_json("not json").is_empty());
+        assert!(parse_parallels_json("{}").is_empty());
+        assert!(parse_parallels_json(r#"{"results": []}"#).is_empty());
+    }
+
+    #[test]
+    fn parse_parallels_json_extracts_canonical_fields() {
+        let raw = r#"{
+            "generated_at": "2026-06-05",
+            "results": [
+                {
+                    "id": "btc-200wma",
+                    "name": "BTC at 200WMA",
+                    "symbol": "BTC",
+                    "narrative": "Test narrative",
+                    "match_count": 12,
+                    "median_5d_pct": 1.4,
+                    "median_30d_pct": 8.2,
+                    "median_90d_pct": 24.1,
+                    "median_180d_pct": 45.0,
+                    "hit_rate_30d_pct": 75.0,
+                    "hit_rate_90d_pct": 83.3
+                }
+            ]
+        }"#;
+        let results = parse_parallels_json(raw);
+        assert_eq!(results.len(), 1);
+        let r = &results[0];
+        assert_eq!(r.id, "btc-200wma");
+        assert_eq!(r.symbol, "BTC");
+        assert_eq!(r.match_count, 12);
+        assert_eq!(r.median_30d_pct, Some(8.2));
+        assert_eq!(r.hit_rate_90d_pct, Some(83.3));
+    }
+
+    #[test]
+    fn parse_parallels_json_supports_forward_returns_nested_shape() {
+        let raw = r#"{
+            "results": [
+                {
+                    "id": "spx-rsi-elevated",
+                    "name": "SPX RSI Elevated",
+                    "symbol": "SPY",
+                    "narrative": "",
+                    "n_matches": 8,
+                    "forward_returns": { "5d": 0.5, "30d": -1.0, "90d": 2.5, "180d": 6.0 }
+                }
+            ]
+        }"#;
+        let results = parse_parallels_json(raw);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].match_count, 8);
+        assert_eq!(results[0].median_5d_pct, Some(0.5));
+        assert_eq!(results[0].median_30d_pct, Some(-1.0));
+    }
+
+    #[test]
+    fn parse_parallels_json_preserves_engine_error() {
+        let raw = r#"{
+            "results": [
+                {
+                    "id": "broken",
+                    "name": "Broken Set",
+                    "symbol": "BTC",
+                    "narrative": "",
+                    "error": "predicate parse failed"
+                }
+            ]
+        }"#;
+        let results = parse_parallels_json(raw);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].error.as_deref(), Some("predicate parse failed"));
+    }
+
+    #[test]
+    fn load_parallels_results_returns_empty_when_file_missing() {
+        // A nonsense date guarantees the file does not exist; loader must
+        // degrade rather than panic or surface an error.
+        let out = load_parallels_results("9999-99-99");
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn load_morning_brief_summary_from_narrative_value() {
+        let v = serde_json::json!({
+            "headline": "Risk-on with caveats",
+            "subtitle": "Sticky services inflation still hot"
+        });
+        let summary = load_morning_brief_summary(&v).expect("populated brief");
+        assert_eq!(summary.headline.as_deref(), Some("Risk-on with caveats"));
+        assert!(summary.central_tension.is_some());
+    }
+
+    #[test]
+    fn load_morning_brief_summary_none_when_no_fields() {
+        let v = serde_json::json!({});
+        assert!(load_morning_brief_summary(&v).is_none());
+    }
+
+    #[test]
+    fn data_availability_includes_new_slots() {
+        let ctx = BuildContext::default();
+        let rows = data_availability(&ctx);
+        let names: Vec<&str> = rows.iter().map(|r| r.field).collect();
+        assert!(names.contains(&"parallels_results"));
+        assert!(names.contains(&"cross_layer_signals"));
+        assert!(names.contains(&"private_asset_intelligence"));
+        assert!(names.contains(&"morning_brief"));
+    }
+
+    #[test]
+    fn private_section_plan_contains_new_sections() {
+        let plan = private_section_plan();
+        let names: Vec<&str> = plan.iter().map(|s| s.name).collect();
+        assert!(names.contains(&"private_cross_layer_signals"));
+        assert!(names.contains(&"private_parallels"));
+        // private_decisions_pending must remain last.
+        assert_eq!(*names.last().unwrap(), "private_decisions_pending");
     }
 
     #[test]

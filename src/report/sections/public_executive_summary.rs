@@ -7,6 +7,10 @@ use crate::report::build::daily::BuildContext;
 pub fn render_public_executive_summary(ctx: &BuildContext) -> Result<String> {
     let mut paragraphs = Vec::new();
 
+    if let Some(lead) = render_morning_brief_lead(ctx) {
+        paragraphs.push(lead);
+    }
+
     paragraphs.push(render_regime_paragraph(ctx));
     paragraphs.push(render_analyst_paragraph(ctx));
     paragraphs.push(render_scenario_paragraph(ctx));
@@ -19,6 +23,26 @@ pub fn render_public_executive_summary(ctx: &BuildContext) -> Result<String> {
         "## Executive Summary\n\n{}",
         paragraphs.join("\n\n")
     ))
+}
+
+fn render_morning_brief_lead(ctx: &BuildContext) -> Option<String> {
+    let brief = ctx.morning_brief.as_ref()?;
+    let headline = brief
+        .headline
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    let tension = brief
+        .central_tension
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    match (headline, tension) {
+        (Some(h), Some(t)) => Some(format!("**Lead:** {}. **Central tension:** {}.", h.trim_end_matches(['.', '!', '?']), t.trim_end_matches(['.', '!', '?']))),
+        (Some(h), None) => Some(format!("**Lead:** {}.", h.trim_end_matches(['.', '!', '?']))),
+        (None, Some(t)) => Some(format!("**Central tension:** {}.", t.trim_end_matches(['.', '!', '?']))),
+        (None, None) => None,
+    }
 }
 
 fn render_regime_paragraph(ctx: &BuildContext) -> String {
@@ -155,8 +179,8 @@ fn sentence_fragment(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::report::build::daily::{
-        AnalystConvergenceSummary, CatalystSummary, RegimeSummary, ScenarioDeltaSummary,
-        SynthesisSnapshot,
+        AnalystConvergenceSummary, CatalystSummary, MorningBriefSummary, RegimeSummary,
+        ScenarioDeltaSummary, SynthesisSnapshot,
     };
 
     #[test]
@@ -223,6 +247,34 @@ mod tests {
             .split("\n\n")
             .filter(|part| !part.starts_with("## ") && !part.trim().is_empty())
             .count()
+    }
+
+    #[test]
+    fn public_executive_summary_prepends_morning_brief_lead() {
+        let ctx = BuildContext {
+            morning_brief: Some(MorningBriefSummary {
+                headline: Some("Risk assets digest hot CPI without breaking trend".to_string()),
+                central_tension: Some(
+                    "whether sticky services inflation forces a hawkish hold".to_string(),
+                ),
+            }),
+            ..BuildContext::default()
+        };
+        let rendered = render_public_executive_summary(&ctx).unwrap();
+        assert!(rendered.starts_with("## Executive Summary\n\n"));
+        // Lead should appear BEFORE the "does not yet have enough cached
+        // synthesis data" sparse-context paragraph.
+        let lead_idx = rendered.find("**Lead:**").expect("lead present");
+        let regime_idx = rendered.find("does not yet have").expect("regime fallback");
+        assert!(lead_idx < regime_idx);
+        assert!(rendered.contains("Central tension:"));
+    }
+
+    #[test]
+    fn public_executive_summary_skips_lead_when_morning_brief_absent() {
+        let rendered = render_public_executive_summary(&BuildContext::default()).unwrap();
+        assert!(!rendered.contains("**Lead:**"));
+        assert!(!rendered.contains("**Central tension:**"));
     }
 
     fn assert_public_safe(markdown: &str) {
