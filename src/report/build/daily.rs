@@ -1433,6 +1433,71 @@ impl BuildContext {
             })
             .flatten();
 
+        // ---- Per-asset convergence + drift + derived actions -------------
+        // These three slots together drive the per-asset cards. A bug where
+        // any one of them was left empty caused every card to render with an
+        // "INSUFFICIENT VIEWS" badge even when the analyst layers had
+        // written 6+ views per asset. The loaders below are intentionally
+        // best-effort: a missing source must degrade to empty, never abort.
+
+        let since_ts = crate::db::analyst_views::parse_since("7d").ok();
+        let targets_by_symbol: std::collections::HashMap<String, f64> = backend
+            .sqlite_native()
+            .and_then(|conn| crate::db::allocation_targets::list_targets(conn).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|t| (t.symbol.to_uppercase(), dec_to_f64(t.target_pct)))
+            .collect();
+        ctx.private_asset_convergence =
+            crate::db::analyst_views::convergence_all_backend(backend, since_ts.as_deref())
+                .map(|reports| {
+                    reports
+                        .into_iter()
+                        .filter(|r| !r.views.is_empty())
+                        .map(|r| PrivateAssetConvergenceRow {
+                            target_pct: targets_by_symbol.get(&r.asset.to_uppercase()).copied(),
+                            symbol: r.asset,
+                            views: r
+                                .views
+                                .into_iter()
+                                .map(|v| PrivateAssetConvergenceView {
+                                    analyst: v.analyst,
+                                    conviction: v.conviction,
+                                    reasoning_summary: v.reasoning_summary,
+                                })
+                                .collect(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+        let target_records: std::collections::HashMap<
+            String,
+            crate::db::allocation_targets::AllocationTarget,
+        > = backend
+            .sqlite_native()
+            .and_then(|conn| crate::db::allocation_targets::list_targets(conn).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|t| (t.symbol.to_uppercase(), t))
+            .collect();
+        ctx.private_drift_rows = ctx
+            .private_positions
+            .iter()
+            .filter_map(|p| {
+                let target = target_records.get(&p.symbol.to_uppercase())?;
+                Some(PrivateDriftRow {
+                    symbol: p.symbol.clone(),
+                    target_pct: dec_to_f64(target.target_pct),
+                    actual_pct: p.allocation_pct,
+                    band_pct: dec_to_f64(target.drift_band_pct),
+                })
+            })
+            .collect();
+
+        ctx.private_derived_actions =
+            derive_actions(&ctx.private_asset_convergence, &ctx.private_drift_rows);
+
         Ok(ctx)
     }
 
@@ -1444,6 +1509,107 @@ impl BuildContext {
             ..BuildContext::default()
         }
     }
+}
+
+/// Derive ADD/TRIM/HOLD action summaries from per-asset convergence and
+/// drift rows. Pure function — no DB access, no I/O — so the rules can be
+/// unit-tested with synthetic fixtures.
+///
+/// Rules (in priority order):
+///   * insufficient-views → no action emitted
+///   * convergent-bull / strong-convergent-bull AND actual < target − band
+///     → ADD (urgency=high if strong, else normal)
+///   * convergent-bear / strong-convergent-bear AND actual > target + band
+///     → TRIM (urgency=high if strong, else normal)
+///   * convergent-neutral within band → HOLD (urgency=low)
+///   * everything else → no action
+pub fn derive_actions(
+    convergence: &[PrivateAssetConvergenceRow],
+    drift_rows: &[PrivateDriftRow],
+) -> Vec<DerivedActionSummary> {
+    let mut out: Vec<DerivedActionSummary> = Vec::new();
+    for row in convergence {
+        if row.views.is_empty() {
+            continue;
+        }
+        let n_views = row.views.len();
+        let convictions: Vec<i64> = row.views.iter().map(|v| v.conviction).collect();
+        let avg = convictions.iter().copied().map(|c| c as f64).sum::<f64>() / n_views as f64;
+        let (min_c, max_c) = match (convictions.iter().min(), convictions.iter().max()) {
+            (Some(min), Some(max)) => (*min, *max),
+            _ => continue,
+        };
+        let max_divergence = max_c - min_c;
+        let classification =
+            crate::db::analyst_views::classify_convergence(n_views, avg, max_divergence);
+        if classification == "insufficient-views" {
+            continue;
+        }
+        let drift = drift_rows
+            .iter()
+            .find(|d| d.symbol.eq_ignore_ascii_case(&row.symbol));
+        match classification {
+            "convergent-bull" | "strong-convergent-bull" => {
+                if let Some(d) = drift {
+                    if d.actual_pct < d.target_pct - d.band_pct {
+                        let urgency = if classification == "strong-convergent-bull" {
+                            "high"
+                        } else {
+                            "normal"
+                        };
+                        out.push(DerivedActionSummary {
+                            asset: row.symbol.clone(),
+                            action: "ADD".to_string(),
+                            urgency: urgency.to_string(),
+                            rationale: format!(
+                                "{classification}; allocation {:.1}% vs target {:.1}% (band ±{:.1}%)",
+                                d.actual_pct, d.target_pct, d.band_pct
+                            ),
+                        });
+                    }
+                }
+            }
+            "convergent-bear" | "strong-convergent-bear" => {
+                if let Some(d) = drift {
+                    if d.actual_pct > d.target_pct + d.band_pct {
+                        let urgency = if classification == "strong-convergent-bear" {
+                            "high"
+                        } else {
+                            "normal"
+                        };
+                        out.push(DerivedActionSummary {
+                            asset: row.symbol.clone(),
+                            action: "TRIM".to_string(),
+                            urgency: urgency.to_string(),
+                            rationale: format!(
+                                "{classification}; allocation {:.1}% vs target {:.1}% (band ±{:.1}%)",
+                                d.actual_pct, d.target_pct, d.band_pct
+                            ),
+                        });
+                    }
+                }
+            }
+            "convergent-neutral" => {
+                if let Some(d) = drift {
+                    let lo = d.target_pct - d.band_pct;
+                    let hi = d.target_pct + d.band_pct;
+                    if d.actual_pct >= lo && d.actual_pct <= hi {
+                        out.push(DerivedActionSummary {
+                            asset: row.symbol.clone(),
+                            action: "HOLD".to_string(),
+                            urgency: "low".to_string(),
+                            rationale: format!(
+                                "convergent-neutral; allocation {:.1}% within band {:.1}–{:.1}%",
+                                d.actual_pct, lo, hi
+                            ),
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Load the latest-per-asset synthesis-time adversary view from
@@ -3413,6 +3579,255 @@ mod assembler_tests {
             let _ = write!(&mut s, "{:02x}", byte);
         }
         s
+    }
+
+    // ------------------------------------------------------------------
+    // Loader / derive_actions unit tests — pure-Rust fixtures, no DB.
+    // ------------------------------------------------------------------
+
+    fn fixture_convergence_row(
+        symbol: &str,
+        target_pct: Option<f64>,
+        convictions: &[(&str, i64)],
+    ) -> PrivateAssetConvergenceRow {
+        PrivateAssetConvergenceRow {
+            symbol: symbol.to_string(),
+            target_pct,
+            views: convictions
+                .iter()
+                .map(|(analyst, conviction)| PrivateAssetConvergenceView {
+                    analyst: (*analyst).to_string(),
+                    conviction: *conviction,
+                    reasoning_summary: format!("{analyst} reasoning"),
+                })
+                .collect(),
+        }
+    }
+
+    fn fixture_drift(symbol: &str, target_pct: f64, actual_pct: f64, band_pct: f64) -> PrivateDriftRow {
+        PrivateDriftRow {
+            symbol: symbol.to_string(),
+            target_pct,
+            actual_pct,
+            band_pct,
+        }
+    }
+
+    #[test]
+    fn derive_actions_emits_add_when_convergent_bull_and_underweight() {
+        let convergence = vec![fixture_convergence_row(
+            "BTC",
+            Some(20.0),
+            &[("low", 2), ("medium", 2), ("high", 2), ("macro", 1)],
+        )];
+        let drift = vec![fixture_drift("BTC", 20.0, 15.0, 2.0)];
+        let actions = derive_actions(&convergence, &drift);
+        assert_eq!(actions.len(), 1, "expected ADD action");
+        assert_eq!(actions[0].asset, "BTC");
+        assert_eq!(actions[0].action, "ADD");
+        assert_eq!(actions[0].urgency, "normal");
+    }
+
+    #[test]
+    fn derive_actions_emits_high_urgency_for_strong_convergent_bull() {
+        let convergence = vec![fixture_convergence_row(
+            "BTC",
+            Some(20.0),
+            &[("low", 4), ("medium", 4), ("high", 5), ("macro", 5)],
+        )];
+        let drift = vec![fixture_drift("BTC", 20.0, 10.0, 2.0)];
+        let actions = derive_actions(&convergence, &drift);
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].action, "ADD");
+        assert_eq!(actions[0].urgency, "high");
+    }
+
+    #[test]
+    fn derive_actions_emits_trim_when_convergent_bear_and_overweight() {
+        let convergence = vec![fixture_convergence_row(
+            "QQQ",
+            Some(10.0),
+            &[("low", -2), ("medium", -2), ("high", -1), ("macro", -2)],
+        )];
+        let drift = vec![fixture_drift("QQQ", 10.0, 18.0, 2.0)];
+        let actions = derive_actions(&convergence, &drift);
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].action, "TRIM");
+        assert_eq!(actions[0].urgency, "normal");
+    }
+
+    #[test]
+    fn derive_actions_emits_high_urgency_for_strong_convergent_bear() {
+        let convergence = vec![fixture_convergence_row(
+            "QQQ",
+            Some(10.0),
+            &[("low", -4), ("medium", -5), ("high", -4), ("macro", -3)],
+        )];
+        let drift = vec![fixture_drift("QQQ", 10.0, 20.0, 2.0)];
+        let actions = derive_actions(&convergence, &drift);
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].action, "TRIM");
+        assert_eq!(actions[0].urgency, "high");
+    }
+
+    #[test]
+    fn derive_actions_emits_hold_when_convergent_neutral_within_band() {
+        let convergence = vec![fixture_convergence_row(
+            "GLD",
+            Some(10.0),
+            &[("low", 0), ("medium", 0), ("high", 1), ("macro", -1)],
+        )];
+        let drift = vec![fixture_drift("GLD", 10.0, 10.5, 2.0)];
+        let actions = derive_actions(&convergence, &drift);
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].action, "HOLD");
+        assert_eq!(actions[0].urgency, "low");
+    }
+
+    #[test]
+    fn derive_actions_skips_insufficient_views() {
+        let convergence = vec![fixture_convergence_row("BTC", Some(20.0), &[("low", 3)])];
+        let drift = vec![fixture_drift("BTC", 20.0, 10.0, 2.0)];
+        let actions = derive_actions(&convergence, &drift);
+        assert!(
+            actions.is_empty(),
+            "single-view rows must produce no action (insufficient-views)"
+        );
+    }
+
+    #[test]
+    fn derive_actions_skips_when_no_drift_row_present() {
+        // No matching drift entry for the convergence asset → no action emitted.
+        let convergence = vec![fixture_convergence_row(
+            "BTC",
+            Some(20.0),
+            &[("low", 2), ("medium", 2), ("high", 2)],
+        )];
+        let drift = vec![fixture_drift("QQQ", 10.0, 9.0, 1.0)];
+        let actions = derive_actions(&convergence, &drift);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn derive_actions_does_not_emit_add_when_already_in_band() {
+        let convergence = vec![fixture_convergence_row(
+            "BTC",
+            Some(20.0),
+            &[("low", 2), ("medium", 2), ("high", 2), ("macro", 1)],
+        )];
+        // actual within target band — bullish convergence but no rebalance need.
+        let drift = vec![fixture_drift("BTC", 20.0, 19.5, 2.0)];
+        let actions = derive_actions(&convergence, &drift);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn derive_actions_drift_match_is_case_insensitive() {
+        let convergence = vec![fixture_convergence_row(
+            "btc",
+            Some(20.0),
+            &[("low", 2), ("medium", 2), ("high", 2)],
+        )];
+        let drift = vec![fixture_drift("BTC", 20.0, 12.0, 2.0)];
+        let actions = derive_actions(&convergence, &drift);
+        assert_eq!(actions.len(), 1, "case mismatch must not block matching");
+        assert_eq!(actions[0].action, "ADD");
+    }
+
+    // ------------------------------------------------------------------
+    // Loader tests against an in-memory SQLite backend. These exercise
+    // the convergence + drift loaders end-to-end using only synthetic
+    // fixtures (no live DB access, per CLAUDE.md data-security rule).
+    // ------------------------------------------------------------------
+
+    fn in_memory_backend() -> BackendConnection {
+        let conn = rusqlite::Connection::open_in_memory().expect("open in-memory sqlite");
+        crate::db::schema::run_migrations(&conn).expect("migrate in-memory db");
+        BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn load_populates_private_asset_convergence_from_analyst_views() {
+        use rust_decimal_macros::dec;
+        let backend = in_memory_backend();
+        // Synthetic per-asset views from each of the four analyst layers.
+        for (analyst, conviction) in [("low", 2), ("medium", 2), ("high", 3), ("macro", 2)] {
+            crate::db::analyst_views::upsert_view_backend(
+                &backend,
+                analyst,
+                "BTC",
+                "bull",
+                conviction,
+                "Synthetic fixture reasoning.",
+                None,
+                None,
+                None,
+            )
+            .expect("upsert synthetic view");
+        }
+        crate::db::allocation_targets::set_target_backend(&backend, "BTC", dec!(20), dec!(2))
+            .expect("set synthetic target");
+
+        let ctx = BuildContext::load(&backend, "2026-06-05").expect("load context");
+        assert_eq!(ctx.private_asset_convergence.len(), 1);
+        let row = &ctx.private_asset_convergence[0];
+        assert_eq!(row.symbol, "BTC");
+        assert_eq!(row.views.len(), 4, "expected all four layers");
+        assert_eq!(row.target_pct, Some(20.0));
+    }
+
+    #[test]
+    fn load_emits_no_drift_rows_when_allocation_targets_empty() {
+        let backend = in_memory_backend();
+        // Seed views so positions are knowable, but no allocation_targets rows.
+        crate::db::analyst_views::upsert_view_backend(
+            &backend, "low", "BTC", "bull", 2, "fixture", None, None, None,
+        )
+        .expect("upsert");
+
+        let ctx = BuildContext::load(&backend, "2026-06-05").expect("load");
+        assert!(
+            ctx.private_drift_rows.is_empty(),
+            "empty allocation_targets table → no drift rows"
+        );
+    }
+
+    #[test]
+    fn load_derives_actions_from_loaded_convergence_and_drift() {
+        use rust_decimal_macros::dec;
+        let backend = in_memory_backend();
+
+        // Synthetic four-layer bull convergence on BTC.
+        for (analyst, conviction) in [("low", 2), ("medium", 2), ("high", 3), ("macro", 2)] {
+            crate::db::analyst_views::upsert_view_backend(
+                &backend, analyst, "BTC", "bull", conviction, "fixture", None, None, None,
+            )
+            .expect("upsert");
+        }
+        crate::db::allocation_targets::set_target_backend(&backend, "BTC", dec!(20), dec!(2))
+            .expect("set target");
+
+        // Bypass the transactions-based positions loader by stamping a
+        // synthetic underweight position and re-running the derive step.
+        // The DB-driven loader paths still run via `BuildContext::load`.
+        let mut ctx = BuildContext::load(&backend, "2026-06-05").expect("load");
+        ctx.private_positions = vec![PrivatePositionSnapshotRow {
+            symbol: "BTC".to_string(),
+            price: Some("100000".to_string()),
+            daily_change: None,
+            allocation_pct: 12.0,
+            unrealized_pnl: None,
+        }];
+        ctx.private_drift_rows = vec![PrivateDriftRow {
+            symbol: "BTC".to_string(),
+            target_pct: 20.0,
+            actual_pct: 12.0,
+            band_pct: 2.0,
+        }];
+        ctx.private_derived_actions =
+            derive_actions(&ctx.private_asset_convergence, &ctx.private_drift_rows);
+        assert_eq!(ctx.private_derived_actions.len(), 1);
+        assert_eq!(ctx.private_derived_actions[0].action, "ADD");
     }
 }
 
