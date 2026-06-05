@@ -2,12 +2,21 @@
 
 use anyhow::Result;
 
-use crate::report::build::daily::BuildContext;
+use crate::report::build::daily::{BuildContext, TodaysAnalystSynthesis};
 
 pub fn render_public_executive_summary(ctx: &BuildContext) -> Result<String> {
     let mut paragraphs = Vec::new();
 
-    paragraphs.push(render_regime_paragraph(ctx));
+    // Lead with the analyst-written synthesis when today's analysts have
+    // produced substantive content; fall back to the legacy regime
+    // paragraph so the section is never empty.
+    let lead = ctx
+        .todays_analyst_synthesis
+        .as_ref()
+        .and_then(|s| render_synthesis_paragraph(ctx, s))
+        .unwrap_or_else(|| render_regime_paragraph(ctx));
+    paragraphs.push(lead);
+
     paragraphs.push(render_analyst_paragraph(ctx));
     paragraphs.push(render_scenario_paragraph(ctx));
 
@@ -19,6 +28,54 @@ pub fn render_public_executive_summary(ctx: &BuildContext) -> Result<String> {
         "## Executive Summary\n\n{}",
         paragraphs.join("\n\n")
     ))
+}
+
+fn render_synthesis_paragraph(
+    ctx: &BuildContext,
+    synthesis: &TodaysAnalystSynthesis,
+) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(mv) = &synthesis.leading_move {
+        let cum = mv
+            .cumulative_pct
+            .map(|c| format!(" (cum {c:+.1}% from baseline)"))
+            .unwrap_or_default();
+        parts.push(format!("Today's leading move is {} {:+.1}%{}.", mv.asset, mv.move_pct, cum));
+    }
+    if let Some(action) = synthesis.action_summary.as_deref() {
+        parts.push(sentence(action));
+    }
+    // Surface a regime read so the lead still carries the classifier
+    // context the operator-facing version had, but framed as the analysts'
+    // narrative rather than synthetic boilerplate.
+    if let Some(regime) = &ctx.regime {
+        parts.push(format!(
+            "Regime read: {}.",
+            readable(&regime.classification)
+        ));
+    }
+    // Include up to two analyst-layer headlines to give the lead actual
+    // multi-timeframe weight.
+    let mut headline_count = 0;
+    for (label, headline) in [
+        ("LOW analyst", synthesis.headline_low.as_deref()),
+        ("MEDIUM analyst", synthesis.headline_medium.as_deref()),
+        ("HIGH analyst", synthesis.headline_high.as_deref()),
+        ("MACRO analyst", synthesis.headline_macro.as_deref()),
+    ] {
+        if headline_count >= 2 {
+            break;
+        }
+        if let Some(text) = headline.filter(|t| !t.trim().is_empty()) {
+            parts.push(format!("{label} reads: {}", sentence_fragment(text)));
+            headline_count += 1;
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
 }
 
 fn render_regime_paragraph(ctx: &BuildContext) -> String {
@@ -155,8 +212,8 @@ fn sentence_fragment(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::report::build::daily::{
-        AnalystConvergenceSummary, CatalystSummary, RegimeSummary, ScenarioDeltaSummary,
-        SynthesisSnapshot,
+        AnalystConvergenceSummary, CatalystSummary, MaterialMove, RegimeSummary,
+        ScenarioDeltaSummary, SynthesisSnapshot, TodaysAnalystSynthesis,
     };
 
     #[test]
@@ -204,6 +261,58 @@ mod tests {
         assert!(rendered.contains("Gold: constructive across HIGH and MACRO"));
         assert!(rendered.contains("Inflation Spike at 45% probability"));
         assert_eq!(paragraph_count(&rendered), 4);
+        assert_public_safe(&rendered);
+    }
+
+    #[test]
+    fn public_executive_summary_leads_with_analyst_synthesis_when_present() {
+        let mut ctx = BuildContext {
+            regime: Some(RegimeSummary {
+                classification: "risk_off".to_string(),
+                detail: Some("Cross-asset breadth is narrow".to_string()),
+            }),
+            todays_analyst_synthesis: Some(TodaysAnalystSynthesis {
+                headline_low: Some(
+                    "BTC -7% to $62,447 cum -14% from May 28; ETF -$671M, COT 92.3 pctile flush"
+                        .to_string(),
+                ),
+                headline_medium: Some(
+                    "Weekly: credit spreads widen as positioning unwinds".to_string(),
+                ),
+                headline_high: None,
+                headline_macro: None,
+                leading_move: Some(MaterialMove {
+                    asset: "BTC".to_string(),
+                    move_pct: -7.0,
+                    cumulative_pct: Some(-14.0),
+                    note: "ETF -$671M".to_string(),
+                }),
+                action_summary: Some(
+                    "Position for further BTC weakness into quarter-end".to_string(),
+                ),
+            }),
+            ..BuildContext::default()
+        };
+        ctx.scenario_deltas = vec![];
+
+        let rendered = render_public_executive_summary(&ctx).unwrap();
+        assert!(
+            rendered.contains("Today's leading move is BTC -7.0%"),
+            "leading move missing from exec summary: {rendered}"
+        );
+        assert!(
+            rendered.contains("Position for further BTC weakness"),
+            "action summary missing from exec summary: {rendered}"
+        );
+        assert!(
+            rendered.contains("LOW analyst reads: BTC -7% to $62,447"),
+            "LOW analyst headline missing: {rendered}"
+        );
+        // Must NOT lead with the legacy boilerplate when synthesis is present.
+        assert!(
+            !rendered.contains("pftui classifies the current regime as risk off"),
+            "legacy boilerplate must be replaced when synthesis present: {rendered}"
+        );
         assert_public_safe(&rendered);
     }
 
