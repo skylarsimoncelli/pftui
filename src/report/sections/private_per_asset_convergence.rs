@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::db::analyst_views::classify_convergence;
 use crate::report::build::daily::{
-    BuildContext, PrivateAssetConvergenceRow, PrivateAssetConvergenceView,
+    AssetIntelligenceBlob, BuildContext, PrivateAssetConvergenceRow, PrivateAssetConvergenceView,
     PrivatePositionSnapshotRow,
 };
 use crate::report::charts::analyst_convergence_card::{
@@ -25,10 +25,94 @@ pub fn render_private_per_asset_convergence(ctx: &BuildContext) -> Result<String
     for position in held {
         let convergence = find_convergence(&ctx.private_asset_convergence, &position.symbol);
         output.push_str(&render_asset_card(position, convergence));
+        if let Some(blob) = lookup_intelligence(ctx, &position.symbol) {
+            output.push_str("\n\n");
+            output.push_str(&render_deeper_analysis(blob));
+        }
         output.push_str("\n\n");
     }
 
     Ok(output.trim_end().to_string())
+}
+
+fn lookup_intelligence<'a>(
+    ctx: &'a BuildContext,
+    symbol: &str,
+) -> Option<&'a AssetIntelligenceBlob> {
+    let upper = symbol.to_uppercase();
+    ctx.private_asset_intelligence
+        .get(&upper)
+        .or_else(|| ctx.private_asset_intelligence.get(symbol))
+}
+
+fn render_deeper_analysis(blob: &AssetIntelligenceBlob) -> String {
+    let mut bullets: Vec<String> = Vec::new();
+
+    if blob.spot_price.is_some() || blob.daily_change_pct.is_some() {
+        let mut parts = Vec::new();
+        if let Some(p) = blob.spot_price.as_deref() {
+            parts.push(format!("Spot {p}"));
+        }
+        if let Some(d) = blob.daily_change_pct {
+            parts.push(format!("daily {d:+.2}%"));
+        }
+        if !parts.is_empty() {
+            bullets.push(format!("Price action: {}", parts.join(" · ")));
+        }
+    }
+
+    let mut levels = Vec::new();
+    if let Some(s) = blob.nearest_support.as_deref() {
+        levels.push(format!("support {s}"));
+    }
+    if let Some(r) = blob.nearest_resistance.as_deref() {
+        levels.push(format!("resistance {r}"));
+    }
+    if !levels.is_empty() {
+        bullets.push(format!("Key levels: {}", levels.join(" · ")));
+    }
+
+    if let Some(rsi) = blob.rsi_14 {
+        let label = blob.rsi_signal.as_deref().unwrap_or("neutral");
+        bullets.push(format!("RSI(14) {rsi:.1} ({label})"));
+    }
+
+    if let Some(t) = blob.trend.as_deref() {
+        bullets.push(format!("Trend: {t}"));
+    }
+
+    if let Some(pos) = blob.range_52w_position {
+        bullets.push(format!("52w range position: {:.1}%", pos * 100.0));
+    }
+
+    if blob.scenario_count > 0 || blob.open_predictions_count > 0 {
+        bullets.push(format!(
+            "Scenario alignment: {} active scenario(s) · {} open prediction(s)",
+            blob.scenario_count, blob.open_predictions_count,
+        ));
+    }
+
+    if let Some(ctx) = blob.structural_context.as_deref() {
+        bullets.push(format!("Structural context: {ctx}"));
+    }
+
+    if bullets.is_empty() {
+        return format!(
+            "**Deeper Analysis — {}**\n\nNo synthesised intelligence is cached for this symbol yet.",
+            clean_text(&blob.symbol)
+        );
+    }
+
+    // Cap at five bullets per the spec.
+    bullets.truncate(5);
+
+    let mut out = format!("**Deeper Analysis — {}**\n\n", clean_text(&blob.symbol));
+    for b in bullets {
+        out.push_str("- ");
+        out.push_str(&b);
+        out.push('\n');
+    }
+    out.trim_end().to_string()
 }
 
 fn qualifying_positions(rows: &[PrivatePositionSnapshotRow]) -> Vec<&PrivatePositionSnapshotRow> {
@@ -309,5 +393,73 @@ mod tests {
             conviction,
             reasoning_summary: reasoning_summary.to_string(),
         }
+    }
+
+    #[test]
+    fn appends_deeper_analysis_block_when_intelligence_present() {
+        let mut ctx = fixture_context();
+        let mut blob = AssetIntelligenceBlob {
+            symbol: "BTC".to_string(),
+            spot_price: Some("$67,100.00".to_string()),
+            daily_change_pct: Some(1.25),
+            rsi_14: Some(52.3),
+            rsi_signal: Some("neutral".to_string()),
+            trend: Some("above 50/200 SMA (uptrend)".to_string()),
+            nearest_support: Some("$65,000.00".to_string()),
+            nearest_resistance: Some("$70,000.00".to_string()),
+            range_52w_position: Some(0.78),
+            scenario_count: 3,
+            open_predictions_count: 4,
+            structural_context: Some("Above both 50/200 SMA — structural uptrend".to_string()),
+        };
+        blob.symbol = "BTC".to_string();
+        ctx.private_asset_intelligence
+            .insert("BTC".to_string(), blob);
+
+        let rendered = render_private_per_asset_convergence(&ctx).unwrap();
+
+        assert!(rendered.contains("**Deeper Analysis — BTC**"));
+        assert!(rendered.contains("Price action: Spot $67,100.00"));
+        assert!(rendered.contains("daily +1.25%"));
+        assert!(rendered.contains("Key levels: support $65,000.00"));
+        assert!(rendered.contains("RSI(14) 52.3"));
+        // Bullets cap at 5 per spec — the leading bullets win. Confirm the
+        // first five are present.
+        assert!(rendered.contains("Trend: above 50/200 SMA (uptrend)"));
+        assert!(rendered.contains("52w range position: 78.0%"));
+    }
+
+    #[test]
+    fn deeper_analysis_skipped_when_no_intelligence_for_symbol() {
+        let rendered = render_private_per_asset_convergence(&fixture_context()).unwrap();
+        // No intelligence cached → no Deeper Analysis sub-section emitted.
+        assert!(!rendered.contains("**Deeper Analysis"));
+    }
+
+    #[test]
+    fn deeper_analysis_caps_at_five_bullets() {
+        let mut ctx = fixture_context();
+        let blob = AssetIntelligenceBlob {
+            symbol: "BTC".to_string(),
+            spot_price: Some("$67k".to_string()),
+            daily_change_pct: Some(2.0),
+            rsi_14: Some(60.0),
+            rsi_signal: Some("neutral".to_string()),
+            trend: Some("above 50/200 SMA".to_string()),
+            nearest_support: Some("$60k".to_string()),
+            nearest_resistance: Some("$70k".to_string()),
+            range_52w_position: Some(0.5),
+            scenario_count: 2,
+            open_predictions_count: 1,
+            structural_context: Some("structural uptrend".to_string()),
+        };
+        ctx.private_asset_intelligence
+            .insert("BTC".to_string(), blob);
+        let rendered = render_private_per_asset_convergence(&ctx).unwrap();
+        // Find the Deeper Analysis section and count its bullet lines.
+        let start = rendered.find("**Deeper Analysis — BTC**").unwrap();
+        let block = &rendered[start..];
+        let bullet_count = block.lines().filter(|l| l.starts_with("- ")).count();
+        assert!(bullet_count <= 5, "expected ≤5 bullets, got {bullet_count}");
     }
 }

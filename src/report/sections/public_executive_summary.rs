@@ -7,15 +7,21 @@ use crate::report::build::daily::{BuildContext, TodaysAnalystSynthesis};
 pub fn render_public_executive_summary(ctx: &BuildContext) -> Result<String> {
     let mut paragraphs = Vec::new();
 
-    // Lead with the analyst-written synthesis when today's analysts have
-    // produced substantive content; fall back to the legacy regime
-    // paragraph so the section is never empty.
+    // Morning-brief lead first when available — it's the highest-density
+    // summary the operator can read in one paragraph.
+    if let Some(lead) = render_morning_brief_lead(ctx) {
+        paragraphs.push(lead);
+    }
+
+    // Then today's analyst-written synthesis when substantive; fall back to
+    // the legacy regime paragraph so the section is never empty.
     let lead = ctx
         .todays_analyst_synthesis
         .as_ref()
         .and_then(|s| render_synthesis_paragraph(ctx, s))
         .unwrap_or_else(|| render_regime_paragraph(ctx));
     paragraphs.push(lead);
+
 
     paragraphs.push(render_analyst_paragraph(ctx));
     paragraphs.push(render_scenario_paragraph(ctx));
@@ -28,6 +34,26 @@ pub fn render_public_executive_summary(ctx: &BuildContext) -> Result<String> {
         "## Executive Summary\n\n{}",
         paragraphs.join("\n\n")
     ))
+}
+
+fn render_morning_brief_lead(ctx: &BuildContext) -> Option<String> {
+    let brief = ctx.morning_brief.as_ref()?;
+    let headline = brief
+        .headline
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    let tension = brief
+        .central_tension
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    match (headline, tension) {
+        (Some(h), Some(t)) => Some(format!("**Lead:** {}. **Central tension:** {}.", h.trim_end_matches(['.', '!', '?']), t.trim_end_matches(['.', '!', '?']))),
+        (Some(h), None) => Some(format!("**Lead:** {}.", h.trim_end_matches(['.', '!', '?']))),
+        (None, Some(t)) => Some(format!("**Central tension:** {}.", t.trim_end_matches(['.', '!', '?']))),
+        (None, None) => None,
+    }
 }
 
 fn render_synthesis_paragraph(
@@ -45,17 +71,12 @@ fn render_synthesis_paragraph(
     if let Some(action) = synthesis.action_summary.as_deref() {
         parts.push(sentence(action));
     }
-    // Surface a regime read so the lead still carries the classifier
-    // context the operator-facing version had, but framed as the analysts'
-    // narrative rather than synthetic boilerplate.
     if let Some(regime) = &ctx.regime {
         parts.push(format!(
             "Regime read: {}.",
             readable(&regime.classification)
         ));
     }
-    // Include up to two analyst-layer headlines to give the lead actual
-    // multi-timeframe weight.
     let mut headline_count = 0;
     for (label, headline) in [
         ("LOW analyst", synthesis.headline_low.as_deref()),
@@ -212,8 +233,8 @@ fn sentence_fragment(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::report::build::daily::{
-        AnalystConvergenceSummary, CatalystSummary, MaterialMove, RegimeSummary,
-        ScenarioDeltaSummary, SynthesisSnapshot, TodaysAnalystSynthesis,
+        AnalystConvergenceSummary, CatalystSummary, MaterialMove, MorningBriefSummary,
+        RegimeSummary, ScenarioDeltaSummary, SynthesisSnapshot, TodaysAnalystSynthesis,
     };
 
     #[test]
@@ -332,6 +353,34 @@ mod tests {
             .split("\n\n")
             .filter(|part| !part.starts_with("## ") && !part.trim().is_empty())
             .count()
+    }
+
+    #[test]
+    fn public_executive_summary_prepends_morning_brief_lead() {
+        let ctx = BuildContext {
+            morning_brief: Some(MorningBriefSummary {
+                headline: Some("Risk assets digest hot CPI without breaking trend".to_string()),
+                central_tension: Some(
+                    "whether sticky services inflation forces a hawkish hold".to_string(),
+                ),
+            }),
+            ..BuildContext::default()
+        };
+        let rendered = render_public_executive_summary(&ctx).unwrap();
+        assert!(rendered.starts_with("## Executive Summary\n\n"));
+        // Lead should appear BEFORE the "does not yet have enough cached
+        // synthesis data" sparse-context paragraph.
+        let lead_idx = rendered.find("**Lead:**").expect("lead present");
+        let regime_idx = rendered.find("does not yet have").expect("regime fallback");
+        assert!(lead_idx < regime_idx);
+        assert!(rendered.contains("Central tension:"));
+    }
+
+    #[test]
+    fn public_executive_summary_skips_lead_when_morning_brief_absent() {
+        let rendered = render_public_executive_summary(&BuildContext::default()).unwrap();
+        assert!(!rendered.contains("**Lead:**"));
+        assert!(!rendered.contains("**Central tension:**"));
     }
 
     fn assert_public_safe(markdown: &str) {
