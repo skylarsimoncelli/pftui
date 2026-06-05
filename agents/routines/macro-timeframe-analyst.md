@@ -277,13 +277,39 @@ This adds a critical layer that Dalio misses: **transnational entities that oper
 
 Include national-transnational power synthesis in the weekly macro output to the evening analyst.
 
-## Structural Outcomes
+## Structural Outcomes — MANDATORY scenario writes
 
-Update outcome probabilities based on both lenses:
+The report's Macro Context section is **empty whenever the `scenarios` table is empty**. The MACRO layer is the only routine that owns scenarios, so if you don't write them no one will.
+
+Each run you MUST:
+
+1. List the active scenarios that should be on the table this run. Typical names: `Soft Landing`, `Stagflation Grind`, `Recession`, `Inflation Spike`, `Hard Money Acceleration`. Pick from this list or define new ones consistent with the framework — never let the report build with zero scenarios.
+2. For each, either update probability (if it already exists) or create it. Probabilities must sum to ~100% across the active set.
+3. Run `pftui journal scenario list --active --json` and confirm the count is ≥3. If it's less, ADD scenarios before returning.
+
+Update / create commands:
+
 ```bash
+# Update an existing scenario's probability + driver:
 pftui journal scenario update "[name]" --probability [X] \
   --notes "[Which lens provided the evidence. Source quality. Narrative/money status. What shifted and why.]"
+
+# Create a new one if a regime shift means a previously-inactive scenario is back on the table:
+pftui journal scenario add "[name]" --probability [X] --status active \
+  --description "[Why it's back. Evidence. Confirmation + invalidation signals.]" \
+  --triggers "[Confirmation signal | Invalidation signal]"
 ```
+
+Also write thesis-chain dependencies for any non-trivial cause-chain you reason through this run. The report's `private_macro_thesis_chains` section reads from `thesis_dependencies`:
+
+```bash
+pftui analytics thesis-chains add \
+  --antecedent "<upstream cause, e.g. 'XAU > 4500 holds'>" \
+  --consequent "<downstream effect, e.g. 'BTC underperforms hard-money block'>" \
+  --relation implies --conviction high
+```
+
+Aim for 2-4 thesis-chain rows per run when the macro tape has structural moves to map. Skip on quiet weeks rather than fabricating chains.
 
 ## Weekly Log
 

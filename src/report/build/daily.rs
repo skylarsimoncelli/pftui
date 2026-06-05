@@ -1143,13 +1143,16 @@ impl BuildContext {
         let upcoming_events =
             crate::db::calendar_cache::get_upcoming_events_backend(backend, report_date, 60)
                 .unwrap_or_default();
+        // Surface the corrected impact bucket (effective_impact takes the
+        // higher of the stored value vs. the name-based heuristic) so cache
+        // rows mis-tagged "low" by the scraper render with their real weight.
         ctx.economic_calendar = upcoming_events
             .iter()
             .take(12)
             .map(|e| EconomicCalendarEvent {
                 date: e.date.clone(),
                 event: e.name.clone(),
-                importance: Some(e.impact.clone()),
+                importance: Some(effective_impact(e)),
                 market_relevance: e.forecast.as_ref().map(|f| format!("forecast {f}")),
             })
             .collect();
@@ -2539,7 +2542,7 @@ fn calendar_to_macro_catalysts(
         .iter()
         .filter(|e| {
             e.event_type == "economic"
-                && matches!(e.impact.to_lowercase().as_str(), "high" | "medium")
+                && matches!(effective_impact(e).as_str(), "high" | "medium")
         })
         .take(limit)
         .map(|e| PrivateMacroCatalyst {
@@ -2569,7 +2572,7 @@ fn calendar_to_binary_catalysts(
     let cutoff = from + Duration::days(horizon_days);
     events
         .iter()
-        .filter(|e| e.event_type == "economic" && e.impact.eq_ignore_ascii_case("high"))
+        .filter(|e| e.event_type == "economic" && effective_impact(e) == "high")
         .filter(|e| {
             NaiveDate::parse_from_str(&e.date, "%Y-%m-%d")
                 .map(|d| d >= from && d <= cutoff)
@@ -2584,16 +2587,166 @@ fn calendar_to_binary_catalysts(
         .collect()
 }
 
+/// Re-classify a calendar event's impact at read time. Returns the higher
+/// of the stored impact and the impact inferred from the event name, so
+/// upstream feeds that mis-tag NFP / CPI / FOMC as "low" don't silently
+/// drop those events from the binary-catalyst slate. The name-based
+/// heuristic mirrors the keyword set in `data::calendar::classify_impact`
+/// but lives here as a read-time backstop — when the refresh upgrades the
+/// stored impact, this function still agrees with it.
+fn effective_impact(event: &crate::db::calendar_cache::CalendarEvent) -> String {
+    let stored = event.impact.to_lowercase();
+    let inferred = infer_impact_from_name(&event.name);
+    higher_impact(&stored, &inferred)
+}
+
+fn infer_impact_from_name(name: &str) -> String {
+    let lower = name.to_lowercase();
+    const HIGH: &[&str] = &[
+        "fomc",
+        "fed minutes",
+        "federal funds",
+        "interest rate decision",
+        "rate decision",
+        "nonfarm payroll",
+        "non farm payroll",
+        "non-farm payroll",
+        "nfp",
+        "unemployment rate",
+        "core cpi",
+        "core pce",
+        "cpi yoy",
+        "cpi mom",
+        "headline cpi",
+        "inflation rate",
+        "gdp growth",
+        "gdp annualized",
+        "advance gdp",
+        "pce price",
+        "core inflation",
+        "retail sales",
+        "advance retail sales",
+        "jobless claims",
+        "initial claims",
+        "continuing claims",
+        "ism manufacturing",
+        "ism services",
+        "ism non-manufacturing",
+        "pmi composite",
+        "manufacturing pmi",
+        "services pmi",
+        "jolts",
+        "adp employment",
+        "adp non-farm",
+        "consumer confidence",
+        "michigan sentiment",
+        "consumer sentiment",
+        "powell",
+        "fed chair",
+        "fed speaks",
+        "ppi yoy",
+        "ppi mom",
+        "core ppi",
+        "average hourly earnings",
+    ];
+    const MEDIUM: &[&str] = &[
+        "housing",
+        "durable goods",
+        "factory orders",
+        "wholesale",
+        "trade balance",
+        "business inventories",
+        "capacity utilization",
+        "participation rate",
+        "average weekly",
+        "government payroll",
+        "manufacturing payroll",
+        "construction spending",
+        "industrial production",
+        "redbook",
+        "consumer credit",
+        "philadelphia fed",
+        "empire state",
+        "import price",
+        "export price",
+        "personal income",
+        "personal spending",
+    ];
+    if HIGH.iter().any(|k| lower.contains(k)) {
+        return "high".to_string();
+    }
+    if MEDIUM.iter().any(|k| lower.contains(k)) {
+        return "medium".to_string();
+    }
+    "low".to_string()
+}
+
+/// Expand a held-asset symbol into the set of canonical aliases news feeds
+/// might use. Always includes the symbol itself in upper-case. Aliases are
+/// uppercase; matching is case-insensitive after upper-casing the news tag.
+fn symbol_aliases_for_news(symbol: &str) -> Vec<String> {
+    let upper = symbol.to_uppercase();
+    let mut out: Vec<String> = vec![upper.clone()];
+    let extras: &[&str] = match upper.as_str() {
+        // Gold — futures, ETF tickers, metal codes, common feed labels.
+        "GC=F" | "GLD" | "GOLD" | "XAU" | "XAU=X" | "XAUUSD=X" => {
+            &["GC=F", "GLD", "GOLD", "XAU", "XAU=X", "XAUUSD=X", "IAU"]
+        }
+        // Silver — same idea.
+        "SI=F" | "SLV" | "XAG" | "XAG=X" | "XAGUSD=X" => {
+            &["SI=F", "SLV", "XAG", "XAG=X", "XAGUSD=X"]
+        }
+        // Bitcoin — spot ticker, futures, ETF aliases.
+        "BTC" | "BTC-USD" | "BTCUSD=X" | "IBIT" | "FBTC" => {
+            &["BTC", "BTC-USD", "BTCUSD=X", "BITCOIN", "IBIT", "FBTC", "BITO"]
+        }
+        // Ethereum.
+        "ETH" | "ETH-USD" | "ETHUSD=X" => &["ETH", "ETH-USD", "ETHUSD=X", "ETHEREUM"],
+        // Dollar index — DXY is the feed canonical, but Yahoo uses DX-Y.NYB.
+        "DX-Y.NYB" | "DXY" | "USD" => &["DX-Y.NYB", "DXY", "USD", "USDX"],
+        // WTI crude oil.
+        "CL=F" | "USO" | "WTI" => &["CL=F", "USO", "WTI", "OIL"],
+        // 10Y treasury yield.
+        "^TNX" | "TNX" | "10Y" => &["^TNX", "TNX", "10Y", "US10Y"],
+        // S&P 500.
+        "^GSPC" | "SPY" | "SPX" => &["^GSPC", "SPY", "SPX", "ES=F"],
+        // VIX.
+        "^VIX" | "VIX" | "VIXY" => &["^VIX", "VIX", "VIXY"],
+        _ => &[],
+    };
+    for alias in extras {
+        let s = alias.to_string();
+        if !out.contains(&s) {
+            out.push(s);
+        }
+    }
+    out
+}
+
+fn higher_impact(a: &str, b: &str) -> String {
+    let rank = |s: &str| match s {
+        "high" => 3,
+        "medium" => 2,
+        "low" => 1,
+        _ => 0,
+    };
+    if rank(a) >= rank(b) {
+        a.to_string()
+    } else {
+        b.to_string()
+    }
+}
+
 /// Compose a human-readable impact sentence for a catalyst row. We blend the
 /// raw impact bucket with the forecast / previous values when present so the
 /// catalyst card has context rather than just "high".
 fn catalyst_impact_label(event: &crate::db::calendar_cache::CalendarEvent) -> String {
-    let impact_lower = event.impact.to_lowercase();
-    let bucket = match impact_lower.as_str() {
+    let effective = effective_impact(event);
+    let bucket = match effective.as_str() {
         "high" => "High-impact",
         "medium" => "Medium-impact",
         "low" => "Low-impact",
-        _ => impact_lower.as_str(),
+        _ => effective.as_str(),
     };
     let context = match (event.forecast.as_deref(), event.previous.as_deref()) {
         (Some(f), Some(p)) => format!(" (forecast {f}, prior {p})"),
@@ -2854,6 +3007,12 @@ fn scan_leading_move(
 /// Pick the news entries whose `symbol_tag` matches any held symbol
 /// (case-insensitive) and map them to the per-asset catalyst struct. The list
 /// is already newest-first from `news_cache::get_latest_news`.
+///
+/// Matching expands each held symbol to its known canonical aliases — news
+/// feeds tag gold rows as "XAU", "GOLD", or "GLD" but the operator's
+/// portfolio symbol is the futures contract "GC=F"; without alias expansion
+/// every gold-related news item silently fails to connect to the held
+/// position and the report's News & Catalysts section renders empty.
 fn private_news_events_for_held(
     news: &[crate::db::news_cache::NewsEntry],
     held: &[String],
@@ -2861,8 +3020,10 @@ fn private_news_events_for_held(
     if held.is_empty() {
         return Vec::new();
     }
-    let held_set: std::collections::HashSet<String> =
-        held.iter().map(|s| s.to_uppercase()).collect();
+    let held_set: std::collections::HashSet<String> = held
+        .iter()
+        .flat_map(|s| symbol_aliases_for_news(s))
+        .collect();
     news.iter()
         .filter_map(|n| {
             let tag = n.symbol_tag.as_deref()?;
@@ -4819,14 +4980,40 @@ mod assembler_tests {
             evt("2026-06-06", "FOMC", "high", "economic"),
             evt("2026-06-07", "CPI", "high", "economic"),
             evt("2026-06-25", "PCE", "high", "economic"), // outside 14d
-            evt("2026-06-08", "Retail Sales", "medium", "economic"),
+            // Housing Starts: medium-impact, stays medium under the name
+            // heuristic — should be excluded from the binary slate.
+            evt("2026-06-08", "Housing Starts", "medium", "economic"),
         ];
         let rows = calendar_to_binary_catalysts(&events, "2026-06-05", 14, 6);
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().any(|r| r.event == "FOMC"));
         assert!(rows.iter().any(|r| r.event == "CPI"));
         assert!(rows.iter().all(|r| r.event != "PCE"));
-        assert!(rows.iter().all(|r| r.event != "Retail Sales"));
+        assert!(rows.iter().all(|r| r.event != "Housing Starts"));
+    }
+
+    #[test]
+    fn effective_impact_upgrades_misclassified_high_impact_events() {
+        // A scraped row mis-tagged "low" but the name is "Non Farm Payrolls":
+        // the read-time backstop must upgrade it to "high" so the binary
+        // catalyst slate doesn't silently drop it. Repro of the 2026-06-05
+        // regression where NFP / CPI day rendered as "low importance".
+        let nfp = evt("2026-06-06", "Non Farm Payrolls", "low", "economic");
+        assert_eq!(effective_impact(&nfp), "high");
+
+        let cpi = evt("2026-06-10", "Core CPI YoY", "low", "economic");
+        assert_eq!(effective_impact(&cpi), "high");
+
+        let baker = evt("2026-06-06", "Baker Hughes Oil Rig Count", "low", "economic");
+        assert_eq!(effective_impact(&baker), "low"); // genuinely low
+
+        let participation = evt("2026-06-06", "Participation Rate", "low", "economic");
+        assert_eq!(effective_impact(&participation), "medium");
+
+        // Stored "high" wins over inferred "low".
+        let mut treaty = evt("2026-06-10", "Some Random Treaty Vote", "high", "economic");
+        treaty.impact = "high".to_string();
+        assert_eq!(effective_impact(&treaty), "high");
     }
 
     #[test]
@@ -5347,6 +5534,42 @@ mod loader_w4_tests {
         let news = vec![synthetic_news(1, "BTC up", Some("BTC"))];
         let out = private_news_events_for_held(&news, &[]);
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn private_news_events_alias_match_held_futures_against_etf_symbol_tag() {
+        // News feed tags gold rows as "GLD" / "XAU" / "GOLD", but the held
+        // symbol is the futures contract "GC=F". Without alias expansion the
+        // News & Catalysts section silently renders empty for gold-heavy
+        // weeks. Repro of the 2026-06-05 weekly regression.
+        let news = vec![
+            synthetic_news(1, "Gold breakout on DXY weakness", Some("GLD")),
+            synthetic_news(2, "Silver tracks gold higher", Some("XAG")),
+            synthetic_news(3, "BTC ETF outflows accelerate", Some("BITCOIN")),
+            synthetic_news(4, "Random unrelated", Some("XOM")),
+        ];
+        let held = vec!["GC=F".to_string(), "SI=F".to_string(), "BTC".to_string()];
+        let out = private_news_events_for_held(&news, &held);
+        assert_eq!(out.len(), 3, "gold + silver + btc alias matches expected");
+        assert!(out.iter().any(|c| c.headline.contains("Gold breakout")));
+        assert!(out.iter().any(|c| c.headline.contains("Silver tracks")));
+        assert!(out.iter().any(|c| c.headline.contains("BTC ETF")));
+    }
+
+    #[test]
+    fn symbol_aliases_for_news_returns_expected_set() {
+        let gld = symbol_aliases_for_news("GC=F");
+        assert!(gld.contains(&"GLD".to_string()));
+        assert!(gld.contains(&"XAU".to_string()));
+        assert!(gld.contains(&"GC=F".to_string()));
+
+        let btc = symbol_aliases_for_news("BTC");
+        assert!(btc.contains(&"BITCOIN".to_string()));
+        assert!(btc.contains(&"BTC-USD".to_string()));
+
+        // Unknown symbols just return themselves uppercased.
+        let aapl = symbol_aliases_for_news("aapl");
+        assert_eq!(aapl, vec!["AAPL".to_string()]);
     }
 
     fn synthetic_view(analyst: &str, asset: &str, conviction: i64, direction: &str) -> AnalystView {

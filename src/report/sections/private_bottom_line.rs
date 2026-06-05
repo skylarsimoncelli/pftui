@@ -140,7 +140,7 @@ fn render_portfolio_bullet(snapshot: Option<&PrivatePortfolioSnapshotSummary>) -
     let pnl = snapshot
         .daily_pnl
         .as_deref()
-        .unwrap_or("daily P&L unavailable");
+        .unwrap_or("unavailable");
     let pct = snapshot
         .daily_pnl_pct
         .map(|value| format!(" ({value:+.2}%)"))
