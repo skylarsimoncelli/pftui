@@ -114,6 +114,12 @@ pub struct BuildContext {
     /// only emits a block when an entry exists for `asset` AND that
     /// entry's `fragility_score >= 3`. Empty when no rows match.
     pub synthesis_adversary_views: Vec<AdversarySynthesisSummary>,
+    /// Today's analyst-written synthesis: the substantive content the four
+    /// timeframe analysts plus the synthesis-bound agent messages produced
+    /// for the report date. Surfaced by the private Bottom Line and public
+    /// Executive Summary renderers so the report's opening reflects the
+    /// analysts' actual narrative.
+    pub todays_analyst_synthesis: Option<TodaysAnalystSynthesis>,
     /// Forward-return distributions from the parallels catalog runner
     /// (`~/.local/bin/pftui-parallels-run`). Loaded from
     /// `/tmp/pftui-parallels-<REPORT_DATE>.json` when present; empty when
@@ -196,6 +202,31 @@ pub struct AssetIntelligenceBlob {
 pub struct MorningBriefSummary {
     pub headline: Option<String>,
     pub central_tension: Option<String>,
+}
+
+/// Per-day analyst synthesis, mirrored into the report by
+/// [`BuildContext::load`] from `daily_notes` (filtered to
+/// `author IN ('analyst-low','analyst-medium','analyst-high','analyst-macro')`)
+/// and `agent_messages` (filtered to `to='synthesis'`).
+#[derive(Debug, Clone, Default)]
+pub struct TodaysAnalystSynthesis {
+    pub headline_low: Option<String>,
+    pub headline_medium: Option<String>,
+    pub headline_high: Option<String>,
+    pub headline_macro: Option<String>,
+    pub leading_move: Option<MaterialMove>,
+    pub action_summary: Option<String>,
+}
+
+/// A single material-move row surfaced by the analyst synthesis. Captures
+/// the largest |%| move detected in today's analyst notes against a known
+/// held asset, plus optional cumulative-from-baseline framing.
+#[derive(Debug, Clone)]
+pub struct MaterialMove {
+    pub asset: String,
+    pub move_pct: f64,
+    pub cumulative_pct: Option<f64>,
+    pub note: String,
 }
 
 /// Compact per-asset row mirrored from `adversary_synthesis_views` for
@@ -1386,6 +1417,22 @@ impl BuildContext {
         // narrative we already fetched above for the regime synthesis.
         ctx.morning_brief = narrative.as_ref().and_then(load_morning_brief_summary);
 
+        // Today's analyst-written synthesis — the headline note per
+        // timeframe analyst, the largest |%| move mentioned in those notes
+        // against a held asset, and the highest-priority `to='synthesis'`
+        // agent message of the day.
+        ctx.todays_analyst_synthesis = backend
+            .sqlite_native()
+            .and_then(|conn| {
+                let held: Vec<String> = ctx
+                    .private_positions
+                    .iter()
+                    .map(|p| p.symbol.clone())
+                    .collect();
+                load_todays_analyst_synthesis(conn, report_date, &held).ok()
+            })
+            .flatten();
+
         Ok(ctx)
     }
 
@@ -1913,6 +1960,188 @@ fn load_lessons_applied(conn: &rusqlite::Connection) -> Result<Option<PrivateLes
         lesson_references,
         strongest_analog: None,
     }))
+}
+
+/// Cap an analyst-note excerpt to roughly `max_chars` characters so the
+/// Bottom Line / Executive Summary stays scannable. We slice on byte
+/// boundaries while respecting char boundaries to keep this UTF-8 safe.
+fn truncate_excerpt(value: &str, max_chars: usize) -> String {
+    let trimmed = value.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    let truncated: String = trimmed.chars().take(max_chars).collect();
+    format!("{}…", truncated.trim_end())
+}
+
+/// Build `TodaysAnalystSynthesis` from today's `daily_notes` (one per
+/// timeframe analyst, picking the longest substantive note as the
+/// "headline" proxy) plus a scan for the largest |%| move tied to a held
+/// asset, plus the highest-priority `to='synthesis'` agent message of the
+/// day. Returns `None` when neither table contributes anything for the
+/// day so the renderers fall back to their existing behavior.
+fn load_todays_analyst_synthesis(
+    conn: &rusqlite::Connection,
+    report_date: &str,
+    held_assets: &[String],
+) -> Result<Option<TodaysAnalystSynthesis>> {
+    let analyst_authors = [
+        ("analyst-low", 0usize),
+        ("analyst-medium", 1),
+        ("analyst-high", 2),
+        ("analyst-macro", 3),
+    ];
+
+    // 1) Headline note per analyst — pick the longest content row per
+    //    author for the report date. Length is a cheap stand-in for
+    //    "substantive" and avoids accidentally promoting a one-line ping.
+    let mut headlines: [Option<String>; 4] = Default::default();
+    let mut all_notes_today: Vec<crate::db::daily_notes::DailyNote> = Vec::new();
+    for (author, idx) in analyst_authors.iter() {
+        let notes = crate::db::daily_notes::list_notes(
+            conn,
+            Some(report_date),
+            None,
+            None,
+            Some(*author),
+        )
+        .unwrap_or_default();
+        if let Some(longest) = notes
+            .iter()
+            .max_by_key(|n| n.content.trim().chars().count())
+            .filter(|n| !n.content.trim().is_empty())
+        {
+            headlines[*idx] = Some(truncate_excerpt(&longest.content, 200));
+        }
+        all_notes_today.extend(notes);
+    }
+
+    // 2) Leading move — scan today's analyst notes for tokens like
+    //    `BTC -7.0%` or `GLD +1.25%` and keep the largest |move_pct|
+    //    that names a currently held asset. Cumulative is captured when
+    //    a second `cum ...%` token follows in the same sentence.
+    let leading_move = scan_leading_move(&all_notes_today, held_assets);
+
+    // 3) Action summary — highest-priority synthesis-bound agent message
+    //    from today. `since` is the start of the day in the same
+    //    YYYY-MM-DD format daily_notes uses, which agent_messages stores
+    //    as `created_at`.
+    let mut action_summary: Option<String> = None;
+    let messages = crate::db::agent_messages::list_messages(
+        conn,
+        None,
+        Some("synthesis"),
+        None,
+        false,
+        Some(report_date),
+        None,
+        Some(32),
+    )
+    .unwrap_or_default();
+    // Order by priority (high > normal > low) then created_at DESC.
+    let priority_rank = |p: &str| match p {
+        "high" => 0u8,
+        "normal" => 1,
+        _ => 2,
+    };
+    let mut prioritized: Vec<&crate::db::agent_messages::AgentMessage> = messages
+        .iter()
+        .filter(|m| matches!(m.priority.as_str(), "high" | "normal"))
+        .collect();
+    prioritized.sort_by(|a, b| {
+        priority_rank(&a.priority)
+            .cmp(&priority_rank(&b.priority))
+            .then_with(|| b.created_at.cmp(&a.created_at))
+    });
+    if let Some(m) = prioritized.first() {
+        action_summary = Some(truncate_excerpt(&m.content, 200));
+    }
+
+    let synthesis = TodaysAnalystSynthesis {
+        headline_low: headlines[0].clone(),
+        headline_medium: headlines[1].clone(),
+        headline_high: headlines[2].clone(),
+        headline_macro: headlines[3].clone(),
+        leading_move,
+        action_summary,
+    };
+
+    let empty = synthesis.headline_low.is_none()
+        && synthesis.headline_medium.is_none()
+        && synthesis.headline_high.is_none()
+        && synthesis.headline_macro.is_none()
+        && synthesis.leading_move.is_none()
+        && synthesis.action_summary.is_none();
+
+    Ok((!empty).then_some(synthesis))
+}
+
+/// Regex-scan today's analyst notes for the largest absolute %-move that
+/// mentions a held asset. Matches tokens like `BTC -7.0%`, `GLD +1.25%`,
+/// `SPY 2.4%`, optionally followed by `cum [-+]?N.M% from <baseline>`.
+fn scan_leading_move(
+    notes: &[crate::db::daily_notes::DailyNote],
+    held_assets: &[String],
+) -> Option<MaterialMove> {
+    // `\b[A-Z][A-Z0-9.=^-]{0,9}\s*[-+]?\d{1,3}(?:\.\d+)?%`
+    // Accept both `BTC -7%` and `BTC -7.0%`; trailing `=F` / `^VIX`-style
+    // suffixes are common in our symbol set.
+    let token_re = regex::Regex::new(
+        r"\b([A-Z][A-Z0-9.=^-]{0,9})\s*([-+]?\d{1,3}(?:\.\d+)?)%",
+    )
+    .ok()?;
+    let cum_re = regex::Regex::new(
+        r"cum\s+([-+]?\d{1,3}(?:\.\d+)?)%(?:\s+from\s+([^.\n,;]+))?",
+    )
+    .ok()?;
+
+    let held: std::collections::HashSet<String> =
+        held_assets.iter().map(|s| s.to_ascii_uppercase()).collect();
+
+    let mut best: Option<MaterialMove> = None;
+    for note in notes {
+        for cap in token_re.captures_iter(&note.content) {
+            let asset = cap.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
+            let pct_str = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+            let Ok(pct) = pct_str.parse::<f64>() else {
+                continue;
+            };
+            if !held.contains(&asset.to_ascii_uppercase()) {
+                continue;
+            }
+            if pct.abs() < 0.5 {
+                // Filter trivial moves so the lead bullet stays meaningful.
+                continue;
+            }
+            let is_better = best
+                .as_ref()
+                .map(|b| pct.abs() > b.move_pct.abs())
+                .unwrap_or(true);
+            if !is_better {
+                continue;
+            }
+            // Look at the surrounding ~160 chars of the matched token to
+            // build the note + cumulative context.
+            let match_end = cap
+                .get(0)
+                .map(|m| m.end())
+                .unwrap_or(0)
+                .min(note.content.len());
+            let window_end = (match_end + 160).min(note.content.len());
+            let window = &note.content[match_end..window_end];
+            let cumulative_pct =
+                cum_re.captures(window).and_then(|c| c.get(1)?.as_str().parse::<f64>().ok());
+            // Note: trim to the matched sentence-ish window.
+            let note_snippet = truncate_excerpt(window, 160);
+            best = Some(MaterialMove {
+                asset,
+                move_pct: pct,
+                cumulative_pct,
+                note: note_snippet,
+            });
+        }
+    }
+    best
 }
 
 /// Snapshot of which data slots in a `BuildContext` are populated. Used by the
@@ -3184,5 +3413,144 @@ mod assembler_tests {
             let _ = write!(&mut s, "{:02x}", byte);
         }
         s
+    }
+}
+
+#[cfg(test)]
+mod todays_analyst_synthesis_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn create_tables(conn: &Connection) {
+        conn.execute_batch(
+            "CREATE TABLE daily_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                section TEXT NOT NULL DEFAULT 'general',
+                content TEXT NOT NULL,
+                author TEXT NOT NULL DEFAULT 'system',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE agent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_agent TEXT NOT NULL,
+                to_agent TEXT,
+                package_id TEXT,
+                package_title TEXT,
+                priority TEXT NOT NULL DEFAULT 'normal',
+                content TEXT NOT NULL,
+                category TEXT,
+                layer TEXT,
+                acknowledged INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                acknowledged_at TEXT
+            );",
+        )
+        .expect("create tables");
+    }
+
+    #[test]
+    fn synthesis_loader_surfaces_leading_move_action_and_headlines() {
+        let conn = Connection::open_in_memory().expect("memory db");
+        create_tables(&conn);
+
+        let date = "2026-06-05";
+        // Multiple notes per analyst — loader should pick the longest as the headline.
+        crate::db::daily_notes::add_note(
+            &conn,
+            date,
+            "low",
+            "BTC -7% to $62,447 cum -14% from May 28; ETF -$671M, COT 92.3 pctile flush — risk-on tape broke under quarter-end positioning unwinds.",
+            "analyst-low",
+        )
+        .unwrap();
+        crate::db::daily_notes::add_note(&conn, date, "low", "ping", "analyst-low").unwrap();
+        crate::db::daily_notes::add_note(
+            &conn,
+            date,
+            "medium",
+            "Weekly outlook: credit spreads continuing to widen, rates pricing eases marginally.",
+            "analyst-medium",
+        )
+        .unwrap();
+        crate::db::daily_notes::add_note(
+            &conn,
+            date,
+            "macro",
+            "Macro: dollar squeeze through quarter-end is the dominant tape; DXY +0.3% intraday.",
+            "analyst-macro",
+        )
+        .unwrap();
+
+        crate::db::agent_messages::send_message(
+            &conn,
+            "analyst-low",
+            Some("synthesis"),
+            Some("high"),
+            "Trim BTC exposure into strength; raise stop to $61.5k ahead of CME open.",
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let held = vec!["BTC".to_string(), "GLD".to_string(), "SPY".to_string()];
+        let synthesis = load_todays_analyst_synthesis(&conn, date, &held)
+            .expect("loader runs")
+            .expect("synthesis produced");
+
+        let leading = synthesis.leading_move.as_ref().expect("leading move set");
+        assert_eq!(leading.asset, "BTC");
+        assert!((leading.move_pct + 7.0).abs() < f64::EPSILON, "{}", leading.move_pct);
+        assert_eq!(leading.cumulative_pct, Some(-14.0));
+
+        assert!(synthesis.headline_low.as_deref().unwrap().contains("BTC -7%"));
+        assert!(synthesis.headline_medium.as_deref().unwrap().contains("credit spreads"));
+        assert!(synthesis.headline_high.is_none());
+        assert!(synthesis.headline_macro.as_deref().unwrap().contains("dollar squeeze"));
+
+        let action = synthesis.action_summary.as_deref().unwrap();
+        assert!(action.contains("Trim BTC exposure"), "action: {action}");
+    }
+
+    #[test]
+    fn synthesis_loader_returns_none_when_nothing_today() {
+        let conn = Connection::open_in_memory().expect("memory db");
+        create_tables(&conn);
+        // Insert a note for a DIFFERENT date so the report-date filter excludes it.
+        crate::db::daily_notes::add_note(
+            &conn,
+            "2026-05-30",
+            "low",
+            "BTC -1.2% intraday",
+            "analyst-low",
+        )
+        .unwrap();
+        let result = load_todays_analyst_synthesis(&conn, "2026-06-05", &["BTC".to_string()])
+            .expect("loader runs");
+        assert!(result.is_none(), "expected no synthesis: {result:?}");
+    }
+
+    #[test]
+    fn synthesis_loader_ignores_unheld_assets_in_leading_move() {
+        let conn = Connection::open_in_memory().expect("memory db");
+        create_tables(&conn);
+        let date = "2026-06-05";
+        crate::db::daily_notes::add_note(
+            &conn,
+            date,
+            "low",
+            "TSLA +12% on earnings, BTC -2.0% intraday.",
+            "analyst-low",
+        )
+        .unwrap();
+        // BTC is held, TSLA is not. Expect BTC -2.0% even though TSLA |12%| is larger.
+        let synthesis = load_todays_analyst_synthesis(&conn, date, &["BTC".to_string()])
+            .expect("loader runs")
+            .expect("synthesis produced");
+        let mv = synthesis.leading_move.expect("leading move set");
+        assert_eq!(mv.asset, "BTC");
+        assert!((mv.move_pct + 2.0).abs() < f64::EPSILON);
     }
 }
