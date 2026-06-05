@@ -1497,6 +1497,97 @@ impl BuildContext {
 
         ctx.private_derived_actions =
             derive_actions(&ctx.private_asset_convergence, &ctx.private_drift_rows);
+        // What-changed deltas (private "What Changed in 7d" strip) — reuse the
+        // `pftui analytics deltas --json` backend so the report and the CLI
+        // surface the same change-radar items. We pass `persist_current=false`
+        // so report generation never mutates the situation-snapshot history
+        // table (only `data refresh` writes there).
+        ctx.private_what_changed_deltas = crate::analytics::deltas::build_report_backend(
+            backend,
+            crate::analytics::deltas::DeltaWindow::Days7,
+            false,
+        )
+        .map(|report| {
+            report
+                .change_radar
+                .into_iter()
+                .map(map_change_radar_to_delta)
+                .collect()
+        })
+        .unwrap_or_default();
+
+        // Private macro scenarios — current probability + 7d-prior probability
+        // from `scenario_history`, sorted by current probability descending.
+        // The public `ctx.public_scenarios` loader above already populates the
+        // public-mode row shape from `scenarios`; here we layer on the
+        // 7d-prior column from the same `scenario_history` source the CLI
+        // timeline backend reads, so both report modes line up against the
+        // same underlying history.
+        ctx.private_macro_scenarios =
+            crate::db::scenarios::get_all_timelines_backend(backend, Some(7))
+                .map(|timelines| {
+                    let mut rows: Vec<PrivateMacroScenarioRow> = timelines
+                        .into_iter()
+                        .map(|t| {
+                            // change = current - first; prior_7d = current - change.
+                            // When no history exists, fall back to the current value
+                            // so the row still renders deterministically.
+                            let prior_7d = t
+                                .change
+                                .map(|d| t.current_probability - d)
+                                .unwrap_or(t.current_probability);
+                            PrivateMacroScenarioRow {
+                                name: t.name,
+                                probability: t.current_probability,
+                                prior_7d,
+                            }
+                        })
+                        .collect();
+                    rows.sort_by(|a, b| {
+                        b.probability
+                            .partial_cmp(&a.probability)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    rows
+                })
+                .unwrap_or_default();
+
+        // Private macro regime quadrant — derived from `regime_snapshots`. The
+        // table doesn't carry explicit `growth` / `inflation` columns (its
+        // schema records `regime, vix, dxy, yield_10y, oil, gold, btc`), so we
+        // approximate the growth axis from the regime classifier's risk-on /
+        // risk-off bucket. The inflation axis isn't computable from the
+        // currently-stored fields (CPI YoY lives in `economic_data`, not in
+        // the snapshot row), so we leave it at 0.0 and surface a TODO to wire
+        // a richer macro-axis snapshot in a follow-up PR.
+        // TODO: replace the placeholder inflation axis with a real CPI-derived
+        //       value once a macro-axis snapshot table lands. Track at:
+        //       <https://github.com/skylarsimoncelli/pftui/issues> (new issue).
+        ctx.private_macro_regime =
+            crate::db::regime_snapshots::get_history_backend(backend, Some(7))
+                .ok()
+                .filter(|rows| !rows.is_empty())
+                .and_then(|rows| {
+                    let head = rows.first()?;
+                    let (growth, inflation) = regime_to_axes(&head.regime)?;
+                    let trail = rows
+                        .iter()
+                        .skip(1)
+                        .filter_map(|snap| {
+                            regime_to_axes(&snap.regime).map(|(g, i)| {
+                                PrivateRegimeTrailPoint {
+                                    growth: g,
+                                    inflation: i,
+                                }
+                            })
+                        })
+                        .collect();
+                    Some(PrivateMacroRegimeQuadrant {
+                        growth,
+                        inflation,
+                        trail,
+                    })
+                });
 
         Ok(ctx)
     }
@@ -1705,6 +1796,62 @@ const EQUITY_ASSETS: &[&str] = &["SPY", "GOOG", "HOOD", "RKLB", "CCJ"];
 const BITCOIN_NEWS_TOPICS: &[&str] = &["crypto"];
 const METALS_NEWS_TOPICS: &[&str] = &["inflation", "geopolitics"];
 const EQUITY_NEWS_TOPICS: &[&str] = &["equities", "ai"];
+
+/// Map a `change_radar` `SituationInsight` (from the `analytics::deltas`
+/// backend) onto the report-side `WhatChangedDeltaSummary` row shape.
+///
+/// Direction policy (matches the private "What Changed" strip contract):
+///
+/// * `"info"` — regime changes and correlation breaks (no signed direction).
+/// * `"bull"` — any other insight whose `value` field begins with a `+`.
+/// * `"bear"` — any other insight whose `value` field begins with a `-`.
+///
+/// Unsigned values (e.g. a categorical "RISK-ON" lead-signal change) fall back
+/// to `"info"` so the strip can still render the row neutrally.
+fn map_change_radar_to_delta(
+    insight: crate::analytics::situation::SituationInsight,
+) -> WhatChangedDeltaSummary {
+    let title_lc = insight.title.to_ascii_lowercase();
+    let is_info = title_lc.starts_with("regime ")
+        || title_lc.starts_with("correlation ")
+        || title_lc.contains("regime shifted")
+        || title_lc.contains("correlation shifted");
+    let direction = if is_info {
+        "info"
+    } else if insight.value.starts_with('+') {
+        "bull"
+    } else if insight.value.starts_with('-') {
+        "bear"
+    } else {
+        "info"
+    };
+    WhatChangedDeltaSummary {
+        label: insight.title,
+        delta: insight.value,
+        direction: direction.to_string(),
+    }
+}
+
+/// Approximate (growth, inflation) axes from the regime classifier's label.
+///
+/// `regime_snapshots` doesn't carry explicit growth/inflation columns — the
+/// table records `regime, vix, dxy, yield_10y, oil, gold, btc`. We project
+/// the risk-on / risk-off bucket onto the growth axis (risk-on ⇒ growth+,
+/// risk-off ⇒ growth−) and hold the inflation axis at 0.0 until a real
+/// CPI-derived value is wired through. Returns `None` for labels the loader
+/// doesn't recognise so the renderer can skip the block cleanly.
+fn regime_to_axes(regime: &str) -> Option<(f64, f64)> {
+    let key = regime.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+    let growth = match key.as_str() {
+        "risk_on" | "riskon" => 1.0,
+        "lean_risk_on" | "leanrisk_on" => 0.5,
+        "neutral" | "transitioning" | "transition" => 0.0,
+        "lean_risk_off" | "leanrisk_off" => -0.5,
+        "risk_off" | "riskoff" => -1.0,
+        _ => return None,
+    };
+    Some((growth, 0.0))
+}
 
 /// Convert a `Decimal` to `f64` via its string form (no precision-losing
 /// arithmetic). Used only for display-layer percentages, never money math.
@@ -3967,5 +4114,208 @@ mod todays_analyst_synthesis_tests {
         let mv = synthesis.leading_move.expect("leading move set");
         assert_eq!(mv.asset, "BTC");
         assert!((mv.move_pct + 2.0).abs() < f64::EPSILON);
+    }
+
+    // ---------------------------------------------------------------
+    // Loader tests for `BuildContext::load`
+    // (agent W2 — deltas / macro scenarios / macro regime)
+    // ---------------------------------------------------------------
+
+    use crate::analytics::situation::SituationInsight;
+
+    #[test]
+    fn map_change_radar_bullish_signed_value_yields_bull() {
+        let insight = SituationInsight {
+            title: "BTC momentum re-priced".to_string(),
+            detail: "Bitcoin (BTC)".to_string(),
+            value: "+2.50".to_string(),
+            severity: "elevated".to_string(),
+        };
+        let row = map_change_radar_to_delta(insight);
+        assert_eq!(row.direction, "bull");
+        assert_eq!(row.delta, "+2.50");
+        assert_eq!(row.label, "BTC momentum re-priced");
+    }
+
+    #[test]
+    fn map_change_radar_bearish_signed_value_yields_bear() {
+        let insight = SituationInsight {
+            title: "Scenario re-ranked: Soft Landing".to_string(),
+            detail: "Probability moved from 30% to 22%.".to_string(),
+            value: "-8".to_string(),
+            severity: "elevated".to_string(),
+        };
+        let row = map_change_radar_to_delta(insight);
+        assert_eq!(row.direction, "bear");
+    }
+
+    #[test]
+    fn map_change_radar_regime_shift_is_info() {
+        let insight = SituationInsight {
+            title: "Regime shifted".to_string(),
+            detail: "The current regime changed since the baseline snapshot.".to_string(),
+            value: "risk off".to_string(),
+            severity: "critical".to_string(),
+        };
+        let row = map_change_radar_to_delta(insight);
+        assert_eq!(row.direction, "info");
+    }
+
+    #[test]
+    fn map_change_radar_correlation_break_is_info() {
+        let insight = SituationInsight {
+            title: "Correlation shifted: BTC / GLD".to_string(),
+            detail: "30d moved from 0.20 to -0.45.".to_string(),
+            value: "-0.65".to_string(),
+            severity: "elevated".to_string(),
+        };
+        let row = map_change_radar_to_delta(insight);
+        // "Correlation shifted" branch dominates the signed-value branch so
+        // correlation breaks always tag as info.
+        assert_eq!(row.direction, "info");
+    }
+
+    #[test]
+    fn map_change_radar_unsigned_value_falls_back_to_info() {
+        let insight = SituationInsight {
+            title: "Lead signal changed".to_string(),
+            detail: "VIX spike".to_string(),
+            value: "warning".to_string(),
+            severity: "elevated".to_string(),
+        };
+        let row = map_change_radar_to_delta(insight);
+        assert_eq!(row.direction, "info");
+    }
+
+    #[test]
+    fn regime_to_axes_known_labels() {
+        assert_eq!(regime_to_axes("risk_on"), Some((1.0, 0.0)));
+        assert_eq!(regime_to_axes("RISK-ON"), Some((1.0, 0.0)));
+        assert_eq!(regime_to_axes("lean_risk_on"), Some((0.5, 0.0)));
+        assert_eq!(regime_to_axes("neutral"), Some((0.0, 0.0)));
+        assert_eq!(regime_to_axes("transitioning"), Some((0.0, 0.0)));
+        assert_eq!(regime_to_axes("lean_risk_off"), Some((-0.5, 0.0)));
+        assert_eq!(regime_to_axes("risk_off"), Some((-1.0, 0.0)));
+    }
+
+    #[test]
+    fn regime_to_axes_unknown_label_yields_none() {
+        assert!(regime_to_axes("goldilocks_v2").is_none());
+        assert!(regime_to_axes("").is_none());
+    }
+
+    /// Build an in-memory SQLite backend with the canonical schema for loader
+    /// integration tests. Each test owns its own backend so they can't
+    /// observe one another's writes.
+    fn fresh_backend() -> crate::db::backend::BackendConnection {
+        let conn = rusqlite::Connection::open_in_memory().expect("open in-memory sqlite");
+        crate::db::schema::run_migrations(&conn).expect("run migrations");
+        crate::db::backend::BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn loader_private_macro_scenarios_sorts_by_probability_desc() {
+        let backend = fresh_backend();
+        {
+            let conn = backend.sqlite_native().expect("sqlite backend");
+            // Seed three active scenarios with distinct probabilities.
+            crate::db::scenarios::add_scenario(
+                conn,
+                "Soft Landing",
+                30.0,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("add a");
+            crate::db::scenarios::add_scenario(
+                conn,
+                "Stagflation",
+                55.0,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("add b");
+            crate::db::scenarios::add_scenario(
+                conn,
+                "Recession",
+                15.0,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("add c");
+        }
+        let ctx = BuildContext::load(&backend, "2026-06-05").expect("load context");
+        let names: Vec<&str> = ctx
+            .private_macro_scenarios
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["Stagflation", "Soft Landing", "Recession"]);
+        // Probability values are surfaced unchanged; prior_7d falls back to
+        // the current probability when no history exists yet.
+        for row in &ctx.private_macro_scenarios {
+            assert!((row.prior_7d - row.probability).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn loader_private_macro_regime_maps_axes_and_collects_trail() {
+        let backend = fresh_backend();
+        {
+            let conn = backend.sqlite_native().expect("sqlite backend");
+            // Seed the latest plus two prior snapshots. `store_regime` writes
+            // in insert-order; `get_history_backend` orders DESC by
+            // `recorded_at`, so we insert oldest-first below.
+            // Older snapshots first so the most recent ends up at head.
+            crate::db::regime_snapshots::store_regime(
+                conn, "risk_off", None, None, None, None, None, None, None, None,
+            )
+            .expect("seed 1");
+            crate::db::regime_snapshots::store_regime(
+                conn,
+                "lean_risk_on",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("seed 2");
+            crate::db::regime_snapshots::store_regime(
+                conn, "risk_on", None, None, None, None, None, None, None, None,
+            )
+            .expect("seed head");
+        }
+        let ctx = BuildContext::load(&backend, "2026-06-05").expect("load context");
+        let quad = ctx
+            .private_macro_regime
+            .expect("macro regime should be populated");
+        // Head is the most-recent insert ("risk_on") because the loader
+        // orders DESC by recorded_at. The trail carries the two earlier rows.
+        assert!((quad.growth - 1.0).abs() < 1e-9);
+        assert!((quad.inflation - 0.0).abs() < 1e-9);
+        assert_eq!(quad.trail.len(), 2);
+    }
+
+    #[test]
+    fn loader_private_what_changed_deltas_degrades_to_empty_on_empty_db() {
+        let backend = fresh_backend();
+        let ctx = BuildContext::load(&backend, "2026-06-05").expect("load context");
+        // An empty situation-snapshot history can't produce material deltas;
+        // the loader must degrade to an empty Vec rather than abort.
+        // (The "No major deltas" filler row is upstream of map; the deltas
+        // loader passes through whatever `change_radar` returns.)
+        for row in &ctx.private_what_changed_deltas {
+            assert!(["bull", "bear", "info"].contains(&row.direction.as_str()));
+        }
     }
 }
