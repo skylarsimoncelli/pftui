@@ -2765,6 +2765,133 @@ fn run_cli(cli: Cli) -> Result<()> {
             } => {
                 commands::calibration::run(&backend, threshold, window_days, by_layer, json)
             }
+            cli::AnalyticsCommand::RiskFactors { command } => match command {
+                cli::AnalyticsRiskFactorsCommand::Add {
+                    symbol,
+                    factor,
+                    direction,
+                    exposure,
+                    notes,
+                    json,
+                } => {
+                    let id = crate::db::risk_factor_mappings::upsert_backend(
+                        &backend,
+                        &symbol,
+                        &factor,
+                        &direction,
+                        exposure,
+                        notes.as_deref(),
+                    )?;
+                    if json {
+                        println!(
+                            "{}",
+                            serde_json::json!({ "action": "upsert", "id": id, "symbol": symbol, "factor": factor })
+                        );
+                    } else {
+                        println!(
+                            "risk_factor_mappings upserted (id {id}): {symbol}/{factor} {direction} x{exposure:.2}"
+                        );
+                    }
+                    Ok(())
+                }
+                cli::AnalyticsRiskFactorsCommand::List { symbol, json } => {
+                    let rows = crate::db::risk_factor_mappings::list_backend(
+                        &backend,
+                        symbol.as_deref(),
+                    )?;
+                    if json {
+                        let json_rows: Vec<serde_json::Value> = rows
+                            .iter()
+                            .map(|r| {
+                                serde_json::json!({
+                                    "id": r.id,
+                                    "symbol": r.symbol,
+                                    "factor": r.factor,
+                                    "direction": r.direction,
+                                    "exposure_multiplier": r.exposure_multiplier,
+                                    "notes": r.notes,
+                                    "created_at": r.created_at,
+                                })
+                            })
+                            .collect();
+                        println!("{}", serde_json::to_string_pretty(&json_rows)?);
+                    } else {
+                        for r in &rows {
+                            println!(
+                                "{:<8} {:<24} {:<6}  x{:<5.2}  {}",
+                                r.symbol,
+                                r.factor,
+                                r.direction,
+                                r.exposure_multiplier,
+                                r.notes.as_deref().unwrap_or("")
+                            );
+                        }
+                    }
+                    Ok(())
+                }
+                cli::AnalyticsRiskFactorsCommand::Delete {
+                    symbol,
+                    factor,
+                    json,
+                } => {
+                    let n = backend
+                        .sqlite_native()
+                        .and_then(|conn| {
+                            crate::db::risk_factor_mappings::delete(conn, &symbol, &factor).ok()
+                        })
+                        .unwrap_or(0);
+                    if json {
+                        println!(
+                            "{}",
+                            serde_json::json!({ "deleted": n, "symbol": symbol, "factor": factor })
+                        );
+                    } else {
+                        println!("deleted {n} mapping(s) for {symbol}/{factor}");
+                    }
+                    Ok(())
+                }
+            },
+            cli::AnalyticsCommand::CalibrationMatrix { command } => match command {
+                cli::AnalyticsCalibrationMatrixCommand::Rebuild { since, json } => {
+                    let result =
+                        crate::analytics::calibration_scorer::rebuild_calibration_matrix_backend(
+                            &backend, since,
+                        )?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    } else {
+                        println!(
+                            "calibration_matrix rebuilt: {} rows deleted, {} rows inserted",
+                            result.rows_deleted, result.rows_inserted
+                        );
+                    }
+                    Ok(())
+                }
+                cli::AnalyticsCalibrationMatrixCommand::List { layer, json } => {
+                    let rows = crate::analytics::calibration_scorer::list_calibration_matrix_backend(
+                        &backend,
+                        layer.as_deref(),
+                    )?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&rows)?);
+                    } else {
+                        for row in &rows {
+                            println!(
+                                "{:<10} {:<14} {:<8}  n={:<4}  hit_rate={:.2}  stated_conf={}",
+                                row.layer,
+                                row.topic,
+                                row.conviction_band,
+                                row.n,
+                                row.hit_rate,
+                                row.stated_confidence
+                                    .map(|v| format!("{v:.2}"))
+                                    .unwrap_or_else(|| "—".to_string())
+                            );
+                        }
+                    }
+                    Ok(())
+                }
+            },
             cli::AnalyticsCommand::NarrativeDivergence {
                 command,
                 hours,

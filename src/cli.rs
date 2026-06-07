@@ -4294,6 +4294,66 @@ pub enum AnalyticsNewsSourcesCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsRiskFactorsCommand {
+    /// Add or update a risk-factor exposure mapping for a held asset.
+    Add {
+        #[arg(long)]
+        symbol: String,
+        #[arg(long)]
+        factor: String,
+        /// long / short — direction of the asset's exposure to the factor
+        #[arg(long, default_value = "long")]
+        direction: String,
+        /// Exposure multiplier (1.0 = baseline, >1.0 amplified, <1.0 muted)
+        #[arg(long, default_value = "1.0")]
+        exposure: f64,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List all mappings, optionally filtered to one symbol.
+    List {
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a mapping.
+    Delete {
+        #[arg(long)]
+        symbol: String,
+        #[arg(long)]
+        factor: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsCalibrationMatrixCommand {
+    /// Rebuild the calibration_matrix rows from user_predictions outcomes.
+    ///
+    /// Deletes existing rows and re-inserts one row per
+    /// (timeframe, topic, conviction_band) tuple with (n, hit_rate,
+    /// stated_confidence) computed over the trailing `--since` days.
+    Rebuild {
+        /// Trailing window in days for predictions to include
+        #[arg(long, default_value = "365")]
+        since: i64,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show the current calibration_matrix rows.
+    List {
+        #[arg(long)]
+        layer: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsNarrativeDivergenceCommand {
     /// Backfill `narrative_money_history` from existing `news_cache` and
     /// `predictions_history` over the trailing `--since` window.
@@ -4488,6 +4548,38 @@ pub enum AnalyticsCommand {
         by_layer: bool,
         #[arg(long)]
         json: bool,
+    },
+    /// Manage per-held-asset risk-factor mappings (drives Risk Concentration section)
+    ///
+    /// Each row: (symbol, factor, direction, exposure_multiplier) — e.g.
+    /// "SI=F has 1.4x long exposure to electrification". The macro / high
+    /// analyst routines write these so the report's Risk Concentration
+    /// section has rows.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics risk-factors add --symbol SI=F --factor electrification --direction long --exposure 1.4
+    ///   pftui analytics risk-factors list --json
+    ///   pftui analytics risk-factors delete --symbol SI=F --factor electrification
+    #[command(name = "risk-factors")]
+    RiskFactors {
+        #[command(subcommand)]
+        command: AnalyticsRiskFactorsCommand,
+    },
+    /// Rebuild the `calibration_matrix` table from `user_predictions` outcomes
+    ///
+    /// Aggregates every scored prediction (outcome IN 'correct','partial','wrong')
+    /// grouped by (timeframe, topic, conviction_band) into rows of
+    /// (n, hit_rate, stated_confidence). The Self-Retrospective Calibration
+    /// section of the report reads from this table. Run after a batch of
+    /// outcomes lands or before report generation.
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics calibration-matrix rebuild
+    ///   pftui analytics calibration-matrix rebuild --since 180 --json
+    #[command(name = "calibration-matrix")]
+    CalibrationMatrix {
+        #[command(subcommand)]
+        command: AnalyticsCalibrationMatrixCommand,
     },
     /// Compare scenario news pressure against mapped prediction-market movement
     #[command(name = "narrative-divergence", after_help = "Scores each active scenario by comparing 24h topic-tagged news pressure\nagainst mapped prediction-market movement. Positive scores mean narrative\nis running ahead of money; negative scores mean pricing moved with little\nheadline confirmation.\n\nExamples:\n  pftui analytics narrative-divergence --json\n  pftui analytics narrative-divergence --hours 48 --threshold 1.5\n  pftui analytics narrative-divergence rebuild --since 90d --json\n\nSee also: data news topics, data predictions map, analytics calibration")]

@@ -83,6 +83,7 @@ pub mod query;
 pub mod real_yields_history;
 pub mod regime_history;
 pub mod regime_snapshots;
+pub mod risk_factor_mappings;
 pub mod research_questions;
 pub mod rss_feed_health;
 pub mod scan_queries;

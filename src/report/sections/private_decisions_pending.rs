@@ -15,8 +15,9 @@ use anyhow::Result;
 
 use crate::db::analyst_views::classify_convergence;
 use crate::report::build::daily::{
-    BinaryCatalystSummary, BuildContext, PrivateAssetConvergenceRow, PrivateAssetConvergenceView,
-    PrivateDriftRow, PrivateJournalViewRow, PrivatePositionSnapshotRow,
+    BinaryCatalystSummary, BuildContext, PortfolioDecisionCard, PrivateAssetConvergenceRow,
+    PrivateAssetConvergenceView, PrivateDriftRow, PrivateJournalViewRow,
+    PrivatePositionSnapshotRow,
 };
 
 pub const SECTION_PRIVACY: &str = "private";
@@ -115,6 +116,26 @@ pub fn build_cards(ctx: &BuildContext) -> Vec<DecisionCard> {
         if let Some(card) = build_catalyst_card(catalyst) {
             cards.push(card);
         }
+    }
+
+    // 5. Portfolio decision cards — written by the Phase 4 decision
+    //    architect with full evidence-for / evidence-against blocks plus
+    //    sizing math. Promoted ahead of the generic allocation card when
+    //    a card for the same symbol exists (it carries strictly richer
+    //    detail).
+    let symbols_with_architect_card: std::collections::HashSet<String> = ctx
+        .portfolio_decision_cards
+        .iter()
+        .map(|c| c.symbol.to_uppercase())
+        .collect();
+    if !symbols_with_architect_card.is_empty() {
+        cards.retain(|c| {
+            c.recommendation_type == "catalyst"
+                || !symbols_with_architect_card.contains(&c.symbol.to_uppercase())
+        });
+    }
+    for architect in &ctx.portfolio_decision_cards {
+        cards.push(decision_card_from_architect(architect));
     }
 
     cards.sort_by(|a, b| {
@@ -357,6 +378,60 @@ fn build_mismatch_card(
         recommendation_type: "meta".to_string(),
         rec_id: None,
     })
+}
+
+/// Convert a Phase-4 decision-architect JSON envelope into the section's
+/// internal `DecisionCard` shape. The architect's card carries strictly
+/// more detail than the auto-derived allocation card: evidence FOR and
+/// AGAINST blocks, an explicit recommendation, the change-mind trigger,
+/// and sizing math — all of which we surface verbatim.
+fn decision_card_from_architect(card: &PortfolioDecisionCard) -> DecisionCard {
+    let mut context_lines: Vec<String> = Vec::new();
+    if !card.evidence_for.is_empty() {
+        context_lines.push("Evidence FOR:".to_string());
+        for line in &card.evidence_for {
+            context_lines.push(format!("• {}", clean_text(line)));
+        }
+    }
+    if !card.evidence_against.is_empty() {
+        context_lines.push("Evidence AGAINST:".to_string());
+        for line in &card.evidence_against {
+            context_lines.push(format!("• {}", clean_text(line)));
+        }
+    }
+    if !card.what_would_change_it.is_empty() {
+        context_lines.push(format!(
+            "What would change it: {}",
+            clean_text(&card.what_would_change_it)
+        ));
+    }
+    if !card.sizing_math.is_empty() {
+        context_lines.push(format!("Sizing math: {}", clean_text(&card.sizing_math)));
+    }
+    let recommendation = if card.recommendation.is_empty() {
+        "WAIT — Phase-4 decision architect did not specify a recommendation.".to_string()
+    } else {
+        clean_text(&card.recommendation)
+    };
+    let question = if card.question.is_empty() {
+        format!("Decision pending on {}.", card.symbol)
+    } else {
+        clean_text(&card.question)
+    };
+    DecisionCard {
+        symbol: card.symbol.to_uppercase(),
+        question,
+        context_lines,
+        recommendation,
+        reference: format!(
+            "Phase-4 decision architect card for {}.",
+            card.symbol.to_uppercase()
+        ),
+        urgency: URGENCY_HIGH.to_string(),
+        gap: f64::INFINITY,
+        recommendation_type: "architect".to_string(),
+        rec_id: None,
+    }
 }
 
 fn build_catalyst_card(catalyst: &BinaryCatalystSummary) -> Option<DecisionCard> {

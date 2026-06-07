@@ -214,8 +214,8 @@ fn extract_calendar_event(
     }
 
     let _actual = extract_cell_text(row, actual_selector);
-    let previous = extract_cell_text(row, previous_selector);
-    let forecast = extract_cell_text(row, forecast_selector);
+    let previous = extract_cell_text(row, previous_selector).map(|v| sanitize_value(&v));
+    let forecast = extract_cell_text(row, forecast_selector).map(|v| sanitize_value(&v));
     let impact = classify_impact(&name);
 
     Some(Event {
@@ -227,6 +227,28 @@ fn extract_calendar_event(
         event_type: "economic".into(),
         symbol: None,
     })
+}
+
+/// Strip whitespace + the revised-value glyphs that TradingEconomics
+/// appends to previous / forecast cells. Without this the calendar
+/// renders values like "179K\n\n  ®" because the scraper concatenates
+/// the value with a revision marker text node.
+fn sanitize_value(raw: &str) -> String {
+    // Drop control / formatting / non-ASCII trailing glyphs and any
+    // trailing whitespace. The legitimate value is always a short
+    // alphanumeric run with optional %, $, ., and a unit suffix
+    // (K / M / B / T) — anything past that is scraper noise.
+    let collapsed = raw
+        .replace(['\r', '\n', '\t'], " ")
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_string();
+    collapsed
+        .trim_end_matches(|c: char| {
+            !(c.is_ascii_alphanumeric() || c == '%' || c == '$' || c == '.' || c == '-')
+        })
+        .to_string()
 }
 
 fn extract_cell_text(row: &ElementRef<'_>, selector: &Selector) -> Option<String> {

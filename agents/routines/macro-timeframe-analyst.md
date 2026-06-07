@@ -311,6 +311,33 @@ pftui analytics thesis-chains add \
 
 Aim for 2-4 thesis-chain rows per run when the macro tape has structural moves to map. Skip on quiet weeks rather than fabricating chains.
 
+## Risk-factor mappings (MANDATORY per held asset)
+
+The report's **Risk Concentration** section stays blank whenever `risk_factor_mappings` has no rows. The MACRO and HIGH layers jointly own this table — each run you must write at least one factor mapping per held asset so the operator sees their structural exposure, not just allocation concentration.
+
+For each held asset, identify 1-3 structural risk factors and write:
+
+```bash
+pftui analytics risk-factors add \
+  --symbol <SYM> \
+  --factor "<short factor name, e.g. 'electrification', 'de-dollarisation', 'fixed-supply-money', 'positive-real-yields', 'china-cb-buying'>" \
+  --direction <long|short> \
+  --exposure 1.4 \
+  --notes "<1-line justification — what makes this asset that exposure>"
+```
+
+Canonical factor vocabulary (extend when justified):
+
+- **de-dollarisation** — exposure to COFER reserve-share decline + non-USD settlement rail adoption
+- **fixed-supply-money** — exposure to credible-commitment supply caps (BTC, gold)
+- **electrification** — exposure to grid build-out / AI power demand / EV / solar (SI=F, copper, uranium)
+- **central-bank-buying** — exposure to structural sovereign accumulation (gold)
+- **positive-real-yields** — direction of carry on no-yield assets (cash, gold short-term)
+- **risk-off-beta** — high-beta industrial-cyclical behavior in liquidations (SI=F, copper)
+- **fourth-turning-disorder** — exposure to Stage-6 internal-disorder vectors
+
+The Risk Concentration renderer surfaces (symbol, factor, exposure) so the operator can see "BTC and SI=F are BOTH 1.0+ exposed to de-dollarisation — that's a single underlying bet, not two independent positions". Aim for 8-12 rows per run across the held basket.
+
 ## Weekly Log
 
 Add a structured log entry synthesizing both lenses:
