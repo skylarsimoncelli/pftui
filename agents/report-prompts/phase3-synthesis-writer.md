@@ -59,11 +59,39 @@ RISK / REWARD (next 7 days):
 
 ## 2. Overview — Week in Review (one note)
 
-This is the **opening section of the report**. Write engaging, human-readable prose, 200-300 words, covering markets / news / data the operator scanned this week. Set the tone. Drawn from `{MACRO_TAPE_7D}`, the MACRO layer's views, the panel's macro consensus, and what changed since last report.
+This is the **opening section of the report**. Write engaging, human-readable prose, 300-500 words, covering markets / news / data the operator scanned this week. Set the tone. Drawn from `{MACRO_TAPE_7D}`, the MACRO layer's views, the panel's macro consensus, and what changed since last report. Don't merely summarize fields — synthesize, argue, name what the desk learned this week.
 
 ```bash
 pftui journal notes add "[synthesis-economy]
-<200-300 words>" --section analysis --author analyst-synthesis
+<300-500 words>" --section analysis --author analyst-synthesis
+```
+
+## 2b. Macro & News Outlook (one note)
+
+This is the **standalone synthesized macro + news section** that replaces both the previous atomic-data Macro Context block and the News & Catalysts table. Write 300-500 word prose that combines:
+
+- The macro tape's structural drivers (real carry / DXY / yields / VIX regime)
+- The next-2-week binary catalyst slate (CPI / FOMC / PCE / NFP / COFER as applicable) — name the dates inline, bold the highest-impact one
+- The connected news themes affecting held assets (e.g. ETF flow regime, central-bank prints, geopolitical lines)
+- The panel's macro consensus (e.g. "7/8 personas overweight cash") if meaningfully aligned
+- The adversary's sharpest cut on the macro picture
+
+```bash
+pftui journal notes add "[synthesis-macro-outlook]
+<300-500 words>" --section analysis --author analyst-synthesis
+```
+
+## 2c. Closing — Gameplan / Portfolio / What to Watch (one note)
+
+This is the **final section** of the report — the operator's takeaway. Write 300-500 word prose covering:
+
+- **Gameplan for the coming week.** What is the operator actually doing — given the convergence, the deep dive, and recent operator-journal notes about accumulation / cash deployment / target stance.
+- **Portfolio reflection.** What does the current allocation (cash %, hard-money %, BTC %) say about the bet on the table? Is it expressing the thesis, lagging it, or front-running it?
+- **What to watch (top 3-5 falsifiable triggers).** Pull from the per-asset cards' What-Would-Change-My-Mind blocks + the macro outlook's binary catalysts. Each item must be a measurable price level, a ratio, a flow number, or a calendar print.
+
+```bash
+pftui journal notes add "[synthesis-closing]
+<300-500 words>" --section analysis --author analyst-synthesis
 ```
 
 ## 3. Risk-reward framing per active prediction

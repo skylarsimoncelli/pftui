@@ -7,6 +7,8 @@ pub mod private_cross_layer_signals;
 pub mod private_parallels;
 pub mod private_decisions_pending;
 pub mod private_investor_panel;
+pub mod private_closing;
+pub mod private_macro_news_outlook;
 pub mod private_operator_deep_dive;
 pub mod private_overview;
 pub mod private_lessons_applied;
