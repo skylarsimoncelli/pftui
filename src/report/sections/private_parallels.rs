@@ -11,16 +11,24 @@ use anyhow::Result;
 use crate::report::build::daily::{BuildContext, ParallelsResult};
 
 pub fn render_private_parallels(ctx: &BuildContext) -> Result<String> {
-    let mut output = String::from("## Quantitative Parallels\n\n");
-    if ctx.parallels_results.is_empty() {
-        output.push_str(
-            "No parallel-set matches landed for this report. \
-            Run `pftui-parallels-run --emit-json /tmp/pftui-parallels-<DATE>.json` \
-            before the assembler to populate this section.",
-        );
-        return Ok(output);
+    // Suppress 0-match rows from the table. The narrative row underneath
+    // each set already explains *why* a set returned 0 matches (typically
+    // because a referenced data series has too little history), so the
+    // em-dash-across-every-column line adds noise. Engine-error rows are
+    // kept so the operator notices a broken set.
+    let actionable: Vec<_> = ctx
+        .parallels_results
+        .iter()
+        .filter(|r| r.error.is_some() || r.match_count > 0)
+        .collect();
+
+    if actionable.is_empty() {
+        // Whole section suppressed when nothing landed AND no errors —
+        // empty-state filler bloats the PDF.
+        return Ok(String::new());
     }
 
+    let mut output = String::from("## Quantitative Parallels\n\n");
     output.push_str(
         "Matching historical-analog set forward-return distributions \
         (median per horizon). Hit rates measure the share of analog episodes \
@@ -29,7 +37,7 @@ pub fn render_private_parallels(ctx: &BuildContext) -> Result<String> {
 
     output.push_str("| Set | Symbol | n | 5d | 30d | 90d | 180d | hit 30d | hit 90d |\n");
     output.push_str("|---|---|---|---|---|---|---|---|---|\n");
-    for r in &ctx.parallels_results {
+    for r in &actionable {
         if let Some(err) = &r.error {
             output.push_str(&format!(
                 "| {} | {} | — | — | — | — | — | — | — |  _engine error: {}_\n",
@@ -53,10 +61,14 @@ pub fn render_private_parallels(ctx: &BuildContext) -> Result<String> {
         ));
     }
 
+    // Narratives only render for sets that actually produced matches —
+    // a 0-match set's narrative is just the "retained for the future
+    // when more history is backfilled" disclosure, which is operator
+    // noise rather than signal.
     let with_narrative: Vec<&ParallelsResult> = ctx
         .parallels_results
         .iter()
-        .filter(|r| !r.narrative.trim().is_empty())
+        .filter(|r| !r.narrative.trim().is_empty() && r.match_count > 0)
         .collect();
     if !with_narrative.is_empty() {
         output.push_str("\n### Narratives\n\n");
@@ -106,11 +118,12 @@ mod tests {
     }
 
     #[test]
-    fn renders_empty_state_when_no_results() {
+    fn suppressed_when_no_results() {
+        // Empty results => suppress section entirely. Empty-state filler
+        // was operator-noise.
         let ctx = BuildContext::default();
         let out = render_private_parallels(&ctx).unwrap();
-        assert!(out.starts_with("## Quantitative Parallels"));
-        assert!(out.contains("No parallel-set matches"));
+        assert!(out.is_empty());
     }
 
     #[test]

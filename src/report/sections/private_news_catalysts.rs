@@ -27,15 +27,27 @@ pub fn render_private_news_catalysts(ctx: &BuildContext) -> Result<String> {
         return Ok(String::new());
     }
 
-    let mut output = String::from("## News & Catalysts\n\n");
+    let mut body = String::new();
     if !connected.is_empty() {
-        output.push_str(&render_events(&connected));
-        output.push_str("\n\n");
+        body.push_str(&render_events(&connected));
+        body.push_str("\n\n");
     }
     if !silence_rows.is_empty() {
-        output.push_str(&render_silence_signals(silence_rows));
+        let silence = render_silence_signals(silence_rows);
+        if !silence.is_empty() {
+            body.push_str(&silence);
+        }
     }
 
+    // Second-chance suppression: if no actionable sub-block produced any
+    // content (e.g. all silence rows hit insufficient-baseline), drop the
+    // section entirely instead of emitting a bare heading.
+    if body.trim().is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut output = String::from("## News & Catalysts\n\n");
+    output.push_str(&body);
     Ok(output.trim_end().to_string())
 }
 
@@ -149,7 +161,11 @@ fn render_silence_signals(signals: &[NewsVolumeSignal]) -> String {
         .filter(|signal| !is_insufficient_baseline(signal))
         .collect();
     if usable.is_empty() {
-        return "News-silence analytics are unavailable for this build. Do not infer whether a quiet topic is meaningful without a refreshed baseline.".to_string();
+        // Return empty so the parent suppresses the section entirely
+        // when only the "unavailable" disclaimer would have rendered.
+        // The 2026-06-07 weekly emitted the bare disclaimer as the
+        // ONLY content of the News & Catalysts section — wasted page.
+        return String::new();
     }
 
     let mut table = String::from(

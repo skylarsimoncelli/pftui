@@ -202,6 +202,14 @@ pub struct SynthesisNotes {
     /// date suffix so the writer doesn't have to coordinate a single
     /// canonical key with the renderer.
     pub deep_dive: Option<String>,
+    /// Macro + news outlook prose body (body of `[synthesis-macro-outlook]`).
+    /// Replaces the standalone Macro Context atomic-data block and the
+    /// News & Catalysts table with one synthesized 300-500 word read.
+    pub macro_outlook: Option<String>,
+    /// Closing conclusion prose body (body of `[synthesis-closing]`).
+    /// Renders as the final section: gameplan for the coming week,
+    /// portfolio reflection, top 3-5 falsifiable triggers to watch.
+    pub closing: Option<String>,
     /// Per-asset bull/bear/change-mind/risk-reward blocks, in the order the
     /// notes were written.
     pub assets: Vec<SynthesisAssetNote>,
@@ -937,6 +945,9 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_bottom_line",
             visibility: SectionVisibility::Private,
         },
+        // Per-Asset Briefing — one card per held asset with 5-block
+        // structure. The 4-layer convergence + asset intelligence flow into
+        // the card automatically.
         SectionSpec {
             name: "private_synthesis",
             visibility: SectionVisibility::Private,
@@ -945,20 +956,17 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_portfolio_snapshot",
             visibility: SectionVisibility::Private,
         },
+        // Macro & News Outlook — synthesized prose replacing the
+        // standalone Macro Context atomic-data block + News & Catalysts
+        // table. Suppressed when the synthesis writer didn't author one.
         SectionSpec {
-            name: "private_macro_context",
+            name: "private_macro_news_outlook",
             visibility: SectionVisibility::Private,
         },
-        SectionSpec {
-            name: "private_macro_thesis_chains",
-            visibility: SectionVisibility::Private,
-        },
-        // private_per_asset_convergence intentionally removed from the
-        // section plan. The 4-layer convergence data is integrated into
-        // the per-asset cards rendered by `private_synthesis` (Current
-        // bias block). Keeping it as a separate section duplicated the
-        // information and produced the "schizophrenic" per-asset blocks
-        // the operator flagged in the 2026-06-07 review.
+        // Per-asset Convergence Trajectory + Outlook + Risk Concentration
+        // are kept because they auto-suppress when there's no substantive
+        // data. They render only when the analyst writes produced
+        // something worth surfacing.
         SectionSpec {
             name: "private_conviction_trajectory",
             visibility: SectionVisibility::Private,
@@ -971,48 +979,57 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_risk_concentration",
             visibility: SectionVisibility::Private,
         },
-        SectionSpec {
-            name: "private_mismatch_surface",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_news_catalysts",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_upcoming_calendar",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_open_predictions",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_lessons_applied",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_self_retrospective_calibration",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_cross_layer_signals",
-            visibility: SectionVisibility::Private,
-        },
+        // Investor Panel Consensus (panel section is now consensus-only
+        // by default; the persona-detail table is suppressed unless a
+        // strong divergence warrants surfacing it).
         SectionSpec {
             name: "private_investor_panel",
             visibility: SectionVisibility::Private,
         },
+        // Quantitative Parallels — table self-suppresses when no set
+        // returned matches.
         SectionSpec {
             name: "private_parallels",
             visibility: SectionVisibility::Private,
         },
-        // private_decisions_pending intentionally removed from the PDF
-        // section plan — per operator: decision cards belong in the
-        // post-skill chat surface, not as static PDF entries the operator
-        // cannot interact with. Step 11 of the report skill reads the
-        // same source data (architect-written agent_messages + binary
-        // catalysts) and walks the operator through them conversationally.
+        // Closing — synthesized conclusion (Gameplan / Portfolio
+        // reflection / What to Watch). Last section in the report.
+        SectionSpec {
+            name: "private_closing",
+            visibility: SectionVisibility::Private,
+        },
+        // Sections intentionally dropped from the default plan per
+        // operator feedback (2026-06-07): too much unformatted data,
+        // walls of text. Still callable via render_section() and the
+        // Composition step can pull them in when warranted, but they
+        // don't render by default:
+        //
+        //   private_macro_context     — atomic data; macro+news outlook
+        //                               (above) is the synthesized
+        //                               replacement.
+        //   private_macro_thesis_chains — niche; surfaced inline when
+        //                                 thesis chains are written.
+        //   private_mismatch_surface  — auto-suppressed when aligned;
+        //                               the synthesis writer narrates
+        //                               mismatches inline.
+        //   private_news_catalysts    — replaced by macro+news outlook.
+        //   private_upcoming_calendar — operator scans the synthesized
+        //                               outlook for next-week binaries.
+        //   private_open_predictions  — 8 pages of cards; operator can
+        //                               run `pftui journal prediction
+        //                               list` for the canonical view.
+        //   private_lessons_applied   — surfaced inline in the synthesis
+        //                               writer's prose when material.
+        //   private_self_retrospective_calibration — auto-suppressed
+        //                               when calibration_matrix empty.
+        //   private_cross_layer_signals — replaced by the synthesis
+        //                               writer's bullets in the per-
+        //                               asset cards + the Outlook prose.
+        //
+        //   private_decisions_pending — surfaced via chat (Step 11),
+        //                               not PDF.
+        //   private_per_asset_convergence — integrated into per-asset
+        //                                   card (Current bias block).
     ]
 }
 
@@ -1054,6 +1071,10 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         "private_operator_deep_dive" => {
             sections::private_operator_deep_dive::render_private_operator_deep_dive(ctx)
         }
+        "private_macro_news_outlook" => {
+            sections::private_macro_news_outlook::render_private_macro_news_outlook(ctx)
+        }
+        "private_closing" => sections::private_closing::render_private_closing(ctx),
         "private_synthesis" => sections::private_synthesis::render_private_synthesis(ctx),
         "private_portfolio_snapshot" => {
             sections::private_portfolio_snapshot::render_private_portfolio_snapshot(ctx)
@@ -1481,10 +1502,47 @@ impl BuildContext {
                         .collect();
                     Some(parts.join(", "))
                 };
+                // Daily P&L = sum across positions of
+                //   quantity × (current_price - previous_close)
+                // when both prices are available. previous_close comes off
+                // the price_cache quote (Yahoo's regular-market prior close).
+                // We compute against total_value to derive a percent.
+                let mut pnl_total: rust_decimal::Decimal = rust_decimal::Decimal::ZERO;
+                let mut any_pnl_component = false;
+                for p in &positions {
+                    let Some(curr) = p.current_price else { continue };
+                    let qty = p.quantity;
+                    let Some(quote) = price_map.get(&p.symbol) else {
+                        continue;
+                    };
+                    let Some(prev) = quote.previous_close else {
+                        continue;
+                    };
+                    if prev.is_zero() {
+                        continue;
+                    }
+                    pnl_total += (curr - prev) * qty;
+                    any_pnl_component = true;
+                }
+                let (daily_pnl, daily_pnl_pct) = if any_pnl_component {
+                    let pct = if !total_value.is_zero() {
+                        Some(dec_to_f64(
+                            ((pnl_total / total_value)
+                                * rust_decimal::Decimal::from(100))
+                            .round_dp(2),
+                        ))
+                    } else {
+                        None
+                    };
+                    (Some(format_signed_price(pnl_total)), pct)
+                } else {
+                    (None, None)
+                };
+
                 ctx.private_portfolio_snapshot = Some(PrivatePortfolioSnapshotSummary {
                     total_value: Some(format_price(total_value)),
-                    daily_pnl: None,
-                    daily_pnl_pct: None,
+                    daily_pnl,
+                    daily_pnl_pct,
                     allocation_summary: alloc_summary,
                 });
                 ctx.private_positions = positions
@@ -2163,6 +2221,19 @@ fn dec_to_f64(d: rust_decimal::Decimal) -> f64 {
 /// Format a money/price decimal for display with a leading `$`.
 fn format_price(d: rust_decimal::Decimal) -> String {
     format!("${}", d.round_dp(2).normalize())
+}
+
+/// Format a signed money delta — leading `+` for positive (or zero),
+/// leading `-` for negative. Used for daily P&L display in the Bottom
+/// Line bullet.
+fn format_signed_price(d: rust_decimal::Decimal) -> String {
+    let rounded = d.round_dp(2);
+    if rounded.is_sign_negative() {
+        // Decimal's `to_string()` already includes the leading minus.
+        format!("-${}", rounded.abs().normalize())
+    } else {
+        format!("+${}", rounded.normalize())
+    }
 }
 
 /// Truncate an RFC3339 / SQLite timestamp to its `YYYY-MM-DD` date part.
@@ -3145,15 +3216,28 @@ fn load_todays_analyst_synthesis(
     let mut prioritized: Vec<&crate::db::agent_messages::AgentMessage> = messages
         .iter()
         .filter(|m| matches!(m.priority.as_str(), "high" | "normal"))
-        // Decision-card and panel messages are JSON envelopes for their
-        // own sections — they dump as a wall of raw JSON when picked
-        // up here. Three gates: category, sender-prefix, JSON-prefix.
+        // Filter out messages that don't belong in the Bottom Line "Action"
+        // bullet. Four gates:
+        //   1. decision-card category — those are JSON envelopes for the
+        //      Decisions Pending section (now chat-only).
+        //   2. alert category — these are pftui-system divergence alerts
+        //      (the 2026-06-07 run picked one up: "Narrative-vs-money
+        //      divergence crossed 2.0σ for Hard Recession… Topic equities;
+        //      weighted news volume 28.80, sentiment 5.3; market price
+        //      unavailable…"). Not actionable, leaks raw metric text.
+        //   3. sender-prefix — analyst-decisions / panel-* never belong here.
+        //   4. JSON-prefix — defensive against any other JSON envelope.
+        // The Bottom Line should pick a prose action_summary the synthesis
+        // writer (analyst-synthesis) explicitly wrote for this slot.
         .filter(|m| {
             let cat = m.category.as_deref().unwrap_or("");
-            if cat == "decision-card" {
+            if matches!(cat, "decision-card" | "alert") {
                 return false;
             }
-            if m.from_agent == "analyst-decisions" || m.from_agent.starts_with("panel-") {
+            if m.from_agent == "analyst-decisions"
+                || m.from_agent.starts_with("panel-")
+                || m.from_agent == "pftui"
+            {
                 return false;
             }
             !m.content.trim_start().starts_with('{')
@@ -4773,6 +4857,14 @@ fn load_synthesis_notes(
             if out.deep_dive.is_none() {
                 out.deep_dive = Some(body);
             }
+        } else if key.to_ascii_lowercase().starts_with("macro-outlook") {
+            if out.macro_outlook.is_none() {
+                out.macro_outlook = Some(body);
+            }
+        } else if key.to_ascii_lowercase().starts_with("closing") {
+            if out.closing.is_none() {
+                out.closing = Some(body);
+            }
         } else {
             out.assets.push(SynthesisAssetNote { symbol: key, body });
         }
@@ -5023,20 +5115,13 @@ mod assembler_tests {
             "private_bottom_line",
             "private_synthesis",
             "private_portfolio_snapshot",
-            "private_macro_context",
-            "private_macro_thesis_chains",
+            "private_macro_news_outlook",
             "private_conviction_trajectory",
             "private_outlook_by_horizon",
             "private_risk_concentration",
-            "private_mismatch_surface",
-            "private_news_catalysts",
-            "private_upcoming_calendar",
-            "private_open_predictions",
-            "private_lessons_applied",
-            "private_self_retrospective_calibration",
-            "private_cross_layer_signals",
             "private_investor_panel",
             "private_parallels",
+            "private_closing",
         ];
         let pub_actual: Vec<&str> = public_section_plan()
             .iter()
@@ -5451,16 +5536,22 @@ mod assembler_tests {
     fn private_section_plan_contains_new_sections() {
         let plan = private_section_plan();
         let names: Vec<&str> = plan.iter().map(|s| s.name).collect();
-        assert!(names.contains(&"private_cross_layer_signals"));
+        assert!(names.contains(&"private_macro_news_outlook"));
+        assert!(names.contains(&"private_closing"));
         assert!(names.contains(&"private_parallels"));
-        // private_overview must be first — operator's explicit ask that
-        // every report opens with a Week-in-Review section.
+        // private_overview must be first.
         assert_eq!(names[0], "private_overview");
-        // Per-asset convergence is no longer a separate section; the data
-        // feeds into private_synthesis (Current bias block).
+        // private_closing must be last.
+        assert_eq!(*names.last().unwrap(), "private_closing");
+        // Sections intentionally dropped per 2026-06-08 polish:
         assert!(!names.contains(&"private_per_asset_convergence"));
-        // Decisions pending intentionally surfaced via chat, not PDF.
         assert!(!names.contains(&"private_decisions_pending"));
+        assert!(!names.contains(&"private_macro_context"));
+        assert!(!names.contains(&"private_news_catalysts"));
+        assert!(!names.contains(&"private_open_predictions"));
+        assert!(!names.contains(&"private_lessons_applied"));
+        assert!(!names.contains(&"private_cross_layer_signals"));
+        assert!(!names.contains(&"private_upcoming_calendar"));
     }
 
     #[test]
