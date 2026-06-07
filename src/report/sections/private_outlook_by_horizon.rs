@@ -18,34 +18,44 @@ struct NormalizedOutlook {
 }
 
 pub fn render_private_outlook_by_horizon(ctx: &BuildContext) -> Result<String> {
-    let mut output = String::from("## Outlook by Horizon\n\n");
     let held = qualifying_positions(&ctx.private_positions);
     if held.is_empty() {
-        output.push_str("No held assets above 1% are attached to this private build.");
-        return Ok(output);
+        return Ok(String::new());
     }
 
-    // Single Outlook column rendering an SVG-arrow chart per row keeps the
-    // table compact. The prior layout duplicated the data in 4 columns
-    // (Days/Weeks/Months text labels + a Native SVG chart that already
-    // labelled its own axes), producing visually noisy "neutral/unknown"
-    // repetition in every cell of the 2026-06-05 weekly run.
-    output.push_str("| Asset | Outlook |\n");
-    output.push_str("|---|---|\n");
-
+    // Collect rows first so we can suppress the whole section when every
+    // horizon for every held asset is unknown — that case the section
+    // adds noise without information.
+    let mut rows: Vec<(String, String, bool)> = Vec::new();
     let mut alignments = Vec::new();
+    let mut any_known = false;
     for position in held {
         let outlook = find_outlook(&ctx.private_outlooks, &position.symbol);
         let days = normalize_point(outlook.and_then(|row| row.days.as_ref()));
         let weeks = normalize_point(outlook.and_then(|row| row.weeks.as_ref()));
         let months = normalize_point(outlook.and_then(|row| row.months.as_ref()));
+        let row_known = days.conviction != "unknown"
+            || weeks.conviction != "unknown"
+            || months.conviction != "unknown";
+        if row_known {
+            any_known = true;
+        }
         alignments.push(is_aligned(days, weeks, months));
-
-        output.push_str(&format!(
-            "| {} | {} |\n",
+        rows.push((
             clean_cell(&position.symbol),
             native_placeholder(days, weeks, months),
+            row_known,
         ));
+    }
+    if !any_known {
+        return Ok(String::new());
+    }
+
+    let mut output = String::from("## Outlook by Horizon\n\n");
+    output.push_str("| Asset | Outlook |\n");
+    output.push_str("|---|---|\n");
+    for (symbol, outlook_svg, _) in &rows {
+        output.push_str(&format!("| {} | {} |\n", symbol, outlook_svg));
     }
 
     output.push('\n');

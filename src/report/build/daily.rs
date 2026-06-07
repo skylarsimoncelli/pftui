@@ -912,6 +912,14 @@ pub fn public_section_plan() -> Vec<SectionSpec> {
 /// Canonical ordering of the private daily report sections (Step 5b).
 pub fn private_section_plan() -> Vec<SectionSpec> {
     vec![
+        // Overview opens every private report — operator's explicit ask:
+        // "the report should always open with an overview section, human
+        // readable, engaging, high level discussion." Reads the
+        // synthesis-economy note.
+        SectionSpec {
+            name: "private_overview",
+            visibility: SectionVisibility::Private,
+        },
         SectionSpec {
             name: "private_bottom_line",
             visibility: SectionVisibility::Private,
@@ -932,10 +940,12 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_macro_thesis_chains",
             visibility: SectionVisibility::Private,
         },
-        SectionSpec {
-            name: "private_per_asset_convergence",
-            visibility: SectionVisibility::Private,
-        },
+        // private_per_asset_convergence intentionally removed from the
+        // section plan. The 4-layer convergence data is integrated into
+        // the per-asset cards rendered by `private_synthesis` (Current
+        // bias block). Keeping it as a separate section duplicated the
+        // information and produced the "schizophrenic" per-asset blocks
+        // the operator flagged in the 2026-06-07 review.
         SectionSpec {
             name: "private_conviction_trajectory",
             visibility: SectionVisibility::Private,
@@ -984,10 +994,12 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_parallels",
             visibility: SectionVisibility::Private,
         },
-        SectionSpec {
-            name: "private_decisions_pending",
-            visibility: SectionVisibility::Private,
-        },
+        // private_decisions_pending intentionally removed from the PDF
+        // section plan — per operator: decision cards belong in the
+        // post-skill chat surface, not as static PDF entries the operator
+        // cannot interact with. Step 11 of the report skill reads the
+        // same source data (architect-written agent_messages + binary
+        // catalysts) and walks the operator through them conversationally.
     ]
 }
 
@@ -1025,6 +1037,7 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         }
         "public_methodology" => sections::public_methodology::render_public_methodology(ctx),
         "private_bottom_line" => sections::private_bottom_line::render_private_bottom_line(ctx),
+        "private_overview" => sections::private_overview::render_private_overview(ctx),
         "private_synthesis" => sections::private_synthesis::render_private_synthesis(ctx),
         "private_portfolio_snapshot" => {
             sections::private_portfolio_snapshot::render_private_portfolio_snapshot(ctx)
@@ -3116,14 +3129,18 @@ fn load_todays_analyst_synthesis(
     let mut prioritized: Vec<&crate::db::agent_messages::AgentMessage> = messages
         .iter()
         .filter(|m| matches!(m.priority.as_str(), "high" | "normal"))
-        // Decision-card messages are JSON envelopes for the Decisions
-        // Pending section — they dump as a wall of raw JSON when picked
-        // up here. Panel persona responses are JSON for the Investor
-        // Panel section. Both are surfaced in their own sections; the
-        // Bottom Line should pick a prose action_summary instead.
+        // Decision-card and panel messages are JSON envelopes for their
+        // own sections — they dump as a wall of raw JSON when picked
+        // up here. Three gates: category, sender-prefix, JSON-prefix.
         .filter(|m| {
             let cat = m.category.as_deref().unwrap_or("");
-            cat != "decision-card" && !m.from_agent.starts_with("panel-")
+            if cat == "decision-card" {
+                return false;
+            }
+            if m.from_agent == "analyst-decisions" || m.from_agent.starts_with("panel-") {
+                return false;
+            }
+            !m.content.trim_start().starts_with('{')
         })
         .collect();
     prioritized.sort_by(|a, b| {
@@ -4321,13 +4338,23 @@ fn load_cross_layer_signals(
             p == "high" || p == "normal"
         })
         .filter(|m| m.created_at.starts_with(report_date))
-        // Strip messages that are JSON envelopes for their own dedicated
-        // sections. Decision-card messages dump as raw JSON in this table
-        // (see the 2026-06-05 weekly run pages 25-27). Panel responses
-        // similarly belong in the Investor Panel section.
+        // Strip messages that belong in their own dedicated sections OR
+        // are raw JSON envelopes that would dump as a wall of text. Three
+        // gates: (1) category='decision-card' = decision-architect cards;
+        // (2) from_agent='analyst-decisions' or starts with 'panel-' (the
+        // 2026-06-07 run wrote decision cards with category='signal' so the
+        // category gate alone was insufficient); (3) content that starts
+        // with '{' is a JSON payload that doesn't belong in a human-
+        // readable signals table regardless of who wrote it.
         .filter(|m| {
             let cat = m.category.as_deref().unwrap_or("");
-            cat != "decision-card" && !m.from_agent.starts_with("panel-")
+            if cat == "decision-card" {
+                return false;
+            }
+            if m.from_agent == "analyst-decisions" || m.from_agent.starts_with("panel-") {
+                return false;
+            }
+            !m.content.trim_start().starts_with('{')
         })
         .map(|m| CrossLayerSignal {
             from_layer: m.from_agent,
@@ -4370,7 +4397,22 @@ fn load_investor_panel_responses(
 }
 
 fn parse_panel_response(raw: &str) -> Option<InvestorPanelResponse> {
-    let value: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
+    let trimmed = raw.trim();
+    // Try strict JSON first.
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Some(parsed) = parse_panel_response_json(&value) {
+            return Some(parsed);
+        }
+    }
+    // Fallback: persona subagents that returned prose instead of JSON
+    // (the 2026-06-07 run produced "Buffett [neutral, conf62]: cash OW
+    // …, gold NEUTRAL/UW …" rather than the strict schema). Parse the
+    // prose with a tolerant best-effort scanner so the panel section
+    // populates instead of saying "no responses landed".
+    parse_panel_response_prose(trimmed)
+}
+
+fn parse_panel_response_json(value: &serde_json::Value) -> Option<InvestorPanelResponse> {
     let investor = value.get("investor")?.as_str()?.to_string();
     let overall_signal = value
         .get("overall_signal")
@@ -4427,6 +4469,129 @@ fn parse_panel_response(raw: &str) -> Option<InvestorPanelResponse> {
         key_insight,
         what_would_change_my_mind,
     })
+}
+
+/// Tolerant prose-mode parser for persona responses that didn't honor the
+/// JSON schema. Expected shape (e.g. 2026-06-07 weekly):
+///   "Buffett [neutral, conf62]: cash OW (paid to wait, positive real
+///    yield), gold NEUTRAL/UW (produces nothing…), BTC NEUTRAL/AVOID
+///    (rat poison squared…), equities neutral/tactical (want productive
+///    businesses…), oil neutral. <key insight prose>. <change-mind prose>."
+fn parse_panel_response_prose(raw: &str) -> Option<InvestorPanelResponse> {
+    // The first token before '[' is the persona name; the bracket block
+    // carries the overall signal + confidence; per-asset signals come as
+    // "<ASSET> <SIGNAL>/<WEIGHT> (<reasoning>)" segments.
+    let header_split = raw.find('[')?;
+    let investor = raw[..header_split].trim().trim_end_matches(':').to_string();
+    if investor.is_empty() {
+        return None;
+    }
+    let after_header = &raw[header_split..];
+    let bracket_end = after_header.find(']')?;
+    let bracket = &after_header[1..bracket_end];
+    let after_bracket = after_header[bracket_end + 1..].trim_start_matches(':').trim();
+
+    let mut overall_signal = "neutral".to_string();
+    let mut confidence: u8 = 0;
+    for piece in bracket.split(',') {
+        let t = piece.trim().to_lowercase();
+        if t.starts_with("bull") {
+            overall_signal = "bullish".to_string();
+        } else if t.starts_with("bear") {
+            overall_signal = "bearish".to_string();
+        } else if t.starts_with("neutral") {
+            overall_signal = "neutral".to_string();
+        } else if let Some(rest) = t.strip_prefix("conf") {
+            confidence = rest.trim().parse::<u8>().unwrap_or(0).min(100);
+        }
+    }
+
+    // Split the prose into the asset list (before the first ". " that
+    // closes a paren-block) and the trailing prose (key insight +
+    // what-would-change). Best-effort — preserve the full body in the
+    // key_insight if we can't separate.
+    let positioning = scan_prose_positioning(after_bracket);
+    let key_insight = first_sentence_after_assets(after_bracket).to_string();
+    let what_would_change_my_mind = trailing_change_clause(after_bracket).to_string();
+
+    Some(InvestorPanelResponse {
+        investor,
+        overall_signal,
+        confidence,
+        positioning,
+        key_insight,
+        what_would_change_my_mind,
+    })
+}
+
+fn scan_prose_positioning(body: &str) -> Vec<InvestorPanelPositioning> {
+    // Recognise comma-separated segments of the form
+    //   "<asset> <signal>/<weight> (reasoning)"
+    // or "<asset> <signal>" (no weight, no reasoning). Asset names we
+    // accept: cash, gold, btc, equities, oil (canonical panel buckets).
+    const ASSET_KEYS: &[&str] = &["cash", "gold", "btc", "equities", "oil"];
+    let lower = body.to_lowercase();
+    let mut out: Vec<InvestorPanelPositioning> = Vec::new();
+    for key in ASSET_KEYS {
+        let Some(idx) = lower.find(key) else { continue };
+        let after = &body[idx + key.len()..];
+        let head = after.trim_start();
+        // Read up to the next comma or period to get "<signal>/<weight>"
+        let end = head
+            .find([',', '.'])
+            .unwrap_or_else(|| head.len().min(120));
+        let segment = head[..end].trim();
+        let mut signal = "neutral".to_string();
+        let mut weight = String::new();
+        let lower_seg = segment.to_lowercase();
+        if lower_seg.contains("bullish") || lower_seg.contains("bull") {
+            signal = "bullish".to_string();
+        } else if lower_seg.contains("bearish") || lower_seg.contains("bear") {
+            signal = "bearish".to_string();
+        }
+        for piece in segment.split('/') {
+            let t = piece.trim().to_lowercase();
+            if t.contains("over") {
+                weight = "overweight".to_string();
+            } else if t.contains("under") || t == "uw" {
+                weight = "underweight".to_string();
+            } else if t == "ow" {
+                weight = "overweight".to_string();
+            } else if t.contains("avoid") {
+                weight = "zero".to_string();
+            } else if t.contains("tactical") {
+                weight = "tactical".to_string();
+            }
+        }
+        // The reasoning is the parenthetical clause immediately after,
+        // if any.
+        let reasoning = head[end..]
+            .split_once('(')
+            .and_then(|(_, rest)| rest.split_once(')').map(|(inner, _)| inner.trim().to_string()))
+            .unwrap_or_default();
+        out.push(InvestorPanelPositioning {
+            asset: (*key).to_string(),
+            signal,
+            weight,
+            reasoning,
+        });
+    }
+    out
+}
+
+fn first_sentence_after_assets(body: &str) -> &str {
+    // Crude: take the last sentence-ending segment as key_insight.
+    body.rsplit_once(". ")
+        .map(|(prefix, _)| prefix.rsplit_once(". ").map(|(_, tail)| tail).unwrap_or(prefix))
+        .unwrap_or(body)
+        .trim()
+}
+
+fn trailing_change_clause(body: &str) -> &str {
+    body.rsplit_once(". ")
+        .map(|(_, tail)| tail.trim_end_matches('.'))
+        .unwrap_or("")
+        .trim()
 }
 
 /// Aggregate per-asset bullish/bearish/neutral vote tally across the
@@ -4795,7 +4960,9 @@ mod assembler_tests {
             .iter()
             .all(|s| matches!(s.visibility, SectionVisibility::Private)));
         assert!(plan.iter().any(|s| s.name == "private_bottom_line"));
-        assert!(plan.iter().any(|s| s.name == "private_decisions_pending"));
+        // Decisions pending intentionally surfaced via chat (Step 11),
+        // not as a static PDF section. Confirm the section is gone.
+        assert!(plan.iter().all(|s| s.name != "private_decisions_pending"));
     }
 
     #[test]
@@ -4829,12 +4996,12 @@ mod assembler_tests {
             "public_methodology",
         ];
         let expected_private: Vec<&str> = vec![
+            "private_overview",
             "private_bottom_line",
             "private_synthesis",
             "private_portfolio_snapshot",
             "private_macro_context",
             "private_macro_thesis_chains",
-            "private_per_asset_convergence",
             "private_conviction_trajectory",
             "private_outlook_by_horizon",
             "private_risk_concentration",
@@ -4847,7 +5014,6 @@ mod assembler_tests {
             "private_cross_layer_signals",
             "private_investor_panel",
             "private_parallels",
-            "private_decisions_pending",
         ];
         let pub_actual: Vec<&str> = public_section_plan()
             .iter()
@@ -4974,7 +5140,8 @@ mod assembler_tests {
         let ctx = BuildContext::for_date("2026-06-02");
         let body = assemble_private(&ctx).expect("private assembly should succeed");
         assert!(body.contains("## Bottom Line"));
-        assert!(body.contains("## Decisions Pending"));
+        // Decisions Pending now surfaced in chat (Step 11), not in PDF.
+        assert!(!body.contains("## Decisions Pending"));
     }
 
     /// Make a fresh per-test temp directory. Removes on drop.
@@ -5263,8 +5430,14 @@ mod assembler_tests {
         let names: Vec<&str> = plan.iter().map(|s| s.name).collect();
         assert!(names.contains(&"private_cross_layer_signals"));
         assert!(names.contains(&"private_parallels"));
-        // private_decisions_pending must remain last.
-        assert_eq!(*names.last().unwrap(), "private_decisions_pending");
+        // private_overview must be first — operator's explicit ask that
+        // every report opens with a Week-in-Review section.
+        assert_eq!(names[0], "private_overview");
+        // Per-asset convergence is no longer a separate section; the data
+        // feeds into private_synthesis (Current bias block).
+        assert!(!names.contains(&"private_per_asset_convergence"));
+        // Decisions pending intentionally surfaced via chat, not PDF.
+        assert!(!names.contains(&"private_decisions_pending"));
     }
 
     #[test]

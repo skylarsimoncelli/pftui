@@ -15,15 +15,26 @@ const MIN_EVENT_BLOCKS: usize = 3;
 const MAX_SILENCE_ROWS: usize = 5;
 
 pub fn render_private_news_catalysts(ctx: &BuildContext) -> Result<String> {
-    let mut output = String::from("## News & Catalysts\n\n");
-
     let held = held_symbols(&ctx.private_positions);
     let scenarios = active_scenarios(&ctx.private_macro_scenarios);
     let connected = filter_connected(&ctx.private_news_events, &held, &scenarios);
+    let silence_rows = &ctx.private_news_silence;
 
-    output.push_str(&render_events(&connected));
-    output.push_str("\n\n");
-    output.push_str(&render_silence_signals(&ctx.private_news_silence));
+    // Suppress the entire section when neither connected events nor
+    // silence signals landed. Empty-state disclosures bloat the PDF
+    // without telling the operator anything actionable.
+    if connected.is_empty() && silence_rows.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut output = String::from("## News & Catalysts\n\n");
+    if !connected.is_empty() {
+        output.push_str(&render_events(&connected));
+        output.push_str("\n\n");
+    }
+    if !silence_rows.is_empty() {
+        output.push_str(&render_silence_signals(silence_rows));
+    }
 
     Ok(output.trim_end().to_string())
 }
@@ -356,7 +367,8 @@ mod tests {
     }
 
     #[test]
-    fn private_news_catalysts_empty_events_emits_explicit_no_events_line() {
+    fn private_news_catalysts_empty_events_suppresses_section() {
+        // Empty news events + empty silence => suppress entire section.
         let ctx = BuildContext {
             private_positions: vec![position("SPY", 40.0)],
             private_macro_scenarios: vec![scenario("Hard Landing", 35.0, 30.0)],
@@ -366,10 +378,7 @@ mod tests {
         };
 
         let rendered = render_private_news_catalysts(&ctx).unwrap();
-
-        assert!(rendered.starts_with("## News & Catalysts\n\n"));
-        assert!(rendered.contains("No last-24h news events connect to held assets"));
-        assert!(rendered.contains("News-silence analytics are unavailable"));
+        assert!(rendered.is_empty());
     }
 
     #[test]
