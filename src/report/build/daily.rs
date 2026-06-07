@@ -143,6 +143,14 @@ pub struct BuildContext {
     /// command emits. `None` when the brief is unavailable for the
     /// report date.
     pub morning_brief: Option<MorningBriefSummary>,
+    /// Per-asset synthesis digest (bull case / bear case / what-would-change-
+    /// my-mind / risk-reward) plus the "economy this week" paragraph, written
+    /// by the synthesis-writer pass as `daily_notes` rows with
+    /// `author = 'analyst-synthesis'` whose content opens with a
+    /// `[synthesis-<SYM>]` or `[synthesis-economy]` header. Surfaced by the
+    /// `private_synthesis` section. Empty when no synthesis notes exist for
+    /// the report date.
+    pub synthesis_notes: SynthesisNotes,
 }
 
 /// One parallel-set result mirrored from `/tmp/pftui-parallels-<DATE>.json`.
@@ -162,6 +170,30 @@ pub struct ParallelsResult {
     pub hit_rate_30d_pct: Option<f64>,
     pub hit_rate_90d_pct: Option<f64>,
     pub error: Option<String>,
+}
+
+/// Parsed synthesis digest for the report date, built from `daily_notes`
+/// rows authored by `analyst-synthesis`. The synthesis-writer pass emits one
+/// note per held asset (content opens `[synthesis-<SYM>]`) plus one economy
+/// note (`[synthesis-economy]`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SynthesisNotes {
+    /// The "economy this week" paragraph (body of the `[synthesis-economy]`
+    /// note), when present.
+    pub economy: Option<String>,
+    /// Per-asset bull/bear/change-mind/risk-reward blocks, in the order the
+    /// notes were written.
+    pub assets: Vec<SynthesisAssetNote>,
+}
+
+/// One per-asset synthesis block: the symbol parsed from the
+/// `[synthesis-<SYM>]` header and the note body that follows it (which
+/// carries the BULL CASE / BEAR CASE / WHAT WOULD CHANGE MY MIND /
+/// RISK / REWARD sub-sections verbatim).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SynthesisAssetNote {
+    pub symbol: String,
+    pub body: String,
 }
 
 /// One inbound cross-layer signal pulled from `agent_messages` where
@@ -823,6 +855,10 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             visibility: SectionVisibility::Private,
         },
         SectionSpec {
+            name: "private_synthesis",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
             name: "private_portfolio_snapshot",
             visibility: SectionVisibility::Private,
         },
@@ -923,6 +959,7 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         }
         "public_methodology" => sections::public_methodology::render_public_methodology(ctx),
         "private_bottom_line" => sections::private_bottom_line::render_private_bottom_line(ctx),
+        "private_synthesis" => sections::private_synthesis::render_private_synthesis(ctx),
         "private_portfolio_snapshot" => {
             sections::private_portfolio_snapshot::render_private_portfolio_snapshot(ctx)
         }
@@ -1451,6 +1488,14 @@ impl BuildContext {
             })
             .flatten();
 
+        // Synthesis digest — per-asset bull/bear/change-mind/risk-reward plus
+        // the economy paragraph, parsed from `analyst-synthesis` daily_notes
+        // for the report date.
+        ctx.synthesis_notes = backend
+            .sqlite_native()
+            .and_then(|conn| load_synthesis_notes(conn, report_date).ok())
+            .unwrap_or_default();
+
         // ---- Per-asset convergence + drift + derived actions -------------
         // These three slots together drive the per-asset cards. A bug where
         // any one of them was left empty caused every card to render with an
@@ -1542,8 +1587,12 @@ impl BuildContext {
         // 3. private_macro_divergences — narrative-vs-money divergence per
         //    scenario. Material when |divergence z-score| > 1.0 (the spec's
         //    "one sigma" gate).
+        //    The news window MUST match the `pftui analytics narrative-divergence`
+        //    CLI default (24h). The z-scores are population-relative across
+        //    scenarios, so a wider window here shifts every score and makes the
+        //    report's callout disagree with what an operator sees from the CLI.
         ctx.private_macro_divergences =
-            crate::commands::narrative_divergence::build_report_backend(backend, 48, 1.0)
+            crate::commands::narrative_divergence::build_report_backend(backend, 24, 1.0)
                 .map(|rep| {
                     rep.entries
                         .into_iter()
@@ -3467,6 +3516,11 @@ pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
         vec_row!("parallels_results", ctx.parallels_results),
         vec_row!("cross_layer_signals", ctx.cross_layer_signals),
         DataAvailabilityRow {
+            field: "synthesis_notes",
+            populated: ctx.synthesis_notes.economy.is_some()
+                || !ctx.synthesis_notes.assets.is_empty(),
+        },
+        DataAvailabilityRow {
             field: "private_asset_intelligence",
             populated: !ctx.private_asset_intelligence.is_empty(),
         },
@@ -4037,7 +4091,13 @@ fn load_cross_layer_signals(
     backend: &BackendConnection,
     report_date: &str,
 ) -> Vec<CrossLayerSignal> {
-    let since = format!("{report_date}T00:00:00");
+    // agent_messages.created_at is stored with a space separator
+    // ("YYYY-MM-DD HH:MM:SS"), so the since-bound must use a space too —
+    // a 'T' separator sorts lexically AFTER the space and silently drops
+    // every same-day row, leaving the Cross-Layer Signals section empty.
+    // The starts_with(report_date) filter below is the real date bound;
+    // this just scopes the query.
+    let since = format!("{report_date} 00:00:00");
     let messages = crate::db::agent_messages::list_messages_backend(
         backend,
         None,
@@ -4064,6 +4124,60 @@ fn load_cross_layer_signals(
             summary: first_sentence(&m.content).replace('|', "/"),
         })
         .collect()
+}
+
+/// Load the per-asset synthesis digest for the report date from
+/// `daily_notes` rows authored by `analyst-synthesis`. Each note's content
+/// opens with a `[synthesis-<KEY>]` header line, where KEY is either a held
+/// symbol (e.g. `BTC`, `GC=F`) or the literal `economy`. The header line is
+/// stripped and the remaining body retained verbatim (it carries the
+/// BULL CASE / BEAR CASE / WHAT WOULD CHANGE MY MIND / RISK / REWARD
+/// sub-sections). Notes without a recognised header are ignored so the
+/// section never renders stray content.
+fn load_synthesis_notes(
+    conn: &rusqlite::Connection,
+    report_date: &str,
+) -> Result<SynthesisNotes> {
+    let notes = crate::db::daily_notes::list_notes(
+        conn,
+        Some(report_date),
+        None,
+        None,
+        Some("analyst-synthesis"),
+    )?;
+    let mut out = SynthesisNotes::default();
+    for note in notes {
+        let Some((key, body)) = parse_synthesis_header(&note.content) else {
+            continue;
+        };
+        if key.eq_ignore_ascii_case("economy") {
+            // First economy note wins; later duplicates are ignored.
+            if out.economy.is_none() {
+                out.economy = Some(body);
+            }
+        } else {
+            out.assets.push(SynthesisAssetNote { symbol: key, body });
+        }
+    }
+    Ok(out)
+}
+
+/// Parse a `[synthesis-<KEY>]` header from the first non-empty line of a
+/// note's content. Returns `(KEY, body)` where body is everything after the
+/// header line, trimmed. Returns `None` when the header is absent or empty.
+fn parse_synthesis_header(content: &str) -> Option<(String, String)> {
+    let trimmed = content.trim_start();
+    let first_line_end = trimmed.find('\n').unwrap_or(trimmed.len());
+    let first_line = trimmed[..first_line_end].trim();
+    let inner = first_line
+        .strip_prefix("[synthesis-")
+        .and_then(|s| s.strip_suffix(']'))?;
+    let key = inner.trim();
+    if key.is_empty() {
+        return None;
+    }
+    let body = trimmed[first_line_end..].trim().to_string();
+    Some((key.to_string(), body))
 }
 
 /// Build a compact `AssetIntelligenceBlob` for a single held symbol,
@@ -4285,6 +4399,7 @@ mod assembler_tests {
         ];
         let expected_private: Vec<&str> = vec![
             "private_bottom_line",
+            "private_synthesis",
             "private_portfolio_snapshot",
             "private_macro_context",
             "private_macro_thesis_chains",
