@@ -421,6 +421,7 @@ mod tests {
                     "BTC",
                     "BULL CASE:\nCapitulation zone, RSI 18.\n\nBEAR CASE:\nFlush not finished.\n\nWHAT WOULD CHANGE MY MIND:\nA net-positive ETF day.\n\nRISK / REWARD (next 7 days):\nEV -0.8%.",
                 )],
+            ..SynthesisNotes::default()
             },
             private_asset_convergence: vec![PrivateAssetConvergenceRow {
                 symbol: "BTC".to_string(),
@@ -487,6 +488,7 @@ mod tests {
                     "GC=F",
                     "BULL CASE:\nMonetary bid intact.\n",
                 )],
+            ..SynthesisNotes::default()
             },
             private_asset_convergence: vec![PrivateAssetConvergenceRow {
                 symbol: "GC=F".to_string(),
@@ -510,6 +512,7 @@ mod tests {
             synthesis_notes: SynthesisNotes {
                 economy: None,
                 assets: vec![note("USD", "BULL CASE:\nDollar bid this week.\n")],
+            ..SynthesisNotes::default()
             },
             ..BuildContext::default()
         };
