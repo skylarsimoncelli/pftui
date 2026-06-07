@@ -196,6 +196,12 @@ pub struct SynthesisNotes {
     /// The "economy this week" paragraph (body of the `[synthesis-economy]`
     /// note), when present.
     pub economy: Option<String>,
+    /// The long-form operator-focus deep dive (body of any
+    /// `[synthesis-deep-dive ...]` note), when present. Rendered by the
+    /// `private_operator_deep_dive` section. The header tag can carry a
+    /// date suffix so the writer doesn't have to coordinate a single
+    /// canonical key with the renderer.
+    pub deep_dive: Option<String>,
     /// Per-asset bull/bear/change-mind/risk-reward blocks, in the order the
     /// notes were written.
     pub assets: Vec<SynthesisAssetNote>,
@@ -920,6 +926,13 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_overview",
             visibility: SectionVisibility::Private,
         },
+        // Operator Deep Dive — the long-form synthesis tailored to the
+        // operator's focus prompt for this run. Suppressed when no
+        // deep-dive note exists (i.e. balanced-weekly runs).
+        SectionSpec {
+            name: "private_operator_deep_dive",
+            visibility: SectionVisibility::Private,
+        },
         SectionSpec {
             name: "private_bottom_line",
             visibility: SectionVisibility::Private,
@@ -1038,6 +1051,9 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         "public_methodology" => sections::public_methodology::render_public_methodology(ctx),
         "private_bottom_line" => sections::private_bottom_line::render_private_bottom_line(ctx),
         "private_overview" => sections::private_overview::render_private_overview(ctx),
+        "private_operator_deep_dive" => {
+            sections::private_operator_deep_dive::render_private_operator_deep_dive(ctx)
+        }
         "private_synthesis" => sections::private_synthesis::render_private_synthesis(ctx),
         "private_portfolio_snapshot" => {
             sections::private_portfolio_snapshot::render_private_portfolio_snapshot(ctx)
@@ -4751,6 +4767,12 @@ fn load_synthesis_notes(
             if out.economy.is_none() {
                 out.economy = Some(body);
             }
+        } else if key.to_ascii_lowercase().starts_with("deep-dive") {
+            // First deep-dive wins. The header tag may carry a date suffix
+            // (e.g. `[synthesis-deep-dive 2026-06-07]`) so match by prefix.
+            if out.deep_dive.is_none() {
+                out.deep_dive = Some(body);
+            }
         } else {
             out.assets.push(SynthesisAssetNote { symbol: key, body });
         }
@@ -4997,6 +5019,7 @@ mod assembler_tests {
         ];
         let expected_private: Vec<&str> = vec![
             "private_overview",
+            "private_operator_deep_dive",
             "private_bottom_line",
             "private_synthesis",
             "private_portfolio_snapshot",

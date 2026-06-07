@@ -54,6 +54,7 @@ mod tests {
             synthesis_notes: SynthesisNotes {
                 economy: Some("Hot NFP reinforces the dollar bid this week.".to_string()),
                 assets: vec![],
+            ..SynthesisNotes::default()
             },
             ..BuildContext::default()
         };
@@ -68,6 +69,7 @@ mod tests {
             synthesis_notes: SynthesisNotes {
                 economy: Some("   ".to_string()),
                 assets: vec![],
+            ..SynthesisNotes::default()
             },
             ..BuildContext::default()
         };
