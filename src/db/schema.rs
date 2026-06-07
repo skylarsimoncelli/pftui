@@ -1665,6 +1665,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS risk_factor_mappings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            factor TEXT NOT NULL,
+            direction TEXT NOT NULL DEFAULT 'long',
+            exposure_multiplier REAL NOT NULL DEFAULT 1.0,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(symbol, factor)
+        );
+        CREATE INDEX IF NOT EXISTS idx_risk_factor_mappings_symbol
+            ON risk_factor_mappings(symbol);
+        CREATE INDEX IF NOT EXISTS idx_risk_factor_mappings_factor
+            ON risk_factor_mappings(factor);
+
         CREATE TABLE IF NOT EXISTS scenario_prediction_links (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             scenario_id INTEGER NOT NULL,

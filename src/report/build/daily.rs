@@ -132,6 +132,21 @@ pub struct BuildContext {
     /// report date with priority `high` or `normal`. Surfaced by the new
     /// `private_cross_layer_signals` section.
     pub cross_layer_signals: Vec<CrossLayerSignal>,
+    /// Parsed investor-panel persona responses for the report date,
+    /// pulled from `agent_messages` rows where `from_agent` starts with
+    /// `panel-`. Populated when Phase 2b of the report skill spawned
+    /// the panel; empty otherwise.
+    pub investor_panel: Vec<InvestorPanelResponse>,
+    /// Per-asset bullish/bearish/neutral vote tally aggregated across the
+    /// panel responses. Derived in `BuildContext::load` directly from
+    /// `investor_panel` so the renderer doesn't recompute it.
+    pub investor_panel_consensus: Vec<InvestorPanelConsensus>,
+    /// Portfolio decision cards written by the decision-architect agent
+    /// (Phase 4). Pulled from `agent_messages` where `from_agent =
+    /// 'analyst-decisions'` and `category = 'decision-card'`, parsed
+    /// from JSON. Surfaced as actionable cards in `private_decisions_pending`
+    /// alongside the calendar-event cards.
+    pub portfolio_decision_cards: Vec<PortfolioDecisionCard>,
     /// Per-symbol synthesised asset-intelligence blobs derived from the
     /// same substrate as `pftui analytics asset <SYMBOL>`. Populated for
     /// each held private position. Used by the per-asset convergence
@@ -205,6 +220,53 @@ pub struct CrossLayerSignal {
     pub priority: String,
     pub category: String,
     pub summary: String,
+}
+
+/// One investor-panel persona response. Parsed from the JSON content of
+/// an `agent_messages` row where `from_agent` starts with `panel-`.
+/// Mirrors the structured shape produced by the persona subagent per
+/// `~/pftui/agents/investor-panel/schema.json`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InvestorPanelResponse {
+    pub investor: String,
+    pub overall_signal: String,
+    pub confidence: u8,
+    pub positioning: Vec<InvestorPanelPositioning>,
+    pub key_insight: String,
+    pub what_would_change_my_mind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvestorPanelPositioning {
+    pub asset: String,
+    pub signal: String,
+    pub weight: String,
+    pub reasoning: String,
+}
+
+/// Aggregated consensus summary across the panel. Used by the renderer to
+/// surface "strong consensus" and "high divergence" buckets at a glance.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InvestorPanelConsensus {
+    pub asset: String,
+    pub bullish_count: u32,
+    pub bearish_count: u32,
+    pub neutral_count: u32,
+    pub label: String,
+}
+
+/// One portfolio decision card written by the decision-architect agent.
+/// Parsed from the JSON content of an `agent_messages` row where
+/// `from_agent='analyst-decisions'` and `category='decision-card'`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortfolioDecisionCard {
+    pub symbol: String,
+    pub question: String,
+    pub evidence_for: Vec<String>,
+    pub evidence_against: Vec<String>,
+    pub recommendation: String,
+    pub what_would_change_it: String,
+    pub sizing_math: String,
 }
 
 /// Compact synthesised asset-intelligence blob persisted per-asset in the
@@ -915,6 +977,10 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             visibility: SectionVisibility::Private,
         },
         SectionSpec {
+            name: "private_investor_panel",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
             name: "private_parallels",
             visibility: SectionVisibility::Private,
         },
@@ -999,6 +1065,9 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         }
         "private_cross_layer_signals" => {
             sections::private_cross_layer_signals::render_private_cross_layer_signals(ctx)
+        }
+        "private_investor_panel" => {
+            sections::private_investor_panel::render_private_investor_panel(ctx)
         }
         "private_parallels" => {
             sections::private_parallels::render_private_parallels(ctx)
@@ -1449,8 +1518,39 @@ impl BuildContext {
         ctx.parallels_results = load_parallels_results(report_date);
 
         // Cross-layer signals — agent_messages addressed to synthesis on the
-        // report date with high/normal priority.
+        // report date with high/normal priority. Decision-card and panel-*
+        // messages are filtered out inside the loader so they appear in their
+        // own sections instead of dumping JSON into this table.
         ctx.cross_layer_signals = load_cross_layer_signals(backend, report_date);
+
+        // Investor panel — parsed persona responses + per-asset consensus
+        // tally. Both empty when the Phase 2b panel spawn produced nothing.
+        ctx.investor_panel = load_investor_panel_responses(backend, report_date);
+        ctx.investor_panel_consensus = aggregate_panel_consensus(&ctx.investor_panel);
+
+        // Portfolio decision cards — JSON envelopes written by the
+        // decision-architect (Phase 4) and parsed into a typed struct so the
+        // Decisions Pending section can render them alongside calendar
+        // catalyst cards.
+        ctx.portfolio_decision_cards = load_portfolio_decision_cards(backend, report_date);
+
+        // Risk-factor mappings per held asset. Empty when the macro / high
+        // analyst routines have not populated the `risk_factor_mappings`
+        // table via `pftui analytics risk-factors add`.
+        ctx.private_risk_factor_mappings = crate::db::risk_factor_mappings::list_backend(
+            backend, None,
+        )
+        .map(|rows| {
+            rows.into_iter()
+                .map(|r| PrivateRiskFactorMapping {
+                    symbol: r.symbol,
+                    factor: r.factor,
+                    direction: r.direction,
+                    exposure_multiplier: r.exposure_multiplier,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
         // Per-asset synthesised intelligence blobs — one per held position.
         if !ctx.private_positions.is_empty() {
@@ -2587,12 +2687,15 @@ fn calendar_to_macro_catalysts(
     events: &[crate::db::calendar_cache::CalendarEvent],
     limit: usize,
 ) -> Vec<PrivateMacroCatalyst> {
+    let mut seen: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
     events
         .iter()
         .filter(|e| {
             e.event_type == "economic"
                 && matches!(effective_impact(e).as_str(), "high" | "medium")
         })
+        .filter(|e| seen.insert((e.date.clone(), canonical_calendar_key(&e.name))))
         .take(limit)
         .map(|e| PrivateMacroCatalyst {
             date: e.date.clone(),
@@ -2600,6 +2703,57 @@ fn calendar_to_macro_catalysts(
             impact: catalyst_impact_label(e),
         })
         .collect()
+}
+
+/// Collapse common feed variants onto a single canonical key so
+/// "Non Farm Payrolls", "Non-Farm Payrolls", and "Nonfarm Payrolls
+/// Private" (all referring to the same monthly release) dedup to one
+/// entry. Mirrors the function used in `private_upcoming_calendar.rs`
+/// but lives here so both the binary-catalysts loader and the macro-
+/// catalysts loader see the deduped list — without it the 2026-06-05
+/// weekly run rendered three NFP decision-pending cards with
+/// conflicting forecasts.
+fn canonical_calendar_key(headline: &str) -> String {
+    let lower = headline
+        .to_lowercase()
+        .replace(['-', '_'], " ");
+    let collapsed: String = lower
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect();
+    let normalized = collapsed
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    const FAMILIES: &[(&str, &str)] = &[
+        ("non farm payrolls private", "nfp"),
+        ("nonfarm payrolls private", "nfp"),
+        ("non farm payrolls", "nfp"),
+        ("nonfarm payrolls", "nfp"),
+        ("nfp", "nfp"),
+        ("average hourly earnings mom", "avg-hourly-earnings-mom"),
+        ("average hourly earnings yoy", "avg-hourly-earnings-yoy"),
+        ("core cpi yoy", "core-cpi-yoy"),
+        ("core cpi mom", "core-cpi-mom"),
+        ("cpi yoy", "cpi-yoy"),
+        ("cpi mom", "cpi-mom"),
+        ("core pce price index", "core-pce"),
+        ("core pce", "core-pce"),
+        ("pce price index", "pce"),
+        ("fomc", "fomc"),
+        ("federal funds rate", "fomc"),
+        ("interest rate decision", "fomc"),
+        ("u 6 unemployment rate", "u6-unemployment"),
+        ("u6 unemployment rate", "u6-unemployment"),
+        ("unemployment rate", "unemployment-rate"),
+    ];
+    for (variant, canonical) in FAMILIES {
+        if normalized.contains(variant) {
+            return (*canonical).to_string();
+        }
+    }
+    normalized
 }
 
 /// Map the upcoming-events list into the binary catalyst rows that drive
@@ -2619,9 +2773,12 @@ fn calendar_to_binary_catalysts(
         Err(_) => return Vec::new(),
     };
     let cutoff = from + Duration::days(horizon_days);
+    let mut seen: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
     events
         .iter()
         .filter(|e| e.event_type == "economic" && effective_impact(e) == "high")
+        .filter(|e| seen.insert((e.date.clone(), canonical_calendar_key(&e.name))))
         .filter(|e| {
             NaiveDate::parse_from_str(&e.date, "%Y-%m-%d")
                 .map(|d| d >= from && d <= cutoff)
@@ -2959,6 +3116,15 @@ fn load_todays_analyst_synthesis(
     let mut prioritized: Vec<&crate::db::agent_messages::AgentMessage> = messages
         .iter()
         .filter(|m| matches!(m.priority.as_str(), "high" | "normal"))
+        // Decision-card messages are JSON envelopes for the Decisions
+        // Pending section — they dump as a wall of raw JSON when picked
+        // up here. Panel persona responses are JSON for the Investor
+        // Panel section. Both are surfaced in their own sections; the
+        // Bottom Line should pick a prose action_summary instead.
+        .filter(|m| {
+            let cat = m.category.as_deref().unwrap_or("");
+            cat != "decision-card" && !m.from_agent.starts_with("panel-")
+        })
         .collect();
     prioritized.sort_by(|a, b| {
         priority_rank(&a.priority)
@@ -3082,12 +3248,51 @@ fn private_news_events_for_held(
         .collect();
     news.iter()
         .filter_map(|n| {
-            let tag = n.symbol_tag.as_deref()?;
-            let matched: Vec<String> = tag
-                .split([',', ';', ' '])
-                .map(|s| s.trim().to_uppercase())
-                .filter(|s| !s.is_empty() && held_set.contains(s))
-                .collect();
+            // First try the structured symbol_tag (exact-match against
+            // alias-expanded held set).
+            let tagged: Vec<String> = n
+                .symbol_tag
+                .as_deref()
+                .map(|tag| {
+                    tag.split([',', ';', ' '])
+                        .map(|s| s.trim().to_uppercase())
+                        .filter(|s| !s.is_empty() && held_set.contains(s))
+                        .collect()
+                })
+                .unwrap_or_default();
+            // Fallback: when symbol_tag is empty (news ingestion stopped
+            // populating it sometime before the 2026-06-05 weekly run —
+            // ~100% of recent rows had NULL/empty tags), do case-
+            // insensitive substring matching against the title against
+            // the same alias-expanded held set, but only for aliases
+            // that read as proper words (skip tickers like "USD" /
+            // "GLD" that would false-match common prose). Aliases ≥4
+            // chars or containing a hyphen/equals are considered safe
+            // matchers.
+            let matched: Vec<String> = if !tagged.is_empty() {
+                tagged
+            } else {
+                let title_upper = n.title.to_uppercase();
+                held_set
+                    .iter()
+                    .filter(|alias| {
+                        alias.len() >= 4
+                            || alias.contains('-')
+                            || alias.contains('=')
+                            || alias.contains('^')
+                    })
+                    .filter(|alias| {
+                        let needle = format!(" {alias} ");
+                        let prefix = format!("{alias} ");
+                        let suffix = format!(" {alias}");
+                        title_upper.contains(&needle)
+                            || title_upper.starts_with(&prefix)
+                            || title_upper.ends_with(&suffix)
+                            || title_upper == **alias
+                    })
+                    .cloned()
+                    .collect()
+            };
             if matched.is_empty() {
                 return None;
             }
@@ -4116,6 +4321,14 @@ fn load_cross_layer_signals(
             p == "high" || p == "normal"
         })
         .filter(|m| m.created_at.starts_with(report_date))
+        // Strip messages that are JSON envelopes for their own dedicated
+        // sections. Decision-card messages dump as raw JSON in this table
+        // (see the 2026-06-05 weekly run pages 25-27). Panel responses
+        // similarly belong in the Investor Panel section.
+        .filter(|m| {
+            let cat = m.category.as_deref().unwrap_or("");
+            cat != "decision-card" && !m.from_agent.starts_with("panel-")
+        })
         .map(|m| CrossLayerSignal {
             from_layer: m.from_agent,
             to_layer: m.to_agent.unwrap_or_else(|| "synthesis".to_string()),
@@ -4124,6 +4337,224 @@ fn load_cross_layer_signals(
             summary: first_sentence(&m.content).replace('|', "/"),
         })
         .collect()
+}
+
+/// Load the investor-panel persona responses for the report date by
+/// reading `agent_messages` rows where `from_agent` starts with `panel-`
+/// and parsing the JSON content per the panel schema. Rows that don't
+/// parse as valid panel responses are silently dropped — degraded
+/// rather than aborting so a single malformed persona response doesn't
+/// blank the entire section.
+fn load_investor_panel_responses(
+    backend: &BackendConnection,
+    report_date: &str,
+) -> Vec<InvestorPanelResponse> {
+    let since = format!("{report_date} 00:00:00");
+    let messages = crate::db::agent_messages::list_messages_backend(
+        backend,
+        None,
+        Some("synthesis"),
+        None,
+        false,
+        Some(&since),
+        None,
+        Some(64),
+    )
+    .unwrap_or_default();
+    messages
+        .into_iter()
+        .filter(|m| m.from_agent.starts_with("panel-"))
+        .filter(|m| m.created_at.starts_with(report_date))
+        .filter_map(|m| parse_panel_response(&m.content))
+        .collect()
+}
+
+fn parse_panel_response(raw: &str) -> Option<InvestorPanelResponse> {
+    let value: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
+    let investor = value.get("investor")?.as_str()?.to_string();
+    let overall_signal = value
+        .get("overall_signal")
+        .and_then(|v| v.as_str())
+        .unwrap_or("neutral")
+        .to_string();
+    let confidence = value
+        .get("confidence")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0)
+        .min(100) as u8;
+    let key_insight = value
+        .get("key_insight")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let what_would_change_my_mind = value
+        .get("what_would_change_my_mind")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let mut positioning = Vec::new();
+    if let Some(map) = value.get("positioning").and_then(|v| v.as_object()) {
+        for (asset, entry) in map {
+            let signal = entry
+                .get("signal")
+                .and_then(|v| v.as_str())
+                .unwrap_or("neutral")
+                .to_string();
+            let weight = entry
+                .get("weight")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let reasoning = entry
+                .get("reasoning")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            positioning.push(InvestorPanelPositioning {
+                asset: asset.clone(),
+                signal,
+                weight,
+                reasoning,
+            });
+        }
+    }
+    positioning.sort_by(|a, b| a.asset.cmp(&b.asset));
+    Some(InvestorPanelResponse {
+        investor,
+        overall_signal,
+        confidence,
+        positioning,
+        key_insight,
+        what_would_change_my_mind,
+    })
+}
+
+/// Aggregate per-asset bullish/bearish/neutral vote tally across the
+/// panel responses. Labels mirror the panel skill's consensus rules:
+/// "strong-consensus" when ≥75% of voters agree, "high-divergence"
+/// when bullish/bearish counts are within one vote, "mixed" otherwise.
+fn aggregate_panel_consensus(
+    responses: &[InvestorPanelResponse],
+) -> Vec<InvestorPanelConsensus> {
+    use std::collections::BTreeMap;
+    let mut tally: BTreeMap<String, (u32, u32, u32)> = BTreeMap::new();
+    for r in responses {
+        for p in &r.positioning {
+            let entry = tally.entry(p.asset.clone()).or_insert((0, 0, 0));
+            match p.signal.to_ascii_lowercase().as_str() {
+                "bullish" => entry.0 += 1,
+                "bearish" => entry.1 += 1,
+                _ => entry.2 += 1,
+            }
+        }
+    }
+    tally
+        .into_iter()
+        .map(|(asset, (b, r, n))| {
+            let total = b + r + n;
+            let label = if total == 0 {
+                "no-votes".to_string()
+            } else if b as f64 / total as f64 >= 0.75 {
+                "strong-consensus-bullish".to_string()
+            } else if r as f64 / total as f64 >= 0.75 {
+                "strong-consensus-bearish".to_string()
+            } else if (b as i32 - r as i32).abs() <= 1 && b + r > 0 {
+                "high-divergence".to_string()
+            } else if b > r {
+                "lean-bullish".to_string()
+            } else if r > b {
+                "lean-bearish".to_string()
+            } else {
+                "mixed".to_string()
+            };
+            InvestorPanelConsensus {
+                asset,
+                bullish_count: b,
+                bearish_count: r,
+                neutral_count: n,
+                label,
+            }
+        })
+        .collect()
+}
+
+/// Load portfolio decision cards for the report date by reading
+/// `agent_messages` rows where `from_agent='analyst-decisions'` and
+/// `category='decision-card'`, parsed from JSON. Rows that don't parse
+/// are silently dropped.
+fn load_portfolio_decision_cards(
+    backend: &BackendConnection,
+    report_date: &str,
+) -> Vec<PortfolioDecisionCard> {
+    let since = format!("{report_date} 00:00:00");
+    let messages = crate::db::agent_messages::list_messages_backend(
+        backend,
+        Some("analyst-decisions"),
+        Some("synthesis"),
+        None,
+        false,
+        Some(&since),
+        None,
+        Some(64),
+    )
+    .unwrap_or_default();
+    messages
+        .into_iter()
+        .filter(|m| m.created_at.starts_with(report_date))
+        .filter(|m| m.category.as_deref() == Some("decision-card"))
+        .filter_map(|m| parse_decision_card(&m.content))
+        .collect()
+}
+
+fn parse_decision_card(raw: &str) -> Option<PortfolioDecisionCard> {
+    let value: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
+    let symbol = value.get("symbol")?.as_str()?.to_string();
+    let question = value
+        .get("question")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let recommendation = value
+        .get("recommendation")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let what_would_change_it = value
+        .get("what_would_change_it")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let sizing_math = value
+        .get("sizing_math")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let to_str_vec = |v: &serde_json::Value| -> Vec<String> {
+        v.as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|i| i.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let evidence_for = value
+        .get("evidence_for")
+        .map(to_str_vec)
+        .unwrap_or_default();
+    let evidence_against = value
+        .get("evidence_against")
+        .map(to_str_vec)
+        .unwrap_or_default();
+    Some(PortfolioDecisionCard {
+        symbol,
+        question,
+        evidence_for,
+        evidence_against,
+        recommendation,
+        what_would_change_it,
+        sizing_math,
+    })
 }
 
 /// Load the per-asset synthesis digest for the report date from
@@ -4414,6 +4845,7 @@ mod assembler_tests {
             "private_lessons_applied",
             "private_self_retrospective_calibration",
             "private_cross_layer_signals",
+            "private_investor_panel",
             "private_parallels",
             "private_decisions_pending",
         ];
