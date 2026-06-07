@@ -1,24 +1,30 @@
 #![allow(dead_code)]
 //! Private "Cross-Layer Signals" section.
 //!
-//! Surfaces the unacknowledged-since-this-morning inbound signals from
-//! every analyst layer to the synthesis layer. Grouped by priority so
-//! `high` items lead.
+//! Surfaces the inbound signals from every analyst layer to the synthesis
+//! layer as a readable bulleted list, grouped by priority. The previous
+//! incarnation rendered a 4-column FROM/TO/CATEGORY/SUMMARY table that
+//! the operator described as "unreadable and doesn't even seem to be
+//! written for human reading" — this rewrite keeps the data but presents
+//! it as English the operator can skim in a minute.
 
 use anyhow::Result;
+use std::collections::BTreeMap;
 
 use crate::report::build::daily::{BuildContext, CrossLayerSignal};
 
 pub fn render_private_cross_layer_signals(ctx: &BuildContext) -> Result<String> {
-    let mut output = String::from("## Cross-Layer Signals\n\n");
     if ctx.cross_layer_signals.is_empty() {
-        output.push_str(
-            "No inbound layer→synthesis messages landed today at high or normal priority. \
-            This is normal on quiet sessions; check `pftui agent message list --to synthesis` \
-            for the full unfiltered queue.",
-        );
-        return Ok(output);
+        // Suppress on quiet sessions rather than emitting the "no inbound
+        // messages landed" disclaimer that wasted a page in prior runs.
+        return Ok(String::new());
     }
+
+    let mut output = String::from("## Cross-Layer Signals\n\n");
+    output.push_str(
+        "What each timeframe layer flagged to synthesis this run. Grouped by priority \
+         and source; one bullet per signal, source layer prefixed.\n\n",
+    );
 
     let high: Vec<&CrossLayerSignal> = ctx
         .cross_layer_signals
@@ -33,38 +39,74 @@ pub fn render_private_cross_layer_signals(ctx: &BuildContext) -> Result<String> 
 
     if !high.is_empty() {
         output.push_str("### High priority\n\n");
-        push_table(&mut output, &high);
+        push_grouped_bullets(&mut output, &high);
         output.push('\n');
     }
     if !normal.is_empty() {
         output.push_str("### Normal priority\n\n");
-        push_table(&mut output, &normal);
+        push_grouped_bullets(&mut output, &normal);
     }
 
     Ok(output.trim_end().to_string())
 }
 
-fn push_table(out: &mut String, rows: &[&CrossLayerSignal]) {
-    out.push_str("| From | To | Category | Summary |\n");
-    out.push_str("|---|---|---|---|\n");
+/// Group signals by source layer (analyst-low / analyst-medium / etc) so
+/// the operator can scan one layer's worth of flags at a time. Within
+/// each group, signals render as bullets prefixed with the source label.
+fn push_grouped_bullets(out: &mut String, rows: &[&CrossLayerSignal]) {
+    let mut by_source: BTreeMap<String, Vec<&CrossLayerSignal>> = BTreeMap::new();
     for s in rows {
-        out.push_str(&format!(
-            "| {} | {} | {} | {} |\n",
-            escape_cell(&s.from_layer),
-            escape_cell(&s.to_layer),
-            escape_cell(&s.category),
-            escape_cell(&s.summary),
-        ));
+        by_source
+            .entry(canonical_source_label(&s.from_layer))
+            .or_default()
+            .push(*s);
+    }
+    for (source, signals) in by_source {
+        out.push_str(&format!("**{source}**\n\n"));
+        for s in signals {
+            let body = clean_summary(&s.summary);
+            if body.is_empty() {
+                continue;
+            }
+            out.push_str(&format!("- {body}\n"));
+        }
+        out.push('\n');
     }
 }
 
-fn escape_cell(s: &str) -> String {
-    let trimmed = s.replace('|', "/").trim().to_string();
-    if trimmed.is_empty() {
-        "—".to_string()
-    } else {
-        trimmed
+/// Map raw `from_agent` strings onto display labels the operator can scan.
+/// `analyst-low` → "LOW", `analyst-macro-agent` → "MACRO", etc.
+fn canonical_source_label(from: &str) -> String {
+    let lower = from.to_ascii_lowercase();
+    if lower.contains("macro") {
+        return "MACRO".to_string();
     }
+    if lower.contains("high") {
+        return "HIGH".to_string();
+    }
+    if lower.contains("medium") || lower.contains("med") {
+        return "MEDIUM".to_string();
+    }
+    if lower.contains("low") {
+        return "LOW".to_string();
+    }
+    if lower.contains("synthesis") {
+        return "SYNTHESIS".to_string();
+    }
+    if lower.contains("adversary") {
+        return "ADVERSARY".to_string();
+    }
+    if lower.starts_with("panel-") {
+        return "PANEL".to_string();
+    }
+    from.to_string()
+}
+
+fn clean_summary(s: &str) -> String {
+    s.replace('|', "/")
+        .replace('\n', " ")
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]
@@ -82,15 +124,14 @@ mod tests {
     }
 
     #[test]
-    fn renders_empty_state_when_no_signals() {
+    fn suppressed_when_no_signals() {
         let ctx = BuildContext::default();
         let out = render_private_cross_layer_signals(&ctx).unwrap();
-        assert!(out.starts_with("## Cross-Layer Signals"));
-        assert!(out.contains("No inbound layer"));
+        assert!(out.is_empty());
     }
 
     #[test]
-    fn groups_by_priority_high_first() {
+    fn groups_by_layer_high_first() {
         let ctx = BuildContext {
             cross_layer_signals: vec![
                 sig("analyst-low", "high", "alert", "RSI divergence printing"),
@@ -106,12 +147,17 @@ mod tests {
         let hi = out.find("High priority").unwrap();
         let no = out.find("Normal priority").unwrap();
         assert!(hi < no);
-        assert!(out.contains("RSI divergence printing"));
-        assert!(out.contains("MACRO tilt softening"));
+        // Layer labels appear as section headers.
+        assert!(out.contains("**LOW**"));
+        assert!(out.contains("**HIGH**"));
+        assert!(out.contains("**MEDIUM**"));
+        // Bullets carry summaries.
+        assert!(out.contains("- RSI divergence printing"));
+        assert!(out.contains("- 200WMA test underway"));
     }
 
     #[test]
-    fn escapes_pipe_characters_in_summary() {
+    fn pipe_chars_are_escaped() {
         let ctx = BuildContext {
             cross_layer_signals: vec![sig(
                 "analyst-low",
@@ -122,18 +168,7 @@ mod tests {
             ..BuildContext::default()
         };
         let out = render_private_cross_layer_signals(&ctx).unwrap();
-        // Must not break the markdown table.
         assert!(out.contains("BTC / ETH spread widening"));
         assert!(!out.contains("BTC | ETH spread"));
-    }
-
-    #[test]
-    fn empty_category_renders_dash() {
-        let ctx = BuildContext {
-            cross_layer_signals: vec![sig("analyst-macro", "normal", "", "Long-cycle rebalance")],
-            ..BuildContext::default()
-        };
-        let out = render_private_cross_layer_signals(&ctx).unwrap();
-        assert!(out.contains("| — |"));
     }
 }

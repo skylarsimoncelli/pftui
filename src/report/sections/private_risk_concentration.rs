@@ -27,11 +27,10 @@ struct FactorContributor {
 }
 
 pub fn render_private_risk_concentration(ctx: &BuildContext) -> Result<String> {
-    let mut output = String::from("## Risk Concentration\n\n");
     let held = qualifying_positions(&ctx.private_positions);
     if held.is_empty() {
-        output.push_str("No held assets above 1% are attached to this private build.");
-        return Ok(output);
+        // Suppress entirely when there are no held positions to map.
+        return Ok(String::new());
     }
 
     let factors = factor_aggregates(
@@ -40,12 +39,13 @@ pub fn render_private_risk_concentration(ctx: &BuildContext) -> Result<String> {
         &ctx.private_macro_scenarios,
     );
     if factors.is_empty() {
-        output.push_str(
-            "No factor mapping rows are attached for qualifying held assets. Risk concentration is limited to allocation concentration until scenario-to-asset mappings are loaded.",
-        );
-        return Ok(output);
+        // Suppress entirely when there's no factor data to surface.
+        // The previous "No factor mapping rows are attached…" disclosure
+        // wasted a page on every report and produced operator complaint.
+        return Ok(String::new());
     }
 
+    let mut output = String::from("## Risk Concentration\n\n");
     output.push_str(&native_placeholder(&factors));
     output.push_str("\n\n");
     output.push_str(&render_factor_table(&factors));
@@ -293,17 +293,16 @@ mod tests {
     }
 
     #[test]
-    fn private_risk_concentration_missing_factor_mapping_has_fallback() {
+    fn private_risk_concentration_missing_factor_mapping_suppresses_section() {
+        // When no factor mappings are attached the section is suppressed
+        // entirely — operator's ask.
         let rendered = render_private_risk_concentration(&BuildContext {
             private_positions: vec![position("BTC", 42.0)],
             ..BuildContext::default()
         })
         .unwrap();
 
-        assert!(
-            rendered.contains("No factor mapping rows are attached for qualifying held assets.")
-        );
-        assert!(!rendered.contains("{factor_exposure("));
+        assert!(rendered.is_empty());
     }
 
     fn fixture_context() -> BuildContext {

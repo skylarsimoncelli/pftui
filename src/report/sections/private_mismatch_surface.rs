@@ -24,11 +24,9 @@ struct MismatchCard {
 }
 
 pub fn render_private_mismatch_surface(ctx: &BuildContext) -> Result<String> {
-    let mut output = String::from("## Mismatch Surface - Skylar's view vs analyst convergence\n\n");
     let held = qualifying_positions(&ctx.private_positions);
     if held.is_empty() {
-        output.push_str("No held assets above 1% are attached to this private build.");
-        return Ok(output);
+        return Ok(String::new());
     }
 
     let cards = mismatch_cards(
@@ -37,11 +35,11 @@ pub fn render_private_mismatch_surface(ctx: &BuildContext) -> Result<String> {
         &ctx.private_asset_convergence,
     );
     if cards.is_empty() {
-        output.push_str(
-            "Skylar's journal view is aligned with analyst convergence for all qualifying held assets with attached private journal rows.",
-        );
-        return Ok(output);
+        // Alignment is the default state — suppress when nothing diverges.
+        return Ok(String::new());
     }
+
+    let mut output = String::from("## Mismatch Surface - Skylar's view vs analyst convergence\n\n");
 
     for card in cards {
         output.push_str(&render_card(&card));
@@ -191,13 +189,12 @@ mod tests {
     }
 
     #[test]
-    fn private_mismatch_surface_aligned_fixture_uses_one_sentence_fallback() {
+    fn private_mismatch_surface_aligned_fixture_suppresses_section() {
+        // Alignment is the default state — when journal view matches
+        // analyst convergence for every held asset, the section emits
+        // nothing rather than a placeholder.
         let rendered = render_private_mismatch_surface(&aligned_fixture()).unwrap();
-
-        assert_eq!(
-            rendered,
-            "## Mismatch Surface - Skylar's view vs analyst convergence\n\nSkylar's journal view is aligned with analyst convergence for all qualifying held assets with attached private journal rows."
-        );
+        assert!(rendered.is_empty());
     }
 
     #[test]

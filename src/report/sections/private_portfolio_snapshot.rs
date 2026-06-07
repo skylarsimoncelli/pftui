@@ -25,9 +25,15 @@ pub fn render_private_portfolio_snapshot(ctx: &BuildContext) -> Result<String> {
         output.push_str(&dust);
         output.push_str("\n\n");
     }
-    output.push_str("### Drift vs Allocation Targets\n\n");
-    output.push_str("Drift is computed against stated target bands. Analyst-recommended ranges appear separately in per-asset convergence cards.\n\n");
-    output.push_str(&render_drift_bars(&ctx.private_drift_rows));
+    // Drift block — only render when allocation targets exist. The operator's
+    // current stance is "no formal BTC/USD/SI=F targets yet, target-discovery
+    // is a goal of running the reports" — so the drift heading with one or
+    // zero rows was wasted page real estate.
+    if !ctx.private_drift_rows.is_empty() {
+        output.push_str("### Drift vs Allocation Targets\n\n");
+        output.push_str("Drift is computed against stated target bands. Analyst-recommended ranges appear separately in per-asset convergence cards.\n\n");
+        output.push_str(&render_drift_bars(&ctx.private_drift_rows));
+    }
 
     Ok(output.trim_end().to_string())
 }
@@ -199,6 +205,10 @@ mod tests {
 
     #[test]
     fn private_portfolio_snapshot_empty_positions_skips_stacked_bar() {
+        // Empty positions still emit the "no held-position rows" sentence
+        // (the snapshot block keeps its placeholder), but drift section
+        // is suppressed entirely when no allocation targets exist —
+        // operator's explicit ask: no drift section when no targets.
         let ctx = BuildContext {
             private_positions: vec![],
             private_drift_rows: vec![],
@@ -207,7 +217,7 @@ mod tests {
         let rendered = render_private_portfolio_snapshot(&ctx).unwrap();
         assert!(!rendered.contains("<svg"));
         assert!(rendered.contains("No held-position rows are attached to this build."));
-        assert!(rendered.contains("No allocation target drift rows are attached to this build."));
+        assert!(!rendered.contains("Drift vs Allocation Targets"));
     }
 
     fn fixture_context() -> BuildContext {

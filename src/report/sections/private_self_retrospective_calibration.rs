@@ -13,13 +13,22 @@ const MAX_HIGHLIGHT_BULLETS: usize = 3;
 const MIN_HIGHLIGHT_BULLETS: usize = 2;
 
 pub fn render_private_self_retrospective_calibration(ctx: &BuildContext) -> Result<String> {
-    let mut output = String::from("## Self-Retrospective Calibration\n\n");
     let rows = &ctx.private_calibration;
+    if rows.is_empty() && ctx.private_regime_conditional.is_none() {
+        // Suppress the entire section when no calibration substrate is
+        // attached. The previous "No 90-day calibration rows…" disclosure
+        // wasted a page on every report and produced operator complaint.
+        return Ok(String::new());
+    }
+    let mut output = String::from("## Self-Retrospective Calibration\n\n");
     if rows.is_empty() {
-        output.push_str(
-            "No 90-day calibration rows are attached to this private build, so the run cannot show self-retrospective calibration.",
-        );
-        return Ok(output);
+        // Calibration empty but regime-conditional present — fall through
+        // to the regime block at the bottom of the function.
+        if let Some(regime) = &ctx.private_regime_conditional {
+            output.push_str(&render_regime_conditional(regime));
+            return Ok(output.trim_end().to_string());
+        }
+        return Ok(String::new());
     }
 
     output.push_str("{calibration_dot_plot(private_calibration)}\n\n");
@@ -181,11 +190,11 @@ mod tests {
     }
 
     #[test]
-    fn private_self_retrospective_calibration_empty_fixture_fallback() {
+    fn private_self_retrospective_calibration_empty_fixture_suppresses_section() {
+        // Empty calibration substrate => suppress section entirely.
         let rendered =
             render_private_self_retrospective_calibration(&BuildContext::default()).unwrap();
-        assert!(rendered.contains("No 90-day calibration rows"));
-        assert!(!rendered.contains("{calibration_dot_plot"));
+        assert!(rendered.is_empty());
     }
 
     #[test]
