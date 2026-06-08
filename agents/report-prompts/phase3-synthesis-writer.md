@@ -15,7 +15,11 @@ pftui analytics adversary synthesis show --json
 pftui agent message list --from-prefix panel --json
 pftui agent message list --to synthesis --since 1d --json
 sqlite3 -json "$DB" "SELECT * FROM daily_notes WHERE date >= date('now','-1 day') AND author LIKE 'analyst-%'"
+# Phase 2c external-TA research, when present — read the comparison block
+sqlite3 -json "$DB" "SELECT content FROM daily_notes WHERE author='analyst-synthesis' AND content LIKE '[synthesis-external-ta%' AND date = '{DATE_ISO}'"
 ```
+
+When the external-TA note is present, use it to inform your Bull / Bear / What-Would-Change blocks — specifically, cite outside levels / desk targets / on-chain readings that **diverge** from our convergence. The point is to surface "we say X, the crowd says Y" tensions in the per-asset cards, not bury them.
 
 Held assets for this run: {HELD_ASSETS}
 
