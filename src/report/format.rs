@@ -2,7 +2,7 @@
 //!
 //! Centralises money/percentage formatting so every section renders numbers
 //! the same way. The headline behaviour callers want is **thousands
-//! separators** — `$346,838` rather than `$346837.6` — which historically was
+//! separators** — `$250,000` rather than `$250000.5` — which historically was
 //! missing because each renderer formatted ad hoc.
 
 use rust_decimal::Decimal;
@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn groups_thousands() {
-        assert_eq!(group_thousands("346837.6"), "346,837.6");
+        assert_eq!(group_thousands("250000.5"), "250,000.5");
         assert_eq!(group_thousands("4365.3"), "4,365.3");
         assert_eq!(group_thousands("999"), "999");
         assert_eq!(group_thousands("1000"), "1,000");
