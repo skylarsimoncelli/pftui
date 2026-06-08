@@ -65,8 +65,10 @@ fn render_events(events: &[PublicNewsEvent]) -> String {
 }
 
 fn render_silence_signals(signals: &[NewsVolumeSignal]) -> String {
+    // No news-volume baseline this run: suppress the sub-block entirely rather
+    // than print a placeholder. The caller drops empty sub-blocks.
     if signals.is_empty() {
-        return "News-silence analytics are unavailable for this build. Do not infer whether a quiet topic is meaningful without a refreshed baseline.".to_string();
+        return String::new();
     }
 
     let mut table = String::from(
@@ -231,7 +233,9 @@ mod tests {
 
         assert!(rendered.contains("*Source: macro.test (Tier 3, wire) | Topic: inflation | Bound market: CPI above consensus*"));
         assert!(rendered.contains("No event summary is attached"));
-        assert!(rendered.contains("News-silence analytics are unavailable"));
+        // News-silence sub-block suppresses (renders nothing) when no
+        // news-volume baseline is attached, rather than printing a stub.
+        assert!(!rendered.contains("News-silence analytics are unavailable"));
         assert!(rendered.contains("No economic-calendar rows are attached"));
         assert_public_safe(&rendered);
     }

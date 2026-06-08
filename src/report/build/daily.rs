@@ -2235,22 +2235,17 @@ fn dec_to_f64(d: rust_decimal::Decimal) -> f64 {
     d.to_string().parse::<f64>().unwrap_or(0.0)
 }
 
-/// Format a money/price decimal for display with a leading `$`.
+/// Format a money/price decimal for display with a leading `$` and grouped
+/// thousands separators (e.g. `$61,667`). Delegates to the shared formatter.
 fn format_price(d: rust_decimal::Decimal) -> String {
-    format!("${}", d.round_dp(2).normalize())
+    crate::report::format::fmt_money(d)
 }
 
 /// Format a signed money delta — leading `+` for positive (or zero),
-/// leading `-` for negative. Used for daily P&L display in the Bottom
-/// Line bullet.
+/// leading `-` for negative, with grouped thousands. Used for daily P&L
+/// display in the Bottom Line bullet.
 fn format_signed_price(d: rust_decimal::Decimal) -> String {
-    let rounded = d.round_dp(2);
-    if rounded.is_sign_negative() {
-        // Decimal's `to_string()` already includes the leading minus.
-        format!("-${}", rounded.abs().normalize())
-    } else {
-        format!("+${}", rounded.normalize())
-    }
+    crate::report::format::fmt_signed_money(d)
 }
 
 /// Truncate an RFC3339 / SQLite timestamp to its `YYYY-MM-DD` date part.
@@ -3109,26 +3104,25 @@ fn load_lessons_applied(conn: &rusqlite::Connection) -> Result<Option<PrivateLes
 
     let mut lesson_references: Vec<PrivateLessonReferenceRow> = counts
         .iter()
-        .map(|(id, references)| {
-            let lesson = lesson_by_id.get(id);
-            PrivateLessonReferenceRow {
+        // Drop references whose lesson row cannot be resolved (the prediction
+        // cited an out-of-range ID — a symptom of mixing prediction_id and
+        // lesson.id at prompt time). These are not real lesson cites, so they
+        // are excluded from the reader-facing list entirely rather than
+        // surfaced as a bare "Lesson #N" placeholder or a maintainer
+        // diagnostic. The discrepancy is still observable in the headline
+        // counts (guarded predictions vs resolved unique lessons).
+        .filter_map(|(id, references)| {
+            let lesson = lesson_by_id.get(id)?;
+            let summary = first_sentence(&lesson.what_predicted);
+            if summary.is_empty() {
+                return None;
+            }
+            Some(PrivateLessonReferenceRow {
                 lesson_id: *id,
                 references: *references,
-                miss_type: lesson
-                    .map(|l| l.miss_type.clone())
-                    .filter(|s| !s.is_empty()),
-                summary: lesson
-                    .map(|l| first_sentence(&l.what_predicted))
-                    .filter(|s| !s.is_empty())
-                    // When the lesson row is missing (the prediction references
-                    // an out-of-range ID — symptom of mixing prediction_id and
-                    // lesson.id in the prompt-time lesson book), surface that
-                    // explicitly so the reader sees it isn't a real lesson cite
-                    // rather than a bare "Lesson #N" line.
-                    .unwrap_or_else(|| {
-                        format!("Lesson #{id} (no matching row in prediction_lessons — likely a prompt-time ID drift; check that the lesson book uses lessons.id, not prediction_id)")
-                    }),
-            }
+                miss_type: Some(lesson.miss_type.clone()).filter(|s| !s.is_empty()),
+                summary,
+            })
         })
         .collect();
     lesson_references.sort_by(|a, b| {
@@ -3136,13 +3130,16 @@ fn load_lessons_applied(conn: &rusqlite::Connection) -> Result<Option<PrivateLes
             .cmp(&a.references)
             .then_with(|| a.lesson_id.cmp(&b.lesson_id))
     });
+    // Count of resolved unique lessons (excludes dropped unresolvable IDs) so
+    // the headline never claims more unique lessons than are actually listed.
+    let resolved_unique = lesson_references.len() as u32;
     lesson_references.truncate(8);
 
     Ok(Some(PrivateLessonsAppliedSummary {
         since: "all-time".to_string(),
         total_predictions: predictions.len() as u32,
         guarded_predictions: guarded,
-        unique_lessons: counts.len() as u32,
+        unique_lessons: resolved_unique,
         lesson_references,
         strongest_analog: None,
     }))
@@ -3992,14 +3989,36 @@ pub fn audit_public_markdown(body: &str) -> Vec<PrivacyViolation> {
 }
 
 /// Concatenate sections in `plan` order, separating with a blank line.
+/// Empty section bodies (a suppressed/auto-omitted section returns an empty
+/// string) are skipped so they leave no dangling blank lines. The assembled
+/// markdown is scanned for leaked internal/debug text; findings are logged but
+/// non-fatal so report generation is never blocked.
 pub fn assemble_markdown(ctx: &BuildContext, plan: &[SectionSpec]) -> Result<String> {
     let mut parts = Vec::with_capacity(plan.len());
     for spec in plan {
         let body = render_section(spec.name, ctx)
             .with_context(|| format!("failed to render section {}", spec.name))?;
-        parts.push(body);
+        if !body.trim().is_empty() {
+            parts.push(body);
+        }
     }
-    Ok(parts.join("\n\n"))
+    let markdown = parts.join("\n\n");
+    warn_on_leaks(&markdown);
+    Ok(markdown)
+}
+
+/// Log a warning for any leaked internal/debug text found in assembled
+/// markdown. Non-fatal: surfacing it in CI (via the regression test) and on
+/// stderr is enough; we never want to fail an operator's report build over a
+/// cosmetic leak.
+fn warn_on_leaks(markdown: &str) {
+    let findings = crate::report::lint::scan_for_leaks(markdown);
+    for f in &findings {
+        eprintln!(
+            "report-lint: leaked internal text on line {} (matched '{}'): {}",
+            f.line, f.pattern, f.excerpt
+        );
+    }
 }
 
 /// Assemble the public analytical-core markdown only. Enforces the privacy
@@ -4067,9 +4086,13 @@ pub fn assemble_private_with_persist(
             render_section(spec.name, ctx)
                 .with_context(|| format!("failed to render section {}", spec.name))?
         };
-        parts.push(body);
+        if !body.trim().is_empty() {
+            parts.push(body);
+        }
     }
-    Ok(parts.join("\n\n"))
+    let markdown = parts.join("\n\n");
+    warn_on_leaks(&markdown);
+    Ok(markdown)
 }
 
 /// Persist every decision card derived from the context as a `recommendations`
