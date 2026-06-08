@@ -140,6 +140,100 @@ pub fn get_history_backend(
     )
 }
 
+/// Backfill multiple historical readings into `sentiment_history` only.
+///
+/// Each tuple is `(unix_timestamp, value, classification)`. Uses
+/// `INSERT OR IGNORE` so it is idempotent and safe to re-run; it does NOT
+/// touch `sentiment_cache` (the latest-value table). Returns the number of
+/// rows actually inserted (i.e. newly added, ignoring duplicates).
+pub fn backfill_history(
+    conn: &Connection,
+    index_type: &str,
+    rows: &[(i64, u8, String)],
+) -> Result<usize> {
+    let mut inserted = 0usize;
+    let tx = conn.unchecked_transaction()?;
+    for (timestamp, value, classification) in rows {
+        let n = tx.execute(
+            "INSERT OR IGNORE INTO sentiment_history (index_type, date, value, classification)
+             VALUES (?1, date(?2, 'unixepoch'), ?3, ?4)",
+            params![index_type, timestamp, value, classification],
+        )?;
+        inserted += n;
+    }
+    tx.commit()?;
+    Ok(inserted)
+}
+
+pub fn backfill_history_backend(
+    backend: &BackendConnection,
+    index_type: &str,
+    rows: &[(i64, u8, String)],
+) -> Result<usize> {
+    query::dispatch(
+        backend,
+        |conn| backfill_history(conn, index_type, rows),
+        |pool| backfill_history_postgres(pool, index_type, rows),
+    )
+}
+
+fn backfill_history_postgres(
+    pool: &PgPool,
+    index_type: &str,
+    rows: &[(i64, u8, String)],
+) -> Result<usize> {
+    let inserted = crate::db::pg_runtime::block_on(async {
+        let mut total = 0u64;
+        for (timestamp, value, classification) in rows {
+            let res = sqlx::query(
+                "INSERT INTO sentiment_history (index_type, date, value, classification)
+                 VALUES ($1, TO_CHAR(TO_TIMESTAMP($2), 'YYYY-MM-DD'), $3, $4)
+                 ON CONFLICT (index_type, date) DO NOTHING",
+            )
+            .bind(index_type)
+            .bind(*timestamp as f64)
+            .bind(*value as i64)
+            .bind(classification)
+            .execute(pool)
+            .await?;
+            total += res.rows_affected();
+        }
+        Ok::<u64, sqlx::Error>(total)
+    })?;
+    Ok(inserted as usize)
+}
+
+/// Count the number of distinct daily history rows for a given index type.
+///
+/// Used to decide whether a deep-history backfill is needed (the crypto F&G
+/// history is otherwise only as deep as the daily refresh has accumulated).
+pub fn count_history(conn: &Connection, index_type: &str) -> Result<u32> {
+    let n: u32 = conn.query_row(
+        "SELECT COUNT(*) FROM sentiment_history WHERE index_type = ?1",
+        params![index_type],
+        |row| row.get(0),
+    )?;
+    Ok(n)
+}
+
+pub fn count_history_backend(backend: &BackendConnection, index_type: &str) -> Result<u32> {
+    query::dispatch(
+        backend,
+        |conn| count_history(conn, index_type),
+        |pool| count_history_postgres(pool, index_type),
+    )
+}
+
+fn count_history_postgres(pool: &PgPool, index_type: &str) -> Result<u32> {
+    let n: i64 = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar("SELECT COUNT(*) FROM sentiment_history WHERE index_type = $1")
+            .bind(index_type)
+            .fetch_one(pool)
+            .await
+    })?;
+    Ok(n.max(0) as u32)
+}
+
 /// Delete sentiment readings older than `days`.
 ///
 /// Prunes both current cache and history to prevent unbounded growth.
@@ -322,6 +416,38 @@ mod tests {
 
         let history = get_history(&conn, "crypto", 3).unwrap();
         assert_eq!(history.len(), 3);
+    }
+
+    #[test]
+    fn test_backfill_history_idempotent_and_counts() {
+        let conn = setup_test_db();
+
+        // Simulate a multi-row Alternative.me history backfill (3 distinct days).
+        let base = chrono::Utc::now();
+        let rows: Vec<(i64, u8, String)> = (0..3)
+            .map(|i| {
+                let ts = (base - chrono::Duration::days(i)).timestamp();
+                (ts, 20 + (i as u8 * 5), "Fear".to_string())
+            })
+            .collect();
+
+        let inserted = backfill_history(&conn, "crypto_fng", &rows).unwrap();
+        assert_eq!(inserted, 3);
+        assert_eq!(count_history(&conn, "crypto_fng").unwrap(), 3);
+
+        // Re-running is idempotent: INSERT OR IGNORE adds nothing new.
+        let inserted_again = backfill_history(&conn, "crypto_fng", &rows).unwrap();
+        assert_eq!(inserted_again, 0);
+        assert_eq!(count_history(&conn, "crypto_fng").unwrap(), 3);
+
+        // Backfill does NOT populate the latest-value cache table.
+        assert!(get_latest(&conn, "crypto_fng").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_count_history_empty() {
+        let conn = setup_test_db();
+        assert_eq!(count_history(&conn, "crypto_fng").unwrap(), 0);
     }
 
     #[test]

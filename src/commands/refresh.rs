@@ -662,6 +662,38 @@ fn cot_staleness_detail(backend: &BackendConnection) -> Option<String> {
     }
 }
 
+/// Build an age-stamped stale-cache note for COT when the live fetch fails.
+///
+/// Mirrors the COMEX/supply last-good-cache pattern: if `cached_reports` holds
+/// prior reports, return an explicit "serving cached data as of <date>" note so
+/// downstream report code never silently cites stale COT data. Returns `None`
+/// when there is no cache to fall back to.
+fn cot_stale_cache_note(
+    cached_reports: &[crate::db::cot_cache::CotCacheEntry],
+    today: chrono::NaiveDate,
+) -> Option<String> {
+    let as_of = latest_cot_report_date(cached_reports)?;
+    let age_days = (today - as_of).num_days();
+    Some(format!(
+        "COT live fetch failed; serving cached data as of {} ({} days old)",
+        as_of.format("%Y-%m-%d"),
+        age_days
+    ))
+}
+
+/// Build an age-stamped stale-cache note for options when all live fetches fail.
+///
+/// `latest_fetched_ats` is the set of per-symbol most-recent `fetched_at`
+/// strings from `options_chain_snapshots`. Returns a note referencing the most
+/// recent cached snapshot, or `None` when nothing is cached.
+fn options_stale_cache_note(latest_fetched_ats: &[String]) -> Option<String> {
+    let as_of = latest_fetched_ats.iter().max()?;
+    Some(format!(
+        "Options live fetch failed; serving cached snapshot as of {}",
+        as_of
+    ))
+}
+
 /// Check if COMEX needs refreshing
 fn comex_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     // Check common metals
@@ -2672,6 +2704,46 @@ fn store_sentiment_result(
                 if sentiment_cache::upsert_reading_backend(backend, &reading).is_ok() {
                     count += 1;
                 }
+
+                // One-time/idempotent deep-history backfill: the daily path
+                // only accumulates one crypto_fng history row per refresh, so
+                // sentiment_history stays shallow and starves historical-analog
+                // parallels. If we have fewer than the threshold of rows, pull
+                // the full Alternative.me history (limit=0 → ~2018→present) and
+                // INSERT OR IGNORE it. Safe to re-run; only crypto_fng (CNN's
+                // traditional_fng has no deep-history endpoint).
+                const CRYPTO_FNG_BACKFILL_THRESHOLD: u32 = 400;
+                let existing = sentiment_cache::count_history_backend(backend, "crypto_fng")
+                    .unwrap_or(0);
+                if existing < CRYPTO_FNG_BACKFILL_THRESHOLD {
+                    match crate::data::sentiment::fetch_crypto_fng_history(0) {
+                        Ok(history) => {
+                            let rows: Vec<(i64, u8, String)> = history
+                                .into_iter()
+                                .map(|r| (r.timestamp, r.value, r.classification))
+                                .collect();
+                            match sentiment_cache::backfill_history_backend(
+                                backend,
+                                "crypto_fng",
+                                &rows,
+                            ) {
+                                Ok(n) => info_ln!(
+                                    verbose,
+                                    "✓ Sentiment crypto_fng backfill (+{} history rows)",
+                                    n
+                                ),
+                                Err(e) => warn_ln!(
+                                    verbose,
+                                    "crypto_fng history backfill persist failed: {}",
+                                    e
+                                ),
+                            }
+                        }
+                        Err(e) => {
+                            warn_ln!(verbose, "crypto_fng history backfill fetch failed: {}", e)
+                        }
+                    }
+                }
             }
             if let Ok(trad) = trad_result {
                 let reading = crate::db::sentiment_cache::SentimentReading {
@@ -3186,21 +3258,45 @@ fn store_cot_result(
                 detail: staleness_detail,
             });
         } else {
-            info_ln!(verbose, "✗ COT (all failed)");
-            dag_result.add(SourceResult {
-                name: "cot".to_string(),
-                label: "COT (CFTC)".to_string(),
-                status: SourceStatus::Failed,
-                items_attempted: Some(cot::COT_CONTRACTS.len()),
-                items_failed: Some(failed_contracts.len()),
-                failed_symbols: (!failed_contracts.is_empty()).then_some(failed_contracts),
-                items_updated: None,
-                duration_ms: cot_start.elapsed().as_millis() as u64,
-                reason: None,
-                age_minutes: None,
-                error: Some("all contracts failed".to_string()),
-                detail: staleness_detail,
-            });
+            // Live fetch failed for every contract. Fall back to last-good
+            // cache (mirrors the COMEX/supply pattern): if cot_cache still
+            // holds prior reports, surface them with an explicit as-of date
+            // so downstream report code never silently cites stale COT data.
+            let cached_reports = cot_cache::get_all_latest_backend(backend).unwrap_or_default();
+            if let Some(note) = cot_stale_cache_note(&cached_reports, chrono::Utc::now().date_naive())
+            {
+                warn_ln!(verbose, "⚠ COT ({note})");
+                dag_result.add(SourceResult {
+                    name: "cot".to_string(),
+                    label: "COT (CFTC)".to_string(),
+                    status: SourceStatus::Ok,
+                    items_attempted: Some(cot::COT_CONTRACTS.len()),
+                    items_failed: Some(failed_contracts.len()),
+                    failed_symbols: (!failed_contracts.is_empty()).then_some(failed_contracts),
+                    items_updated: Some(0),
+                    duration_ms: cot_start.elapsed().as_millis() as u64,
+                    reason: Some(note.clone()),
+                    age_minutes: None,
+                    error: None,
+                    detail: Some(staleness_detail.unwrap_or(note)),
+                });
+            } else {
+                info_ln!(verbose, "✗ COT (all failed, no cache)");
+                dag_result.add(SourceResult {
+                    name: "cot".to_string(),
+                    label: "COT (CFTC)".to_string(),
+                    status: SourceStatus::Failed,
+                    items_attempted: Some(cot::COT_CONTRACTS.len()),
+                    items_failed: Some(failed_contracts.len()),
+                    failed_symbols: (!failed_contracts.is_empty()).then_some(failed_contracts),
+                    items_updated: None,
+                    duration_ms: cot_start.elapsed().as_millis() as u64,
+                    reason: None,
+                    age_minutes: None,
+                    error: Some("all contracts failed, no cache".to_string()),
+                    detail: staleness_detail,
+                });
+            }
         }
     } else if in_plan {
         let staleness_detail = cot_staleness_detail(backend);
@@ -4391,34 +4487,83 @@ fn store_options_result(
         }
     }
 
-    let status = if count > 0 {
-        SourceStatus::Ok
-    } else {
-        SourceStatus::Failed
-    };
     if count > 0 {
         info_ln!(verbose, "✓ Options ({} chains)", count);
-    } else {
-        info_ln!(verbose, "✗ Options (no chains persisted)");
+        dag_result.add(SourceResult {
+            name: "options".to_string(),
+            label: "Options chain + GEX".to_string(),
+            status: SourceStatus::Ok,
+            items_attempted: Some(crate::data::options::DEFAULT_OPTIONS_SYMBOLS.len()),
+            items_failed: Some(failed.len()),
+            failed_symbols: if failed.is_empty() {
+                None
+            } else {
+                Some(failed)
+            },
+            items_updated: Some(count),
+            duration_ms: start.elapsed().as_millis() as u64,
+            reason: None,
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
+        return;
     }
-    dag_result.add(SourceResult {
-        name: "options".to_string(),
-        label: "Options chain + GEX".to_string(),
-        status,
-        items_attempted: Some(crate::data::options::DEFAULT_OPTIONS_SYMBOLS.len()),
-        items_failed: Some(failed.len()),
-        failed_symbols: if failed.is_empty() {
-            None
-        } else {
-            Some(failed)
-        },
-        items_updated: Some(count),
-        duration_ms: start.elapsed().as_millis() as u64,
-        reason: None,
-        age_minutes: None,
-        error: None,
-        detail: None,
-    });
+
+    // All live fetches failed. Fall back to last-good cache (mirrors the
+    // COMEX/supply pattern): if options_chain_snapshots still holds prior
+    // snapshots, surface them with an explicit as-of date so downstream
+    // report code never silently cites stale options/GEX data.
+    let latest_fetched_ats: Vec<String> = crate::data::options::DEFAULT_OPTIONS_SYMBOLS
+        .iter()
+        .filter_map(|sym| {
+            crate::db::options_chain_snapshots::latest_fetched_at(conn, sym)
+                .ok()
+                .flatten()
+        })
+        .collect();
+
+    if let Some(note) = options_stale_cache_note(&latest_fetched_ats) {
+        warn_ln!(verbose, "⚠ Options ({note})");
+        dag_result.add(SourceResult {
+            name: "options".to_string(),
+            label: "Options chain + GEX".to_string(),
+            status: SourceStatus::Ok,
+            items_attempted: Some(crate::data::options::DEFAULT_OPTIONS_SYMBOLS.len()),
+            items_failed: Some(failed.len()),
+            failed_symbols: if failed.is_empty() {
+                None
+            } else {
+                Some(failed)
+            },
+            items_updated: Some(0),
+            duration_ms: start.elapsed().as_millis() as u64,
+            reason: Some(note.clone()),
+            age_minutes: None,
+            error: None,
+            detail: Some(note),
+        });
+    } else {
+        info_ln!(verbose, "✗ Options (no chains persisted, no cache)");
+        dag_result.add(SourceResult {
+            name: "options".to_string(),
+            label: "Options chain + GEX".to_string(),
+            status: SourceStatus::Failed,
+            items_attempted: Some(crate::data::options::DEFAULT_OPTIONS_SYMBOLS.len()),
+            items_failed: Some(failed.len()),
+            failed_symbols: if failed.is_empty() {
+                None
+            } else {
+                Some(failed)
+            },
+            items_updated: Some(0),
+            duration_ms: start.elapsed().as_millis() as u64,
+            reason: None,
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
+    }
 }
 
 /// Persist capital-flow observations from the configured provider (F59 scaffold).
@@ -5524,6 +5669,55 @@ mod tests {
 
         let age_days = latest_cot_report_age_days(&reports).unwrap();
         assert!(age_days >= 0);
+    }
+
+    fn cot_entry(report_date: &str) -> crate::db::cot_cache::CotCacheEntry {
+        crate::db::cot_cache::CotCacheEntry {
+            cftc_code: "088691".to_string(),
+            report_date: report_date.to_string(),
+            open_interest: 0,
+            managed_money_long: 0,
+            managed_money_short: 0,
+            managed_money_net: 0,
+            commercial_long: 0,
+            commercial_short: 0,
+            commercial_net: 0,
+            fetched_at: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    #[test]
+    fn cot_stale_cache_note_age_stamps_when_cache_present() {
+        // Fetch failed but cache has a report dated 10 days before "today".
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 3, 30).unwrap();
+        let reports = vec![cot_entry("2026-03-20"), cot_entry("2026-03-13")];
+        let note = cot_stale_cache_note(&reports, today).expect("expected stale note");
+        assert!(note.contains("2026-03-20"), "uses newest report date: {note}");
+        assert!(note.contains("10 days old"), "age-stamped: {note}");
+        assert!(note.to_lowercase().contains("cached"));
+    }
+
+    #[test]
+    fn cot_stale_cache_note_none_when_no_cache() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 3, 30).unwrap();
+        assert!(cot_stale_cache_note(&[], today).is_none());
+    }
+
+    #[test]
+    fn options_stale_cache_note_uses_most_recent_snapshot() {
+        let fetched = vec![
+            "2026-03-28T10:00:00Z".to_string(),
+            "2026-03-29T10:00:00Z".to_string(),
+            "2026-03-27T10:00:00Z".to_string(),
+        ];
+        let note = options_stale_cache_note(&fetched).expect("expected stale note");
+        assert!(note.contains("2026-03-29T10:00:00Z"), "uses newest: {note}");
+        assert!(note.to_lowercase().contains("cached"));
+    }
+
+    #[test]
+    fn options_stale_cache_note_none_when_no_cache() {
+        assert!(options_stale_cache_note(&[]).is_none());
     }
 
     #[test]
