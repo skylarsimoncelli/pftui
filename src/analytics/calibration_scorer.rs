@@ -244,4 +244,61 @@ mod tests {
         assert_eq!(only_low.len(), 1);
         assert_eq!(only_low[0].layer, "low");
     }
+
+    /// Regression: legacy DBs created before `conviction_band` (and the other
+    /// analytic columns) were added to the `calibration_matrix` CREATE have the
+    /// old shape on disk. `run_migrations` must self-heal the table so a rebuild
+    /// INSERT no longer fails with
+    /// "table calibration_matrix has no column named conviction_band".
+    #[test]
+    fn migration_adds_missing_columns_to_legacy_calibration_matrix() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Simulate the legacy on-disk shape: table exists but only has the
+        // earliest columns. CREATE TABLE IF NOT EXISTS in run_migrations would
+        // otherwise leave this untouched.
+        conn.execute_batch(
+            "CREATE TABLE calibration_matrix (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                layer TEXT
+            );",
+        )
+        .unwrap();
+
+        crate::db::schema::run_migrations(&conn).unwrap();
+
+        let cols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('calibration_matrix')")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for expected in [
+            "layer",
+            "topic",
+            "conviction_band",
+            "n",
+            "hit_rate",
+            "stated_confidence",
+            "recorded_at",
+        ] {
+            assert!(
+                cols.iter().any(|c| c == expected),
+                "expected column `{expected}` after migration, got {cols:?}"
+            );
+        }
+
+        // A rebuild INSERT path must now succeed against the healed table.
+        conn.execute(
+            "INSERT INTO user_predictions
+                (claim, symbol, conviction, timeframe, topic, confidence,
+                 outcome, scored_at)
+             VALUES ('synthetic', 'BTC', 'high', 'low', 'crypto', 0.8, 'correct', datetime('now'))",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+        let result = rebuild_calibration_matrix_backend(&backend, 365).unwrap();
+        assert_eq!(result.rows_inserted, 1);
+    }
 }
