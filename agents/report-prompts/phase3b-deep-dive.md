@@ -44,6 +44,8 @@ Pick one of the structures below depending on the focus shape. **Don't use sub-h
 - Acknowledge what you don't know. If COFER doesn't print until mid-July, say so and frame the call as contingent.
 - No filler sentences. No "in summary" paragraphs. No bullet lists of all the things you considered. **Argue for a view.**
 - Write at a high readability bar: someone reading this on their phone over coffee should finish it and feel like they learned something specific.
+- **Source-incentive discipline.** When you cite a sell-side / bank price target or institutional forecast (e.g. "JPM $6,000 gold", "Goldman", "UBS"), tag it as a sentiment marker, NOT evidence, and name who benefits if the operator believes it (the bank's book / flow / narrative). You already do this well on the IPO "cash-out operation" read — generalize it: a desk target is a position someone is talking, not a fact.
+- **Provenance tags on structural claims.** Every load-bearing structural number (e.g. "CB buying ~850t/yr", "COFER USD share ~56%") carries its as-of date inline and a flag for whether it's a fresh print or inferred from a stale prior. If it's stale/inferred, say so in the sentence (e.g. "~56%, Q3 2024 — stale, next print mid-July").
 
 ## Length
 

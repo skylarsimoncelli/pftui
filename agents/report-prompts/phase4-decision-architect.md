@@ -14,6 +14,7 @@ Weight your card prioritisation toward the focus. If the operator is wrestling w
 pftui analytics views convergence-all --json
 sqlite3 -json "$DB" "SELECT * FROM allocation_targets"
 pftui --cached-only analytics situation --json
+pftui portfolio status --json   # portfolio total + cash % — for net-worth-relative sizing below
 sqlite3 -json "$DB" "SELECT * FROM daily_notes WHERE author = 'analyst-synthesis' AND date >= date('now','-1 day')"
 ```
 
@@ -44,6 +45,8 @@ pftui agent message send \
 ```
 
 Aim for 3-8 cards per run. Quality over quantity — if the convergence is genuinely insufficient-views or neutral, write a "WAIT" card with the missing input as the recommendation.
+
+**Size every card in NET-WORTH terms, not just asset-percentage terms.** Use the operator's own risk math (portfolio total + cash % from `pftui portfolio status --json`), not only single-asset stats. Don't stop at "BTC 7d EV -0.9%" — also state what a leg of the proposed size risks against the whole book if it draws down: e.g. "a +X pp BTC add risks ~Y% of total net worth if BTC flushes -Z%." Mirror the operator's stated framing — "46% cash means a -25% BTC flush is ~1.5% of net worth" — so downside is legible at the portfolio level. Fold this into the `sizing_math` field (and `evidence_against` where the net-worth hit is the real argument against).
 
 **Critical:** use `--category decision-card` (NOT `signal`). The previous run wrote with `signal` which caused the cards to dump raw JSON into the Cross-Layer Signals section.
 
