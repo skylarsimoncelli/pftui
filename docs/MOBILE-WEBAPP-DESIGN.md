@@ -702,7 +702,7 @@ src/web/static/
 │  pftui                   ⚠️ Offline │
 │                                      │
 │  Portfolio (as of 2h ago)            │
-│  $368,300                            │
+│  $250,000                            │
 │                                      │
 │  Prices may be outdated.             │
 │  Last updated: 2:30 PM               │
@@ -947,12 +947,12 @@ User registers their fingerprint/face via WebAuthn. Token is stored in browser's
 ├───────────────────────────────────────┤
 │                                        │
 │   Total Portfolio                      │
-│   $368,300.00                          │
+│   $250,000.00                          │
 │   +$4,230 (+1.16%) ↗️                  │
 │                                        │
 │   ┌─────────────────────────────────┐ │
 │   │    [Allocation Donut Chart]      │ │
-│   │   Cash 49% · Commodity 31%       │ │
+│   │   Cash 40% · Commodity 35%       │ │
 │   │   Crypto 20%                     │ │
 │   └─────────────────────────────────┘ │
 │                                        │
@@ -962,7 +962,7 @@ User registers their fingerprint/face via WebAuthn. Token is stored in browser's
 │ │ 💵 US Dollar (USD)          ---    ││
 │ │ $1.00                              ││
 │ │ ─────────── (cash)                 ││
-│ │ 179,420 USD · $179,420 · 48.7%    ││
+│ │ 120,000 USD · $120,000 · 48.0%    ││
 │ │ Gain: $0 (0.0%) ─                  ││
 │ └────────────────────────────────────┘│
 │                                        │
