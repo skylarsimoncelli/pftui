@@ -1,5 +1,7 @@
 pub mod build;
 pub mod charts;
+pub mod format;
+pub mod lint;
 pub mod palette;
 pub mod registry;
 pub mod sections;
