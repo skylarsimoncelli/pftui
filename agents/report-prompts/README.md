@@ -53,7 +53,8 @@ Every variable the skill can provide. Templates declare what they need at the to
 | `phase1-timeframe-analyst.md` | 1 | LOW / MEDIUM / HIGH / MACRO analyst template (parameterised by `{LAYER}`). |
 | `phase2a-adversary.md` | 2a | Synthesis-time adversary contesting the convergence. |
 | `phase2b-panel-persona.md` | 2b | Investor-panel persona (parameterised by `{PERSONA_PATH}`). |
-| `phase3-synthesis-writer.md` | 3 | Per-asset bull/bear/change-mind/RR + Week-in-Review economy paragraph + cross-layer signals. |
+| `phase2c-external-research.md` | 2c | External TA + research agent (web-search outside pftui's news pipeline, compare per-asset to our convergence). |
+| `phase3-synthesis-writer.md` | 3 | Per-asset bull/bear/change-mind/RR + Week-in-Review economy + Macro & News Outlook + Closing notes. |
 | `phase3b-deep-dive.md` | 3b | NEW — long-form narrative tailored to `{OPERATOR_FOCUS}`. |
 | `phase4-decision-architect.md` | 4 | Portfolio decision cards from drift + convergence + catalysts. |
 | `phase5-steelman-bull.md` | 5 | Per-asset steelman bull. |

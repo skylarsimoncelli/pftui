@@ -210,6 +210,13 @@ pub struct SynthesisNotes {
     /// Renders as the final section: gameplan for the coming week,
     /// portfolio reflection, top 3-5 falsifiable triggers to watch.
     pub closing: Option<String>,
+    /// External technical-analysis comparison prose (body of
+    /// `[synthesis-external-ta]`). The Phase 2c research agent web-
+    /// searches outside pftui's news pipeline (TradingView ideas, sell-
+    /// side notes, on-chain trackers, retail TA streams) and writes a
+    /// per-asset comparison of external reads against our convergence.
+    /// Suppressed when the Phase 2c agent didn't run.
+    pub external_ta: Option<String>,
     /// Per-asset bull/bear/change-mind/risk-reward blocks, in the order the
     /// notes were written.
     pub assets: Vec<SynthesisAssetNote>,
@@ -986,6 +993,13 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_investor_panel",
             visibility: SectionVisibility::Private,
         },
+        // External TA & Comparison — Phase 2c research agent's web-
+        // sourced TA reads + per-asset comparison vs our convergence.
+        // Auto-suppressed when no external-ta note was attached.
+        SectionSpec {
+            name: "private_external_ta",
+            visibility: SectionVisibility::Private,
+        },
         // Quantitative Parallels — table self-suppresses when no set
         // returned matches.
         SectionSpec {
@@ -1073,6 +1087,9 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         }
         "private_macro_news_outlook" => {
             sections::private_macro_news_outlook::render_private_macro_news_outlook(ctx)
+        }
+        "private_external_ta" => {
+            sections::private_external_ta::render_private_external_ta(ctx)
         }
         "private_closing" => sections::private_closing::render_private_closing(ctx),
         "private_synthesis" => sections::private_synthesis::render_private_synthesis(ctx),
@@ -4865,6 +4882,10 @@ fn load_synthesis_notes(
             if out.closing.is_none() {
                 out.closing = Some(body);
             }
+        } else if key.to_ascii_lowercase().starts_with("external-ta") {
+            if out.external_ta.is_none() {
+                out.external_ta = Some(body);
+            }
         } else {
             out.assets.push(SynthesisAssetNote { symbol: key, body });
         }
@@ -5120,6 +5141,7 @@ mod assembler_tests {
             "private_outlook_by_horizon",
             "private_risk_concentration",
             "private_investor_panel",
+            "private_external_ta",
             "private_parallels",
             "private_closing",
         ];
@@ -5538,6 +5560,7 @@ mod assembler_tests {
         let names: Vec<&str> = plan.iter().map(|s| s.name).collect();
         assert!(names.contains(&"private_macro_news_outlook"));
         assert!(names.contains(&"private_closing"));
+        assert!(names.contains(&"private_external_ta"));
         assert!(names.contains(&"private_parallels"));
         // private_overview must be first.
         assert_eq!(names[0], "private_overview");
