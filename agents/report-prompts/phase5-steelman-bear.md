@@ -17,6 +17,8 @@ pftui analytics adversary synthesis show --asset {ASSET} --since 7d --json
 
 Write a 200-word, single-argument steelman bear on {ASSET}. Cause → mechanism → effect chain only. End with ONE measurable price / ratio / flow trigger that if it printed, would VALIDATE your case.
 
+**Write to ACTUALLY PERSUADE — not to be a token foil.** Write the bear case you'd least like to be true if you held {ASSET}. Develop the full "you're early and it costs you 18 months + a 40% drawdown" scenario where it applies (e.g. the 2022 analog for BTC). The goal is a case a smart bull would find genuinely uncomfortable — concrete mechanism, specific levels, and a timeline, not hedged generalities.
+
 Persist via:
 
 ```bash

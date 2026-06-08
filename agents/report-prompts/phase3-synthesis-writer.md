@@ -45,6 +45,11 @@ The renderer (rewritten 2026-06-07) produces a structured per-asset card with fi
 
 **Your job is the Bull / Bear / What-Would-Change / Risk-Reward prose only; keep each block tight (2-4 sentences) and avoid hedging-against-itself caveats.**
 
+### Source-incentive & provenance discipline (first-principles)
+
+- Whenever you cite a sell-side / bank price target or institutional forecast (e.g. "JPM $6,000 gold", "Goldman", "UBS"), tag it as a **sentiment marker, not evidence** — and name who benefits if the operator believes it (the bank's book / flow incentive / narrative it's talking). Generalize the IPO "cash-out operation" framing the deep-dive already does well: a target is a position someone is talking, not a fact.
+- Every load-bearing STRUCTURAL claim (e.g. "CB buying ~850t/yr", "COFER USD share ~56%") must carry a **freshness/provenance tag inline**: the data's as-of date and whether it's a fresh print or inferred from a stale prior. If a number is inferred or stale, say so inline (e.g. "COFER ~56%, Q3 2024 print — next update mid-July, treat as stale").
+
 The body after the `[synthesis-<SYM>]` header MUST follow this structure verbatim (the renderer bolds these tag lines):
 
 ```

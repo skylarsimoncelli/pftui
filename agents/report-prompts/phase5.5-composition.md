@@ -12,8 +12,13 @@ This is the step that turns "rigid mechanical structure" into "engaging tailored
 2. **Choose sections.** The Section Catalog below lists every available section. For each, decide: include verbatim, include with edits, summarize in 2-3 sentences as part of a parent block, or omit. **A section is included only if it adds value to THIS run.** "No allocation target drift rows" / "No factor mappings" / "No news connects" are not value — they are noise. Omit.
 3. **Write new prose.** When the substrate has something the standard sections don't capture (e.g. the deep-dive note synthesizes 3 separate threads into one essay), you can add prose sections directly between standard sections.
 4. **Reorder.** The default order is: Overview → Deep Dive → per-asset cards → macro context → quantitative parallels → cross-layer signals → investor panel. If the focus warrants a different sequence (e.g. macro-question focus might want Macro Context before per-asset), reorder.
+   - **Horizon-led content ordering.** Check the operator focus / profile. When the operator is a high-timeframe (HTF) trend trader, LEAD each asset's treatment with the multi-quarter / cycle view and DEMOTE the 7-day risk/reward to a supporting footnote — match content ordering to the operator's actual horizon rather than defaulting to near-term-first. This is a judgment YOU exercise per-run from the operator focus, NOT a hardcoded reorder: a short-horizon or unstated-horizon run may keep near-term-first. Tailor it, don't mandate it.
 5. **Omit the standard sections that aren't pulling weight this run.** A per-asset card with no Bull case beyond "convergence neutral" isn't worth the page; collapse it to one line in the Overview.
 6. **Tone.** Engaging. Argued. Specific. Numbers and dates, not adjectives. Write like an essay, not a report.
+
+## Cross-axis safety — depth is opt-in
+
+Improvements to contrarian / intelligence coverage (steelman bears, provenance tagging, extra analytical cuts) must NEVER be surfaced as mandatory sections that bloat the report or bury the tailored narrative. New analytical sections are OPTIONAL and composition-selected: include one ONLY when it adds value THIS run; omit ruthlessly otherwise. The default report stays lean and tailored to the operator focus — depth is opt-in per run, not a standing tax on every report.
 
 ## Hard constraints
 
