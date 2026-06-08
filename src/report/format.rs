@@ -75,16 +75,16 @@ mod tests {
 
     #[test]
     fn fmt_money_adds_separators_and_dollar() {
-        assert_eq!(fmt_money(dec!(346837.6)), "$346,837.6");
-        assert_eq!(fmt_money(dec!(61667)), "$61,667");
-        assert_eq!(fmt_money(dec!(4365.30)), "$4,365.3");
+        assert_eq!(fmt_money(dec!(250000.5)), "$250,000.5");
+        assert_eq!(fmt_money(dec!(61234)), "$61,234");
+        assert_eq!(fmt_money(dec!(4321.30)), "$4,321.3");
         assert_eq!(fmt_money(dec!(1)), "$1");
     }
 
     #[test]
     fn fmt_signed_money_signs_and_groups() {
         assert_eq!(fmt_signed_money(dec!(12500)), "+$12,500");
-        assert_eq!(fmt_signed_money(dec!(-8915.67)), "-$8,915.67");
+        assert_eq!(fmt_signed_money(dec!(-8765.43)), "-$8,765.43");
         assert_eq!(fmt_signed_money(dec!(0)), "+$0");
     }
 
