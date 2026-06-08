@@ -1744,6 +1744,38 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             ON gex_snapshots(symbol, fetched_at DESC);",
     )?;
 
+    // Migration: self-heal `calibration_matrix` on legacy DBs.
+    //
+    // The CREATE TABLE IF NOT EXISTS above is the canonical shape, but DBs
+    // created before `conviction_band` (and the other analytic columns) were
+    // added to that CREATE still have the old shape on disk — CREATE TABLE IF
+    // NOT EXISTS never adds columns to an existing table. Without this,
+    // `pftui analytics calibration-matrix rebuild` fails at the INSERT with
+    // "table calibration_matrix has no column named conviction_band".
+    //
+    // Add any missing columns from the canonical set. Idempotent via
+    // pragma_table_info check, mirroring the `scenarios` migration above.
+    for (column, ddl) in &[
+        ("layer", "ALTER TABLE calibration_matrix ADD COLUMN layer TEXT"),
+        ("topic", "ALTER TABLE calibration_matrix ADD COLUMN topic TEXT"),
+        ("conviction_band", "ALTER TABLE calibration_matrix ADD COLUMN conviction_band TEXT"),
+        ("n", "ALTER TABLE calibration_matrix ADD COLUMN n INTEGER NOT NULL DEFAULT 0"),
+        ("hit_rate", "ALTER TABLE calibration_matrix ADD COLUMN hit_rate REAL NOT NULL DEFAULT 0.0"),
+        ("stated_confidence", "ALTER TABLE calibration_matrix ADD COLUMN stated_confidence REAL"),
+        (
+            "recorded_at",
+            "ALTER TABLE calibration_matrix ADD COLUMN recorded_at TEXT NOT NULL DEFAULT (datetime('now'))",
+        ),
+    ] {
+        let exists: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('calibration_matrix') WHERE name = ?1")?
+            .query_row([column], |row| row.get::<_, i64>(0))
+            .unwrap_or(0)
+            > 0;
+        if !exists {
+            conn.execute_batch(ddl)?;
+        }
+    }
 
     Ok(())
 }

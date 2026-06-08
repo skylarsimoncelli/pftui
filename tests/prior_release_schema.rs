@@ -170,6 +170,22 @@ fn assert_migration_columns_present(db_path: &Path) {
         "prediction_lessons",
         &["status", "last_cited_at"],
     );
+    // `calibration_matrix` may pre-date `conviction_band` (and other analytic
+    // columns) on legacy DBs; the self-healing migration must add them so
+    // `analytics calibration-matrix rebuild` can INSERT.
+    assert_columns(
+        &conn,
+        "calibration_matrix",
+        &[
+            "layer",
+            "topic",
+            "conviction_band",
+            "n",
+            "hit_rate",
+            "stated_confidence",
+            "recorded_at",
+        ],
+    );
     assert_indexes(
         &conn,
         &[
