@@ -206,7 +206,7 @@ pftui performance
 
 ### Data Integrity ✅
 - Allocations sum to exactly 100.00% across all positions
-- `pftui value` and `pftui brief` report consistent total ($363,356.35)
+- `pftui value` and `pftui brief` report consistent total ($250,000.00)
 - Export JSON positions match summary output
 - Macro dashboard has no N/A or NaN values (except known USD/JPY, USD/CNY bug)
 
