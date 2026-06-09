@@ -112,6 +112,17 @@ Use this substrate differently from LOW/MEDIUM/HIGH:
 
 When the output digest mentions a structural development, include the evidence class: independent tier-1/2 confirmation, source-history support, narrative-vs-money alignment/divergence, or negative-space signal. This prevents the MACRO layer from turning headline volume into thesis drift.
 
+## Step 0a: Cycle-Framework Alignment (required for any BTC timing view)
+
+Read both cycle thesis sections before any BTC cycle claim:
+
+```bash
+sqlite3 "$DB" "SELECT content FROM thesis WHERE section='cycle-frameworks'"      # external analyst alignment layer (Loukas / Camel Finance / Olson / Cowen)
+sqlite3 "$DB" "SELECT content FROM thesis WHERE section='btc-cycle-framework'"   # pftui-verified cycle table + indicator track record
+```
+
+The external consensus prior (4-yr cycle intact; low clusters Oct 2026 in the $40k-53k zone; Loukas alone carries a ~25% early-low tail) is the benchmark every macro BTC timing view must position itself against — lean on it or reject it explicitly, never ignore it. Early-low claims require the confirm checklist in `cycle-frameworks`, not calendar arguments.
+
 ## Step 0: Historical Context (do first)
 
 You own the `power_metrics_history` table. It contains ~810 rows of Dalio-scale (1-10) scores for 8 powers (US, UK, China, Japan, Russia, EU, India, Saudi) across 9 determinants (education, innovation, competitiveness, military, trade, economic_output, financial, reserve_currency, governance), spanning 1900-2020 by decade.

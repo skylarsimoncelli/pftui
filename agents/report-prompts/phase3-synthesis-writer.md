@@ -45,6 +45,8 @@ The renderer (rewritten 2026-06-07) produces a structured per-asset card with fi
 
 **Your job is the Bull / Bear / What-Would-Change / Risk-Reward prose only; keep each block tight (2-4 sentences) and avoid hedging-against-itself caveats.**
 
+**BTC card extra requirement (cycle-clock alignment):** the BTC card must state, in one sentence inside Bull or Bear, where the current read sits vs the external cycle-analyst consensus (thesis section `cycle-frameworks`: Loukas / Camel Finance / Olson / Cowen — low clusters Oct 2026, $40k-53k zone, Loukas ~25% early-low tail) and which confirm-checklist items have printed. If the four-layer view disagrees with that external prior, say so explicitly — justified divergence is signal, silent divergence is a bug.
+
 ### Source-incentive & provenance discipline (first-principles)
 
 - Whenever you cite a sell-side / bank price target or institutional forecast (e.g. "JPM $6,000 gold", "Goldman", "UBS"), tag it as a **sentiment marker, not evidence** — and name who benefits if the operator believes it (the bank's book / flow incentive / narrative it's talking). Generalize the IPO "cash-out operation" framing the deep-dive already does well: a target is a position someone is talking, not a fact.

@@ -249,6 +249,21 @@ pftui analytics views set --analyst high --asset BTC \
 
 Do NOT skip this step. The structured views feed into cross-timeframe divergence analysis — when HIGH says bull +4 but LOW says bear -2, that tension IS the intelligence.
 
+## Cycle-Framework Alignment (required for any BTC timing view)
+
+The thesis table carries two cycle sections you MUST read before writing a BTC view:
+
+```bash
+sqlite3 "$DB" "SELECT content FROM thesis WHERE section='cycle-frameworks'"      # external analyst alignment layer (Loukas / Camel Finance / Olson / Cowen)
+sqlite3 "$DB" "SELECT content FROM thesis WHERE section='btc-cycle-framework'"   # pftui-verified cycle table + indicator track record
+```
+
+Rules (mirrored in `cycle-frameworks` — the thesis row is canonical):
+- Any BTC timing view must state where it sits vs the cycle clock: week-of-cycle, the external Oct-2026 / $40k-53k consensus cluster, and which framework(s) it leans on or rejects.
+- An early-low call (before Sep 2026) must explicitly invoke the Loukas ~25% short-cycle tail AND name which items on the confirm checklist (vol-crush→expansion, F&G cycle-low extreme, MVRV bottoming band + falling reserves, price at 200W MA, confirmed breakout) have actually printed.
+- Compute the 200W MA from the deep `BTC-USD` series (1400-row window), never the short `BTC` series.
+- The checklist confirms; the calendar does not. Cycle-date claims are not price predictions.
+
 ## Mandatory per-held-asset analyst view
 
 Before exiting, for EACH held asset (currently BTC, GC=F, SI=F, and any other symbol in `pftui portfolio status --json | jq '.positions[].symbol'` with allocation > 1%), write a structured analyst view to the DB:

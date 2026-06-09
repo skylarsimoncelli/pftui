@@ -4,6 +4,18 @@
 
 ---
 
+## P1 - Bugs/Regressions
+
+### `pftui analytics calibration-matrix rebuild` fails on NOT NULL `calibration_matrix.conviction`
+**Source:** 2026-06-09 /pftui-report run (Step 4.95). `pftui analytics calibration-matrix rebuild --since 365 --json` exits 1 with `NOT NULL constraint failed: calibration_matrix.conviction`. The table carries both a legacy `conviction` column and the newer `conviction_band`; the rebuild INSERT only populates `conviction_band`. Fix the INSERT (or add a self-healing migration defaulting/dropping the legacy column — see #877 for the prior conviction_band shape fix) and add a regression test against the fixture DB.
+**Why:** The Self-Retrospective Calibration section renders empty on every report run until this works.
+
+### Convergence classifier counts bear-direction views with positive conviction as bullish
+**Source:** 2026-06-09 run. HIGH and MACRO wrote USD views with `--direction bear --conviction 3` (positive magnitude); `classify_convergence` read the sign only and labeled USD `convergent-bull (+1.75)` while both HTF layers are structural bears. Either (a) normalize at write time in `analytics views set` (direction bear ⇒ store conviction as negative, reject sign mismatches), or (b) make the classifier compose direction × magnitude. Add tests for mixed-sign inputs. Keep `src/db/analyst_views.rs::classify_convergence` the single source of truth.
+**Why:** The per-asset Current-bias header and convergence-all output mislead whenever an analyst writes bear views with positive conviction numbers — it inverted the USD card's headline this run.
+
+---
+
 ## P2 - Coverage And Agent Consumption
 
 
@@ -35,6 +47,24 @@
 **Remaining validation:** Run `/pftui-report --mode both` once more (now that the loaders are merged) and diff the markdown + PDFs against the prior Python-orchestrated outputs (allow byte-level whitespace/ordering diffs; flag content discrepancies as TODOs against the assembler, not the skill). Once validated, drop this entry and delete `~/pftui-operator/charts.py`.
 
 ---
+
+### Cycle-clock analytics command (`pftui analytics btc cycle-clock`)
+**Source:** Operator directive 2026-06-09 (integrate Loukas/Camel-Finance/Olson/Cowen cycle frameworks; see thesis `cycle-frameworks` + journal note #691). Emit, with `--json`: days/weeks since the 2024-04-19 halving; Olson day-900 counter and days remaining; Loukas week-of-4yr-cycle vs the wk-46 ±10% low band (cycle anchor = prior cycle low); midterm-year H2 flag; current price vs 200W MA (computed from the deep `BTC-USD` series) and Mayer Multiple. One command the analysts and the report can cite instead of re-deriving cycle math each run.
+
+### MVRV Z-Score data source + cache
+**Source:** Same directive. Camel Finance's primary bottoming indicator. Needs an on-chain source (free tier: bitcoin-data.com / coinmetrics community / blockchain.com charts API) cached into a new `onchain_mvrv` table via `data refresh`; surface in the BTC per-asset card and `cycle-clock`. Respect the no-new-deps rule — plain reqwest JSON fetch.
+
+### BTC dominance series
+**Source:** Same directive. Cowen's rotation lens. CoinGecko `/global` returns market-cap dominance (CoinGecko currently 403s — needs key or alternate source, e.g. coinpaprika `/global`). Cache history daily; surface alongside cycle-clock output.
+
+### Parallels engine: calendar/time-since-event predicates
+**Source:** Same directive. `pftui-parallels-run` predicates today are price/MA/RSI/F&G only. Add `days_since_date` (e.g. halving day-count band 850-950) and `month_of_year` / `is_midterm_h2` predicate fns so Loukas/Olson timing-band condition sets can join the catalog (`~/.config/pftui/parallels.yml`), and add the two sets.
+
+### 200W MA in technical snapshots + per-asset report card
+**Source:** Same directive. The 200-week MA (1400d window, deep `BTC-USD` series) anchors three of the four external frameworks. Add to `technical_snapshots` and the BTC Key-levels block; guard against short price series (emit null, never a 365-row "200W" MA).
+
+### Report leak-guard over-scrubs legitimate market figures
+**Source:** 2026-06-09 run. The render-time scrubber stripped leading dollar-magnitudes from MARKET facts in assembled markdown: "JPM $5,055" → "JPM ,055", "$3.5T" → ".5T", "$965B" → "~B", "BMO $220" → "BMO ". The guard should scrub only operator-portfolio-scale values (or values matching actual portfolio rows), not sell-side price targets / IPO valuations. Fixed by hand at composition this run; make the scrubber context-aware + add tests with market-figure fixtures.
 
 ## P3 - Long Term
 
