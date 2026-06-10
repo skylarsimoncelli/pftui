@@ -47,6 +47,11 @@ RISK / REWARD (next 7 days):
 ..." --section analysis --author analyst-synthesis
 ```
 
+
+### Risk/Reward probability discipline (added 2026-06-10)
+
+R/R probabilities must be EMPIRICAL where possible: if a matching parallels set exists for the asset (check the run's `/tmp/pftui-parallels-<DATE>.json` — each result now carries `forward_distributions_pct`, `sample_era`, and `recency_weighted_pct` with a 4-year half-life), derive the upside probability from the set's hit rate (prefer the recency-weighted view and cite both: "90d up-rate 58% equal-weighted / weighted mean +14.3%, n_eff 19.5, era 2015-2026"). If NO set matches, either omit numeric probabilities or label them explicitly: "(illustrative, uncalibrated)". Never print invented two-significant-figure probabilities as if they were measurements — that was a named failure in the 2026-06-09 epistemics audit.
+
 The renderer (rewritten 2026-06-07) produces a structured per-asset card with five sub-blocks: Overview / Current bias / Bull case / Bear case / Key levels & technicals / What to watch. The Current bias block is pulled from the 4-layer convergence row automatically — you don't need to repeat it. The Key levels block is pulled from the asset-intelligence blob automatically.
 
 **Your job is the Bull / Bear / What-Would-Change / Risk-Reward prose only; keep each block tight (2-4 sentences) and avoid hedging-against-itself caveats.**

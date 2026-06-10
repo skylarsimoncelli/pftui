@@ -22,6 +22,7 @@
 | **[AGENTS.md](AGENTS.md)** | How agents USE pftui (CLI reference, data model, integration patterns) |
 | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | Code structure, file map, line ranges — READ FIRST before any code change |
 | **[docs/ANALYTICS-SPEC.md](docs/ANALYTICS-SPEC.md)** | Feature specifications for analytics, scenarios, journal |
+| **[docs/EPISTEMICS.md](docs/EPISTEMICS.md)** | The self-checking architecture — independence layer, binding learning loop, scenario/probability discipline, memory consolidation, run-health instrumentation. Read before touching predictions, scenarios, analyst views, or report prompts |
 | **[docs/API-SOURCES.md](docs/API-SOURCES.md)** | Free data source reference — endpoints, rate limits, field mappings |
 | **[docs/VISION.md](docs/VISION.md)** | Design principles, quality bar, target feature set |
 | **[docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)** | Full keyboard shortcut reference |
