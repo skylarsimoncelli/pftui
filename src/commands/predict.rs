@@ -4203,6 +4203,92 @@ mod tests {
         assert_eq!(row.confidence, Some(UNFALSIFIABLE_CONFIDENCE_CAP));
     }
 
+    /// The `data predictions add` / `analytics predictions add` alias now
+    /// dispatches to `run_add_with_preflight` with the exact argument shape
+    /// below (preflight NOT skipped — identical to `journal prediction add`).
+    /// These two tests pin the alias contract: no --falsify → 0.3 cap;
+    /// --falsify → parsed rule, confidence untouched.
+    fn add_prediction_via_alias_dispatch(
+        backend: &BackendConnection,
+        claim: &str,
+        confidence: Option<f64>,
+        falsify: Option<&str>,
+    ) -> Result<()> {
+        // Mirrors main.rs::run_data_predictions DataPredictionsCommand::Add.
+        run_add_with_preflight(
+            backend,
+            claim,
+            Some("BTC-USD"),
+            Some("medium"),
+            Some("medium"),
+            confidence,
+            Some("medium-agent"),
+            Some("2026-12-31"),
+            None,  // resolution_criteria
+            None,  // lessons
+            Some("crypto"),
+            None,  // source_article_id
+            false, // override_cap
+            Some("medium"), // effective_layer = layer.or(timeframe)
+            false, // skip_preflight — alias defaults match journal add
+            false, // accept_preflight
+            false, // inline
+            None,  // preflight_threshold
+            false, // with_adversary
+            falsify,
+            false, // override_confidence_cap
+            None,  // cap_rationale
+            true,  // json output keeps test stdout structured
+        )
+    }
+
+    #[test]
+    fn alias_add_without_falsify_gets_unfalsifiable_cap() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        add_prediction_via_alias_dispatch(
+            &backend,
+            "BTC structurally repriced higher via the alias",
+            Some(0.9),
+            None,
+        )
+        .unwrap();
+        let row = latest_prediction(&backend);
+        assert_eq!(
+            row.confidence,
+            Some(UNFALSIFIABLE_CONFIDENCE_CAP),
+            "alias without --falsify must hit the 0.3 unfalsifiable cap"
+        );
+    }
+
+    #[test]
+    fn alias_add_with_falsify_parses_rule_and_keeps_confidence() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        add_prediction_via_alias_dispatch(
+            &backend,
+            "BTC reclaims six figures via the alias",
+            Some(0.7),
+            Some("BTC-USD close above 100000 by 2026-12-31"),
+        )
+        .unwrap();
+        let row = latest_prediction(&backend);
+        assert_eq!(row.confidence, Some(0.7), "valid --falsify must not cap");
+
+        let conn = backend.sqlite_native().unwrap();
+        let (rule_type, eligible): (String, i64) = conn
+            .query_row(
+                "SELECT rule_type, auto_score_eligible
+                 FROM prediction_falsification_rules
+                 WHERE prediction_id = ?1",
+                rusqlite::params![row.id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(rule_type, "close-above");
+        assert_eq!(eligible, 1);
+    }
+
     #[test]
     fn add_with_valid_falsify_keeps_confidence_and_records_rule() {
         let conn = db::open_in_memory();

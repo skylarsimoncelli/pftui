@@ -6131,7 +6131,8 @@ mod todays_analyst_synthesis_tests {
                 section TEXT NOT NULL DEFAULT 'general',
                 content TEXT NOT NULL,
                 author TEXT NOT NULL DEFAULT 'system',
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                novelty_score REAL
             );
             CREATE TABLE agent_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

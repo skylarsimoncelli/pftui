@@ -14,6 +14,11 @@ pub struct DailyNote {
     pub content: String,
     pub author: String,
     pub created_at: String,
+    /// 1 − max trigram-Jaccard similarity vs the same author's last 20
+    /// notes, computed at write time. None for notes written before the
+    /// novelty migration (or via legacy writers).
+    #[serde(default)]
+    pub novelty_score: Option<f64>,
 }
 
 impl DailyNote {
@@ -25,10 +30,15 @@ impl DailyNote {
             content: row.get(3)?,
             author: row.get(4)?,
             created_at: row.get(5)?,
+            novelty_score: row.get(6)?,
         })
     }
 }
 
+/// Legacy novelty-less writer. Production note writes go through
+/// `add_note_with_novelty`; this remains for fixture/test seeding and any
+/// internal writer that has no novelty context.
+#[allow(dead_code)]
 pub fn add_note(
     conn: &Connection,
     date: &str,
@@ -36,10 +46,21 @@ pub fn add_note(
     content: &str,
     author: &str,
 ) -> Result<i64> {
+    add_note_with_novelty(conn, date, section, content, author, None)
+}
+
+pub fn add_note_with_novelty(
+    conn: &Connection,
+    date: &str,
+    section: &str,
+    content: &str,
+    author: &str,
+    novelty_score: Option<f64>,
+) -> Result<i64> {
     conn.execute(
-        "INSERT INTO daily_notes (date, section, content, author)
-         VALUES (?, ?, ?, ?)",
-        params![date, section, content, author],
+        "INSERT INTO daily_notes (date, section, content, author, novelty_score)
+         VALUES (?, ?, ?, ?, ?)",
+        params![date, section, content, author, novelty_score],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -52,7 +73,7 @@ pub fn list_notes(
     author: Option<&str>,
 ) -> Result<Vec<DailyNote>> {
     let mut query = String::from(
-        "SELECT id, date, section, content, author, created_at
+        "SELECT id, date, section, content, author, created_at, novelty_score
          FROM daily_notes",
     );
 
@@ -93,7 +114,7 @@ pub fn search_notes(
     limit: Option<usize>,
 ) -> Result<Vec<DailyNote>> {
     let mut sql = String::from(
-        "SELECT id, date, section, content, author, created_at
+        "SELECT id, date, section, content, author, created_at, novelty_score
          FROM daily_notes
          WHERE content LIKE ?",
     );
@@ -123,6 +144,8 @@ pub fn remove_note(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// Legacy novelty-less writer (see `add_note`).
+#[allow(dead_code)]
 pub fn add_note_backend(
     backend: &BackendConnection,
     date: &str,
@@ -130,10 +153,21 @@ pub fn add_note_backend(
     content: &str,
     author: &str,
 ) -> Result<i64> {
+    add_note_with_novelty_backend(backend, date, section, content, author, None)
+}
+
+pub fn add_note_with_novelty_backend(
+    backend: &BackendConnection,
+    date: &str,
+    section: &str,
+    content: &str,
+    author: &str,
+    novelty_score: Option<f64>,
+) -> Result<i64> {
     query::dispatch(
         backend,
-        |conn| add_note(conn, date, section, content, author),
-        |pool| add_note_postgres(pool, date, section, content, author),
+        |conn| add_note_with_novelty(conn, date, section, content, author, novelty_score),
+        |pool| add_note_postgres(pool, date, section, content, author, novelty_score),
     )
 }
 
@@ -172,7 +206,7 @@ pub fn remove_note_backend(backend: &BackendConnection, id: i64) -> Result<()> {
     )
 }
 
-type DailyNoteRow = (i64, String, String, String, String, String);
+type DailyNoteRow = (i64, String, String, String, String, String, Option<f64>);
 
 fn from_pg_row(r: DailyNoteRow) -> DailyNote {
     DailyNote {
@@ -182,6 +216,7 @@ fn from_pg_row(r: DailyNoteRow) -> DailyNote {
         content: r.3,
         author: r.4,
         created_at: r.5,
+        novelty_score: r.6,
     }
 }
 
@@ -201,6 +236,11 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         .await?;
         sqlx::query(
             "ALTER TABLE daily_notes ADD COLUMN IF NOT EXISTS author TEXT NOT NULL DEFAULT 'system'",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE daily_notes ADD COLUMN IF NOT EXISTS novelty_score DOUBLE PRECISION",
         )
         .execute(pool)
         .await?;
@@ -224,18 +264,20 @@ fn add_note_postgres(
     section: &str,
     content: &str,
     author: &str,
+    novelty_score: Option<f64>,
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
-            "INSERT INTO daily_notes (date, section, content, author)
-             VALUES ($1, $2, $3, $4)
+            "INSERT INTO daily_notes (date, section, content, author, novelty_score)
+             VALUES ($1, $2, $3, $4, $5)
              RETURNING id",
         )
         .bind(date)
         .bind(section)
         .bind(content)
         .bind(author)
+        .bind(novelty_score)
         .fetch_one(pool)
         .await
     })?;
@@ -252,7 +294,7 @@ fn list_notes_postgres(
     ensure_tables_postgres(pool)?;
     let mut rows: Vec<DailyNoteRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, date, section, content, author, created_at::text
+            "SELECT id, date, section, content, author, created_at::text, novelty_score
              FROM daily_notes
              ORDER BY date DESC, created_at DESC",
         )
@@ -283,7 +325,7 @@ fn search_notes_postgres(
     ensure_tables_postgres(pool)?;
     let mut rows: Vec<DailyNoteRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, date, section, content, author, created_at::text
+            "SELECT id, date, section, content, author, created_at::text, novelty_score
              FROM daily_notes
              WHERE content ILIKE $1
              ORDER BY date DESC, created_at DESC",

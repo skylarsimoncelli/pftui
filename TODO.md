@@ -6,10 +6,6 @@
 
 ## P1 - Bugs/Regressions
 
-### Extend `--falsify` + confidence caps to the `data/analytics predictions add` alias
-**Source:** 2026-06-10 epistemics R2. `journal prediction add` now enforces falsifiability discipline (`--falsify` rule parsing, 0.3 unfalsifiable cap, calibration-derived confidence clamp), but the convenience alias `pftui data predictions add` / `analytics predictions add` routes through the legacy `predict::run("add")` path with none of those mechanisms, so agents can bypass the discipline. Route the alias through `run_add_with_preflight` (or port the cap + falsify logic) and add the `--falsify`/`--override-confidence-cap`/`--cap-rationale` flags there too.
-**Why:** A learning loop that can be silently bypassed by using the alias is not binding.
-
 ---
 
 ## P2 - Coverage And Agent Consumption

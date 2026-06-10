@@ -95,6 +95,7 @@ pub mod schema;
 pub mod sentiment_cache;
 pub mod situation_snapshots;
 pub mod snapshots;
+pub mod standing_rules;
 pub mod structural;
 pub mod technical_levels;
 pub mod technical_signals;
