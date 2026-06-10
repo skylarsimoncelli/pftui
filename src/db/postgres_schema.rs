@@ -458,8 +458,26 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
                 previous TEXT,
                 change TEXT,
                 source_url TEXT NOT NULL,
-                fetched_at TEXT NOT NULL
+                source TEXT NOT NULL DEFAULT 'unknown',
+                confidence TEXT NOT NULL DEFAULT 'medium',
+                fetched_at TEXT NOT NULL,
+                quarantined BOOLEAN NOT NULL DEFAULT FALSE
             )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE economic_data ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'unknown'",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE economic_data ADD COLUMN IF NOT EXISTS confidence TEXT NOT NULL DEFAULT 'medium'",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE economic_data ADD COLUMN IF NOT EXISTS quarantined BOOLEAN NOT NULL DEFAULT FALSE",
         )
         .execute(pool)
         .await?;

@@ -6,14 +6,6 @@
 
 ## P1 - Bugs/Regressions
 
-### `pftui analytics calibration-matrix rebuild` fails on NOT NULL `calibration_matrix.conviction`
-**Source:** 2026-06-09 /pftui-report run (Step 4.95). `pftui analytics calibration-matrix rebuild --since 365 --json` exits 1 with `NOT NULL constraint failed: calibration_matrix.conviction`. The table carries both a legacy `conviction` column and the newer `conviction_band`; the rebuild INSERT only populates `conviction_band`. Fix the INSERT (or add a self-healing migration defaulting/dropping the legacy column — see #877 for the prior conviction_band shape fix) and add a regression test against the fixture DB.
-**Why:** The Self-Retrospective Calibration section renders empty on every report run until this works.
-
-### Convergence classifier counts bear-direction views with positive conviction as bullish
-**Source:** 2026-06-09 run. HIGH and MACRO wrote USD views with `--direction bear --conviction 3` (positive magnitude); `classify_convergence` read the sign only and labeled USD `convergent-bull (+1.75)` while both HTF layers are structural bears. Either (a) normalize at write time in `analytics views set` (direction bear ⇒ store conviction as negative, reject sign mismatches), or (b) make the classifier compose direction × magnitude. Add tests for mixed-sign inputs. Keep `src/db/analyst_views.rs::classify_convergence` the single source of truth.
-**Why:** The per-asset Current-bias header and convergence-all output mislead whenever an analyst writes bear views with positive conviction numbers — it inverted the USD card's headline this run.
-
 ---
 
 ## P2 - Coverage And Agent Consumption
@@ -33,10 +25,6 @@
 - `bitcoin_etf_flows`, `bitcoin_onchain`, `sovereign_gold_holdings`, `macro_news_volume`
 - deeper private analytic slots: conviction trajectories, outlooks-by-horizon, risk-factor mappings, drift rows, private macro quadrant/scenarios/divergences/catalysts
 **Why:** Each fills a currently-empty sub-block in an otherwise-substantive section. None block report generation. Wire incrementally, reusing existing `db::` query functions; never fabricate.
-
-### Report — economy-indicator data quality (`economic_data` scrape errors)
-**Source:** 2026-06-03 validation run. The Brave-extracted `economic_data` rows surface implausible values in the public Macro table: `nfp = 2024` (looks like a scraped year, not a payroll figure) and `ppi = 14`. The loader faithfully renders the table; the bug is upstream in the economy-indicator extraction.
-**Why:** These values are publicly rendered in the daily newsletter. Either fix the extraction (preferred) or add a sanity-range filter that drops/flags out-of-band indicator values before they reach the report.
 
 ### Report — re-enable `report_build_daily_perf` test
 **Source:** 2026-06-03. The perf test (`tests/report_build_daily_perf.rs`) is still `#[ignore]`d with the stale message "report build daily CLI not yet wired". The assembler is now wired with real loaders. Re-enable it and confirm the real loaders meet the <2s budget against `tests/fixtures/db/v0.27.0.sqlite` (raise the budget with justification only if a loader legitimately needs it).
