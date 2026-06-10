@@ -164,6 +164,9 @@ fn run_agent_journal(
                 preflight_threshold,
                 layer,
                 with_adversary,
+                falsify,
+                override_confidence_cap,
+                cap_rationale,
                 json,
             } => {
                 let text = claim.or(value).ok_or_else(|| {
@@ -197,6 +200,9 @@ fn run_agent_journal(
                     inline,
                     preflight_threshold,
                     with_adversary,
+                    falsify.as_deref(),
+                    override_confidence_cap,
+                    cap_rationale.as_deref(),
                     json,
                 )
             }

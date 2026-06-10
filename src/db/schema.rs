@@ -621,6 +621,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             threshold_value REAL,
             threshold_low REAL,
             threshold_high REAL,
+            threshold_text TEXT,
             eval_date_start TEXT,
             eval_date_end TEXT NOT NULL,
             parse_confidence TEXT NOT NULL DEFAULT 'medium',
