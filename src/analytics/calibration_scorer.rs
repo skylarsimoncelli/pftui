@@ -301,4 +301,96 @@ mod tests {
         let result = rebuild_calibration_matrix_backend(&backend, 365).unwrap();
         assert_eq!(result.rows_inserted, 1);
     }
+
+    /// Regression: a live DB carried BOTH the legacy scorer shape
+    /// (`PRIMARY KEY(layer, topic, conviction, window_days)` with
+    /// `conviction TEXT NOT NULL`) AND the appended canonical columns.
+    /// The rebuild INSERT populates only the canonical columns, so it died
+    /// with "NOT NULL constraint failed: calibration_matrix.conviction".
+    /// `run_migrations` must rebuild the table to the canonical shape
+    /// (preserving rows) so the rebuild succeeds.
+    #[test]
+    fn migration_rebuilds_drifted_hybrid_calibration_matrix() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Exact drifted shape observed on the live DB (synthetic data only).
+        conn.execute_batch(
+            "CREATE TABLE calibration_matrix (
+                layer TEXT NOT NULL, topic TEXT NOT NULL, conviction TEXT NOT NULL,
+                n_scored INTEGER NOT NULL DEFAULT 0, n_correct INTEGER NOT NULL DEFAULT 0,
+                n_partial INTEGER NOT NULL DEFAULT 0, n_wrong INTEGER NOT NULL DEFAULT 0,
+                strict_hit_rate REAL NOT NULL DEFAULT 0.0, partial_credit_rate REAL NOT NULL DEFAULT 0.0,
+                avg_confidence REAL, overconfidence_pp REAL, sample_se REAL,
+                computed_at TEXT NOT NULL DEFAULT (datetime('now')), window_days INTEGER NOT NULL DEFAULT 180,
+                conviction_band TEXT, n INTEGER NOT NULL DEFAULT 0, hit_rate REAL NOT NULL DEFAULT 0.0,
+                stated_confidence REAL, recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY(layer, topic, conviction, window_days)
+            );
+            INSERT INTO calibration_matrix
+                (layer, topic, conviction, n_scored, strict_hit_rate, avg_confidence, computed_at)
+            VALUES ('low', 'crypto', 'high', 4, 0.75, 0.8, '2026-05-01T00:00:00Z');",
+        )
+        .unwrap();
+
+        crate::db::schema::run_migrations(&conn).unwrap();
+
+        // The legacy column set must be gone; the canonical shape (with `id`)
+        // must be present.
+        let cols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('calibration_matrix')")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(!cols.iter().any(|c| c == "conviction"), "legacy `conviction` column should be dropped, got {cols:?}");
+        assert!(cols.iter().any(|c| c == "id"), "canonical `id` column missing, got {cols:?}");
+
+        // The pre-existing row must be preserved with the legacy→canonical
+        // mapping (conviction → conviction_band, n_scored → n, etc.).
+        let (band, n, hit_rate, conf, recorded): (String, i64, f64, f64, String) = conn
+            .query_row(
+                "SELECT conviction_band, n, hit_rate, stated_confidence, recorded_at FROM calibration_matrix",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(band, "high");
+        assert_eq!(n, 4);
+        assert!((hit_rate - 0.75).abs() < 1e-9);
+        assert!((conf - 0.8).abs() < 1e-9);
+        // recorded_at existed (with a datetime('now') default) on the hybrid
+        // shape, so it wins over the legacy computed_at; just require NOT NULL.
+        assert!(!recorded.is_empty());
+
+        // Seed a scored prediction for the end-to-end rebuild below.
+        conn.execute(
+            "INSERT INTO user_predictions
+                (claim, symbol, conviction, timeframe, topic, confidence,
+                 outcome, scored_at)
+             VALUES ('synthetic', 'BTC', 'high', 'low', 'crypto', 0.8, 'correct', datetime('now'))",
+            [],
+        )
+        .unwrap();
+        // Idempotence: a second migration pass must not duplicate or drop rows.
+        crate::db::schema::run_migrations(&conn).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM calibration_matrix", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // And the rebuild command must now succeed end-to-end.
+        let backend = BackendConnection::Sqlite { conn };
+        let result = rebuild_calibration_matrix_backend(&backend, 365).unwrap();
+        assert_eq!(result.rows_inserted, 1);
+    }
 }

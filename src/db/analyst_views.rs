@@ -279,6 +279,36 @@ pub fn validate_conviction(value: i64) -> Result<()> {
     Ok(())
 }
 
+/// Direction-authoritative effective conviction: bear views are always
+/// negative, bull views always positive, neutral views keep their stored
+/// value. Used both at write time (normalization) and at read time as a
+/// defense against legacy rows written with a contradicting sign.
+pub fn effective_conviction(direction: &str, conviction: i64) -> i64 {
+    match direction {
+        "bear" => -conviction.abs(),
+        "bull" => conviction.abs(),
+        _ => conviction,
+    }
+}
+
+/// Normalize a (direction, conviction) pair at write time. Direction is
+/// authoritative: a sign that contradicts the direction is flipped and an
+/// informational notice is returned (e.g. `bear` with `+3` becomes `-3`,
+/// `bull` with `-3` becomes `+3`). Matching signs and neutral views pass
+/// through unchanged with no notice.
+pub fn normalize_conviction(direction: &str, conviction: i64) -> (i64, Option<String>) {
+    let normalized = effective_conviction(direction, conviction);
+    if normalized != conviction {
+        let notice = format!(
+            "conviction {:+} contradicts direction '{}'; normalized to {:+} (direction is authoritative)",
+            conviction, direction, normalized
+        );
+        (normalized, Some(notice))
+    } else {
+        (normalized, None)
+    }
+}
+
 /// Validate an `allocation_bias` value. `None` (i.e. no bias supplied) is allowed.
 pub fn validate_allocation_bias(value: Option<&str>) -> Result<()> {
     match value {
@@ -730,6 +760,9 @@ pub fn upsert_view_backend(
     validate_direction(direction)?;
     validate_conviction(conviction)?;
     validate_allocation_bias(allocation_bias)?;
+    // Direction is authoritative: store bear views with negative conviction
+    // and bull views with positive conviction regardless of the sign passed.
+    let (conviction, _notice) = normalize_conviction(direction, conviction);
     query::dispatch(
         backend,
         |conn| {
@@ -1639,15 +1672,21 @@ fn build_report_for_asset(
     let mut views: Vec<ConvergenceView> = latest
         .into_iter()
         .map(
-            |(analyst, (direction, conviction, reasoning, evidence, blind, bias, recorded_at))| ConvergenceView {
-                analyst,
-                direction,
-                conviction,
-                reasoning_summary: reasoning,
-                key_evidence: evidence,
-                blind_spots: blind,
-                allocation_bias: bias,
-                recorded_at,
+            |(analyst, (direction, conviction, reasoning, evidence, blind, bias, recorded_at))| {
+                // Defense for legacy rows written before write-time sign
+                // normalization: direction is authoritative, so a bear view
+                // stored with +3 contributes -3 to convergence stats.
+                let conviction = effective_conviction(&direction, conviction);
+                ConvergenceView {
+                    analyst,
+                    direction,
+                    conviction,
+                    reasoning_summary: reasoning,
+                    key_evidence: evidence,
+                    blind_spots: blind,
+                    allocation_bias: bias,
+                    recorded_at,
+                }
             },
         )
         .collect();
@@ -3144,5 +3183,138 @@ mod tests {
         assert!(parse_since("2025-01-01").is_ok());
         // Garbage rejected.
         assert!(parse_since("not-a-duration").is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // conviction sign normalization (direction is authoritative)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_normalize_conviction_contradicting_signs_flipped_with_notice() {
+        let (c, notice) = normalize_conviction("bear", 3);
+        assert_eq!(c, -3);
+        assert!(notice.is_some());
+
+        let (c, notice) = normalize_conviction("bull", -3);
+        assert_eq!(c, 3);
+        assert!(notice.is_some());
+    }
+
+    #[test]
+    fn test_normalize_conviction_matching_signs_pass_through() {
+        assert_eq!(normalize_conviction("bear", -3), (-3, None));
+        assert_eq!(normalize_conviction("bull", 4), (4, None));
+        assert_eq!(normalize_conviction("bear", 0), (0, None));
+        // Neutral never flips, regardless of sign.
+        assert_eq!(normalize_conviction("neutral", 1), (1, None));
+        assert_eq!(normalize_conviction("neutral", -1), (-1, None));
+    }
+
+    #[test]
+    fn test_effective_conviction_direction_authoritative() {
+        assert_eq!(effective_conviction("bear", 3), -3);
+        assert_eq!(effective_conviction("bear", -3), -3);
+        assert_eq!(effective_conviction("bull", -2), 2);
+        assert_eq!(effective_conviction("bull", 2), 2);
+        assert_eq!(effective_conviction("neutral", -1), -1);
+    }
+
+    #[test]
+    fn test_upsert_backend_normalizes_contradicting_sign() {
+        let conn = setup_db();
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+        // bear written with positive conviction (the live USD bug) must be
+        // stored negative in both analyst_views and analyst_view_history.
+        upsert_view_backend(&backend, "high", "USD", "bear", 3, "r", None, None, None).unwrap();
+        let view = get_view_backend(&backend, "high", "USD").unwrap().unwrap();
+        assert_eq!(view.direction, "bear");
+        assert_eq!(view.conviction, -3);
+        let conn = backend.sqlite_native().unwrap();
+        let hist_conv: i64 = conn
+            .query_row(
+                "SELECT conviction FROM analyst_view_history WHERE analyst='high' AND asset='USD'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(hist_conv, -3);
+    }
+
+    /// Regression: legacy rows wrote bear views with positive conviction;
+    /// `classify_convergence` only saw the sign and labeled the asset
+    /// convergent-bull. With direction-authoritative effective conviction,
+    /// 2 bears (stored +3) + 1 bull (+1) + 1 neutral (0) must NOT classify
+    /// as bullish.
+    #[test]
+    fn test_convergence_mixed_sign_legacy_rows_not_bullish() {
+        let conn = setup_db();
+        // Insert raw history rows, bypassing write-time normalization, to
+        // simulate the pre-fix on-disk state.
+        for (analyst, direction, conviction) in [
+            ("high", "bear", 3_i64),
+            ("macro", "bear", 3),
+            ("low", "bull", 1),
+            ("medium", "neutral", 0),
+        ] {
+            conn.execute(
+                "INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary)
+                 VALUES (?, 'USD', ?, ?, 'r')",
+                params![analyst, direction, conviction],
+            )
+            .unwrap();
+        }
+
+        let r = convergence_for(&conn, "USD");
+        assert_eq!(r.stats.n_views, 4);
+        // Effective convictions: -3, -3, +1, 0 → avg -1.25, bearish lean.
+        assert!(r.stats.avg_conviction < 0.0, "avg should be bearish, got {}", r.stats.avg_conviction);
+        assert_ne!(r.summary, "convergent-bull");
+        assert_ne!(r.summary, "strong-convergent-bull");
+        // The bear views must surface with negative conviction.
+        let high = r.views.iter().find(|v| v.analyst == "high").unwrap();
+        assert_eq!(high.conviction, -3);
+    }
+
+    /// The one-time schema migration must flip contradicting signs in BOTH
+    /// analyst_views and analyst_view_history, idempotently.
+    #[test]
+    fn test_migration_normalizes_existing_conviction_signs() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::schema::run_migrations(&conn).unwrap();
+        ensure_tables(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO analyst_views (analyst, asset, direction, conviction, reasoning_summary)
+             VALUES ('high', 'USD', 'bear', 3, 'r'),
+                    ('macro', 'USD', 'bear', -2, 'r'),
+                    ('low', 'BTC', 'bull', -4, 'r'),
+                    ('medium', 'GLD', 'neutral', 1, 'r');
+             INSERT INTO analyst_view_history (analyst, asset, direction, conviction, reasoning_summary)
+             VALUES ('high', 'USD', 'bear', 3, 'r'),
+                    ('low', 'BTC', 'bull', -4, 'r');",
+        )
+        .unwrap();
+
+        // Re-run migrations: signs normalized where direction contradicts.
+        crate::db::schema::run_migrations(&conn).unwrap();
+
+        let read = |table: &str, analyst: &str, asset: &str| -> i64 {
+            conn.query_row(
+                &format!("SELECT conviction FROM {table} WHERE analyst=? AND asset=?"),
+                params![analyst, asset],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(read("analyst_views", "high", "USD"), -3);
+        assert_eq!(read("analyst_views", "macro", "USD"), -2); // already correct
+        assert_eq!(read("analyst_views", "low", "BTC"), 4);
+        assert_eq!(read("analyst_views", "medium", "GLD"), 1); // neutral untouched
+        assert_eq!(read("analyst_view_history", "high", "USD"), -3);
+        assert_eq!(read("analyst_view_history", "low", "BTC"), 4);
+
+        // Idempotent: a second pass changes nothing.
+        crate::db::schema::run_migrations(&conn).unwrap();
+        assert_eq!(read("analyst_views", "high", "USD"), -3);
+        assert_eq!(read("analyst_view_history", "low", "BTC"), 4);
     }
 }

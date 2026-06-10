@@ -3458,6 +3458,7 @@ fn store_economy_result(
                             source: item.source.name().to_string(),
                             confidence: item.source.confidence().to_string(),
                             fetched_at: now.clone(),
+                            quarantined: false,
                         };
                         let _ = economic_data_db::upsert_entry_backend(backend, &entry);
                     }
@@ -3547,6 +3548,7 @@ fn store_ism_result(
                         source: item.source.name().to_string(),
                         confidence: item.source.confidence().to_string(),
                         fetched_at: now.clone(),
+                        quarantined: false,
                     };
                     let _ = economic_data_db::upsert_entry_backend(backend, &entry);
                 }

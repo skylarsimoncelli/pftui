@@ -29,6 +29,13 @@ pub fn set(
     allocation_bias: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
+    // Direction is authoritative for the conviction sign. A contradicting
+    // sign (e.g. `--direction bear --conviction 3`) is normalized with an
+    // informational notice rather than stored as-is — stored sign errors
+    // previously inverted convergence classification.
+    analyst_views::validate_conviction(conviction)?;
+    let (conviction, notice) = analyst_views::normalize_conviction(direction, conviction);
+
     let id = analyst_views::upsert_view_backend(
         backend,
         analyst,
@@ -50,10 +57,14 @@ pub fn set(
                 "id": id,
                 "analyst": analyst,
                 "asset": asset,
+                "notice": notice,
                 "view": view,
             }))?
         );
     } else {
+        if let Some(n) = &notice {
+            println!("note: {}", n);
+        }
         let icon = match direction {
             "bull" => "🐂",
             "bear" => "🐻",

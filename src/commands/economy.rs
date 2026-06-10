@@ -11,7 +11,11 @@ use crate::db::economic_data;
 use crate::db::macro_events;
 
 pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> Result<()> {
+    // `get_all_backend` excludes quarantined rows (failed the write-time
+    // sanity check); fetch them separately so they can be surfaced as
+    // explicitly unavailable instead of silently rendering garbage values.
     let mut rows = economic_data::get_all_backend(backend)?;
+    let mut quarantined_rows = economic_data::get_quarantined_backend(backend).unwrap_or_default();
 
     // If economic_data table is empty (BLS/Brave both failed), synthesize
     // indicator rows from FRED cache data so agents always get values.
@@ -24,6 +28,11 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
     // retail sales, and industrial production even when partial BLS/Brave data exists.
     merge_fred_only_indicators(backend, &mut rows);
 
+    // Only report a quarantined indicator as unavailable when no healthy
+    // source (FRED merge/synthesis) covered it.
+    let covered: HashSet<String> = rows.iter().map(|r| r.indicator.clone()).collect();
+    quarantined_rows.retain(|q| !covered.contains(&q.indicator));
+
     let macro_events = macro_events::list_recent_backend(backend, 10)?;
 
     // Cross-reference with FRED data from economic_cache for discrepancy detection
@@ -34,6 +43,7 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
     if let Some(ind) = indicator {
         let needle = ind.to_lowercase();
         rows.retain(|r| r.indicator.to_lowercase() == needle);
+        quarantined_rows.retain(|r| r.indicator.to_lowercase() == needle);
     }
 
     if json {
@@ -212,10 +222,25 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                 })
             })
             .collect();
+        let quarantined_json: Vec<_> = quarantined_rows
+            .iter()
+            .map(|r| {
+                let (unit, display_name) = indicator_metadata(&r.indicator);
+                serde_json::json!({
+                    "indicator": r.indicator,
+                    "display_name": display_name,
+                    "unit": unit,
+                    "status": "unavailable (failed sanity check)",
+                    "source": r.source,
+                    "fetched_at": r.fetched_at,
+                })
+            })
+            .collect();
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "indicators": indicators,
+                "quarantined": quarantined_json,
                 "macro_events": surprises,
                 "gdp_context": gdp_context,
                 "data_quality": fred_quality,
@@ -224,7 +249,7 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
         return Ok(());
     }
 
-    if rows.is_empty() {
+    if rows.is_empty() && quarantined_rows.is_empty() {
         println!("No economy data available. Run `pftui refresh` first.");
         return Ok(());
     }
@@ -289,6 +314,19 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
             change,
             conf,
             source_label,
+        );
+    }
+
+    for r in &quarantined_rows {
+        let unavailable = "unavailable (failed sanity check)";
+        println!(
+            "{:<28} {:>12} {:>12} {:>12}  {:<8} {}",
+            display_name(&r.indicator),
+            "—",
+            "—",
+            "—",
+            "n/a",
+            unavailable,
         );
     }
 
@@ -1109,6 +1147,7 @@ fn merge_fred_only_indicators(
                 source: "fred".to_string(),
                 confidence,
                 fetched_at: now.clone(),
+                quarantined: false,
             });
         }
     }
@@ -1134,6 +1173,7 @@ fn merge_fred_only_indicators(
                 source: "fred".to_string(),
                 confidence,
                 fetched_at: now.clone(),
+                quarantined: false,
             });
         }
     }
@@ -1502,6 +1542,7 @@ mod tests {
             source: "brave".to_string(),
             confidence: "low".to_string(),
             fetched_at: "2026-03-27T00:00:00Z".to_string(),
+            quarantined: false,
         }];
         assert_eq!(
             count_sources_for_indicator("fed_funds_rate", &fred_obs, &rows),
@@ -1592,6 +1633,7 @@ mod tests {
             source: "bls".to_string(),
             confidence: "high".to_string(),
             fetched_at: "2026-04-07T00:00:00Z".to_string(),
+            quarantined: false,
         };
         let override_row = Some((dec!(3.1), "2026-02-01".to_string(), "CPIAUCSL"));
         assert_eq!(

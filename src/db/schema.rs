@@ -472,7 +472,8 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             source_url TEXT NOT NULL,
             source TEXT NOT NULL DEFAULT 'unknown',
             confidence TEXT NOT NULL DEFAULT 'medium',
-            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+            quarantined INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS annotations (
@@ -1259,6 +1260,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    // Migration: add quarantined flag to economic_data (sanity-check
+    // quarantine for implausible scraped indicator values).
+    let has_quarantined: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('economic_data') WHERE name = 'quarantined'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_quarantined {
+        conn.execute_batch(
+            "ALTER TABLE economic_data ADD COLUMN quarantined INTEGER NOT NULL DEFAULT 0",
+        )?;
+    }
+
     // Migration: add previous_close to price_cache (movers P0 fix)
     let has_previous_close: bool = conn
         .prepare(
@@ -1744,6 +1760,24 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             ON gex_snapshots(symbol, fetched_at DESC);",
     )?;
 
+    // Migration: rebuild a drifted `calibration_matrix` to the canonical shape.
+    //
+    // Legacy DBs created the table with the old scorer shape —
+    // `PRIMARY KEY(layer, topic, conviction, window_days)` and a
+    // `conviction TEXT NOT NULL` column — and a prior additive migration
+    // (#877) appended the canonical analytic columns alongside the legacy
+    // ones. That hybrid still breaks `pftui analytics calibration-matrix
+    // rebuild`: the INSERT populates only the canonical columns, so the
+    // legacy NOT-NULL `conviction` column (no default) fails with
+    // "NOT NULL constraint failed: calibration_matrix.conviction".
+    //
+    // Detect drift (a legacy `conviction` column, or a missing `id` rowid
+    // column) and rebuild the table in place to the canonical CREATE above,
+    // preserving rows with a best-effort legacy→canonical column mapping.
+    // Idempotent: a canonical table has `id` and no `conviction`, so the
+    // rebuild never re-fires.
+    rebuild_drifted_calibration_matrix(conn)?;
+
     // Migration: self-heal `calibration_matrix` on legacy DBs.
     //
     // The CREATE TABLE IF NOT EXISTS above is the canonical shape, but DBs
@@ -1777,6 +1811,130 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         }
     }
 
+    // Migration: normalize analyst-view conviction signs (direction is
+    // authoritative). Historical rows were written with positive conviction
+    // magnitudes on bear views (e.g. `--direction bear --conviction 3` stored
+    // +3), which flipped convergence classification bullish. Idempotent:
+    // after one pass no row matches either predicate.
+    normalize_analyst_view_conviction_signs(conn)?;
+
+    Ok(())
+}
+
+/// Rebuild `calibration_matrix` to the canonical shape when the on-disk
+/// table has drifted (legacy `conviction TEXT NOT NULL` column and/or a
+/// `PRIMARY KEY(layer, topic, conviction, window_days)` without the `id`
+/// rowid column). Rows are preserved with a best-effort legacy→canonical
+/// column mapping:
+///
+///   conviction_band   ← conviction_band, else legacy `conviction`
+///   n                 ← n (when non-zero), else legacy `n_scored`
+///   hit_rate          ← hit_rate (when non-zero), else legacy `strict_hit_rate`
+///   stated_confidence ← stated_confidence, else legacy `avg_confidence`
+///   recorded_at       ← recorded_at, else legacy `computed_at`, else now
+fn rebuild_drifted_calibration_matrix(conn: &Connection) -> Result<()> {
+    let column_exists = |name: &str| -> Result<bool> {
+        let n: i64 = conn
+            .prepare(
+                "SELECT COUNT(*) FROM pragma_table_info('calibration_matrix') WHERE name = ?1",
+            )?
+            .query_row([name], |row| row.get(0))
+            .unwrap_or(0);
+        Ok(n > 0)
+    };
+
+    let has_conviction = column_exists("conviction")?;
+    let has_id = column_exists("id")?;
+    if !has_conviction && has_id {
+        // Already canonical (or close enough for the additive column loop).
+        return Ok(());
+    }
+
+    // Build a SELECT that only references columns present on the drifted table.
+    let expr = |canonical: &str, legacy_fallbacks: &[&str], default: &str| -> Result<String> {
+        let mut parts: Vec<String> = Vec::new();
+        if column_exists(canonical)? {
+            // NULLIF(x, default) lets a legacy twin win over an appended
+            // never-populated DEFAULT column for numeric counters.
+            if default == "0" || default == "0.0" {
+                parts.push(format!("NULLIF({canonical}, {default})"));
+            } else {
+                parts.push(canonical.to_string());
+            }
+        }
+        for legacy in legacy_fallbacks {
+            if column_exists(legacy)? {
+                parts.push((*legacy).to_string());
+            }
+        }
+        parts.push(default.to_string());
+        Ok(if parts.len() == 1 {
+            parts.remove(0)
+        } else {
+            format!("COALESCE({})", parts.join(", "))
+        })
+    };
+
+    let layer_expr = expr("layer", &[], "NULL")?;
+    let topic_expr = expr("topic", &[], "NULL")?;
+    let band_expr = expr("conviction_band", &["conviction"], "NULL")?;
+    let n_expr = expr("n", &["n_scored"], "0")?;
+    let hit_rate_expr = expr("hit_rate", &["strict_hit_rate"], "0.0")?;
+    let conf_expr = expr("stated_confidence", &["avg_confidence"], "NULL")?;
+    let recorded_expr = expr("recorded_at", &["computed_at"], "datetime('now')")?;
+
+    conn.execute_batch(&format!(
+        "DROP TABLE IF EXISTS calibration_matrix_canonical_rebuild;
+        CREATE TABLE calibration_matrix_canonical_rebuild (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            layer TEXT,
+            topic TEXT,
+            conviction_band TEXT,
+            n INTEGER NOT NULL DEFAULT 0,
+            hit_rate REAL NOT NULL DEFAULT 0.0,
+            stated_confidence REAL,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO calibration_matrix_canonical_rebuild
+            (layer, topic, conviction_band, n, hit_rate, stated_confidence, recorded_at)
+        SELECT {layer_expr}, {topic_expr}, {band_expr}, COALESCE({n_expr}, 0),
+               COALESCE({hit_rate_expr}, 0.0), {conf_expr}, {recorded_expr}
+        FROM calibration_matrix;
+        DROP TABLE calibration_matrix;
+        ALTER TABLE calibration_matrix_canonical_rebuild RENAME TO calibration_matrix;"
+    ))?;
+    Ok(())
+}
+
+/// One-time (idempotent) sign normalization for `analyst_views` and
+/// `analyst_view_history`: direction is authoritative, so bear views must
+/// carry negative conviction and bull views positive conviction. Neutral
+/// rows are left untouched. Tables are created lazily by the analyst-views
+/// module, so skip silently when absent.
+fn normalize_analyst_view_conviction_signs(conn: &Connection) -> Result<()> {
+    for table in ["analyst_views", "analyst_view_history"] {
+        let exists: i64 = conn
+            .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1")?
+            .query_row([table], |row| row.get(0))
+            .unwrap_or(0);
+        if exists == 0 {
+            continue;
+        }
+        conn.execute(
+            &format!(
+                "UPDATE {table} SET conviction = -conviction
+                 WHERE direction = 'bear' AND conviction > 0"
+            ),
+            [],
+        )?;
+        conn.execute(
+            &format!(
+                "UPDATE {table} SET conviction = -conviction
+                 WHERE direction = 'bull' AND conviction < 0"
+            ),
+            [],
+        )?;
+    }
     Ok(())
 }
 
