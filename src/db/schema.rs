@@ -1893,11 +1893,29 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             audit_pass_rate REAL,
             agents_spawned INTEGER,
             notes TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            conviction_price_corr REAL
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_run_health_run_date
             ON run_health(run_date);",
     )?;
+
+    // Migration (gold post-mortem T2): conviction_price_corr — max |Pearson
+    // r| between a canonical layer's conviction trajectory and a held
+    // asset's closes (standing rule 15: conviction must not track price).
+    // Additive — idempotent via pragma_table_info check.
+    {
+        let exists: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM pragma_table_info('run_health') WHERE name = 'conviction_price_corr'",
+            )?
+            .query_row([], |row| row.get::<_, i64>(0))
+            .unwrap_or(0)
+            > 0;
+        if !exists {
+            conn.execute_batch("ALTER TABLE run_health ADD COLUMN conviction_price_corr REAL")?;
+        }
+    }
 
     // ── R5 memory-consolidation layer (additive migrations) ──────────────
     //

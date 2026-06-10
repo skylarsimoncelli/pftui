@@ -170,6 +170,78 @@ pub struct BuildContext {
     /// date. Surfaced by the `private_epistemic_health` section, which
     /// auto-suppresses when no row was recorded for the date.
     pub epistemic_health: Option<crate::db::run_health::RunHealth>,
+    /// Recommendation-ledger scoreboard lines for held assets that have at
+    /// least one scored 90d forward return. Surfaced as a sub-block of the
+    /// `private_epistemic_health` section; empty (sub-block suppressed)
+    /// while the ledger is still accruing.
+    pub recommendation_scoreboard: Vec<RecommendationScoreboardLine>,
+}
+
+/// One held symbol's recommendation-ledger summary for the epistemic-health
+/// section: the recorded action mix, the 90d forward-return hit rate, and
+/// the per-symbol window-quality delta (mean 90d after ADD − after WAIT).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RecommendationScoreboardLine {
+    pub symbol: String,
+    /// e.g. `add×5 wait×3 hold×1` (every recorded ledger row, scored or not).
+    pub action_mix: String,
+    /// Scored 90d returns across all actions for the symbol.
+    pub n_scored_90d: usize,
+    /// Share of scored 90d returns that are positive (percent).
+    pub pct_positive_90d: Option<f64>,
+    /// Window quality: mean 90d fwd return after ADD − after WAIT (pp).
+    /// None until both sides have a scored 90d return.
+    pub window_quality_delta_pct: Option<f64>,
+}
+
+/// Collapse the ledger scoreboard onto held symbols with ≥1 scored 90d
+/// return. Pure aggregation over `db::recommendations::scoreboard` output so
+/// it can be unit-tested with synthetic boards.
+pub fn scoreboard_lines_for_held(
+    board: &crate::db::recommendations::Scoreboard,
+    held_symbols: &[String],
+) -> Vec<RecommendationScoreboardLine> {
+    let held: std::collections::BTreeSet<String> =
+        held_symbols.iter().map(|s| s.to_uppercase()).collect();
+    /// (action mix as (action, n_total) pairs, scored 90d count, positive 90d count)
+    type SymbolAgg = (Vec<(String, usize)>, usize, usize);
+    let mut by_symbol: std::collections::BTreeMap<String, SymbolAgg> =
+        std::collections::BTreeMap::new();
+    for row in &board.rows {
+        if !held.contains(&row.symbol) {
+            continue;
+        }
+        let entry = by_symbol.entry(row.symbol.clone()).or_default();
+        entry.0.push((row.action.clone(), row.n_total));
+        if let Some(c) = &row.h90 {
+            entry.1 += c.n;
+            entry.2 += c.positive;
+        }
+    }
+    let wq: std::collections::BTreeMap<&str, Option<f64>> = board
+        .window_quality
+        .iter()
+        .map(|w| (w.symbol.as_str(), w.delta_pct))
+        .collect();
+    by_symbol
+        .into_iter()
+        .filter(|(_, (_, n90, _))| *n90 > 0)
+        .map(|(symbol, (mut mix, n90, pos90))| {
+            mix.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            let action_mix = mix
+                .iter()
+                .map(|(action, n)| format!("{action}×{n}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            RecommendationScoreboardLine {
+                window_quality_delta_pct: wq.get(symbol.as_str()).copied().flatten(),
+                pct_positive_90d: Some(pos90 as f64 / n90 as f64 * 100.0),
+                n_scored_90d: n90,
+                action_mix,
+                symbol,
+            }
+        })
+        .collect()
 }
 
 /// One parallel-set result mirrored from `/tmp/pftui-parallels-<DATE>.json`.
@@ -1994,6 +2066,15 @@ impl BuildContext {
             .sqlite_native()
             .and_then(|conn| crate::db::run_health::get_run_health(conn, report_date).ok())
             .flatten();
+
+        // 11. recommendation_scoreboard — the ledger's per-held-symbol
+        //     forward-return summary (action mix, 90d hit rate, ADD−WAIT
+        //     window quality). Best-effort; empty while the ledger accrues.
+        ctx.recommendation_scoreboard = backend
+            .sqlite_native()
+            .and_then(|conn| crate::db::recommendations::scoreboard(conn, None).ok())
+            .map(|board| scoreboard_lines_for_held(&board, &held_symbols))
+            .unwrap_or_default();
 
         Ok(ctx)
     }
@@ -3900,6 +3981,7 @@ pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
         },
         opt_row!("morning_brief", ctx.morning_brief),
         opt_row!("epistemic_health", ctx.epistemic_health),
+        vec_row!("recommendation_scoreboard", ctx.recommendation_scoreboard),
     ]
 }
 
@@ -5193,6 +5275,82 @@ fn load_morning_brief_summary(narrative: &serde_json::Value) -> Option<MorningBr
 #[cfg(test)]
 mod assembler_tests {
     use super::*;
+
+    #[test]
+    fn scoreboard_lines_for_held_filters_and_aggregates() {
+        use crate::db::recommendations::{Scoreboard, ScoreboardCell, ScoreboardRow, WindowQuality};
+        let board = Scoreboard {
+            rows: vec![
+                ScoreboardRow {
+                    symbol: "GC=F".to_string(),
+                    action: "add".to_string(),
+                    n_total: 5,
+                    h30: None,
+                    h90: Some(ScoreboardCell {
+                        n: 4,
+                        positive: 1,
+                        pct_positive: 25.0,
+                        mean_pct: -6.0,
+                    }),
+                    h180: None,
+                },
+                ScoreboardRow {
+                    symbol: "GC=F".to_string(),
+                    action: "wait".to_string(),
+                    n_total: 2,
+                    h30: None,
+                    h90: Some(ScoreboardCell {
+                        n: 2,
+                        positive: 2,
+                        pct_positive: 100.0,
+                        mean_pct: 3.0,
+                    }),
+                    h180: None,
+                },
+                // Held, but nothing scored at 90d → excluded.
+                ScoreboardRow {
+                    symbol: "SI=F".to_string(),
+                    action: "wait".to_string(),
+                    n_total: 3,
+                    h30: None,
+                    h90: None,
+                    h180: None,
+                },
+                // Scored, but not held → excluded.
+                ScoreboardRow {
+                    symbol: "QQQ".to_string(),
+                    action: "add".to_string(),
+                    n_total: 1,
+                    h30: None,
+                    h90: Some(ScoreboardCell {
+                        n: 1,
+                        positive: 1,
+                        pct_positive: 100.0,
+                        mean_pct: 8.0,
+                    }),
+                    h180: None,
+                },
+            ],
+            window_quality: vec![WindowQuality {
+                symbol: "GC=F".to_string(),
+                add_n: 4,
+                wait_n: 2,
+                add_mean_90d_pct: Some(-6.0),
+                wait_mean_90d_pct: Some(3.0),
+                delta_pct: Some(-9.0),
+            }],
+            unscored: 3,
+        };
+        let held = vec!["GC=F".to_string(), "SI=F".to_string(), "BTC".to_string()];
+        let lines = scoreboard_lines_for_held(&board, &held);
+        assert_eq!(lines.len(), 1);
+        let gold = &lines[0];
+        assert_eq!(gold.symbol, "GC=F");
+        assert_eq!(gold.action_mix, "add×5 wait×2");
+        assert_eq!(gold.n_scored_90d, 6);
+        assert!((gold.pct_positive_90d.unwrap() - 50.0).abs() < 1e-9);
+        assert!((gold.window_quality_delta_pct.unwrap() + 9.0).abs() < 1e-9);
+    }
 
     #[test]
     fn section_plan_for_public_only_has_public_sections() {

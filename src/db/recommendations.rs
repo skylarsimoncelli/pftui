@@ -18,6 +18,7 @@
 //!   monetary values.
 
 use anyhow::{anyhow, Result};
+use chrono::NaiveDate;
 use rusqlite::{params, Connection};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -28,15 +29,33 @@ use std::str::FromStr;
 /// recommendation that produced a given reply.
 pub const VALID_RECOMMENDATION_TYPES: &[&str] = &[
     "add",
+    "wait",
     "trim",
     "hold",
     "exit",
+    "avoid",
     "target-set",
     "target-remove",
     "target-ignore",
     "outlook-refine",
     "catalyst",
     "meta",
+];
+
+/// The recommendation-ledger action vocabulary (`pftui analytics
+/// recommendations record`). A strict subset of
+/// `VALID_RECOMMENDATION_TYPES`: the five actions that are mechanically
+/// scoreable against forward returns. `wait` is a first-class recorded
+/// action — for physically held assets (gold, silver) the system's job is
+/// timing accumulation windows, and a correct WAIT through a drawdown is the
+/// system doing its job.
+pub const LEDGER_ACTIONS: &[&str] = &["add", "wait", "hold", "trim", "avoid"];
+
+/// Forward-return scoring horizons (days, column name).
+pub const FORWARD_HORIZONS: &[(i64, &str)] = &[
+    (30, "fwd_30d_pct"),
+    (90, "fwd_90d_pct"),
+    (180, "fwd_180d_pct"),
 ];
 
 pub const VALID_URGENCY: &[&str] = &["high", "normal", "low"];
@@ -58,6 +77,21 @@ pub struct Recommendation {
     pub urgency: String,
     pub rationale_summary: Option<String>,
     pub created_at: String,
+    /// Decimal string: the close used to price the recommendation at record
+    /// time (ledger rows only; legacy decision-card rows have NULL).
+    pub entry_price: Option<String>,
+    /// The price_history series that priced it (e.g. `GC=F` or `BTC-USD`).
+    pub price_series: Option<String>,
+    /// Which writer recorded it (default `decision-architect`).
+    pub source: String,
+    /// Scored forward returns (percent, vs entry_price). NULL until the
+    /// horizon elapses and `score` fills it; never overwritten once set.
+    pub fwd_30d_pct: Option<f64>,
+    pub fwd_90d_pct: Option<f64>,
+    pub fwd_180d_pct: Option<f64>,
+    /// Timestamp of the most recent forward-return scoring pass that filled
+    /// at least one horizon on this row.
+    pub scored_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +123,14 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
             recommendation_type TEXT NOT NULL,
             urgency TEXT NOT NULL,
             rationale_summary TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            entry_price TEXT,
+            price_series TEXT,
+            source TEXT NOT NULL DEFAULT 'decision-architect',
+            fwd_30d_pct REAL,
+            fwd_90d_pct REAL,
+            fwd_180d_pct REAL,
+            scored_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_recommendations_report_date
             ON recommendations(report_date);
@@ -114,7 +155,97 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_rec_outcomes_tx
             ON recommendation_outcomes(transaction_id);",
     )?;
+
+    // Migration (gold post-mortem T2): recommendation-ledger columns.
+    // CREATE TABLE IF NOT EXISTS never adds columns to an existing table, so
+    // DBs created before the ledger shipped self-heal here. Additive and
+    // idempotent via pragma_table_info, mirroring the calibration_matrix
+    // pattern in db/schema.rs. Order matches the canonical CREATE above so a
+    // migrated table and a fresh table have identical column order.
+    for (column, ddl) in &[
+        (
+            "entry_price",
+            "ALTER TABLE recommendations ADD COLUMN entry_price TEXT",
+        ),
+        (
+            "price_series",
+            "ALTER TABLE recommendations ADD COLUMN price_series TEXT",
+        ),
+        (
+            "source",
+            "ALTER TABLE recommendations ADD COLUMN source TEXT NOT NULL DEFAULT 'decision-architect'",
+        ),
+        (
+            "fwd_30d_pct",
+            "ALTER TABLE recommendations ADD COLUMN fwd_30d_pct REAL",
+        ),
+        (
+            "fwd_90d_pct",
+            "ALTER TABLE recommendations ADD COLUMN fwd_90d_pct REAL",
+        ),
+        (
+            "fwd_180d_pct",
+            "ALTER TABLE recommendations ADD COLUMN fwd_180d_pct REAL",
+        ),
+        (
+            "scored_at",
+            "ALTER TABLE recommendations ADD COLUMN scored_at TEXT",
+        ),
+    ] {
+        let exists: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('recommendations') WHERE name = ?1")?
+            .query_row([column], |row| row.get::<_, i64>(0))
+            .unwrap_or(0)
+            > 0;
+        if !exists {
+            conn.execute_batch(ddl)?;
+        }
+    }
     Ok(())
+}
+
+/// Canonical SELECT column list for `Recommendation` rows. `prefix` lets
+/// callers qualify with a table alias (pass `"r."` in joins, `""` otherwise).
+fn rec_columns(prefix: &str) -> String {
+    [
+        "id",
+        "report_date",
+        "asset",
+        "recommendation_type",
+        "urgency",
+        "rationale_summary",
+        "created_at",
+        "entry_price",
+        "price_series",
+        "source",
+        "fwd_30d_pct",
+        "fwd_90d_pct",
+        "fwd_180d_pct",
+        "scored_at",
+    ]
+    .iter()
+    .map(|c| format!("{prefix}{c}"))
+    .collect::<Vec<_>>()
+    .join(", ")
+}
+
+fn row_to_recommendation(row: &rusqlite::Row) -> Result<Recommendation, rusqlite::Error> {
+    Ok(Recommendation {
+        id: row.get(0)?,
+        report_date: row.get(1)?,
+        asset: row.get(2)?,
+        recommendation_type: row.get(3)?,
+        urgency: row.get(4)?,
+        rationale_summary: row.get(5)?,
+        created_at: row.get(6)?,
+        entry_price: row.get(7)?,
+        price_series: row.get(8)?,
+        source: row.get(9)?,
+        fwd_30d_pct: row.get(10)?,
+        fwd_90d_pct: row.get(11)?,
+        fwd_180d_pct: row.get(12)?,
+        scored_at: row.get(13)?,
+    })
 }
 
 /// Insert a new recommendation row. Returns the newly assigned id.
@@ -181,11 +312,7 @@ pub fn list(
     since: Option<&str>,
 ) -> Result<Vec<Recommendation>> {
     ensure_table(conn)?;
-    let mut sql = String::from(
-        "SELECT id, report_date, asset, recommendation_type, urgency,
-                rationale_summary, created_at
-         FROM recommendations WHERE 1=1",
-    );
+    let mut sql = format!("SELECT {} FROM recommendations WHERE 1=1", rec_columns(""));
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if let Some(d) = report_date {
         sql.push_str(" AND report_date = ?");
@@ -207,41 +334,18 @@ pub fn list(
     let mut stmt = conn.prepare(&sql)?;
     let params_slice: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
     let rows = stmt
-        .query_map(params_slice.as_slice(), |row| {
-            Ok(Recommendation {
-                id: row.get(0)?,
-                report_date: row.get(1)?,
-                asset: row.get(2)?,
-                recommendation_type: row.get(3)?,
-                urgency: row.get(4)?,
-                rationale_summary: row.get(5)?,
-                created_at: row.get(6)?,
-            })
-        })?
+        .query_map(params_slice.as_slice(), row_to_recommendation)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
 
 pub fn get(conn: &Connection, id: i64) -> Result<Option<Recommendation>> {
     ensure_table(conn)?;
-    let mut stmt = conn.prepare(
-        "SELECT id, report_date, asset, recommendation_type, urgency,
-                rationale_summary, created_at
-         FROM recommendations WHERE id = ?1",
-    )?;
-    let row = stmt
-        .query_row(params![id], |row| {
-            Ok(Recommendation {
-                id: row.get(0)?,
-                report_date: row.get(1)?,
-                asset: row.get(2)?,
-                recommendation_type: row.get(3)?,
-                urgency: row.get(4)?,
-                rationale_summary: row.get(5)?,
-                created_at: row.get(6)?,
-            })
-        })
-        .ok();
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM recommendations WHERE id = ?1",
+        rec_columns("")
+    ))?;
+    let row = stmt.query_row(params![id], row_to_recommendation).ok();
     Ok(row)
 }
 
@@ -506,13 +610,13 @@ pub fn find_open_for_reply(
     decision_type: Option<&str>,
 ) -> Result<Option<Recommendation>> {
     ensure_table(conn)?;
-    let mut sql = String::from(
-        "SELECT r.id, r.report_date, r.asset, r.recommendation_type, r.urgency,
-                r.rationale_summary, r.created_at
+    let mut sql = format!(
+        "SELECT {}
          FROM recommendations r
          LEFT JOIN recommendation_outcomes o ON o.recommendation_id = r.id
          WHERE r.report_date = ?1
            AND o.operator_reply_id IS NULL",
+        rec_columns("r.")
     );
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(report_date.to_string())];
     if let Some(a) = asset {
@@ -527,17 +631,7 @@ pub fn find_open_for_reply(
     let mut stmt = conn.prepare(&sql)?;
     let params_slice: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
     let row = stmt
-        .query_row(params_slice.as_slice(), |row| {
-            Ok(Recommendation {
-                id: row.get(0)?,
-                report_date: row.get(1)?,
-                asset: row.get(2)?,
-                recommendation_type: row.get(3)?,
-                urgency: row.get(4)?,
-                rationale_summary: row.get(5)?,
-                created_at: row.get(6)?,
-            })
-        })
+        .query_row(params_slice.as_slice(), row_to_recommendation)
         .ok();
     Ok(row)
 }
@@ -568,8 +662,7 @@ pub fn find_open_for_transaction(
         .collect::<Vec<_>>()
         .join(",");
     let sql = format!(
-        "SELECT r.id, r.report_date, r.asset, r.recommendation_type, r.urgency,
-                r.rationale_summary, r.created_at
+        "SELECT {}
          FROM recommendations r
          LEFT JOIN recommendation_outcomes o ON o.recommendation_id = r.id
          WHERE r.asset = ?1
@@ -578,6 +671,7 @@ pub fn find_open_for_transaction(
            AND julianday(?2) - julianday(r.report_date) <= ?3
            AND (o.transaction_id IS NULL)
          ORDER BY r.report_date DESC LIMIT 1",
+        rec_columns("r."),
         types_placeholder
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -591,17 +685,7 @@ pub fn find_open_for_transaction(
     }
     let params_slice: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
     let row = stmt
-        .query_row(params_slice.as_slice(), |row| {
-            Ok(Recommendation {
-                id: row.get(0)?,
-                report_date: row.get(1)?,
-                asset: row.get(2)?,
-                recommendation_type: row.get(3)?,
-                urgency: row.get(4)?,
-                rationale_summary: row.get(5)?,
-                created_at: row.get(6)?,
-            })
-        })
+        .query_row(params_slice.as_slice(), row_to_recommendation)
         .ok();
     Ok(row)
 }
@@ -610,12 +694,12 @@ pub fn find_open_for_transaction(
 /// Useful for `pftui analytics recommendations score --all`.
 pub fn list_unscored(conn: &Connection, since: Option<&str>) -> Result<Vec<Recommendation>> {
     ensure_table(conn)?;
-    let mut sql = String::from(
-        "SELECT r.id, r.report_date, r.asset, r.recommendation_type, r.urgency,
-                r.rationale_summary, r.created_at
+    let mut sql = format!(
+        "SELECT {}
          FROM recommendations r
          LEFT JOIN recommendation_outcomes o ON o.recommendation_id = r.id
          WHERE (o.outcome_score IS NULL)",
+        rec_columns("r.")
     );
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if let Some(s) = since {
@@ -626,17 +710,7 @@ pub fn list_unscored(conn: &Connection, since: Option<&str>) -> Result<Vec<Recom
     let mut stmt = conn.prepare(&sql)?;
     let params_slice: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
     let rows = stmt
-        .query_map(params_slice.as_slice(), |row| {
-            Ok(Recommendation {
-                id: row.get(0)?,
-                report_date: row.get(1)?,
-                asset: row.get(2)?,
-                recommendation_type: row.get(3)?,
-                urgency: row.get(4)?,
-                rationale_summary: row.get(5)?,
-                created_at: row.get(6)?,
-            })
-        })?
+        .query_map(params_slice.as_slice(), row_to_recommendation)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
@@ -683,6 +757,364 @@ pub struct RollingHitRate {
     pub hits: u32,
     pub hit_rate_pct: f64,
     pub avg_score: f64,
+}
+
+// ---------------------------------------------------------------------------
+// Recommendation ledger (gold post-mortem T2)
+//
+// A 5-month post-mortem found the system recommended adding gold every single
+// run into a -19% drawdown and could not notice, because recommendations —
+// unlike predictions — were never scored. The ledger fixes that: every
+// decision-card action is recorded with the close that priced it, forward
+// returns are filled mechanically when each horizon elapses, and the
+// scoreboard makes the timing quality of ADD vs WAIT calls measurable.
+// ---------------------------------------------------------------------------
+
+/// Resolve the price series that can price `symbol` at `date`: the symbol
+/// itself, else the `SYMBOL-USD` twin (crypto held under its bare ticker).
+/// Returns `(series, close)` or `None` when neither has history.
+pub fn resolve_entry_price(
+    conn: &Connection,
+    symbol: &str,
+    date: &str,
+) -> Result<Option<(String, Decimal)>> {
+    if let Some(close) = crate::db::price_history::get_price_at_date(conn, symbol, date)? {
+        if close != Decimal::ZERO {
+            return Ok(Some((symbol.to_string(), close)));
+        }
+    }
+    if !symbol.to_uppercase().ends_with("-USD") {
+        let twin = format!("{symbol}-USD");
+        if let Some(close) = crate::db::price_history::get_price_at_date(conn, &twin, date)? {
+            if close != Decimal::ZERO {
+                return Ok(Some((twin, close)));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Record one ledger entry. `action` must be one of `LEDGER_ACTIONS`.
+/// `entry_price` is auto-filled from the latest `price_history` close on or
+/// before `run_date` (falling back `SYM` → `SYM-USD`; the series that priced
+/// it is stored in `price_series`). A missing price is not an error — the row
+/// is recorded unpriced and simply never accrues forward returns.
+pub fn record_ledger_entry(
+    conn: &Connection,
+    run_date: &str,
+    symbol: &str,
+    action: &str,
+    rationale: Option<&str>,
+    source: &str,
+) -> Result<Recommendation> {
+    ensure_table(conn)?;
+    if !LEDGER_ACTIONS.contains(&action) {
+        return Err(anyhow!(
+            "invalid action '{}'; must be one of {}",
+            action,
+            LEDGER_ACTIONS.join("|")
+        ));
+    }
+    let symbol = symbol.to_uppercase();
+    let priced = resolve_entry_price(conn, &symbol, run_date)?;
+    let (price_series, entry_price) = match &priced {
+        Some((series, close)) => (Some(series.clone()), Some(close.to_string())),
+        None => (None, None),
+    };
+    conn.execute(
+        "INSERT INTO recommendations
+            (report_date, asset, recommendation_type, urgency, rationale_summary,
+             entry_price, price_series, source)
+         VALUES (?1, ?2, ?3, 'normal', ?4, ?5, ?6, ?7)",
+        params![run_date, symbol, action, rationale, entry_price, price_series, source],
+    )?;
+    let id = conn.last_insert_rowid();
+    get(conn, id)?.ok_or_else(|| anyhow!("recommendation row vanished after insert"))
+}
+
+/// Summary of one forward-return scoring pass.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ForwardScoreSummary {
+    /// Rows examined (priced rows with at least one unscored horizon).
+    pub candidates: usize,
+    /// Individual (row, horizon) cells filled this pass.
+    pub horizons_filled: usize,
+    /// Distinct rows that received at least one new horizon.
+    pub rows_updated: usize,
+}
+
+/// Fill `fwd_{30,90,180}d_pct` for any row whose horizon has elapsed:
+/// percent change from `entry_price` to the close at `run_date + N` (closest
+/// close on or before that date, but strictly after `run_date` so a data gap
+/// can't score a row against its own entry close). Idempotent — a scored
+/// horizon is never overwritten, and unscorable cells are retried on the
+/// next pass once price history arrives.
+pub fn score_forward_returns(conn: &Connection, today: &str) -> Result<ForwardScoreSummary> {
+    ensure_table(conn)?;
+    let today_date = NaiveDate::parse_from_str(today, "%Y-%m-%d")
+        .map_err(|_| anyhow!("invalid date '{}': expected YYYY-MM-DD", today))?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM recommendations
+         WHERE entry_price IS NOT NULL
+           AND (fwd_30d_pct IS NULL OR fwd_90d_pct IS NULL OR fwd_180d_pct IS NULL)
+         ORDER BY report_date ASC, id ASC",
+        rec_columns("")
+    ))?;
+    let rows = stmt
+        .query_map([], row_to_recommendation)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut summary = ForwardScoreSummary {
+        candidates: rows.len(),
+        ..Default::default()
+    };
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    for rec in &rows {
+        let Ok(run_date) = NaiveDate::parse_from_str(&rec.report_date, "%Y-%m-%d") else {
+            continue;
+        };
+        let Some(entry) = rec.entry_price.as_deref().and_then(|p| Decimal::from_str(p).ok())
+        else {
+            continue;
+        };
+        if entry == Decimal::ZERO {
+            continue;
+        }
+        let series = rec
+            .price_series
+            .clone()
+            .or_else(|| rec.asset.clone())
+            .unwrap_or_default();
+        if series.is_empty() {
+            continue;
+        }
+        let mut filled_any = false;
+        for (days, column) in FORWARD_HORIZONS {
+            let already = match *column {
+                "fwd_30d_pct" => rec.fwd_30d_pct.is_some(),
+                "fwd_90d_pct" => rec.fwd_90d_pct.is_some(),
+                _ => rec.fwd_180d_pct.is_some(),
+            };
+            if already {
+                continue;
+            }
+            let horizon_date = run_date + chrono::Duration::days(*days);
+            if horizon_date > today_date {
+                continue; // horizon not elapsed yet
+            }
+            let horizon_str = horizon_date.format("%Y-%m-%d").to_string();
+            // Closest close on or before run_date+N, strictly after run_date.
+            let close: Option<String> = conn
+                .prepare(
+                    "SELECT close FROM price_history
+                     WHERE symbol = ?1 AND date <= ?2 AND date > ?3
+                     ORDER BY date DESC LIMIT 1",
+                )?
+                .query_row(params![series, horizon_str, rec.report_date], |row| {
+                    row.get(0)
+                })
+                .ok();
+            let Some(close) = close.and_then(|c| Decimal::from_str(&c).ok()) else {
+                continue;
+            };
+            let pct = ((close - entry) / entry * Decimal::from(100))
+                .to_string()
+                .parse::<f64>()
+                .unwrap_or(0.0);
+            // COALESCE guard: never overwrite a scored horizon, even if a
+            // concurrent pass beat us to it.
+            conn.execute(
+                &format!(
+                    "UPDATE recommendations
+                     SET {column} = COALESCE({column}, ?1), scored_at = ?2
+                     WHERE id = ?3"
+                ),
+                params![pct, now, rec.id],
+            )?;
+            summary.horizons_filled += 1;
+            filled_any = true;
+        }
+        if filled_any {
+            summary.rows_updated += 1;
+        }
+    }
+    Ok(summary)
+}
+
+/// Per-horizon aggregate for one (symbol, action) scoreboard cell.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ScoreboardCell {
+    pub n: usize,
+    pub positive: usize,
+    pub pct_positive: f64,
+    pub mean_pct: f64,
+}
+
+fn cell_from(values: &[f64]) -> Option<ScoreboardCell> {
+    if values.is_empty() {
+        return None;
+    }
+    let n = values.len();
+    let positive = values.iter().filter(|v| **v > 0.0).count();
+    let mean = values.iter().sum::<f64>() / n as f64;
+    Some(ScoreboardCell {
+        n,
+        positive,
+        pct_positive: positive as f64 / n as f64 * 100.0,
+        mean_pct: mean,
+    })
+}
+
+/// One scoreboard row: symbol × action with per-horizon stats.
+#[derive(Debug, Clone, Serialize)]
+pub struct ScoreboardRow {
+    pub symbol: String,
+    pub action: String,
+    /// All recorded ledger rows for this (symbol, action), scored or not.
+    pub n_total: usize,
+    pub h30: Option<ScoreboardCell>,
+    pub h90: Option<ScoreboardCell>,
+    pub h180: Option<ScoreboardCell>,
+}
+
+/// The WINDOW-QUALITY metric per symbol: mean 90d forward return after ADD
+/// minus after WAIT. Positive → the system's ADD timing added value over
+/// just waiting. Negative → its ADD calls were worse than its WAIT calls
+/// (the gold failure, made measurable).
+#[derive(Debug, Clone, Serialize)]
+pub struct WindowQuality {
+    pub symbol: String,
+    pub add_n: usize,
+    pub wait_n: usize,
+    pub add_mean_90d_pct: Option<f64>,
+    pub wait_mean_90d_pct: Option<f64>,
+    /// `add_mean_90d_pct - wait_mean_90d_pct`; None until both sides have a
+    /// scored 90d return.
+    pub delta_pct: Option<f64>,
+}
+
+/// Full scoreboard payload.
+#[derive(Debug, Clone, Serialize)]
+pub struct Scoreboard {
+    pub rows: Vec<ScoreboardRow>,
+    pub window_quality: Vec<WindowQuality>,
+    /// Ledger rows with no scored horizon yet (still accruing).
+    pub unscored: usize,
+}
+
+/// Build the scoreboard over ledger-action rows (optionally one symbol).
+pub fn scoreboard(conn: &Connection, symbol: Option<&str>) -> Result<Scoreboard> {
+    ensure_table(conn)?;
+    let actions_in = LEDGER_ACTIONS
+        .iter()
+        .map(|a| format!("'{a}'"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut sql = format!(
+        "SELECT asset, recommendation_type, fwd_30d_pct, fwd_90d_pct, fwd_180d_pct
+         FROM recommendations
+         WHERE asset IS NOT NULL AND recommendation_type IN ({actions_in})"
+    );
+    let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = symbol {
+        sql.push_str(" AND upper(asset) = upper(?)");
+        args.push(Box::new(s.to_string()));
+    }
+    let mut stmt = conn.prepare(&sql)?;
+    let params_slice: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
+    /// (asset, action, fwd_30d_pct, fwd_90d_pct, fwd_180d_pct)
+    type LedgerCells = (String, String, Option<f64>, Option<f64>, Option<f64>);
+    let rows: Vec<LedgerCells> = stmt
+        .query_map(params_slice.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    use std::collections::BTreeMap;
+    #[derive(Default)]
+    struct Agg {
+        n_total: usize,
+        h30: Vec<f64>,
+        h90: Vec<f64>,
+        h180: Vec<f64>,
+    }
+    let mut by_key: BTreeMap<(String, String), Agg> = BTreeMap::new();
+    let mut unscored = 0usize;
+    for (asset, action, f30, f90, f180) in rows {
+        let entry = by_key.entry((asset.to_uppercase(), action)).or_default();
+        entry.n_total += 1;
+        if f30.is_none() && f90.is_none() && f180.is_none() {
+            unscored += 1;
+        }
+        if let Some(v) = f30 {
+            entry.h30.push(v);
+        }
+        if let Some(v) = f90 {
+            entry.h90.push(v);
+        }
+        if let Some(v) = f180 {
+            entry.h180.push(v);
+        }
+    }
+
+    let mut out_rows = Vec::new();
+    let mut per_symbol_90: BTreeMap<String, (Vec<f64>, Vec<f64>)> = BTreeMap::new();
+    for ((sym, action), agg) in by_key {
+        match action.as_str() {
+            "add" => per_symbol_90
+                .entry(sym.clone())
+                .or_default()
+                .0
+                .extend(agg.h90.iter().copied()),
+            "wait" => per_symbol_90
+                .entry(sym.clone())
+                .or_default()
+                .1
+                .extend(agg.h90.iter().copied()),
+            _ => {}
+        }
+        out_rows.push(ScoreboardRow {
+            symbol: sym,
+            action,
+            n_total: agg.n_total,
+            h30: cell_from(&agg.h30),
+            h90: cell_from(&agg.h90),
+            h180: cell_from(&agg.h180),
+        });
+    }
+
+    let window_quality = per_symbol_90
+        .into_iter()
+        .filter(|(_, (adds, waits))| !adds.is_empty() || !waits.is_empty())
+        .map(|(sym, (adds, waits))| {
+            let add_mean = cell_from(&adds).map(|c| c.mean_pct);
+            let wait_mean = cell_from(&waits).map(|c| c.mean_pct);
+            let delta = match (add_mean, wait_mean) {
+                (Some(a), Some(w)) => Some(a - w),
+                _ => None,
+            };
+            WindowQuality {
+                symbol: sym,
+                add_n: adds.len(),
+                wait_n: waits.len(),
+                add_mean_90d_pct: add_mean,
+                wait_mean_90d_pct: wait_mean,
+                delta_pct: delta,
+            }
+        })
+        .collect();
+
+    Ok(Scoreboard {
+        rows: out_rows,
+        window_quality,
+        unscored,
+    })
 }
 
 /// Helper to detect a DECISION REPLY style payload in a free-text journal
@@ -1078,6 +1510,231 @@ mod tests {
         assert!(parse_decision_reply("just a regular journal entry").is_none());
         // Missing required keys returns None.
         assert!(parse_decision_reply("DECISION REPLY response=yes").is_none());
+    }
+
+    // ----- recommendation ledger (gold post-mortem T2) -----
+
+    #[test]
+    fn record_ledger_entry_autofills_entry_price_from_history() {
+        let conn = fresh_conn();
+        conn.execute_batch(
+            "INSERT INTO price_history (symbol, date, close) VALUES
+                ('GC=F', '2026-06-08', '3300.50'),
+                ('GC=F', '2026-06-09', '3310.25');",
+        )
+        .unwrap();
+        let rec = record_ledger_entry(
+            &conn,
+            "2026-06-10",
+            "gc=f",
+            "add",
+            Some("accumulation window open"),
+            "decision-architect",
+        )
+        .unwrap();
+        assert_eq!(rec.asset.as_deref(), Some("GC=F"));
+        assert_eq!(rec.recommendation_type, "add");
+        // Closest close on/before run_date.
+        assert_eq!(rec.entry_price.as_deref(), Some("3310.25"));
+        assert_eq!(rec.price_series.as_deref(), Some("GC=F"));
+        assert_eq!(rec.source, "decision-architect");
+        assert!(rec.scored_at.is_none());
+    }
+
+    #[test]
+    fn record_ledger_entry_falls_back_to_usd_series() {
+        let conn = fresh_conn();
+        conn.execute_batch(
+            "INSERT INTO price_history (symbol, date, close) VALUES
+                ('BTC-USD', '2026-06-09', '101000.00');",
+        )
+        .unwrap();
+        let rec = record_ledger_entry(&conn, "2026-06-10", "BTC", "wait", None, "decision-architect")
+            .unwrap();
+        assert_eq!(rec.entry_price.as_deref(), Some("101000.00"));
+        assert_eq!(rec.price_series.as_deref(), Some("BTC-USD"));
+    }
+
+    #[test]
+    fn record_ledger_entry_without_history_records_unpriced() {
+        let conn = fresh_conn();
+        let rec =
+            record_ledger_entry(&conn, "2026-06-10", "XYZ", "hold", None, "decision-architect")
+                .unwrap();
+        assert!(rec.entry_price.is_none());
+        assert!(rec.price_series.is_none());
+    }
+
+    #[test]
+    fn record_ledger_entry_rejects_non_ledger_actions() {
+        let conn = fresh_conn();
+        assert!(
+            record_ledger_entry(&conn, "2026-06-10", "BTC", "exit", None, "x").is_err(),
+            "exit is a decision-card type, not a ledger action"
+        );
+        assert!(record_ledger_entry(&conn, "2026-06-10", "BTC", "smash", None, "x").is_err());
+    }
+
+    #[test]
+    fn score_forward_returns_fills_elapsed_horizons_only() {
+        let conn = fresh_conn();
+        conn.execute_batch(
+            "INSERT INTO price_history (symbol, date, close) VALUES
+                ('GC=F', '2026-01-01', '100.00'),
+                ('GC=F', '2026-01-31', '110.00'),
+                ('GC=F', '2026-04-01', '90.00');",
+        )
+        .unwrap();
+        let rec =
+            record_ledger_entry(&conn, "2026-01-01", "GC=F", "add", None, "decision-architect")
+                .unwrap();
+        assert_eq!(rec.entry_price.as_deref(), Some("100.00"));
+
+        // 100 days later: 30d and 90d elapsed, 180d not.
+        let summary = score_forward_returns(&conn, "2026-04-11").unwrap();
+        assert_eq!(summary.rows_updated, 1);
+        assert_eq!(summary.horizons_filled, 2);
+        let row = get(&conn, rec.id).unwrap().unwrap();
+        assert!((row.fwd_30d_pct.unwrap() - 10.0).abs() < 1e-9); // 100 → 110
+        assert!((row.fwd_90d_pct.unwrap() + 10.0).abs() < 1e-9); // 100 → 90 (close on/before +90d)
+        assert!(row.fwd_180d_pct.is_none());
+        assert!(row.scored_at.is_some());
+    }
+
+    #[test]
+    fn score_forward_returns_is_idempotent_and_never_overwrites() {
+        let conn = fresh_conn();
+        conn.execute_batch(
+            "INSERT INTO price_history (symbol, date, close) VALUES
+                ('GC=F', '2026-01-01', '100.00'),
+                ('GC=F', '2026-01-31', '110.00');",
+        )
+        .unwrap();
+        let rec =
+            record_ledger_entry(&conn, "2026-01-01", "GC=F", "add", None, "decision-architect")
+                .unwrap();
+        let s1 = score_forward_returns(&conn, "2026-02-15").unwrap();
+        assert_eq!(s1.horizons_filled, 1);
+        // Mutate price history; a re-run must NOT change the scored horizon.
+        conn.execute(
+            "UPDATE price_history SET close = '200.00' WHERE symbol = 'GC=F' AND date = '2026-01-31'",
+            [],
+        )
+        .unwrap();
+        let s2 = score_forward_returns(&conn, "2026-02-15").unwrap();
+        assert_eq!(s2.horizons_filled, 0);
+        let row = get(&conn, rec.id).unwrap().unwrap();
+        assert!((row.fwd_30d_pct.unwrap() - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn score_forward_returns_requires_close_after_run_date() {
+        let conn = fresh_conn();
+        // Only the entry close exists — the on-or-before lookup must NOT
+        // score the row against its own entry close.
+        conn.execute_batch(
+            "INSERT INTO price_history (symbol, date, close) VALUES
+                ('GC=F', '2026-01-01', '100.00');",
+        )
+        .unwrap();
+        record_ledger_entry(&conn, "2026-01-01", "GC=F", "add", None, "decision-architect")
+            .unwrap();
+        let s = score_forward_returns(&conn, "2026-12-01").unwrap();
+        assert_eq!(s.horizons_filled, 0);
+    }
+
+    #[test]
+    fn scoreboard_aggregates_mix_and_window_quality() {
+        let conn = fresh_conn();
+        conn.execute_batch(
+            "INSERT INTO price_history (symbol, date, close) VALUES ('GC=F','2026-01-01','100.00');",
+        )
+        .unwrap();
+        // Two scored ADDs (mean 90d = -10%), one scored WAIT (90d = +5%),
+        // one unscored ADD still accruing.
+        for (action, f90) in [("add", Some(-15.0)), ("add", Some(-5.0)), ("wait", Some(5.0)), ("add", None)] {
+            let rec = record_ledger_entry(&conn, "2026-01-01", "GC=F", action, None, "decision-architect")
+                .unwrap();
+            if let Some(v) = f90 {
+                conn.execute(
+                    "UPDATE recommendations SET fwd_90d_pct = ?1, scored_at = datetime('now') WHERE id = ?2",
+                    params![v, rec.id],
+                )
+                .unwrap();
+            }
+        }
+        let board = scoreboard(&conn, Some("GC=F")).unwrap();
+        let add_row = board
+            .rows
+            .iter()
+            .find(|r| r.action == "add")
+            .expect("add row");
+        assert_eq!(add_row.n_total, 3);
+        let h90 = add_row.h90.as_ref().unwrap();
+        assert_eq!(h90.n, 2);
+        assert_eq!(h90.positive, 0);
+        assert!((h90.mean_pct + 10.0).abs() < 1e-9);
+        let wait_row = board.rows.iter().find(|r| r.action == "wait").unwrap();
+        assert_eq!(wait_row.h90.as_ref().unwrap().n, 1);
+
+        // Window quality: ADD mean (-10) − WAIT mean (+5) = -15 → the gold
+        // failure made measurable.
+        assert_eq!(board.window_quality.len(), 1);
+        let wq = &board.window_quality[0];
+        assert_eq!(wq.symbol, "GC=F");
+        assert_eq!(wq.add_n, 2);
+        assert_eq!(wq.wait_n, 1);
+        assert!((wq.delta_pct.unwrap() + 15.0).abs() < 1e-9);
+
+        assert_eq!(board.unscored, 1);
+    }
+
+    #[test]
+    fn scoreboard_accruing_state_with_no_scored_rows() {
+        let conn = fresh_conn();
+        record_ledger_entry(&conn, "2026-06-10", "SI=F", "wait", None, "decision-architect")
+            .unwrap();
+        let board = scoreboard(&conn, None).unwrap();
+        assert_eq!(board.unscored, 1);
+        let row = &board.rows[0];
+        assert!(row.h30.is_none() && row.h90.is_none() && row.h180.is_none());
+        assert!(board.window_quality.iter().all(|w| w.delta_pct.is_none()));
+    }
+
+    #[test]
+    fn ensure_table_migrates_legacy_shape_additively() {
+        // A pre-ledger DB: old-shape recommendations table without the new
+        // columns. ensure_table must self-heal it.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE recommendations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_date TEXT NOT NULL,
+                asset TEXT,
+                recommendation_type TEXT NOT NULL,
+                urgency TEXT NOT NULL,
+                rationale_summary TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE price_history (
+                symbol TEXT NOT NULL,
+                date TEXT NOT NULL,
+                close TEXT NOT NULL,
+                PRIMARY KEY (symbol, date)
+            );
+            INSERT INTO recommendations (report_date, asset, recommendation_type, urgency)
+            VALUES ('2026-05-01', 'BTC', 'add', 'normal');",
+        )
+        .unwrap();
+        ensure_table(&conn).unwrap();
+        // Legacy row readable through the new mapper, with defaults applied.
+        let rows = list(&conn, None, None, None, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].source, "decision-architect");
+        assert!(rows[0].entry_price.is_none());
+        // And new writes work.
+        record_ledger_entry(&conn, "2026-06-10", "BTC", "wait", None, "decision-architect")
+            .unwrap();
     }
 
     #[test]

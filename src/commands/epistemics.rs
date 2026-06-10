@@ -1,10 +1,12 @@
 //! `pftui analytics epistemics` — run-health instrumentation (epistemics R4).
 //!
 //! Subcommands:
-//!   record  — upsert one run's epistemic-health metrics by date
-//!   show    — one run's row with threshold flags
-//!   history — newest-first trend table
-//!   rivalry — house-vs-antithesis scored-prediction scoreboard
+//!   record           — upsert one run's epistemic-health metrics by date
+//!   show             — one run's row with threshold flags
+//!   history          — newest-first trend table
+//!   rivalry          — house-vs-antithesis scored-prediction scoreboard
+//!   conviction-price — per (layer × held asset) conviction-vs-price Pearson r
+//!                      (standing rule 15: conviction must not track price)
 
 use anyhow::Result;
 use rusqlite::Connection;
@@ -34,9 +36,31 @@ fn validate_unit_interval(name: &str, value: Option<f64>) -> Result<()> {
     Ok(())
 }
 
+/// Held-asset symbols (quantity > 0) computed from transactions. Used by the
+/// conviction-price correlation derivations. Best-effort: an empty portfolio
+/// or a non-SQLite transaction store degrades to an empty list.
+fn held_asset_symbols(backend: &BackendConnection) -> Vec<String> {
+    let txs = crate::db::transactions::list_transactions_backend(backend).unwrap_or_default();
+    if txs.is_empty() {
+        return Vec::new();
+    }
+    let empty = std::collections::HashMap::new();
+    crate::models::position::compute_positions(&txs, &empty, &empty)
+        .into_iter()
+        .filter(|p| p.quantity > rust_decimal::Decimal::ZERO)
+        .map(|p| p.symbol)
+        .collect()
+}
+
+/// Default trailing window (days) for the conviction-price correlation when
+/// `record` self-derives it.
+const CONVICTION_PRICE_DEFAULT_DAYS: i64 = 90;
+
 /// Record (upsert) a run's health metrics. Derives what it can when flags
 /// are omitted: blind_divergence from same-day analyst views,
-/// scenario_delta_total from today's scenario probability ledger.
+/// scenario_delta_total from today's scenario probability ledger, and
+/// conviction_price_corr (max |r| across canonical layer × held asset pairs
+/// over the trailing 90d) from analyst_view_history × price_history.
 #[allow(clippy::too_many_arguments)]
 pub fn record(
     backend: &BackendConnection,
@@ -50,6 +74,7 @@ pub fn record(
     audit_pass_rate: Option<f64>,
     agents: Option<i64>,
     notes: Option<&str>,
+    conviction_price_corr: Option<f64>,
     json_output: bool,
 ) -> Result<()> {
     let conn = sqlite(backend)?;
@@ -78,6 +103,26 @@ pub fn record(
             )?)
         }
     };
+    let conviction_price_corr = match conviction_price_corr {
+        Some(v) => Some(v),
+        None => {
+            let held = held_asset_symbols(backend);
+            let computed = if held.is_empty() {
+                None
+            } else {
+                let rows = run_health::compute_conviction_price_correlations(
+                    conn,
+                    &held,
+                    CONVICTION_PRICE_DEFAULT_DAYS,
+                )?;
+                run_health::max_abs_conviction_price_corr(&rows)
+            };
+            if computed.is_some() {
+                derived.push("conviction_price_corr");
+            }
+            computed
+        }
+    };
 
     let input = RunHealthInput {
         agreement_rate: agreement,
@@ -89,6 +134,7 @@ pub fn record(
         audit_pass_rate,
         agents_spawned: agents,
         notes: notes.map(str::to_string),
+        conviction_price_corr,
     };
     let id = run_health::upsert_run_health(conn, date, &input)?;
     let row = run_health::get_run_health(conn, date)?
@@ -176,6 +222,12 @@ fn print_row_text(row: &RunHealth) {
         "  {:<22} {:>8}",
         "audit_pass_rate",
         fmt_opt_f64(row.audit_pass_rate, 2),
+    );
+    println!(
+        "  {:<22} {:>8}  {}",
+        "conviction_price_corr",
+        fmt_opt_f64(row.conviction_price_corr, 2),
+        flag_for("conviction_price_corr"),
     );
     println!(
         "  {:<22} {:>8}",
@@ -344,4 +396,201 @@ pub fn rivalry(backend: &BackendConnection, json_output: bool) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Per (canonical layer × held asset) Pearson correlation between the
+/// layer's signed conviction trajectory and the asset's closes (standing
+/// rule 15: conviction must not track price). `--asset` overrides the
+/// held-asset universe with a single symbol.
+pub fn conviction_price(
+    backend: &BackendConnection,
+    days: i64,
+    asset: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let conn = sqlite(backend)?;
+    if days <= 0 {
+        anyhow::bail!("--days must be positive, got {}", days);
+    }
+    let assets: Vec<String> = match asset {
+        Some(a) => vec![a.to_uppercase()],
+        None => held_asset_symbols(backend),
+    };
+    if assets.is_empty() {
+        if json_output {
+            println!(
+                "{}",
+                json!({ "rows": [], "max_abs_r": null, "days": days,
+                        "note": "no held assets (and no --asset given)" })
+            );
+        } else {
+            println!("No held assets found (and no --asset given) — nothing to correlate.");
+        }
+        return Ok(());
+    }
+
+    let rows = run_health::compute_conviction_price_correlations(conn, &assets, days)?;
+    let max_abs = run_health::max_abs_conviction_price_corr(&rows);
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "days": days,
+                "rows": rows,
+                "max_abs_r": max_abs,
+                "flag_threshold": run_health::CONVICTION_PRICE_CORR_CEILING,
+                "min_n": run_health::CONVICTION_PRICE_MIN_N,
+            }))?
+        );
+        return Ok(());
+    }
+
+    if rows.is_empty() {
+        println!(
+            "No conviction trajectories found in the last {} day(s) for: {}.",
+            days,
+            assets.join(", ")
+        );
+        return Ok(());
+    }
+    println!(
+        "Conviction-price correlation — last {} day(s) (flag: |r| > {:.2})\n",
+        days,
+        run_health::CONVICTION_PRICE_CORR_CEILING
+    );
+    println!("{:<8} {:<8} {:>4} {:>8}  flag", "layer", "asset", "n", "r");
+    println!("{}", "-".repeat(60));
+    for row in &rows {
+        let r_str = row
+            .r
+            .map(|r| format!("{:+.3}", r))
+            .unwrap_or_else(|| "insuff.".to_string());
+        let flag = if row.flagged {
+            "⚠ momentum dressed as structure (standing rule 15)"
+        } else {
+            ""
+        };
+        println!(
+            "{:<8} {:<8} {:>4} {:>8}  {}",
+            row.layer, row.asset, row.n, r_str, flag
+        );
+    }
+    match max_abs {
+        Some(m) => println!("\nmax |r| = {:.3} (self-derived into run_health.conviction_price_corr by `epistemics record`)", m),
+        None => println!("\nNo pair has ≥{} paired observations yet — correlation accruing.", run_health::CONVICTION_PRICE_MIN_N),
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::params;
+
+    fn make_backend() -> BackendConnection {
+        BackendConnection::Sqlite {
+            conn: crate::db::open_in_memory(),
+        }
+    }
+
+    fn seed_lockstep(conn: &Connection, asset: &str, series: &str) {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS analyst_view_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                analyst TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                conviction INTEGER NOT NULL,
+                reasoning_summary TEXT NOT NULL,
+                key_evidence TEXT,
+                blind_spots TEXT,
+                allocation_bias TEXT,
+                recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+        for i in 0..7i64 {
+            let date = (chrono::Utc::now().date_naive() - chrono::Duration::days(7 - i))
+                .format("%Y-%m-%d")
+                .to_string();
+            conn.execute(
+                "INSERT INTO analyst_view_history
+                    (analyst, asset, direction, conviction, reasoning_summary, recorded_at)
+                 VALUES ('medium', ?1, 'bull', ?2, 'r', ?3 || ' 09:00:00')",
+                params![asset, i + 1, date],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO price_history (symbol, date, close, source)
+                 VALUES (?1, ?2, ?3, 'test')",
+                params![series, date, format!("{}", 3000 + i * 50)],
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn record_self_derives_conviction_price_corr_from_held_assets() {
+        let backend = make_backend();
+        let conn = backend.sqlite_native().unwrap();
+        // One held position (buy 1 GC=F) whose conviction tracks price.
+        conn.execute(
+            "INSERT INTO transactions (symbol, category, tx_type, quantity, price_per, currency, date)
+             VALUES ('GC=F', 'commodity', 'buy', '1', '3000', 'USD', '2026-01-05')",
+            [],
+        )
+        .unwrap();
+        seed_lockstep(conn, "GC=F", "GC=F");
+
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        record(
+            &backend, &today, Some(0.7), None, None, None, None, None, None, None, None,
+            None, // conviction_price_corr omitted → self-derive
+            true,
+        )
+        .unwrap();
+        let row = run_health::get_run_health(conn, &today).unwrap().unwrap();
+        let corr = row
+            .conviction_price_corr
+            .expect("self-derived conviction_price_corr");
+        assert!(corr > 0.95, "lockstep trajectory must derive |r|≈1, got {corr}");
+        // And the threshold flag fires through the shared flag path.
+        assert!(run_health::threshold_flags(&row)
+            .iter()
+            .any(|(m, _)| *m == "conviction_price_corr"));
+    }
+
+    #[test]
+    fn record_explicit_flag_wins_over_derivation() {
+        let backend = make_backend();
+        let conn = backend.sqlite_native().unwrap();
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        record(
+            &backend,
+            &today,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(0.25),
+            true,
+        )
+        .unwrap();
+        let row = run_health::get_run_health(conn, &today).unwrap().unwrap();
+        assert_eq!(row.conviction_price_corr, Some(0.25));
+    }
+
+    #[test]
+    fn conviction_price_command_runs_on_empty_db() {
+        let backend = make_backend();
+        conviction_price(&backend, 90, None, true).unwrap();
+        conviction_price(&backend, 90, Some("GC=F"), true).unwrap();
+        assert!(conviction_price(&backend, 0, None, true).is_err());
+    }
 }
