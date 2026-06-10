@@ -36,14 +36,11 @@
 
 ---
 
-### Cycle-clock analytics command (`pftui analytics btc cycle-clock`)
-**Source:** Operator directive 2026-06-09 (integrate Loukas/Camel-Finance/Olson/Cowen cycle frameworks; see thesis `cycle-frameworks` + journal note #691). Emit, with `--json`: days/weeks since the 2024-04-19 halving; Olson day-900 counter and days remaining; Loukas week-of-4yr-cycle vs the wk-46 ±10% low band (cycle anchor = prior cycle low); midterm-year H2 flag; current price vs 200W MA (computed from the deep `BTC-USD` series) and Mayer Multiple. One command the analysts and the report can cite instead of re-deriving cycle math each run.
-
 ### MVRV Z-Score data source + cache
-**Source:** Same directive. Camel Finance's primary bottoming indicator. Needs an on-chain source (free tier: bitcoin-data.com / coinmetrics community / blockchain.com charts API) cached into a new `onchain_mvrv` table via `data refresh`; surface in the BTC per-asset card and `cycle-clock`. Respect the no-new-deps rule — plain reqwest JSON fetch.
+**Source:** Operator directive 2026-06-09 (cycle frameworks). Camel Finance's primary bottoming indicator. Needs an on-chain source (free tier: bitcoin-data.com / coinmetrics community / blockchain.com charts API) cached into a new `onchain_mvrv` table via `data refresh`; surface in the BTC per-asset card and `analytics cycles clock`. Respect the no-new-deps rule — plain reqwest JSON fetch.
 
 ### BTC dominance series
-**Source:** Same directive. Cowen's rotation lens. CoinGecko `/global` returns market-cap dominance (CoinGecko currently 403s — needs key or alternate source, e.g. coinpaprika `/global`). Cache history daily; surface alongside cycle-clock output.
+**Source:** Same directive. Cowen's rotation lens. CoinGecko `/global` returns market-cap dominance (CoinGecko currently 403s — needs key or alternate source, e.g. coinpaprika `/global`). Cache history daily; surface alongside `analytics cycles clock` output.
 
 ### Parallels engine: calendar/time-since-event predicates
 **Source:** Same directive. `pftui-parallels-run` predicates today are price/MA/RSI/F&G only. Add `days_since_date` (e.g. halving day-count band 850-950) and `month_of_year` / `is_midterm_h2` predicate fns so Loukas/Olson timing-band condition sets can join the catalog (`~/.config/pftui/parallels.yml`), and add the two sets.

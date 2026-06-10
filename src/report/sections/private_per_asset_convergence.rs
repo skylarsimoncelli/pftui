@@ -415,6 +415,7 @@ mod tests {
             scenario_count: 3,
             open_predictions_count: 4,
             structural_context: Some("Above both 50/200 SMA — structural uptrend".to_string()),
+            ..Default::default()
         };
         blob.symbol = "BTC".to_string();
         ctx.private_asset_intelligence
@@ -456,6 +457,7 @@ mod tests {
             scenario_count: 2,
             open_predictions_count: 1,
             structural_context: Some("structural uptrend".to_string()),
+            ..Default::default()
         };
         ctx.private_asset_intelligence
             .insert("BTC".to_string(), blob);
