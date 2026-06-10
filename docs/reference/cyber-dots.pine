@@ -1,0 +1,502 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © skyenettech
+// Cyber Dots is a comprehensive multi-featured trend analysis indicator with breakout detection for catching aggressive moves early.
+// Features include fully customizable visuals, multi-timeframe RSI integration, candle coloring, and comprehensive alert conditions.
+//
+// Key Components:
+// • CyberBands: Gaussian Channel mode (default) or Zone Based mode
+// • CyberLine: Volatility Weighted mode (default) or Donchian Channel mode
+// • CyberDots: Micro-trend strength indicators with transparency modulation and thresholds
+// • Reversal Signals: Bollinger Band-based reversal detection
+// • Pi Cycle: Historical Bitcoin top/bottom signals adapted for any asset
+// • Breakout Arrows: Multi-timeframe RSI, 3-Line Strike, and momentum exhaustion detection
+// • Candle Coloring: Trend-based and extreme RSI level highlighting
+//
+//
+// Drop us some feedback in the comment section!
+
+//@version=6
+indicator('Cyber Dots', shorttitle = 'Cyber Dots', overlay = true)
+
+bullishColor = input.color(color.rgb(0, 255, 65), "Bullish Color", group="Colors")
+cautionColor = input.color(color.rgb(255, 255, 0), "Caution Color", group="Colors")
+bearishColor = input.color(color.rgb(138, 43, 226), "Bearish Color", group="Colors")
+
+//=== CYBERBANDS (GAUSSIAN CHANNEL) PARAMETERS ===//
+showCyberBands = input.bool(true, 'Show CyberBands?', group="CyberBands")
+cyberBandsMode = input.string('Gaussian Channel', 'CyberBands Mode', options=['Gaussian Channel', 'Zone Based'], group="CyberBands")
+src_dema = input(close, "DEMA Source", group="CyberBands")
+len_dema = input.int(7, "Dema Length", group="CyberBands")
+len_FG = input.int(4, title='Gaussian length', minval=1, group="CyberBands", step=1)
+sigma_FG = input.float(2.0, title='Gaussian Sigma', minval=0.1, step=0.1, group="CyberBands")
+len_S = input(12, 'SMMA length', group="CyberBands")
+len_SD = input.int(30, title='SD length', minval=1, step=1, group="CyberBands")
+mult_SDup = input.float(2.5, minval=0, step=0.1, title='SD Mult Up', group="CyberBands")
+mult_SDdn = input.float(1.8, minval=0, step=0.1, title='SD Mult Down', group="CyberBands")
+cyberBandsTransparency = input.int(80, "CyberBands Transparency", minval=0, maxval=100, group="CyberBands")
+
+//=== CYBERBANDS (ZONE BASED CHANNEL) PARAMETERS ===//
+zoneMA1 = input.int(144, "Zone MA1", group="CyberBands")
+zoneMA2 = input.int(233, "Zone MA2", group="CyberBands")
+zoneScaleInner = input.float(2.0, "Zone Scale Inner", minval=0.1, step=0.1, group="CyberBands")
+zoneScaleOuter = input.float(2.0, "Zone Scale Outer", minval=0.1, step=0.1, group="CyberBands")
+zoneRExt = input.int(3, "Zone R Extension", group="CyberBands")
+zoneBExt = input.int(3, "Zone B Extension", group="CyberBands")
+enableTimeframeAdaptation = input.bool(true, "Enable Timeframe Adaptation", group="CyberBands")
+
+//=== CYBERLINE (DYNAMIC TREND LINE) PARAMETERS ===//
+showCyberLine = input.bool(true, 'Show CyberLine?', group="CyberLine")
+cyberLineSensitivity = input.string('Medium', 'CyberLine Sensitivity', options=['Fast', 'Medium', 'Slow'], group="CyberLine")
+cyberLineMode = input.string('Volatility Weighted', 'CyberLine Mode', options=['Volatility Weighted', 'Donchian Channel', 'Hybrid'], group="CyberLine")
+cyberLineThickness = input.int(2, 'CyberLine Thickness', minval=1, maxval=5, group="CyberLine")
+donchianLength = input.int(26, 'Donchian Length', minval=1, group="CyberLine")
+conversionLength = input.int(5, 'Conversion Length', minval=1, group="CyberLine")
+hybridWeight = input.float(0.5, 'Hybrid Weight (0=Volatility, 1=Donchian)', minval=0.0, maxval=1.0, step=0.1, group="CyberLine")
+
+//=== CYBERDOTS (STRENGTH DOTS) PARAMETERS ===//
+showCyberDots = input.bool(true, 'Show CyberDots?', group="CyberDots")
+cyberDotsModulateTransparency = input.bool(true, 'Modulate CyberDots Transparency by Strength?', group="CyberDots")
+cyberDotsSensitivity = input.string('Medium', 'CyberDots Sensitivity', options=['Low', 'Medium', 'High'], group="CyberDots")
+cyberDotsRSIColoring = input.bool(true, 'Enable RSI Orange Coloring?', group="CyberDots")
+cyberDotsRSIMultiplier = input.float(4.0, 'RSI Higher Timeframe Multiplier', minval=1.0, maxval=10.0, step=0.5, group="CyberDots")
+cyberDotsRSIHighLevel = input.float(90.0, 'RSI High Orange Threshold', minval=70.0, maxval=100.0, step=1.0, group="CyberDots")
+cyberDotsRSILowLevel = input.float(10.0, 'RSI Low Orange Threshold', minval=0.0, maxval=30.0, step=1.0, group="CyberDots")
+
+//=== REVERSAL SIGNALS PARAMETERS ===//
+showRevSignals = input.bool(true, 'Show Reversal Signals?', group="Reversal Signals")
+showRevConf1 = input.bool(true, 'Show First Confirmation Bars?', group="Reversal Signals")
+showRevConf2 = input.bool(true, 'Show Second Confirmation Bars?', group="Reversal Signals")
+bb_length = input.int(20, "BB Length", group="Reversal Signals")
+bb_mult = input.float(2.0, "BB Multiplier", group="Reversal Signals")
+
+//=== BREAKOUT ARROWS PARAMETERS ===//
+showBreakoutArrows = input.bool(true, "Show Hybrid Breakout Arrows?", group="Breakout Arrows")
+useRSIBreakouts = input.bool(true, "Use Multi-Timeframe RSI Breakouts", group="Breakout Arrows")
+use3LineStrike = input.bool(true, "Use 3-Line Strike Pattern", group="Breakout Arrows")
+useMomentumExhaustion = input.bool(true, "Use Momentum Exhaustion", group="Breakout Arrows")
+minCooldownBars = input.int(5, "Minimum Bars Between Arrows", minval=2, maxval=15, group="Breakout Arrows")
+requireMultipleSignals = input.bool(false, "Require Multiple Signal Confirmation", group="Breakout Arrows")
+rsi_length = input.int(6, "RSI Length", group="Breakout Arrows")
+rsi_high = input.int(72, "RSI High Threshold", group="Breakout Arrows")
+rsi_low = input.int(28, "RSI Low Threshold", group="Breakout Arrows")
+exhaustionBars = input.int(5, "Exhaustion Bar Count", group="Breakout Arrows")
+exhaustionLength = input.int(25, "Exhaustion Lookback Length", group="Breakout Arrows")
+
+//=== PI CYCLE PARAMETERS ===//
+showPiCycle = input.bool(true, "Show Pi Cycle Signals", group="Pi Cycle")
+piTopLongMA = input.int(350, "Top Long MA Length", group="Pi Cycle")
+piTopShortMA = input.int(111, "Top Short MA Length", group="Pi Cycle")
+piBottomLongMA = input.int(471, "Bottom Long MA Length", group="Pi Cycle")
+piBottomShortMA = input.int(150, "Bottom Short MA Length", group="Pi Cycle")
+
+//=== CANDLE COLORING PARAMETERS ===//
+colorCandles = input.bool(false, "Color Candles by Trend?", group="Candle Coloring")
+showRSICandles = input.bool(true, "Show RSI Candle Coloring", group="Candle Coloring")
+rsiLength = input.int(14, "RSI Length", group="Candle Coloring")
+rsiExtremeHigh = input.int(85, "Extreme Overbought Level", group="Candle Coloring")
+rsiExtremeLow = input.int(15, "Extreme Oversold Level", group="Candle Coloring")
+
+//=== DISPLAY PARAMETERS ===//
+recentSigLimit = input.int(2000, 'Signals Shown in x No. of Bars (0 = All)', minval=0, group="Display")
+sigLimit = recentSigLimit > 0 ? recentSigLimit : na
+
+//=== TECHNICAL ANALYSIS FUNCTIONS ===//
+getCurrentTFInMinutes() =>
+    switch timeframe.period
+        "1S" => 0.0167
+        "5S" => 0.083
+        "15S" => 0.25
+        "30S" => 0.5
+        "1" => 1
+        "3" => 3
+        "5" => 5
+        "15" => 15
+        "30" => 30
+        "45" => 45
+        "60" => 60
+        "120" => 120
+        "180" => 180
+        "240" => 240
+        "360" => 360
+        "480" => 480
+        "720" => 720
+        "1D" => 1440
+        "1W" => 10080
+        "1M" => 43200
+        => 60
+
+F_DEMA(SRC, LEN) =>
+    E1 = ta.ema(SRC, LEN)
+    E2 = ta.ema(E1, LEN)
+    DEMA = 2 * E1 - E2
+    DEMA
+
+F_Gaussian(src, len_FG, sigma) =>
+    sum_G = 0.0
+    weightedSum_G = 0.0
+    for i = 0 to len_FG - 1 by 1
+        weight = math.exp(-0.5 * math.pow((i - (len_FG - 1) / 2) / sigma, 2))
+        sum_G += weight
+        weightedSum_G += src[i] * weight
+    Final_Gaussian = weightedSum_G / sum_G
+    Final_Gaussian
+
+F_SMMA(src_s, len_s) =>
+    float SMMA = na
+    dema = F_DEMA(src_s, len_s)
+    if bar_index >= len_s - 1
+        alpha_val = 1 / len_s
+        SMMA := na(SMMA[1]) ? dema : (src_s - SMMA[1]) * alpha_val + SMMA[1]
+        SMMA
+    else
+        SMMA := src_s
+        SMMA
+    SMMA
+
+getDynamicTimeframes() =>
+    currentTF = getCurrentTFInMinutes()
+    tf1 = currentTF <= 1 ? "1" : currentTF <= 5 ? "1" : currentTF <= 15 ? "5" : currentTF <= 60 ? "15" : currentTF <= 240 ? "60" : currentTF <= 1440 ? "240" : "1D"
+    tf2 = currentTF <= 1 ? "5" : currentTF <= 5 ? "15" : currentTF <= 15 ? "30" : currentTF <= 60 ? "60" : currentTF <= 240 ? "1D" : currentTF <= 1440 ? "1W" : "1M"
+    tf3 = currentTF <= 1 ? "15" : currentTF <= 5 ? "30" : currentTF <= 15 ? "60" : currentTF <= 60 ? "240" : currentTF <= 240 ? "1W" : currentTF <= 1440 ? "1M" : "3M"
+    tf4 = currentTF <= 1 ? "60" : currentTF <= 5 ? "60" : currentTF <= 15 ? "240" : currentTF <= 60 ? "1D" : currentTF <= 240 ? "1M" : currentTF <= 1440 ? "3M" : "12M"
+    [tf1, tf2, tf3, tf4]
+
+//=== CYBERBANDS CALCULATIONS ===//
+DEMA = F_DEMA(src_dema, len_dema)
+filter_Gaussian = F_Gaussian(DEMA, len_FG, sigma_FG)
+SMMA = F_SMMA(filter_Gaussian, len_S)
+filter_SD = ta.stdev(SMMA, len_SD)
+LongV = SMMA + filter_SD * mult_SDup
+ShortV = SMMA - filter_SD * mult_SDdn
+Long_C = close > LongV
+Short_C = close < ShortV
+var QB = 0
+if Long_C and not Short_C
+    QB := 1
+if Short_C
+    QB := -1
+trendState = QB
+
+// Timeframe adaptation for Zone Based mode
+getTimeframeMultiplier() =>
+    currentTFMinutes = getCurrentTFInMinutes()
+    if currentTFMinutes <= 60
+        1.0  // Intraday timeframes - use normal periods
+    else if currentTFMinutes <= 1440
+        0.7  // Daily - reduce periods by 30%
+    else if currentTFMinutes <= 10080
+        0.4  // Weekly - reduce periods by 60%
+    else
+        0.2  // Monthly+ - reduce periods by 80%
+
+tfMultiplier = enableTimeframeAdaptation ? getTimeframeMultiplier() : 1.0
+adaptedMA1 = math.max(math.round(zoneMA1 * tfMultiplier), 5)
+adaptedMA2 = math.max(math.round(zoneMA2 * tfMultiplier), 8)
+
+// Multi-Scale EMA Functions
+band_th(e1, e2, t1, t2) =>
+    dif = e1 > e2 ? e1 - e2 : e2 - e1
+    th = e1 > e2 ? e1 + t1 * dif : e1 - t2 * dif
+    th
+
+band_lum(e1, e2, r1, b1) =>
+    l = band_th(e1, e2, 0, 0)
+    u = band_th(e1, e2, r1, b1)
+    m = e2 > u ? e2 - (e2 - u) / 2 : u - (u - e2) / 2
+    [l, u, m]
+
+multiScaleEMA(p, r, b, ma1, ma2) =>
+    ema1 = ta.ema(p, math.round(ma1))
+    ema2 = ta.ema(p, math.round(ma2))
+    is_1_gt_2 = ema1 > ema2
+    [l1, u1, m1] = band_lum(ema1, ema2, r, b)
+    [ema1, ema2, is_1_gt_2, l1, u1, m1]
+
+[ema1_inner, iz_i, is_1_gt_2, l1_inner, iz_o, m1_inner] = multiScaleEMA(close, zoneRExt, zoneBExt, adaptedMA1*zoneScaleInner, adaptedMA2*zoneScaleInner)
+[ema1_outer, i2, is_1_gt_2_outer, l2, o2, m2] = multiScaleEMA(close, zoneRExt, zoneBExt, adaptedMA1/zoneScaleOuter, adaptedMA2/zoneScaleOuter)
+
+// Zone detection logic
+is_uuz = is_1_gt_2 and o2 > iz_o  // upper outer zone
+is_ulz = is_1_gt_2 and o2 < iz_i  // upper inner zone
+is_llz = not is_1_gt_2 and o2 < iz_o  // lower outer zone
+is_luz = not is_1_gt_2 and o2 > iz_i  // lower inner zone
+
+// Zone threshold calculation
+uiz_o = o2 > iz_o and o2 > iz_i
+liz_o = o2 < iz_o and o2 < iz_i
+oz_i = is_uuz ? iz_o : is_ulz ? iz_i : is_llz ? iz_o : is_luz ? iz_i : iz_o
+oz_o = uiz_o or liz_o ? o2 : iz_o
+
+// Color assignments for bands
+color = QB == 1 ? bullishColor : QB == -1 ? bearishColor : cautionColor
+volUpper = LongV
+volLower = ShortV
+smmaVal = SMMA
+
+//=== RSI CANDLE COLOR CALCULATIONS ===//
+[colorTF1, colorTF2, colorTF3, colorTF4] = getDynamicTimeframes()
+rsiColor = ta.rsi(close, rsiLength)
+htfRSI1 = request.security(syminfo.tickerid, colorTF1, ta.rsi(close, rsiLength))
+htfRSI2 = request.security(syminfo.tickerid, colorTF2, ta.rsi(close, rsiLength))
+htfRSI3 = request.security(syminfo.tickerid, colorTF3, ta.rsi(close, rsiLength))
+htfRSI4 = request.security(syminfo.tickerid, colorTF4, ta.rsi(close, rsiLength))
+colorTFMin = getCurrentTFInMinutes()
+isRSIExtremeHigh = (rsiColor > rsiExtremeHigh and htfRSI1 > rsiExtremeHigh and htfRSI2 > rsiExtremeHigh and (colorTFMin < 60 ? htfRSI3 > rsiExtremeHigh : true) and (colorTFMin < 240 ? htfRSI4 > rsiExtremeHigh : true))
+isRSIExtremeLow = (rsiColor < rsiExtremeLow and htfRSI1 < rsiExtremeLow and htfRSI2 < rsiExtremeLow and (colorTFMin < 60 ? htfRSI3 < rsiExtremeLow : true) and (colorTFMin < 240 ? htfRSI4 < rsiExtremeLow : true))
+
+//=== CYBERBANDS PLOTTING ===//
+pS = plot(showCyberBands and cyberBandsMode == 'Gaussian Channel' ? SMMA : na, color = na, linewidth = 2, title='SMMA Line')
+upperSMMASD = plot(showCyberBands and cyberBandsMode == 'Gaussian Channel' ? LongV : na, title = 'Upper CyberBand', color = na, linewidth = 1)
+lowerSMMASD = plot(showCyberBands and cyberBandsMode == 'Gaussian Channel' ? ShortV : na, title = 'Lower CyberBand', color = na, linewidth = 1)
+
+innerUpperBand = plot(cyberBandsMode == 'Zone Based' and showCyberBands ? iz_o : na, color = na, title = 'Inner Zone Upper')
+innerLowerBand = plot(cyberBandsMode == 'Zone Based' and showCyberBands ? iz_i : na, color = na, title = 'Inner Zone Lower')
+outerUpperBand = plot(cyberBandsMode == 'Zone Based' and showCyberBands ? oz_o : na, color = na, title = 'Outer Zone Upper')
+outerLowerBand = plot(cyberBandsMode == 'Zone Based' and showCyberBands ? oz_i : na, color = na, title = 'Outer Zone Lower')
+
+fill(upperSMMASD, pS, LongV, SMMA, cyberBandsMode == 'Gaussian Channel' and showCyberBands ? (QB==1 ? color.new(bullishColor, cyberBandsTransparency) : QB == -1 ? color.new(bearishColor, cyberBandsTransparency) : color.new(color.gray, cyberBandsTransparency)) : na, na)
+fill(lowerSMMASD, pS, ShortV, SMMA, cyberBandsMode == 'Gaussian Channel' and showCyberBands ? (QB==-1 ? color.new(bearishColor, cyberBandsTransparency) : QB == 1 ? color.new(bullishColor, cyberBandsTransparency) : color.new(color.gray, cyberBandsTransparency)) : na, na)
+
+innerZoneColor = (is_1_gt_2 ? color.new(bullishColor, 85) : color.new(bearishColor, 85))
+outerZoneColor = (oz_o > oz_i ? color.new(bullishColor, 70) : color.new(bearishColor, 70))
+fill(outerUpperBand, outerLowerBand, cyberBandsMode == 'Zone Based' and showCyberBands ? outerZoneColor : na, title='Outer Zone Fill')
+fill(innerUpperBand, innerLowerBand, cyberBandsMode == 'Zone Based' and showCyberBands ? innerZoneColor : na, title='Inner Zone Fill')
+
+//=== CANDLE COLORING ===//
+candleColor = colorCandles ? color : na
+plotcandle(colorCandles ? open : na, colorCandles ? high : na, colorCandles ? low : na, colorCandles ? close : na, 'BarColor', color=candleColor, bordercolor=candleColor, wickcolor=candleColor, force_overlay=true)
+barcolor(showRSICandles and isRSIExtremeHigh ? color.new(cautionColor, 20) : showRSICandles and isRSIExtremeLow ? color.new(bullishColor, 20) : na, title='RSI Extreme Candles')
+
+//=== CYBERLINE CALCULATIONS ===//
+cyberLineTrendLen = cyberLineSensitivity == 'Fast' ? 9 : cyberLineSensitivity == 'Medium' ? 18 : 27
+
+// Volatility Weighted Mode
+cyberLineSrc = close
+cyberLineK = 1.0 / cyberLineTrendLen
+cyberLinePdm = math.max(cyberLineSrc - cyberLineSrc[1], 0)
+cyberLineMdm = math.max(cyberLineSrc[1] - cyberLineSrc, 0)
+cyberLinePdmSmooth = 0.0
+cyberLinePdmSmooth := (1 - cyberLineK) * nz(cyberLinePdmSmooth[1]) + cyberLineK * cyberLinePdm
+cyberLineMdmSmooth = 0.0
+cyberLineMdmSmooth := (1 - cyberLineK) * nz(cyberLineMdmSmooth[1]) + cyberLineK * cyberLineMdm
+cyberLineSum = cyberLinePdmSmooth + cyberLineMdmSmooth
+cyberLinePdi = cyberLinePdmSmooth / cyberLineSum
+cyberLineMdi = cyberLineMdmSmooth / cyberLineSum
+cyberLinePdiSmooth = 0.0
+cyberLinePdiSmooth := (1 - cyberLineK) * nz(cyberLinePdiSmooth[1]) + cyberLineK * cyberLinePdi
+cyberLineMdiSmooth = 0.0
+cyberLineMdiSmooth := (1 - cyberLineK) * nz(cyberLineMdiSmooth[1]) + cyberLineK * cyberLineMdi
+cyberLineDiff = math.abs(cyberLinePdiSmooth - cyberLineMdiSmooth)
+cyberLineSum1 = cyberLinePdiSmooth + cyberLineMdiSmooth
+cyberLineISmooth = 0.0
+cyberLineISmooth := (1 - cyberLineK) * nz(cyberLineISmooth[1]) + cyberLineK * (cyberLineDiff / cyberLineSum1)
+cyberLineHigh = ta.highest(cyberLineISmooth, cyberLineTrendLen)
+cyberLineLow = ta.lowest(cyberLineISmooth, cyberLineTrendLen)
+cyberLineRange = cyberLineHigh - cyberLineLow
+cyberLineVolIdx = (cyberLineISmooth - cyberLineLow) / cyberLineRange
+volatilityWeightedTrend = 0.0
+volatilityWeightedTrend := (1 - cyberLineK * cyberLineVolIdx) * nz(volatilityWeightedTrend[1]) + cyberLineK * cyberLineVolIdx * cyberLineSrc
+
+// Donchian Channel Mode
+donchianChannel(len) => math.avg(ta.lowest(len), ta.highest(len))
+conversionLine = donchianChannel(conversionLength)
+baseLine = donchianChannel(donchianLength)
+donchianTrend = math.avg(conversionLine, baseLine)
+
+// Mode Selection
+cyberLineTrend = cyberLineMode == 'Volatility Weighted' ? volatilityWeightedTrend :
+                 cyberLineMode == 'Donchian Channel' ? donchianTrend :
+                 (1 - hybridWeight) * volatilityWeightedTrend + hybridWeight * donchianTrend
+
+cyberLineColor = cyberLineTrend > cyberLineTrend[1] ? bullishColor : cyberLineTrend < cyberLineTrend[1] ? bearishColor : cautionColor
+
+//=== CYBERLINE PLOTTING ===//
+plot(showCyberLine ? cyberLineTrend : na, 'CyberLine', color = cyberLineColor, linewidth = cyberLineThickness)
+
+//=== CYBERDOTS CALCULATIONS ===//
+cyberDotsSuperMult = timeframe.period == '720' ? 1.2 : timeframe.period == 'D' ? 1.3 : timeframe.period == '2D' ? 1.3 : timeframe.period == '3D' ? 1.3 : timeframe.period == '4D' ? 1.3 : timeframe.period == '5D' ? 1.3 : timeframe.period == '6D' ? 1.3 : timeframe.period == '1W' ? 1.3 : timeframe.period == '2W' ? 1.3 : 1.1
+cyberDotsSuperPer = timeframe.period == '720' ? 12 : timeframe.period == 'D' ? 12 : timeframe.period == '2D' ? 12 : timeframe.period == '3D' ? 12 : timeframe.period == '4D' ? 12 : timeframe.period == '5D' ? 12 : timeframe.period == '6D' ? 12 : timeframe.period == '1W' ? 12 : timeframe.period == '2W' ? 12 : 10
+cyberDotsSuperSrc = hl2
+cyberDotsAtr = ta.sma(ta.tr, cyberDotsSuperPer)
+cyberDotsSupUp = cyberDotsSuperSrc - cyberDotsSuperMult * cyberDotsAtr
+cyberDotsSupUp := close[1] > nz(cyberDotsSupUp[1]) ? math.max(cyberDotsSupUp, nz(cyberDotsSupUp[1])) : cyberDotsSupUp
+cyberDotsSupDn = cyberDotsSuperSrc + cyberDotsSuperMult * cyberDotsAtr
+cyberDotsSupDn := close[1] < nz(cyberDotsSupDn[1]) ? math.min(cyberDotsSupDn, nz(cyberDotsSupDn[1])) : cyberDotsSupDn
+cyberDotsDir = 1
+cyberDotsDir := nz(cyberDotsDir[1])
+cyberDotsDir := cyberDotsDir == -1 and close > nz(cyberDotsSupDn[1]) ? 1 : cyberDotsDir == 1 and close < nz(cyberDotsSupUp[1]) ? -1 : cyberDotsDir
+
+cyberDotsVmaLen = 4
+cyberDotsVmaK = 1.0 / cyberDotsVmaLen
+cyberDotsVmaPdm = math.max(close - close[1], 0)
+cyberDotsVmaMdm = math.max(close[1] - close, 0)
+cyberDotsVmaPdmS = 0.0
+cyberDotsVmaPdmS := (1 - cyberDotsVmaK) * nz(cyberDotsVmaPdmS[1]) + cyberDotsVmaK * cyberDotsVmaPdm
+cyberDotsVmaMdmS = 0.0
+cyberDotsVmaMdmS := (1 - cyberDotsVmaK) * nz(cyberDotsVmaMdmS[1]) + cyberDotsVmaK * cyberDotsVmaMdm
+cyberDotsVmaS = cyberDotsVmaPdmS + cyberDotsVmaMdmS
+cyberDotsVmaPdi = cyberDotsVmaPdmS / cyberDotsVmaS
+cyberDotsVmaMdi = cyberDotsVmaMdmS / cyberDotsVmaS
+cyberDotsVmaPdiS = 0.0
+cyberDotsVmaPdiS := (1 - cyberDotsVmaK) * nz(cyberDotsVmaPdiS[1]) + cyberDotsVmaK * cyberDotsVmaPdi
+cyberDotsVmaMdiS = 0.0
+cyberDotsVmaMdiS := (1 - cyberDotsVmaK) * nz(cyberDotsVmaMdiS[1]) + cyberDotsVmaK * cyberDotsVmaMdi
+cyberDotsVmaD = math.abs(cyberDotsVmaPdiS - cyberDotsVmaMdiS)
+cyberDotsVmaS1 = cyberDotsVmaPdiS + cyberDotsVmaMdiS
+cyberDotsVmaIS = 0.0
+cyberDotsVmaIS := (1 - cyberDotsVmaK) * nz(cyberDotsVmaIS[1]) + cyberDotsVmaK * cyberDotsVmaD / cyberDotsVmaS1
+cyberDotsVmaHhv = ta.highest(cyberDotsVmaIS, cyberDotsVmaLen)
+cyberDotsVmaLlv = ta.lowest(cyberDotsVmaIS, cyberDotsVmaLen)
+cyberDotsVmaD1 = cyberDotsVmaHhv - cyberDotsVmaLlv
+cyberDotsVmaVI = (cyberDotsVmaIS - cyberDotsVmaLlv) / cyberDotsVmaD1
+cyberDotsVmaVal = 0.0
+cyberDotsVmaVal := (1 - cyberDotsVmaK * cyberDotsVmaVI) * nz(cyberDotsVmaVal[1]) + cyberDotsVmaK * cyberDotsVmaVI * close
+
+cyberDotsMaLen = 18
+cyberDotsMa = ta.sma(close, cyberDotsMaLen)
+
+// Set sensitivity-based thresholds and strength requirements
+cyberDotsVmaThreshold = cyberDotsSensitivity == 'High' ? 0.05 : cyberDotsSensitivity == 'Medium' ? 0.15 : 0.4
+cyberDotsMaThreshold = cyberDotsSensitivity == 'High' ? 0.08 : cyberDotsSensitivity == 'Medium' ? 0.2 : 0.5
+cyberDotsMinStrength = cyberDotsSensitivity == 'High' ? 1 : cyberDotsSensitivity == 'Medium' ? 2 : 3
+
+// Calculate percentage distances from moving averages
+cyberDotsVmaDistance = math.abs(close - cyberDotsVmaVal) / cyberDotsVmaVal * 100
+cyberDotsMaDistance = math.abs(close - cyberDotsMa) / cyberDotsMa * 100
+
+// Updated conditions using distance thresholds
+cyberDotsUpCond1 = close > cyberDotsVmaVal and cyberDotsVmaDistance >= cyberDotsVmaThreshold
+cyberDotsUpCond2 = close > cyberDotsMa and cyberDotsMaDistance >= cyberDotsMaThreshold
+cyberDotsUpCond3 = cyberDotsDir == 1
+cyberDotsDnCond1 = close < cyberDotsVmaVal and cyberDotsVmaDistance >= cyberDotsVmaThreshold
+cyberDotsDnCond2 = close < cyberDotsMa and cyberDotsMaDistance >= cyberDotsMaThreshold
+cyberDotsDnCond3 = cyberDotsDir == -1
+cyberDotsUpStrength = (cyberDotsUpCond1 ? 1 : 0) + (cyberDotsUpCond2 ? 1 : 0) + (cyberDotsUpCond3 ? 1 : 0)
+cyberDotsDnStrength = (cyberDotsDnCond1 ? 1 : 0) + (cyberDotsDnCond2 ? 1 : 0) + (cyberDotsDnCond3 ? 1 : 0)
+cyberDotsUpDot = cyberDotsUpStrength >= cyberDotsMinStrength
+cyberDotsDnDot = cyberDotsDnStrength >= cyberDotsMinStrength
+
+// RSI calculation for orange coloring using higher timeframe
+cyberDotsRSITimeframe = timeframe.from_seconds(math.round(timeframe.in_seconds() * cyberDotsRSIMultiplier))
+cyberDotsHTFRSI = request.security(syminfo.tickerid, cyberDotsRSITimeframe, ta.rsi(close, 14))
+cyberDotsIsRSIExtreme = cyberDotsRSIColoring and (cyberDotsHTFRSI >= cyberDotsRSIHighLevel or cyberDotsHTFRSI <= cyberDotsRSILowLevel)
+
+// Color logic with RSI override
+cyberDotsUpShade = cyberDotsIsRSIExtreme ? cautionColor : cyberDotsModulateTransparency ? (cyberDotsUpStrength == 3 ? color.new(bullishColor, 0) : cyberDotsUpStrength == 2 ? color.new(bullishColor, 30) : color.new(bullishColor, 60)) : color.new(bullishColor, 0)
+cyberDotsDnShade = cyberDotsIsRSIExtreme ? cautionColor : cyberDotsModulateTransparency ? (cyberDotsDnStrength == 3 ? color.new(bearishColor, 0) : cyberDotsDnStrength == 2 ? color.new(bearishColor, 30) : color.new(bearishColor, 60)) : color.new(bearishColor, 0)
+
+//=== CYBERDOTS PLOTTING ===//
+plotshape(showCyberDots and cyberDotsUpDot, 'Up CyberDot', style = shape.circle, location = location.belowbar, color = cyberDotsUpShade, size = size.auto, show_last = sigLimit)
+plotshape(showCyberDots and cyberDotsDnDot, 'Down CyberDot', style = shape.circle, location = location.abovebar, color = cyberDotsDnShade, size = size.auto, show_last = sigLimit)
+
+//=== PI CYCLE CALCULATIONS ===//
+dailyClose = request.security(syminfo.tickerid, "1D", close)
+piTopLongMACalc = ta.sma(dailyClose, piTopLongMA) * 2
+piTopShortMACalc = ta.sma(dailyClose, piTopShortMA)
+piBottomLongMACalc = ta.sma(dailyClose, piBottomLongMA) * 0.745
+piBottomShortMACalc = ta.ema(dailyClose, piBottomShortMA)
+piTopLongMAPlot = request.security(syminfo.tickerid, "1D", piTopLongMACalc)
+piTopShortMAPlot = request.security(syminfo.tickerid, "1D", piTopShortMACalc)
+piBottomLongMAPlot = request.security(syminfo.tickerid, "1D", piBottomLongMACalc)
+piBottomShortMAPlot = request.security(syminfo.tickerid, "1D", piBottomShortMACalc)
+piCycleTop = ta.crossunder(piTopLongMAPlot, piTopShortMAPlot)
+piCycleBottom = ta.crossover(piBottomLongMAPlot, piBottomShortMAPlot)
+
+//=== REVERSAL SIGNALS CALCULATIONS ===//
+bb_basis = ta.sma(close, bb_length)
+bb_dev = bb_mult * ta.stdev(close, bb_length)
+bb_upper = bb_basis + bb_dev
+bb_lower = bb_basis - bb_dev
+topRev = ta.crossunder(close, bb_upper)
+botRev = ta.crossover(close, bb_lower)
+topRevLow = ta.valuewhen(topRev, low, 0)
+topRevSince1 = ta.barssince(topRev) == 1
+topConf1 = close < topRevLow and topRevSince1
+botRevHigh = ta.valuewhen(botRev, high, 0)
+botRevSince1 = ta.barssince(botRev) == 1
+botConf1 = close > botRevHigh and botRevSince1
+topRevSince2 = ta.barssince(topRev) == 2
+topConfSince1 = ta.barssince(topConf1) == 1
+topConf2 = close < topRevLow and topRevSince2 and topConfSince1
+botRevSince2 = ta.barssince(botRev) == 2
+botConfSince1 = ta.barssince(botConf1) == 1
+botConf2 = close > botRevHigh and botRevSince2 and botConfSince1
+
+//=== REVERSAL SIGNALS PLOTTING ===//
+plotchar(showRevSignals and topRev, 'Top Rev', char = 'T', location = location.abovebar, color = color.new(bearishColor, 0), size = size.tiny, show_last = sigLimit)
+plotchar(showRevSignals and botRev, 'Bot Rev', char = 'B', location = location.belowbar, color = color.new(bullishColor, 0), size = size.tiny, show_last = sigLimit)
+barcolor(showRevSignals and topRev ? color.new(bearishColor, 50) : na, title = 'Top Rev Bar')
+barcolor(showRevSignals and botRev ? color.new(bullishColor, 50) : na, title = 'Bot Rev Bar')
+
+//=== PI CYCLE PLOTTING ===//
+plotchar(showPiCycle and piCycleTop, 'Pi Cycle Top', char = 'π', location = location.abovebar, color = color.new(bearishColor, 0), size = size.tiny, show_last = sigLimit)
+plotchar(showPiCycle and piCycleBottom, 'Pi Cycle Bottom', char = 'π', location = location.belowbar, color = color.new(bullishColor, 0), size = size.tiny, show_last = sigLimit)
+
+//=== HYBRID BREAKOUT CALCULATIONS ===//
+[dynamicTF1, dynamicTF2, dynamicTF3, dynamicTF4] = getDynamicTimeframes()
+rsiCurrent = ta.rsi(close, rsi_length)
+rsiTF1 = request.security(syminfo.tickerid, dynamicTF1, ta.rsi(close, rsi_length))
+rsiTF2 = request.security(syminfo.tickerid, dynamicTF2, ta.rsi(close, rsi_length))
+rsiTF3 = request.security(syminfo.tickerid, dynamicTF3, ta.rsi(close, rsi_length))
+rsiTF4 = request.security(syminfo.tickerid, dynamicTF4, ta.rsi(close, rsi_length))
+currentTFMin = getCurrentTFInMinutes()
+redZone = (rsiCurrent > rsi_high and rsiTF1 > rsi_high and rsiTF2 > rsi_high and (currentTFMin < 60 ? rsiTF3 > rsi_high : true) and (currentTFMin < 240 ? rsiTF4 > rsi_high : true))
+greenZone = (rsiCurrent < rsi_low and rsiTF1 < rsi_low and rsiTF2 < rsi_low and (currentTFMin < 60 ? rsiTF3 < rsi_low : true) and (currentTFMin < 240 ? rsiTF4 < rsi_low : true))
+sinceRed = ta.barssince(redZone)
+sinceGreen = ta.barssince(greenZone)
+rsi_UpSignal = useRSIBreakouts and not greenZone and (sinceGreen < 2)
+rsi_DownSignal = useRSIBreakouts and not redZone and (sinceRed < 2)
+bullish3Strike = use3LineStrike and close[3] < open[3] and close[2] < open[2] and close[1] < open[1] and close > open[1]
+bearish3Strike = use3LineStrike and close[3] > open[3] and close[2] > open[2] and close[1] > open[1] and close < open[1]
+highestHigh = ta.highest(high, exhaustionLength)
+lowestLow = ta.lowest(low, exhaustionLength)
+var bindex = 0
+var sindex = 0
+if close > close[4]
+    bindex += 1
+if close < close[4]
+    sindex += 1
+momExhaustionHigh = useMomentumExhaustion and bindex > exhaustionBars and close < open and high >= highestHigh
+momExhaustionLow = useMomentumExhaustion and sindex > exhaustionBars and close > open and low <= lowestLow
+if momExhaustionHigh
+    bindex := 0
+if momExhaustionLow
+    sindex := 0
+bullSignalCount = (rsi_UpSignal ? 1 : 0) + (bullish3Strike ? 1 : 0) + (momExhaustionLow ? 1 : 0)
+bearSignalCount = (rsi_DownSignal ? 1 : 0) + (bearish3Strike ? 1 : 0) + (momExhaustionHigh ? 1 : 0)
+var lastBullArrow = 0
+var lastBearArrow = 0
+bullArrowCooldown = bar_index - lastBullArrow >= minCooldownBars
+bearArrowCooldown = bar_index - lastBearArrow >= minCooldownBars
+minSignalsRequired = requireMultipleSignals ? 2 : 1
+bullBreakout = showBreakoutArrows and bullSignalCount >= minSignalsRequired and trendState >= 0 and bullArrowCooldown
+bearBreakout = showBreakoutArrows and bearSignalCount >= minSignalsRequired and trendState <= 0 and bearArrowCooldown
+if bullBreakout
+    lastBullArrow := bar_index
+if bearBreakout
+    lastBearArrow := bar_index
+breakoutStrength = math.max(bullSignalCount, bearSignalCount)
+bullShade = breakoutStrength >= 3 ? color.new(bullishColor, 0) : breakoutStrength == 2 ? color.new(bullishColor, 30) : color.new(bullishColor, 60)
+bearShade = breakoutStrength >= 3 ? color.new(bearishColor, 0) : breakoutStrength == 2 ? color.new(bearishColor, 30) : color.new(bearishColor, 60)
+
+//=== RESPONSIVE BREAKOUT PLOTTING ===//
+plotshape(bullBreakout, "Responsive Bull Breakout", style=shape.triangleup, location=location.belowbar, color=bullShade, size=size.small, show_last=sigLimit)
+plotshape(bearBreakout, "Responsive Bear Breakout", style=shape.triangledown, location=location.abovebar, color=bearShade, size=size.small, show_last=sigLimit)
+
+//=== ALERT CONDITIONS ===//
+alertcondition(cyberDotsUpDot, 'Up CyberDot', 'Upward strength detected on {{ticker}}')
+alertcondition(cyberDotsDnDot, 'Down CyberDot', 'Downward strength detected on {{ticker}}')
+alertcondition(topRev, 'Top Reversal', 'Potential top reversal on {{ticker}}')
+alertcondition(botRev, 'Bottom Reversal', 'Potential bottom reversal on {{ticker}}')
+alertcondition(topConf1, 'Top First Conf', 'First confirmation for top reversal on {{ticker}}')
+alertcondition(botConf1, 'Bot First Conf', 'First confirmation for bottom reversal on {{ticker}}')
+alertcondition(topConf2, 'Top Second Conf', 'Second confirmation for top reversal on {{ticker}}')
+alertcondition(botConf2, 'Bot Second Conf', 'Second confirmation for bottom reversal on {{ticker}}')
+alertcondition(ta.crossover(close, cyberLineTrend), 'Bullish CyberLine Cross', 'Price crossed above CyberLine on {{ticker}}')
+alertcondition(ta.crossunder(close, cyberLineTrend), 'Bearish CyberLine Cross', 'Price crossed below CyberLine on {{ticker}}')
+alertcondition(bullBreakout, "MTF Bullish Breakout", "Multi-timeframe bullish breakout detected on {{ticker}}")
+alertcondition(bearBreakout, "MTF Bearish Breakout", "Multi-timeframe bearish breakout detected on {{ticker}}")
+alertcondition(piCycleTop, 'Pi Cycle Top', 'Pi Cycle Top detected on {{ticker}} - historical Bitcoin top signal')
+alertcondition(piCycleBottom, 'Pi Cycle Bottom', 'Pi Cycle Bottom detected on {{ticker}} - historical Bitcoin bottom signal')
+alertcondition(ta.crossover(QB, 0), title="CyberBands Long", message="CyberBands Long {{exchange}}:{{ticker}}")
+alertcondition(ta.crossunder(QB, 0), title="CyberBands Short", message="CyberBands Short {{exchange}}:{{ticker}}")
