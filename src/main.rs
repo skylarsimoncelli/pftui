@@ -536,6 +536,9 @@ fn run_agent_journal(
                 None,
                 json,
             ),
+            cli::JournalNotesCommand::Repetition { author, days, json } => {
+                commands::notes::run_repetition(backend, author.as_deref(), days, json)
+            }
         },
         Some(cli::JournalCommand::Scenario { command }) => match command {
             cli::JournalScenarioCommand::Add {
@@ -1028,32 +1031,48 @@ fn dispatch_predictions(
             resolution_criteria,
             lessons,
             override_cap,
+            skip_preflight,
+            accept_preflight,
+            inline,
+            preflight_threshold,
+            layer,
+            with_adversary,
+            falsify,
+            override_confidence_cap,
+            cap_rationale,
             json: j,
-        }) => commands::predict::run(
-            backend,
-            "add",
-            Some(&claim),
-            None,
-            symbol.as_deref(),
-            conviction.as_deref(),
-            timeframe.as_deref(),
-            confidence,
-            source_agent.as_deref(),
-            target_date.as_deref(),
-            resolution_criteria.as_deref(),
-            lessons.as_deref(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-            topic.as_deref(),
-            source_article_id,
-            override_cap,
-            j || json,
-        ),
+        }) => {
+            // Route through the same disciplined path as `journal prediction
+            // add`: falsification-rule parsing, the 0.3 unfalsifiable
+            // confidence cap, the calibration-derived clamp (with
+            // --override-confidence-cap/--cap-rationale), and auto-preflight.
+            let effective_layer = layer.clone().or_else(|| timeframe.clone());
+            commands::predict::run_add_with_preflight(
+                backend,
+                &claim,
+                symbol.as_deref(),
+                conviction.as_deref(),
+                timeframe.as_deref(),
+                confidence,
+                source_agent.as_deref(),
+                target_date.as_deref(),
+                resolution_criteria.as_deref(),
+                lessons.as_deref(),
+                topic.as_deref(),
+                source_article_id,
+                override_cap,
+                effective_layer.as_deref(),
+                skip_preflight,
+                accept_preflight,
+                inline,
+                preflight_threshold,
+                with_adversary,
+                falsify.as_deref(),
+                override_confidence_cap,
+                cap_rationale.as_deref(),
+                j || json,
+            )
+        }
     }
 }
 
@@ -2949,6 +2968,41 @@ fn run_cli(cli: Cli) -> Result<()> {
                 cli::AnalyticsLessonsCommand::Health { json } => {
                     commands::lessons_curate::run_health(&backend, json)
                 }
+                cli::AnalyticsLessonsCommand::Rules { command } => match command {
+                    cli::AnalyticsLessonsRulesCommand::Add {
+                        rule,
+                        rationale,
+                        sources,
+                        enforcement,
+                        json,
+                    } => commands::standing_rules::run_add(
+                        &backend,
+                        &rule,
+                        rationale.as_deref(),
+                        sources.as_deref(),
+                        &enforcement,
+                        json,
+                    ),
+                    cli::AnalyticsLessonsRulesCommand::List { all, json } => {
+                        commands::standing_rules::run_list(&backend, all, json)
+                    }
+                    cli::AnalyticsLessonsRulesCommand::Retire { id, json } => {
+                        commands::standing_rules::run_retire(&backend, id, json)
+                    }
+                    cli::AnalyticsLessonsRulesCommand::Cite { id, json } => {
+                        commands::standing_rules::run_cite(&backend, id, json)
+                    }
+                },
+            },
+            cli::AnalyticsCommand::Thesis { command } => match command {
+                cli::AnalyticsThesisCommand::SetReview {
+                    section,
+                    date,
+                    json,
+                } => commands::thesis::run_set_review(&backend, &section, &date, json),
+                cli::AnalyticsThesisCommand::ReviewDue { json } => {
+                    commands::thesis::run_review_due(&backend, json)
+                }
             },
             cli::AnalyticsCommand::DebateScore { command } => match command {
                 cli::AnalyticsDebateScoreCommand::Add {
@@ -3121,6 +3175,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                     asset,
                     json,
                 } => commands::analyst_views::delete(&backend, &analyst, &asset, json),
+                cli::AnalyticsViewsCommand::Stale {
+                    days,
+                    move_pct,
+                    json,
+                } => commands::views_stale::run(&backend, days, move_pct, json),
             },
             cli::AnalyticsCommand::Opportunities { json } => commands::analytics::run(
                 &backend,

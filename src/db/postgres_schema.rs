@@ -240,6 +240,10 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
+        // R5 memory layer: thesis review scheduling (additive).
+        sqlx::query("ALTER TABLE thesis ADD COLUMN IF NOT EXISTS review_by TEXT")
+            .execute(pool)
+            .await?;
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS power_metrics (
                 id BIGSERIAL PRIMARY KEY,

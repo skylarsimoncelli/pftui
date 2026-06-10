@@ -1899,6 +1899,39 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             ON run_health(run_date);",
     )?;
 
+    // ── R5 memory-consolidation layer (additive migrations) ──────────────
+    //
+    // Migration: novelty_score on daily_notes. Stored at write time by
+    // `pftui journal notes add` as 1 − max trigram-Jaccard similarity vs the
+    // same author's last 20 notes. NULL for notes written before this
+    // migration (novelty was never computed for them).
+    let daily_notes_has_novelty: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('daily_notes') WHERE name = 'novelty_score'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !daily_notes_has_novelty {
+        conn.execute_batch("ALTER TABLE daily_notes ADD COLUMN novelty_score REAL")?;
+    }
+
+    // Migration: review_by on thesis. A YYYY-MM-DD date by which the section
+    // must be re-reviewed; `pftui analytics thesis review-due` lists sections
+    // whose date has passed (and unscheduled sections). NULL = unscheduled.
+    let thesis_has_review_by: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('thesis') WHERE name = 'review_by'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !thesis_has_review_by {
+        conn.execute_batch("ALTER TABLE thesis ADD COLUMN review_by TEXT")?;
+    }
+
+    // standing_rules: consolidated operational rules distilled from
+    // prediction_lessons (see `db/standing_rules.rs`).
+    crate::db::standing_rules::ensure_table(conn)?;
+
     Ok(())
 }
 

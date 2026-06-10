@@ -15,6 +15,10 @@ pub struct ThesisEntry {
     pub content: String,
     pub conviction: String,
     pub updated_at: String,
+    /// YYYY-MM-DD date by which this section must be re-reviewed.
+    /// None = unscheduled (surfaced by `analytics thesis review-due`).
+    #[serde(default)]
+    pub review_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +38,7 @@ impl ThesisEntry {
             content: row.get(2)?,
             conviction: row.get(3)?,
             updated_at: row.get(4)?,
+            review_by: row.get(5)?,
         })
     }
 }
@@ -74,14 +79,40 @@ pub fn upsert_thesis(
         "medium".to_string()
     };
 
+    // Preserve any scheduled review date across the REPLACE below.
+    let existing_review_by: Option<String> =
+        get_thesis_section(conn, section)?.and_then(|e| e.review_by);
+
     // Upsert using INSERT OR REPLACE
     conn.execute(
-        "INSERT OR REPLACE INTO thesis (section, content, conviction, updated_at)
-         VALUES (?, ?, ?, datetime('now'))",
-        params![section, content, final_conviction],
+        "INSERT OR REPLACE INTO thesis (section, content, conviction, updated_at, review_by)
+         VALUES (?, ?, ?, datetime('now'), ?)",
+        params![section, content, final_conviction, existing_review_by],
     )?;
 
     Ok(())
+}
+
+/// Set (or clear, with None) the review-by date on a thesis section.
+/// Returns false when the section does not exist.
+pub fn set_review_by(conn: &Connection, section: &str, date: Option<&str>) -> Result<bool> {
+    let n = conn.execute(
+        "UPDATE thesis SET review_by = ? WHERE section = ?",
+        params![date, section],
+    )?;
+    Ok(n > 0)
+}
+
+pub fn set_review_by_backend(
+    backend: &BackendConnection,
+    section: &str,
+    date: Option<&str>,
+) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| set_review_by(conn, section, date),
+        |pool| set_review_by_postgres(pool, section, date),
+    )
 }
 
 pub fn upsert_thesis_backend(
@@ -99,7 +130,7 @@ pub fn upsert_thesis_backend(
 
 pub fn list_thesis(conn: &Connection) -> Result<Vec<ThesisEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT id, section, content, conviction, updated_at
+        "SELECT id, section, content, conviction, updated_at, review_by
          FROM thesis
          ORDER BY section ASC",
     )?;
@@ -118,7 +149,7 @@ pub fn list_thesis_backend(backend: &BackendConnection) -> Result<Vec<ThesisEntr
 
 pub fn get_thesis_section(conn: &Connection, section: &str) -> Result<Option<ThesisEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT id, section, content, conviction, updated_at
+        "SELECT id, section, content, conviction, updated_at, review_by
          FROM thesis
          WHERE section = ?",
     )?;
@@ -223,12 +254,15 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
+        sqlx::query("ALTER TABLE thesis ADD COLUMN IF NOT EXISTS review_by TEXT")
+            .execute(pool)
+            .await?;
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())
 }
 
-type ThesisRow = (i64, String, String, String, String);
+type ThesisRow = (i64, String, String, String, String, Option<String>);
 type ThesisHistRow = (i64, String, String, String, String);
 
 fn to_thesis_entry(row: ThesisRow) -> ThesisEntry {
@@ -238,6 +272,7 @@ fn to_thesis_entry(row: ThesisRow) -> ThesisEntry {
         content: row.2,
         conviction: row.3,
         updated_at: row.4,
+        review_by: row.5,
     }
 }
 
@@ -308,7 +343,7 @@ fn list_thesis_postgres(pool: &PgPool) -> Result<Vec<ThesisEntry>> {
     ensure_tables_postgres(pool)?;
     let rows: Vec<ThesisRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, section, content, conviction, updated_at::text
+            "SELECT id, section, content, conviction, updated_at::text, review_by
              FROM thesis
              ORDER BY section ASC",
         )
@@ -322,7 +357,7 @@ fn get_thesis_section_postgres(pool: &PgPool, section: &str) -> Result<Option<Th
     ensure_tables_postgres(pool)?;
     let row: Option<ThesisRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, section, content, conviction, updated_at::text
+            "SELECT id, section, content, conviction, updated_at::text, review_by
              FROM thesis
              WHERE section = $1",
         )
@@ -331,6 +366,19 @@ fn get_thesis_section_postgres(pool: &PgPool, section: &str) -> Result<Option<Th
         .await
     })?;
     Ok(row.map(to_thesis_entry))
+}
+
+fn set_review_by_postgres(pool: &PgPool, section: &str, date: Option<&str>) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let n = crate::db::pg_runtime::block_on(async {
+        sqlx::query("UPDATE thesis SET review_by = $1 WHERE section = $2")
+            .bind(date)
+            .bind(section)
+            .execute(pool)
+            .await
+    })?
+    .rows_affected();
+    Ok(n > 0)
 }
 
 fn get_thesis_history_postgres(

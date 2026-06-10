@@ -1041,6 +1041,7 @@ pub enum ConsensusCommand {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)] // Add carries the full journal-add discipline flag set
 pub enum DataPredictionsCommand {
     /// Show prediction market contract odds from Polymarket (tag-based macro-relevant contracts)
     #[command(after_help = "Sources: Polymarket Gamma events API (fed, economics, geopolitics, politics, bitcoin, crypto, ai tags).\n\nWhen the enriched prediction_market_contracts table is populated (via `pftui refresh`), shows contracts with exchange, event grouping, liquidity, and end dates. Falls back to legacy predictions_cache when contracts table is empty.\n\nSee also: `data predictions stats`, `data predictions scorecard`, `data predictions unanswered`, `analytics predictions`")]
@@ -1177,7 +1178,7 @@ pub enum DataPredictionsCommand {
     },
     /// Add a personal prediction (convenience alias for `journal prediction add`)
     #[command(
-        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`.\n\nTimeframe accepts: low, medium, high, macro, macro-checkpoint (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\nUse either `--source-agent` or the shorter alias `--agent`.\nUse `--lessons` to record which structured lesson IDs informed the call.\nLOW analyst calls are capped at 5/hour unless `--override-cap` is passed.\nMACRO-CHECKPOINT predictions must embed `[thesis=<slug>]` in the claim;\nscoring a checkpoint Wrong fires a parent-thesis re-eval message to synthesis.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD --lessons 218,240\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high --agent medium-agent\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n  pftui analytics predictions add --claim \"[thesis=de-dollarisation] CB gold > 800t by 2026-09-28\" --timeframe macro-checkpoint --agent analyst-macro --target-date 2026-09-28\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
+        after_help = "Creates a personal prediction in the journal database.\nThis is a convenience alias — identical to `pftui journal prediction add`,\nincluding the falsifiability discipline: omitting --falsify caps confidence\nat 0.3, the calibration-derived confidence clamp applies, and\n--override-confidence-cap requires --cap-rationale.\n\nTimeframe accepts: low, medium, high, macro, macro-checkpoint (aliases: short=low, long=high).\nConviction accepts: high, medium, low.\nUse either `--source-agent` or the shorter alias `--agent`.\nUse `--lessons` to record which structured lesson IDs informed the call.\nLOW analyst calls are capped at 5/hour unless `--override-cap` is passed.\nMACRO-CHECKPOINT predictions must embed `[thesis=<slug>]` in the claim;\nscoring a checkpoint Wrong fires a parent-thesis re-eval message to synthesis.\n\nExamples:\n  pftui analytics predictions add --claim \"BTC above 100k by June\" --timeframe medium --symbol BTC-USD --lessons 218,240\n  pftui data predictions add --claim \"Gold breaks 3000\" --timeframe high --conviction high --agent medium-agent\n  pftui analytics predictions add --claim \"VIX spikes above 30\" --timeframe low --confidence 0.8\n  pftui analytics predictions add --claim \"[thesis=de-dollarisation] CB gold > 800t by 2026-09-28\" --timeframe macro-checkpoint --agent analyst-macro --target-date 2026-09-28\n\nSee also: `journal prediction add`, `analytics predictions stats`,\n          `analytics predictions scorecard`, `analytics backtest`"
     )]
     Add {
         /// The prediction claim text
@@ -1227,6 +1228,50 @@ pub enum DataPredictionsCommand {
         /// Allow LOW analyst predictions beyond the soft 5-per-hour cap
         #[arg(long = "override-cap")]
         override_cap: bool,
+
+        /// Skip the auto-preflight check before save (same semantics as
+        /// `journal prediction add --skip-preflight`)
+        #[arg(long = "skip-preflight")]
+        skip_preflight: bool,
+
+        /// Accept a blocking preflight finding and commit anyway
+        #[arg(long = "accept-preflight")]
+        accept_preflight: bool,
+
+        /// Append a one-line serialized preflight block to the prediction's
+        /// resolution_criteria
+        #[arg(long = "inline")]
+        inline: bool,
+
+        /// Override the auto-preflight abort threshold (0..=100, default 50)
+        #[arg(long = "preflight-threshold")]
+        preflight_threshold: Option<u32>,
+
+        /// Analyst layer for the calibration_adjustments lookup
+        /// ("low" | "medium" | "high" | "macro"). Defaults to the resolved timeframe.
+        #[arg(long = "layer")]
+        layer: Option<String>,
+
+        /// Compose and persist a write-time adversary view linked to the new
+        /// prediction (same semantics as `journal prediction add --with-adversary`)
+        #[arg(long = "with-adversary")]
+        with_adversary: bool,
+
+        /// Machine-scoreable success condition. Deterministic grammar:
+        /// "<SYMBOL> <close|closes|stays|prints> <above|below|between|in-range|in-band>
+        /// <value> [<value2>] by <YYYY-MM-DD>". Omitting --falsify (or a
+        /// parse failure) caps confidence at 0.3 (unfalsifiable prediction).
+        #[arg(long)]
+        falsify: Option<String>,
+
+        /// Bypass the calibration-derived confidence clamp. Requires --cap-rationale.
+        #[arg(long = "override-confidence-cap")]
+        override_confidence_cap: bool,
+
+        /// Why the calibration confidence clamp does not apply (required
+        /// with --override-confidence-cap)
+        #[arg(long = "cap-rationale")]
+        cap_rationale: Option<String>,
 
         /// Output as JSON
         #[arg(long)]
@@ -2710,6 +2755,28 @@ pub enum JournalNotesCommand {
     Remove {
         #[arg(long)]
         id: i64,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Surface repeated note clusters ("you have written this note 9 times")
+    ///
+    /// Clusters an author's recent notes by mutual character-trigram Jaccard
+    /// similarity ≥ 0.85 and prints the top repeated clusters (count,
+    /// first/last date, 100-char excerpt). Repetition is the signal that a
+    /// conclusion should be consolidated into the thesis table instead of
+    /// being re-derived every run.
+    ///
+    /// EXAMPLES:
+    ///   pftui journal notes repetition --author analyst-medium --json
+    ///   pftui journal notes repetition --days 60
+    Repetition {
+        /// Restrict to one author (e.g. analyst-low). Omitting it clusters
+        /// every author's notes separately (clusters never span authors).
+        #[arg(long)]
+        author: Option<String>,
+        /// Lookback window in days
+        #[arg(long, default_value = "30")]
+        days: i64,
         #[arg(long)]
         json: bool,
     },
@@ -4313,6 +4380,27 @@ pub enum AnalyticsViewsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Stale-view detector: held assets whose layer view is old AND whose price has moved
+    ///
+    /// For each held asset (net positive transactions) and each canonical
+    /// layer (low/medium/high/macro): flags the layer's latest view when it
+    /// is older than --days AND the asset's price has moved more than
+    /// --move-pct percent since the view's updated_at (per price_history).
+    /// "View may be stale: evidence moved, conviction didn't."
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics views stale --json
+    ///   pftui analytics views stale --days 14 --move-pct 5
+    Stale {
+        /// Age threshold in days (a view younger than this is never stale)
+        #[arg(long, default_value = "21")]
+        days: i64,
+        /// Price-move threshold in percent since the view was written
+        #[arg(long = "move-pct", default_value = "10")]
+        move_pct: f64,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -4774,6 +4862,17 @@ pub enum AnalyticsCommand {
     Lessons {
         #[command(subcommand)]
         command: AnalyticsLessonsCommand,
+    },
+    /// Thesis review scheduling: set review-by dates and list overdue sections
+    ///
+    /// The thesis table holds durable per-section beliefs. Without review
+    /// dates, sections silently rot. `set-review` schedules a re-review
+    /// date for a section; `review-due` lists sections whose date has
+    /// passed plus sections with no date at all ("unscheduled").
+    #[command(after_help = "Examples:\n  pftui analytics thesis set-review cycle-frameworks --date 2026-09-01\n  pftui analytics thesis review-due --json\n\nSee also: analytics thesis-chains, analytics views stale")]
+    Thesis {
+        #[command(subcommand)]
+        command: AnalyticsThesisCommand,
     },
     /// Debate accuracy scoring: track which side (bull/bear) was right historically
     #[command(name = "debate-score", after_help = "Score resolved debates to track which side (bull/bear) was historically\ncorrect. Feeds into system accuracy tracking.\n\nWorkflow:\n  1. Debates are created and resolved via `agent debate`\n  2. Score resolved debates with `analytics debate-score add`\n  3. View accuracy stats with `analytics debate-score accuracy`\n  4. Find unscored debates with `analytics debate-score unscored`\n\nExamples:\n  pftui analytics debate-score add --debate-id 1 --winner bull --outcome \"BTC hit 185k\"\n  pftui analytics debate-score list --json\n  pftui analytics debate-score accuracy --topic BTC --json\n  pftui analytics debate-score unscored --json\n\nSee also: agent debate start, agent debate history, agent debate summary")]
@@ -5656,6 +5755,89 @@ pub enum AnalyticsLessonsCommand {
     /// citations per active lesson.
     #[command(after_help = "Example:\n  pftui analytics lessons health --json")]
     Health {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Standing operational rules consolidated from the lesson library.
+    ///
+    /// The lesson book injects only the most recent ~25 lessons into
+    /// prompts, so a failure pattern repeated across many lessons (e.g.
+    /// magnitude overshoot) crowds out older distinct lessons. A standing
+    /// rule consolidates one pattern into one imperative rule with its
+    /// rationale and source lesson ids. Active rules are injected into
+    /// analyst prompts in full.
+    #[command(after_help = "Examples:\n  pftui analytics lessons rules add --rule \"Cap magnitude forecasts at 1.5x trailing realized vol.\" \\\n    --rationale \"Magnitude overshoot is the dominant repeated miss.\" --sources \"12,40,77\"\n  pftui analytics lessons rules list --json\n  pftui analytics lessons rules cite 3\n  pftui analytics lessons rules retire 3\n\nSee also: analytics lessons curate, analytics lessons health")]
+    Rules {
+        #[command(subcommand)]
+        command: AnalyticsLessonsRulesCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsThesisCommand {
+    /// Schedule a review-by date for a thesis section
+    #[command(name = "set-review")]
+    SetReview {
+        /// Thesis section slug (must exist in the thesis table)
+        section: String,
+        /// Review-by date (YYYY-MM-DD)
+        #[arg(long)]
+        date: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List thesis sections due for review (review_by <= today) and unscheduled sections
+    #[command(name = "review-due")]
+    ReviewDue {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsLessonsRulesCommand {
+    /// Add a standing rule (imperative, 1-3 sentences)
+    Add {
+        /// The operational rule text
+        #[arg(long)]
+        rule: String,
+        /// Why — including the failure pattern this rule prevents
+        #[arg(long)]
+        rationale: Option<String>,
+        /// Comma-separated prediction_lessons ids this rule consolidates (e.g. "12,40,77")
+        #[arg(long)]
+        sources: Option<String>,
+        /// Enforcement level: advisory (prompt-injected) or validator (machine-checked)
+        #[arg(long, default_value = "advisory")]
+        enforcement: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List standing rules (active only by default; compact prompt-injectable render)
+    List {
+        /// Include retired rules
+        #[arg(long)]
+        all: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Retire a standing rule by id
+    Retire {
+        /// Rule id
+        id: i64,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Record a violation of a standing rule (increments violation_count)
+    Cite {
+        /// Rule id
+        id: i64,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -13903,5 +14085,326 @@ mod tests {
         assert!(confirm);
         assert!(json);
         Ok(())
+    }
+
+    // ── R5 memory-consolidation layer ───────────────────────────────────
+
+    #[test]
+    fn parse_journal_notes_repetition() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "notes",
+            "repetition",
+            "--author",
+            "analyst-medium",
+            "--days",
+            "60",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Journal {
+            command: Some(JournalCommand::Notes { command }),
+        }) = cli.command
+        else {
+            panic!("expected journal notes command");
+        };
+        let JournalNotesCommand::Repetition { author, days, json } = command else {
+            panic!("expected notes repetition");
+        };
+        assert_eq!(author.as_deref(), Some("analyst-medium"));
+        assert_eq!(days, 60);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_journal_notes_repetition_defaults() {
+        let cli = Cli::try_parse_from(["pftui", "journal", "notes", "repetition"]).unwrap();
+        let Some(Command::Journal {
+            command: Some(JournalCommand::Notes { command }),
+        }) = cli.command
+        else {
+            panic!("expected journal notes command");
+        };
+        let JournalNotesCommand::Repetition { author, days, json } = command else {
+            panic!("expected notes repetition");
+        };
+        assert!(author.is_none());
+        assert_eq!(days, 30);
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_lessons_rules_add() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "lessons",
+            "rules",
+            "add",
+            "--rule",
+            "Cap magnitude forecasts at 1.5x trailing vol.",
+            "--rationale",
+            "Magnitude overshoot dominates the lesson book.",
+            "--sources",
+            "12,40,77",
+            "--enforcement",
+            "validator",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Lessons { command },
+        }) = cli.command
+        else {
+            panic!("expected analytics lessons command");
+        };
+        let AnalyticsLessonsCommand::Rules { command } = command else {
+            panic!("expected lessons rules");
+        };
+        let AnalyticsLessonsRulesCommand::Add {
+            rule,
+            rationale,
+            sources,
+            enforcement,
+            json,
+        } = command
+        else {
+            panic!("expected rules add");
+        };
+        assert!(rule.starts_with("Cap magnitude"));
+        assert!(rationale.is_some());
+        assert_eq!(sources.as_deref(), Some("12,40,77"));
+        assert_eq!(enforcement, "validator");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_lessons_rules_list_retire_cite() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "lessons", "rules", "list", "--all"])
+                .unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Lessons {
+                    command: AnalyticsLessonsCommand::Rules {
+                        command: AnalyticsLessonsRulesCommand::List { all, json },
+                    },
+                },
+        }) = cli.command
+        else {
+            panic!("expected rules list");
+        };
+        assert!(all);
+        assert!(!json);
+
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "lessons", "rules", "retire", "7"]).unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Lessons {
+                    command: AnalyticsLessonsCommand::Rules {
+                        command: AnalyticsLessonsRulesCommand::Retire { id, .. },
+                    },
+                },
+        }) = cli.command
+        else {
+            panic!("expected rules retire");
+        };
+        assert_eq!(id, 7);
+
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "lessons", "rules", "cite", "3", "--json"])
+                .unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Lessons {
+                    command: AnalyticsLessonsCommand::Rules {
+                        command: AnalyticsLessonsRulesCommand::Cite { id, json },
+                    },
+                },
+        }) = cli.command
+        else {
+            panic!("expected rules cite");
+        };
+        assert_eq!(id, 3);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_thesis_set_review_and_review_due() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "thesis",
+            "set-review",
+            "cycle-frameworks",
+            "--date",
+            "2026-09-01",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Thesis {
+                    command: AnalyticsThesisCommand::SetReview { section, date, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected thesis set-review");
+        };
+        assert_eq!(section, "cycle-frameworks");
+        assert_eq!(date, "2026-09-01");
+        assert!(!json);
+
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "thesis", "review-due", "--json"]).unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Thesis {
+                    command: AnalyticsThesisCommand::ReviewDue { json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected thesis review-due");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_views_stale() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "views",
+            "stale",
+            "--days",
+            "14",
+            "--move-pct",
+            "5",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command: AnalyticsViewsCommand::Stale { days, move_pct, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected views stale");
+        };
+        assert_eq!(days, 14);
+        assert!((move_pct - 5.0).abs() < f64::EPSILON);
+        assert!(json);
+
+        // Defaults: 21 days, 10% move.
+        let cli = Cli::try_parse_from(["pftui", "analytics", "views", "stale"]).unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Views {
+                    command: AnalyticsViewsCommand::Stale { days, move_pct, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected views stale");
+        };
+        assert_eq!(days, 21);
+        assert!((move_pct - 10.0).abs() < f64::EPSILON);
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_data_predictions_add_alias_discipline_flags() {
+        // Alias with --falsify + cap-override flags parses.
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "add",
+            "--claim",
+            "BTC reclaims six figures",
+            "--timeframe",
+            "medium",
+            "--confidence",
+            "0.7",
+            "--falsify",
+            "BTC-USD close above 100000 by 2026-12-31",
+            "--override-confidence-cap",
+            "--cap-rationale",
+            "regime change invalidates the trailing record",
+            "--skip-preflight",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data {
+            command:
+                DataCommand::Predictions {
+                    command: Some(DataPredictionsCommand::Add {
+                        claim,
+                        falsify,
+                        override_confidence_cap,
+                        cap_rationale,
+                        skip_preflight,
+                        accept_preflight,
+                        with_adversary,
+                        json,
+                        ..
+                    }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected data predictions add");
+        };
+        assert_eq!(claim, "BTC reclaims six figures");
+        assert_eq!(
+            falsify.as_deref(),
+            Some("BTC-USD close above 100000 by 2026-12-31")
+        );
+        assert!(override_confidence_cap);
+        assert!(cap_rationale.is_some());
+        assert!(skip_preflight);
+        assert!(!accept_preflight);
+        assert!(!with_adversary);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_predictions_add_alias_without_falsify() {
+        // Alias without --falsify parses; falsify is None so the 0.3
+        // unfalsifiable cap applies downstream in run_add_with_preflight.
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "predictions",
+            "add",
+            "--claim",
+            "BTC structurally repriced higher",
+            "--timeframe",
+            "medium",
+            "--confidence",
+            "0.9",
+        ])
+        .unwrap();
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Predictions {
+                    command: Some(DataPredictionsCommand::Add {
+                        falsify,
+                        override_confidence_cap,
+                        cap_rationale,
+                        skip_preflight,
+                        ..
+                    }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics predictions add");
+        };
+        assert!(falsify.is_none());
+        assert!(!override_confidence_cap);
+        assert!(cap_rationale.is_none());
+        assert!(!skip_preflight, "preflight must be ON by default, like journal add");
     }
 }

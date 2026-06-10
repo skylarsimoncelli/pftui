@@ -276,6 +276,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui agent message ack --id N` | Acknowledge a single message |
 | `pftui journal notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
 | `pftui journal notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
+| `pftui journal notes repetition [--author analyst-medium] [--days 30] [--json]` | Cluster an author's recent notes by mutual trigram similarity ≥0.85 and surface repeated clusters ("you have written this note 9 times"). `notes add` also stores a per-note `novelty_score` (1 − max similarity vs the author's last 20 notes) and warns when a new note is ≥85% similar to an existing one — consolidate into the thesis table instead of re-deriving |
 | `pftui portfolio opportunity add "EVENT" [--asset SYM] [--missed_gain_usd N] [--avoided_loss_usd N]` | Log an opportunity-cost event |
 | `pftui portfolio opportunity stats --json` | Show net missed-vs-avoided positioning stats |
 | `pftui analytics correlations compute --store --period 30d` | Compute live correlations and persist snapshots |
@@ -314,6 +315,13 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui analytics lessons curate [--dry-run] [--retire-after-days 60] [--json]` | Retire stale uncited active lessons whose topic cluster is idle; journals the change to `agent_messages` |
 | `pftui analytics lessons revive <id> [--json]` | Manually un-retire a previously retired lesson (sets status back to `active`) |
 | `pftui analytics lessons health [--json]` | Library health summary: total / active / retired / superseded / citations total / avg citations per active |
+| `pftui analytics lessons rules add --rule "TEXT" [--rationale "TEXT"] [--sources "12,40,77"] [--enforcement advisory\|validator]` | Add a standing rule — one imperative operational rule consolidated from repeated lessons (with the failure pattern it prevents and its source lesson ids) |
+| `pftui analytics lessons rules list [--all] [--json]` | Compact prompt-injectable list of standing rules (active only by default; `--all` includes retired) |
+| `pftui analytics lessons rules cite <id> [--json]` | Record a violation of a standing rule (increments `violation_count`) |
+| `pftui analytics lessons rules retire <id> [--json]` | Retire a standing rule |
+| `pftui analytics views stale [--days 21] [--move-pct 10] [--json]` | Stale-view detector: for each held asset × canonical layer, flag views older than `--days` where price moved more than `--move-pct`% since the view was written ("evidence moved, conviction didn't") |
+| `pftui analytics thesis set-review <section> --date YYYY-MM-DD [--json]` | Schedule a review-by date on a thesis section |
+| `pftui analytics thesis review-due [--json]` | Thesis sections past their review date, plus unscheduled sections (no `review_by` set) |
 | `pftui analytics news-sources accuracy --json [--domain bloomberg.com] [--topic fed] [--include-pre-deployment]` | Per-source hit-rate ledger for predictions derived from news articles. `--include-pre-deployment` emits an explicit forward-only notice (the ledger does NOT retroactively attribute pre-`source_article_id`-deployment predictions to a source) |
 | `pftui analytics news-sources rank --topic iran --json` | Rank news sources for a topic using trailing source-attributed prediction outcomes |
 | `pftui analytics news-sources rebuild-accuracy [--since 180d] [--dry-run] --json` | Replay `sync_prediction_outcome` for every scored prediction with a `source_article_id`; idempotent backfill |

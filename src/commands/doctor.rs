@@ -42,6 +42,17 @@ pub async fn run(json_output: bool) -> Result<()> {
         checks.push(cache_check);
     }
 
+    // 4. BTC series divergence guard (SQLite only; the price_history dual
+    // series problem is a local-cache concern).
+    if checks[0].passed && matches!(config.database_backend, DatabaseBackend::Sqlite) {
+        let db_path = crate::db::default_db_path();
+        if let Ok(conn) =
+            Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        {
+            checks.push(btc_series_divergence_check(&conn));
+        }
+    }
+
     // Output results
     if json_output {
         output_json(&checks)?;
@@ -594,6 +605,130 @@ async fn test_cache_freshness(
     }
 }
 
+/// BTC series divergence guard.
+///
+/// The local DB can carry two BTC series: `BTC` (fresh but shallow) and
+/// `BTC-USD` (deep but occasionally stale — it has lagged spot by 28%).
+/// Compare the latest closes of both where each has data within the last
+/// 7 days; divergence above 2% fails the check with both values + dates.
+/// One series missing recent data yields a warning naming which.
+const BTC_DIVERGENCE_WINDOW_DAYS: i64 = 7;
+const BTC_DIVERGENCE_THRESHOLD_PCT: f64 = 2.0;
+
+fn latest_close(conn: &Connection, symbol: &str) -> Option<(String, rust_decimal::Decimal)> {
+    conn.query_row(
+        "SELECT date, close FROM price_history WHERE symbol = ?1 ORDER BY date DESC LIMIT 1",
+        [symbol],
+        |row| {
+            let date: String = row.get(0)?;
+            let close: String = row.get(1)?;
+            Ok((date, close))
+        },
+    )
+    .ok()
+    .and_then(|(date, close)| {
+        close
+            .parse::<rust_decimal::Decimal>()
+            .ok()
+            .map(|c| (date, c))
+    })
+}
+
+fn btc_series_divergence_check(conn: &Connection) -> DiagnosticCheck {
+    use rust_decimal::prelude::ToPrimitive;
+    use rust_decimal::Decimal;
+
+    let mk = |passed: bool, message: String| DiagnosticCheck {
+        name: "BTC Series Divergence".to_string(),
+        category: "Data Health".to_string(),
+        passed,
+        critical: false,
+        message,
+        duration_ms: None,
+    };
+
+    let btc = latest_close(conn, "BTC");
+    let btc_usd = latest_close(conn, "BTC-USD");
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(BTC_DIVERGENCE_WINDOW_DAYS))
+        .format("%Y-%m-%d")
+        .to_string();
+
+    match (btc, btc_usd) {
+        (None, None) => mk(
+            true,
+            "Neither BTC nor BTC-USD tracked in price_history — divergence check skipped"
+                .to_string(),
+        ),
+        (Some(_), None) => mk(
+            true,
+            "Only the BTC series is tracked (no BTC-USD) — divergence check not applicable"
+                .to_string(),
+        ),
+        (None, Some(_)) => mk(
+            true,
+            "Only the BTC-USD series is tracked (no BTC) — divergence check not applicable"
+                .to_string(),
+        ),
+        (Some((btc_date, btc_close)), Some((usd_date, usd_close))) => {
+            let btc_recent = btc_date.as_str() >= cutoff.as_str();
+            let usd_recent = usd_date.as_str() >= cutoff.as_str();
+            match (btc_recent, usd_recent) {
+                (true, true) => {
+                    let midpoint = (btc_close + usd_close) / Decimal::from(2);
+                    if midpoint == Decimal::ZERO {
+                        return mk(false, "Warning: BTC series closes are zero".to_string());
+                    }
+                    let divergence_pct = ((btc_close - usd_close).abs() / midpoint
+                        * Decimal::from(100))
+                    .round_dp(2)
+                    .to_f64()
+                    .unwrap_or(0.0);
+                    if divergence_pct > BTC_DIVERGENCE_THRESHOLD_PCT {
+                        mk(
+                            false,
+                            format!(
+                                "BTC series diverged {:.2}% (> {:.0}%): BTC {} ({}) vs BTC-USD {} ({}) — one series is stale; refresh or repair before trusting BTC analytics",
+                                divergence_pct,
+                                BTC_DIVERGENCE_THRESHOLD_PCT,
+                                btc_close, btc_date, usd_close, usd_date
+                            ),
+                        )
+                    } else {
+                        mk(
+                            true,
+                            format!(
+                                "BTC series agree within {:.2}%: BTC {} ({}) vs BTC-USD {} ({})",
+                                divergence_pct, btc_close, btc_date, usd_close, usd_date
+                            ),
+                        )
+                    }
+                }
+                (true, false) => mk(
+                    false,
+                    format!(
+                        "Warning: BTC-USD has no data in the last {} days (latest {}) — deep series may be stale vs BTC ({})",
+                        BTC_DIVERGENCE_WINDOW_DAYS, usd_date, btc_date
+                    ),
+                ),
+                (false, true) => mk(
+                    false,
+                    format!(
+                        "Warning: BTC has no data in the last {} days (latest {}) — spot series may be stale vs BTC-USD ({})",
+                        BTC_DIVERGENCE_WINDOW_DAYS, btc_date, usd_date
+                    ),
+                ),
+                (false, false) => mk(
+                    true,
+                    format!(
+                        "No recent data in either BTC series (BTC latest {}, BTC-USD latest {}) — divergence check skipped",
+                        btc_date, usd_date
+                    ),
+                ),
+            }
+        }
+    }
+}
+
 fn output_json(checks: &[DiagnosticCheck]) -> Result<()> {
     let output = serde_json::json!({
         "checks": checks,
@@ -663,5 +798,105 @@ fn output_human(checks: &[DiagnosticCheck]) {
         println!("\n⚠️  Some data sources are unavailable. Core functionality should work.");
     } else {
         println!("\n✓ All systems operational.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::schema::run_migrations(&conn).unwrap();
+        conn
+    }
+
+    fn insert_close(conn: &Connection, symbol: &str, date: &str, close: &str) {
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source) VALUES (?1, ?2, ?3, 'test')",
+            rusqlite::params![symbol, date, close],
+        )
+        .unwrap();
+    }
+
+    fn recent_date(days_ago: i64) -> String {
+        (chrono::Utc::now() - chrono::Duration::days(days_ago))
+            .format("%Y-%m-%d")
+            .to_string()
+    }
+
+    #[test]
+    fn btc_divergence_skips_when_untracked() {
+        let conn = setup_conn();
+        let check = btc_series_divergence_check(&conn);
+        assert!(check.passed);
+        assert!(check.message.contains("skipped"));
+        assert_eq!(check.category, "Data Health");
+        assert!(!check.critical);
+    }
+
+    #[test]
+    fn btc_divergence_single_series_not_applicable() {
+        let conn = setup_conn();
+        insert_close(&conn, "BTC", &recent_date(0), "100000");
+        let check = btc_series_divergence_check(&conn);
+        assert!(check.passed);
+        assert!(check.message.contains("no BTC-USD"));
+    }
+
+    #[test]
+    fn btc_divergence_within_threshold_passes() {
+        let conn = setup_conn();
+        insert_close(&conn, "BTC", &recent_date(0), "100000");
+        insert_close(&conn, "BTC-USD", &recent_date(1), "101000");
+        let check = btc_series_divergence_check(&conn);
+        assert!(check.passed, "message: {}", check.message);
+        assert!(check.message.contains("agree"));
+    }
+
+    #[test]
+    fn btc_divergence_above_threshold_fails_with_values_and_dates() {
+        let conn = setup_conn();
+        let btc_date = recent_date(0);
+        let usd_date = recent_date(2);
+        insert_close(&conn, "BTC", &btc_date, "100000");
+        // 28% lag — the historically observed failure mode.
+        insert_close(&conn, "BTC-USD", &usd_date, "72000");
+        let check = btc_series_divergence_check(&conn);
+        assert!(!check.passed);
+        assert!(!check.critical);
+        assert!(check.message.contains("100000"), "message: {}", check.message);
+        assert!(check.message.contains("72000"));
+        assert!(check.message.contains(&btc_date));
+        assert!(check.message.contains(&usd_date));
+    }
+
+    #[test]
+    fn btc_divergence_warns_when_one_series_stale() {
+        let conn = setup_conn();
+        insert_close(&conn, "BTC", &recent_date(0), "100000");
+        insert_close(&conn, "BTC-USD", "2026-01-01", "72000");
+        let check = btc_series_divergence_check(&conn);
+        assert!(!check.passed);
+        assert!(check.message.contains("Warning"));
+        assert!(check.message.contains("BTC-USD has no data"));
+
+        // And the mirrored case.
+        let conn = setup_conn();
+        insert_close(&conn, "BTC", "2026-01-01", "100000");
+        insert_close(&conn, "BTC-USD", &recent_date(0), "98000");
+        let check = btc_series_divergence_check(&conn);
+        assert!(!check.passed);
+        assert!(check.message.contains("BTC has no data"));
+    }
+
+    #[test]
+    fn btc_divergence_both_stale_skips() {
+        let conn = setup_conn();
+        insert_close(&conn, "BTC", "2026-01-01", "100000");
+        insert_close(&conn, "BTC-USD", "2026-01-02", "72000");
+        let check = btc_series_divergence_check(&conn);
+        assert!(check.passed);
+        assert!(check.message.contains("No recent data"));
     }
 }
