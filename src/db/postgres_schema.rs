@@ -1062,13 +1062,20 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
                 audit_pass_rate DOUBLE PRECISION,
                 agents_spawned BIGINT,
                 notes TEXT,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                conviction_price_corr DOUBLE PRECISION
             )",
         )
         .execute(pool)
         .await?;
         sqlx::query(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_run_health_run_date ON run_health(run_date)",
+        )
+        .execute(pool)
+        .await?;
+        // Gold post-mortem T2: conviction-price correlation column (additive).
+        sqlx::query(
+            "ALTER TABLE run_health ADD COLUMN IF NOT EXISTS conviction_price_corr DOUBLE PRECISION",
         )
         .execute(pool)
         .await?;

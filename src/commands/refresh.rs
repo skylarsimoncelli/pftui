@@ -2312,6 +2312,59 @@ fn run_pipeline(
         }
     }
 
+    // Tail step: fill recommendation-ledger forward returns
+    // (fwd_{30,90,180}d_pct) for any priced row whose horizon has elapsed,
+    // against the daily closes refreshed above. Same rationale as the
+    // prediction auto-score: no daemon, refresh is the recurring surface,
+    // and an unscored recommendation ledger is how add-into-a-drawdown went
+    // unnoticed for 5 months. Idempotent — scored horizons are never
+    // overwritten.
+    let recscore_start = Instant::now();
+    match crate::commands::recommendations::auto_score_for_refresh(backend) {
+        Ok(summary) => {
+            info_ln!(
+                verbose,
+                "✓ Recommendation forward-score: {} horizon(s) filled across {} row(s)",
+                summary.horizons_filled,
+                summary.rows_updated
+            );
+            dag_result.add(SourceResult {
+                name: "recommendation_forward_score".to_string(),
+                label: "Recommendation Forward-Score".to_string(),
+                status: SourceStatus::Ok,
+                items_attempted: None,
+                items_failed: None,
+                failed_symbols: None,
+                items_updated: Some(summary.horizons_filled),
+                duration_ms: recscore_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: Some(format!(
+                    "{} candidate row(s), {} horizon cell(s) filled, {} row(s) updated",
+                    summary.candidates, summary.horizons_filled, summary.rows_updated
+                )),
+            });
+        }
+        Err(e) => {
+            info_ln!(verbose, "  ⚠ Recommendation forward-score failed: {}", e);
+            dag_result.add(SourceResult {
+                name: "recommendation_forward_score".to_string(),
+                label: "Recommendation Forward-Score".to_string(),
+                status: SourceStatus::Failed,
+                items_attempted: None,
+                items_failed: None,
+                failed_symbols: None,
+                items_updated: None,
+                duration_ms: recscore_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: Some(e.to_string()),
+                detail: None,
+            });
+        }
+    }
+
     // Idempotent: classify today's regime from the latest scenario state and
     // upsert into `regime_history`. Safe to run multiple times per day; the
     // most recent classification wins via `ON CONFLICT(date) DO UPDATE`.

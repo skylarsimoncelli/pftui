@@ -5046,6 +5046,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     audit_pass_rate,
                     agents,
                     notes,
+                    conviction_price_corr,
                     json,
                 } => commands::epistemics::record(
                     &backend,
@@ -5059,6 +5060,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     audit_pass_rate,
                     agents,
                     notes.as_deref(),
+                    conviction_price_corr,
                     json,
                 ),
                 cli::AnalyticsEpistemicsCommand::Show { date, json } => {
@@ -5069,6 +5071,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
                 cli::AnalyticsEpistemicsCommand::Rivalry { json } => {
                     commands::epistemics::rivalry(&backend, json)
+                }
+                cli::AnalyticsEpistemicsCommand::ConvictionPrice { days, asset, json } => {
+                    commands::epistemics::conviction_price(&backend, days, asset.as_deref(), json)
                 }
             },
             cli::AnalyticsCommand::Conviction { command } => match command {
@@ -5490,20 +5495,42 @@ fn run_cli(cli: Cli) -> Result<()> {
                 json,
             ),
             cli::AnalyticsCommand::Recommendations { command } => match command {
+                cli::AnalyticsRecommendationsCommand::Record {
+                    symbol,
+                    action,
+                    rationale,
+                    date,
+                    source,
+                    json,
+                } => commands::recommendations::record_cmd(
+                    &backend,
+                    &symbol,
+                    &action,
+                    rationale.as_deref(),
+                    date.as_deref(),
+                    &source,
+                    json,
+                ),
                 cli::AnalyticsRecommendationsCommand::List {
                     date,
                     asset,
+                    symbol,
                     recommendation_type,
                     since,
+                    limit,
                     json,
                 } => commands::recommendations::list_cmd(
                     &backend,
                     date.as_deref(),
-                    asset.as_deref(),
+                    asset.or(symbol).as_deref(),
                     recommendation_type.as_deref(),
                     since.as_deref(),
+                    limit,
                     json,
                 ),
+                cli::AnalyticsRecommendationsCommand::Scoreboard { symbol, json } => {
+                    commands::recommendations::scoreboard_cmd(&backend, symbol.as_deref(), json)
+                }
                 cli::AnalyticsRecommendationsCommand::Score {
                     all,
                     id,

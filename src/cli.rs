@@ -4110,6 +4110,9 @@ pub enum AnalyticsEpistemicsCommand {
         /// Free-form run notes
         #[arg(long)]
         notes: Option<String>,
+        /// Max |Pearson r| between any canonical layer's conviction trajectory and the matching held asset's closes (derived from analyst_view_history × price_history over 90d when omitted)
+        #[arg(long = "conviction-price-corr")]
+        conviction_price_corr: Option<f64>,
         #[arg(long)]
         json: bool,
     },
@@ -4134,6 +4137,21 @@ pub enum AnalyticsEpistemicsCommand {
         after_help = "Compares scored user_predictions (outcome != pending) grouped by\nsource_agent — the antithesis rival ledger vs the canonical analyst-*\nlayers. Renders an accrual notice while the antithesis layer still has\nonly pending predictions."
     )]
     Rivalry {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Conviction-vs-price correlation per (canonical layer × held asset)
+    #[command(
+        name = "conviction-price",
+        after_help = "Pearson correlation between each canonical layer's signed conviction\ntrajectory (analyst_view_history, bear counts negative) and the asset's\ncloses on matching dates over the window. Needs ≥6 paired observations\nper pair; |r| > 0.6 flags \"momentum dressed as structure\" (standing\nrule 15: conviction must not track price — if conviction is just a\nlagged price chart, it adds no information).\n\nThe max |r| across pairs is what `epistemics record` self-derives into\nrun_health.conviction_price_corr when --conviction-price-corr is omitted.\n\nExamples:\n  pftui analytics epistemics conviction-price --json\n  pftui analytics epistemics conviction-price --days 60 --asset GC=F"
+    )]
+    ConvictionPrice {
+        /// Trailing window in days (default 90)
+        #[arg(long, default_value_t = 90)]
+        days: i64,
+        /// Restrict to one asset (default: every held asset)
+        #[arg(long)]
+        asset: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -5162,7 +5180,7 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
     },
     /// Run-health instrumentation: echo risk, blind divergence, scenario churn, rivalry scoreboard
     #[command(
-        after_help = "Per-run epistemic health of the multi-agent intelligence system.\n\nMetrics:\n  agreement_rate        share of voices agreeing with the operator stance (0-1);\n                        > 0.85 flags echo risk\n  blind_divergence      mean |house conviction − blind conviction| across held\n                        assets; > 2.0 flags a house view far from the raw-data read\n  panel_dispersion      stddev of panel persona confidences; < 4.0 flags persona washing\n  novelty_rate          share of the run's notes that are novel\n  scenario_delta_total  sum |Δprobability| across scenarios today\n  audit_pass_rate       accuracy-audit claims_passed/claims_total\n\nWorkflows:\n  pftui analytics epistemics record --date 2026-06-10 --agreement 0.7 --panel-dispersion 6.2\n  pftui analytics epistemics show --date 2026-06-10 --json\n  pftui analytics epistemics history --limit 14\n  pftui analytics epistemics rivalry --json   # house vs antithesis scoreboard"
+        after_help = "Per-run epistemic health of the multi-agent intelligence system.\n\nMetrics:\n  agreement_rate         share of voices agreeing with the operator stance (0-1);\n                         > 0.85 flags echo risk\n  blind_divergence       mean |house conviction − blind conviction| across held\n                         assets; > 2.0 flags a house view far from the raw-data read\n  panel_dispersion       stddev of panel persona confidences; < 4.0 flags persona washing\n  novelty_rate           share of the run's notes that are novel\n  scenario_delta_total   sum |Δprobability| across scenarios today\n  audit_pass_rate        accuracy-audit claims_passed/claims_total\n  conviction_price_corr  max |Pearson r| between layer conviction trajectories and\n                         held-asset closes; > 0.6 flags momentum dressed as structure\n                         (standing rule 15)\n\nWorkflows:\n  pftui analytics epistemics record --date 2026-06-10 --agreement 0.7 --panel-dispersion 6.2\n  pftui analytics epistemics show --date 2026-06-10 --json\n  pftui analytics epistemics history --limit 14\n  pftui analytics epistemics rivalry --json            # house vs antithesis scoreboard\n  pftui analytics epistemics conviction-price --json   # per layer × held asset"
     )]
     Epistemics {
         #[command(subcommand)]
@@ -5339,10 +5357,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
 
-    /// Recommendation → action → outcome chain: list, score, accuracy, retroactive linking
+    /// Recommendation ledger: record, score, scoreboard, accuracy, linking
     #[command(
         name = "recommendations",
-        after_help = "Closes the loop between system-generated decision cards, the operator's\nreply, the resulting transaction, and the price action that follows.\n\nSubcommands:\n  list                List recommendations with optional filters\n  score               Compute outcome scores from price_history\n  accuracy            Hit-rate breakdown by recommendation type\n  link                Manually link a reply or transaction to a recommendation\n  relink-historical   Retroactively link existing operator_replies and transactions\n\nExamples:\n  pftui analytics recommendations list --asset BTC --json\n  pftui analytics recommendations score --all --horizon 30 --json\n  pftui analytics recommendations score --id 42 --horizon 14 --json\n  pftui analytics recommendations accuracy --type add --since 90d --json\n  pftui analytics recommendations relink-historical --json"
+        after_help = "The recommendation ledger — every system recommendation is recorded\nwith the close that priced it and scored against forward returns, so\nthe system can notice when its own advice loses money (gold post-mortem:\nadd-into-a-drawdown went unmeasured for 5 months).\n\nSubcommands:\n  record              Record one action (add/wait/hold/trim/avoid) per symbol\n  list                List recommendations with optional filters\n  score               Fill forward returns for elapsed horizons (default mode)\n  scoreboard          Per symbol × action: n, % positive, mean fwd return,\n                      plus the per-symbol WINDOW-QUALITY (ADD−WAIT) delta\n  accuracy            Legacy hit-rate breakdown by recommendation type\n  link                Manually link a reply or transaction to a recommendation\n  relink-historical   Retroactively link existing operator_replies and transactions\n\nExamples:\n  pftui analytics recommendations record --symbol GC=F --action wait \\\n    --rationale \"extension >12% over 200dma\" --json\n  pftui analytics recommendations scoreboard --symbol GC=F --json\n  pftui analytics recommendations score --json\n  pftui analytics recommendations list --symbol BTC --limit 20 --json"
     )]
     Recommendations {
         #[command(subcommand)]
@@ -5457,29 +5475,70 @@ pub enum AnalyticsAdversarySynthesisCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsRecommendationsCommand {
+    /// Record a ledger entry: one scored, timestamped action per symbol per run.
+    #[command(
+        after_help = "The recommendation ledger (gold post-mortem T2): every decision-card\naction is recorded with the close that priced it, so the system's own\nadvice becomes scoreable. entry_price is auto-filled from the latest\nprice_history close on or before --date (falling back SYM → SYM-USD;\nthe series used is stored in price_series).\n\nActions:\n  add    open the accumulation window / scale in\n  wait   named-gate wait — a first-class, scored recommendation,\n         NOT a failure to decide\n  hold   no change to the position\n  trim   reduce (exchange-held assets only — never physical metal)\n  avoid  do not initiate\n\nExamples:\n  pftui analytics recommendations record --symbol GC=F --action wait \\\n    --rationale \"extension gate: >12% above 200dma\" --source decision-architect\n  pftui analytics recommendations record --symbol BTC --action add --json"
+    )]
+    Record {
+        /// Asset symbol (e.g. GC=F, BTC)
+        #[arg(long)]
+        symbol: String,
+        /// Action: add | wait | hold | trim | avoid
+        #[arg(long)]
+        action: String,
+        /// One-line rationale for the call
+        #[arg(long)]
+        rationale: Option<String>,
+        /// Run date (YYYY-MM-DD; default today)
+        #[arg(long)]
+        date: Option<String>,
+        /// Which writer recorded it (default decision-architect)
+        #[arg(long, default_value = "decision-architect")]
+        source: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// List recommendations with optional filters.
     List {
         #[arg(long, help = "Filter by report date (YYYY-MM-DD).")]
         date: Option<String>,
         #[arg(long, help = "Filter by asset (e.g. BTC, GLD).")]
         asset: Option<String>,
-        #[arg(long = "type", help = "Filter by recommendation type (add/trim/hold/...).")]
+        #[arg(long, help = "Alias for --asset (ledger vocabulary).")]
+        symbol: Option<String>,
+        #[arg(long = "type", help = "Filter by recommendation type (add/wait/hold/trim/avoid/...).")]
         recommendation_type: Option<String>,
         #[arg(long, help = "Filter to recommendations on or after this date (YYYY-MM-DD or e.g. 30d).")]
+        since: Option<String>,
+        #[arg(long, help = "Maximum rows (newest first).")]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Score recommendations: forward returns (default) or legacy outcome scores.
+    #[command(
+        after_help = "Default (no --all/--id): fill fwd_30d_pct / fwd_90d_pct / fwd_180d_pct\nfor any priced ledger row whose horizon has elapsed — percent change from\nentry_price to the close at run_date+N. Idempotent: a scored horizon is\nnever overwritten. Runs automatically in the tail of `pftui data refresh`\n(this machine has no daemon).\n\nWith --all or --id: the legacy outcome-score pass (recommendation →\noperator action → bounded [-100,100] quality score at --horizon days).\n\nExamples:\n  pftui analytics recommendations score --json          # forward returns\n  pftui analytics recommendations score --all --horizon 30 --json"
+    )]
+    Score {
+        #[arg(long, help = "Legacy outcome scoring: score every recommendation without an outcome.")]
+        all: bool,
+        #[arg(long, help = "Legacy outcome scoring: score a single recommendation by id.")]
+        id: Option<i64>,
+        #[arg(long, default_value = "30", help = "Legacy outcome scoring: days after report_date to evaluate.")]
+        horizon: i64,
+        #[arg(long, help = "Legacy outcome scoring: restrict to recommendations on or after this date.")]
         since: Option<String>,
         #[arg(long)]
         json: bool,
     },
-    /// Compute outcome scores for recommendations against price_history.
-    Score {
-        #[arg(long, help = "Score every recommendation that doesn't yet have an outcome.")]
-        all: bool,
-        #[arg(long, help = "Score a single recommendation by id.")]
-        id: Option<i64>,
-        #[arg(long, default_value = "30", help = "Days after report_date to evaluate (14/30/60 typical).")]
-        horizon: i64,
-        #[arg(long, help = "Restrict scoring to recommendations on or after this date.")]
-        since: Option<String>,
+    /// THE ledger deliverable: per symbol × action forward-return scoreboard.
+    #[command(
+        after_help = "Per (symbol × action): n, % positive, and mean forward return at\n30/90/180 days. Plus the WINDOW-QUALITY line per symbol: mean 90d\nforward return after ADD minus after WAIT — positive means the system's\ntiming added value over just waiting; negative means its ADD calls were\nworse than its own WAIT calls (the gold failure, made measurable).\n\nDecision-architect contract: consult this scoreboard for the symbol\nBEFORE composing a decision card, and cite its verdict in the card.\n\nExamples:\n  pftui analytics recommendations scoreboard --json\n  pftui analytics recommendations scoreboard --symbol GC=F"
+    )]
+    Scoreboard {
+        /// Restrict to one symbol
+        #[arg(long)]
+        symbol: Option<String>,
         #[arg(long)]
         json: bool,
     },

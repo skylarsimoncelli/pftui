@@ -13,8 +13,9 @@ use serde::Serialize;
 use crate::db::backend::BackendConnection;
 use crate::db::recommendations::{
     accuracy_summary, find_open_for_reply, find_open_for_transaction, get, link_operator_reply,
-    link_transaction, list as list_recommendations, list_unscored, price_at, set_outcome_score,
-    AccuracyBucket, Recommendation, RecommendationOutcome,
+    link_transaction, list as list_recommendations, list_unscored, price_at, record_ledger_entry,
+    score_forward_returns, scoreboard as build_scoreboard, set_outcome_score, AccuracyBucket,
+    ForwardScoreSummary, Recommendation, RecommendationOutcome, Scoreboard,
 };
 use crate::db::transactions::list_transactions_backend;
 
@@ -45,14 +46,59 @@ fn print_json<T: Serialize>(value: &T) -> Result<()> {
     Ok(())
 }
 
+// ------------- record (ledger) -------------
+
+pub fn record_cmd(
+    backend: &BackendConnection,
+    symbol: &str,
+    action: &str,
+    rationale: Option<&str>,
+    date: Option<&str>,
+    source: &str,
+    json: bool,
+) -> Result<()> {
+    let conn = require_sqlite(backend)?;
+    let run_date = match date {
+        Some(d) => {
+            NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                .with_context(|| format!("invalid --date '{d}': expected YYYY-MM-DD"))?;
+            d.to_string()
+        }
+        None => Utc::now().date_naive().format("%Y-%m-%d").to_string(),
+    };
+    let rec = record_ledger_entry(conn, &run_date, symbol, action, rationale, source)?;
+    if json {
+        return print_json(&rec);
+    }
+    let priced = match (&rec.entry_price, &rec.price_series) {
+        (Some(price), Some(series)) => format!("@ {price} (series {series})"),
+        _ => "(no price history — recorded unpriced, will not accrue forward returns)".to_string(),
+    };
+    println!(
+        "Recorded {} {} {} on {} (id {}, source {}).",
+        rec.recommendation_type.to_uppercase(),
+        rec.asset.as_deref().unwrap_or("-"),
+        priced,
+        rec.report_date,
+        rec.id,
+        rec.source,
+    );
+    if let Some(r) = &rec.rationale_summary {
+        println!("  rationale: {r}");
+    }
+    Ok(())
+}
+
 // ------------- list -------------
 
+#[allow(clippy::too_many_arguments)]
 pub fn list_cmd(
     backend: &BackendConnection,
     date: Option<&str>,
     asset: Option<&str>,
     recommendation_type: Option<&str>,
     since: Option<&str>,
+    limit: Option<usize>,
     json: bool,
 ) -> Result<()> {
     let conn = require_sqlite(backend)?;
@@ -60,13 +106,16 @@ pub fn list_cmd(
         Some(s) => Some(parse_since(s)?),
         None => None,
     };
-    let rows = list_recommendations(
+    let mut rows = list_recommendations(
         conn,
         date,
         asset,
         recommendation_type,
         resolved_since.as_deref(),
     )?;
+    if let Some(limit) = limit {
+        rows.truncate(limit);
+    }
     if json {
         return print_json(&rows);
     }
@@ -75,13 +124,32 @@ pub fn list_cmd(
         return Ok(());
     }
     for r in &rows {
+        let priced = match (&r.entry_price, &r.price_series) {
+            (Some(p), Some(s)) => format!(" entry={p} ({s})"),
+            _ => String::new(),
+        };
+        let fwd = [
+            ("30d", r.fwd_30d_pct),
+            ("90d", r.fwd_90d_pct),
+            ("180d", r.fwd_180d_pct),
+        ]
+        .iter()
+        .filter_map(|(label, v)| v.map(|v| format!("{label}={v:+.1}%")))
+        .collect::<Vec<_>>()
+        .join(" ");
         println!(
-            "{} [{}] {} {} urgency={} {}",
+            "{} [{}] {} {} src={}{}{} {}",
             r.id,
             r.report_date,
             r.asset.as_deref().unwrap_or("-"),
             r.recommendation_type,
-            r.urgency,
+            r.source,
+            priced,
+            if fwd.is_empty() {
+                String::new()
+            } else {
+                format!(" fwd[{fwd}]")
+            },
             r.rationale_summary.as_deref().unwrap_or(""),
         );
     }
@@ -112,8 +180,24 @@ pub fn score_cmd(
     since: Option<&str>,
     json: bool,
 ) -> Result<()> {
+    // Default mode (no --all/--id): the forward-return scorer — fill
+    // fwd_{30,90,180}d_pct for any priced ledger row whose horizon has
+    // elapsed. Idempotent; this is the pass `data refresh` runs in its tail.
     if !all && id.is_none() {
-        return Err(anyhow!("score requires --all or --id <N>"));
+        let conn = require_sqlite(backend)?;
+        let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        let summary = score_forward_returns(conn, &today)?;
+        if json {
+            return print_json(&summary);
+        }
+        println!(
+            "Forward-return scoring: {} candidate row(s), {} horizon cell(s) filled across {} row(s).",
+            summary.candidates, summary.horizons_filled, summary.rows_updated
+        );
+        if summary.candidates > 0 && summary.horizons_filled == 0 {
+            println!("  (horizons not yet elapsed or price history missing — accruing)");
+        }
+        return Ok(());
     }
     let conn = require_sqlite(backend)?;
     let resolved_since = match since {
@@ -196,6 +280,109 @@ pub fn score_cmd(
                 .map(|s| format!("{s:.2}"))
                 .unwrap_or_else(|| "n/a".to_string()),
         );
+    }
+    Ok(())
+}
+
+/// Refresh-tail hook: run the forward-return scorer best-effort. Returns a
+/// zeroed summary on non-SQLite backends (the ledger is local-only substrate,
+/// mirroring the prediction auto-score precedent).
+pub fn auto_score_for_refresh(backend: &BackendConnection) -> Result<ForwardScoreSummary> {
+    let Some(conn) = backend.sqlite_native() else {
+        return Ok(ForwardScoreSummary::default());
+    };
+    let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+    score_forward_returns(conn, &today)
+}
+
+// ------------- scoreboard -------------
+
+fn fmt_cell(cell: &Option<crate::db::recommendations::ScoreboardCell>) -> String {
+    match cell {
+        Some(c) => format!("n={} {:>3.0}%+ {:+.1}%", c.n, c.pct_positive, c.mean_pct),
+        None => "—".to_string(),
+    }
+}
+
+pub fn scoreboard_cmd(backend: &BackendConnection, symbol: Option<&str>, json: bool) -> Result<()> {
+    let conn = require_sqlite(backend)?;
+    let board: Scoreboard = build_scoreboard(conn, symbol)?;
+    if json {
+        return print_json(&board);
+    }
+
+    if board.rows.is_empty() {
+        println!(
+            "No ledger recommendations recorded yet{}. Record with `pftui analytics recommendations record`.",
+            symbol.map(|s| format!(" for {s}")).unwrap_or_default()
+        );
+        return Ok(());
+    }
+
+    let any_scored = board
+        .rows
+        .iter()
+        .any(|r| r.h30.is_some() || r.h90.is_some() || r.h180.is_some());
+    if !any_scored {
+        println!(
+            "scoreboard accruing — {} unscored recommendation(s), no forward horizon has both elapsed and priced yet.",
+            board.unscored
+        );
+        println!("\nRecorded so far:");
+        for r in &board.rows {
+            println!("  {:<8} {:<6} n={}", r.symbol, r.action, r.n_total);
+        }
+        return Ok(());
+    }
+
+    println!("Recommendation scoreboard — forward returns vs entry close\n");
+    println!(
+        "{:<8} {:<6} {:>4}  {:<20} {:<20} {:<20}",
+        "symbol", "action", "n", "30d (n, %pos, mean)", "90d (n, %pos, mean)", "180d (n, %pos, mean)"
+    );
+    println!("{}", "-".repeat(86));
+    for r in &board.rows {
+        println!(
+            "{:<8} {:<6} {:>4}  {:<20} {:<20} {:<20}",
+            r.symbol,
+            r.action,
+            r.n_total,
+            fmt_cell(&r.h30),
+            fmt_cell(&r.h90),
+            fmt_cell(&r.h180),
+        );
+    }
+
+    if !board.window_quality.is_empty() {
+        println!("\nWindow quality (mean 90d fwd return after ADD − after WAIT):");
+        for wq in &board.window_quality {
+            match wq.delta_pct {
+                Some(delta) => {
+                    let verdict = if delta >= 0.0 {
+                        "ADD timing added value over waiting"
+                    } else {
+                        "ADD calls were WORSE than the system's own WAIT calls"
+                    };
+                    println!(
+                        "  {:<8} Δ = {:+.1}pp (add n={} mean {:+.1}% vs wait n={} mean {:+.1}%) — {}",
+                        wq.symbol,
+                        delta,
+                        wq.add_n,
+                        wq.add_mean_90d_pct.unwrap_or(0.0),
+                        wq.wait_n,
+                        wq.wait_mean_90d_pct.unwrap_or(0.0),
+                        verdict,
+                    );
+                }
+                None => println!(
+                    "  {:<8} accruing — needs a scored 90d return on both ADD (have {}) and WAIT (have {})",
+                    wq.symbol, wq.add_n, wq.wait_n
+                ),
+            }
+        }
+    }
+    if board.unscored > 0 {
+        println!("\n{} recommendation(s) still accruing (no scored horizon yet).", board.unscored);
     }
     Ok(())
 }
