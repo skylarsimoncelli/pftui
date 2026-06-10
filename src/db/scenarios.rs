@@ -84,6 +84,8 @@ type ScenarioExtRow = (
     String,         // phase
     Option<String>, // resolved_at
     Option<String>, // resolution_notes
+    Option<f64>,    // base_rate
+    Option<String>, // base_rate_reference
 );
 type ScenarioSignalRow = (
     i64,
@@ -111,6 +113,12 @@ pub struct Scenario {
     pub phase: String,
     pub resolved_at: Option<String>,
     pub resolution_notes: Option<String>,
+    /// Reference-class base rate for this scenario (percent), if set.
+    #[serde(default)]
+    pub base_rate: Option<f64>,
+    /// Description of the reference class the base rate comes from.
+    #[serde(default)]
+    pub base_rate_reference: Option<String>,
 }
 
 fn default_phase() -> String {
@@ -214,6 +222,8 @@ impl Scenario {
             phase: row.get(10).unwrap_or_else(|_| "hypothesis".to_string()),
             resolved_at: row.get(11).unwrap_or(None),
             resolution_notes: row.get(12).unwrap_or(None),
+            base_rate: row.get(13).unwrap_or(None),
+            base_rate_reference: row.get(14).unwrap_or(None),
         })
     }
 }
@@ -466,14 +476,14 @@ pub fn classify_overfill(modeled_sum: f64) -> OverfillState {
 pub fn list_scenarios(conn: &Connection, status_filter: Option<&str>) -> Result<Vec<Scenario>> {
     let query = if let Some(status) = status_filter {
         format!(
-            "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at, updated_at, phase, resolved_at, resolution_notes
+            "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at, updated_at, phase, resolved_at, resolution_notes, base_rate, base_rate_reference
              FROM scenarios
              WHERE status = '{}'
              ORDER BY probability DESC",
             status
         )
     } else {
-        "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at, updated_at, phase, resolved_at, resolution_notes
+        "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at, updated_at, phase, resolved_at, resolution_notes, base_rate, base_rate_reference
          FROM scenarios
          ORDER BY probability DESC"
             .to_string()
@@ -494,7 +504,7 @@ pub fn list_scenarios(conn: &Connection, status_filter: Option<&str>) -> Result<
 /// appear in operator-facing phase queries.
 pub fn list_scenarios_by_phase(conn: &Connection, phase: &str) -> Result<Vec<Scenario>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at, updated_at, phase, resolved_at, resolution_notes
+        "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at, updated_at, phase, resolved_at, resolution_notes, base_rate, base_rate_reference
          FROM scenarios
          WHERE phase = ?1 AND status != ?2
          ORDER BY probability DESC",
@@ -509,7 +519,7 @@ pub fn list_scenarios_by_phase(conn: &Connection, phase: &str) -> Result<Vec<Sce
 
 pub fn get_scenario_by_name(conn: &Connection, name: &str) -> Result<Option<Scenario>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at, updated_at, phase, resolved_at, resolution_notes
+        "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at, updated_at, phase, resolved_at, resolution_notes, base_rate, base_rate_reference
          FROM scenarios
          WHERE name = ?",
     )?;
@@ -980,6 +990,248 @@ pub fn update_scenario_probability(
     Ok(())
 }
 
+// --- Probability ledger discipline (epistemics R4) ---
+
+/// Maximum cumulative |Δprobability| (percentage points) a single scenario may
+/// accrue across all updates in one day without a `--hard-print` bypass.
+pub const SCENARIO_DAILY_DELTA_CAP_PP: f64 = 5.0;
+
+/// Default proposer recorded when `--proposer` is not supplied.
+pub const DEFAULT_SCENARIO_PROPOSER: &str = "synthesis";
+
+/// One probability-update ledger entry (a `scenario_updates` row that carries
+/// the old→new probability move).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScenarioProbabilityLedgerEntry {
+    pub proposer: Option<String>,
+    pub evidence: Option<String>,
+    pub old_probability: Option<f64>,
+    pub new_probability: Option<f64>,
+    pub hard_print_event: Option<String>,
+    pub created_at: String,
+}
+
+impl ScenarioProbabilityLedgerEntry {
+    fn delta(&self) -> f64 {
+        match (self.old_probability, self.new_probability) {
+            (Some(old), Some(new)) => new - old,
+            _ => 0.0,
+        }
+    }
+}
+
+/// Render a day's probability ledger for inclusion in guard error messages.
+fn format_probability_ledger(entries: &[ScenarioProbabilityLedgerEntry]) -> String {
+    entries
+        .iter()
+        .map(|e| {
+            let delta = e.delta();
+            let sign = if delta >= 0.0 { "+" } else { "" };
+            format!(
+                "  {}  {}  {:.1}% → {:.1}% ({}{:.1}pp){}",
+                e.created_at.get(..16).unwrap_or(&e.created_at),
+                e.proposer.as_deref().unwrap_or("?"),
+                e.old_probability.unwrap_or(0.0),
+                e.new_probability.unwrap_or(0.0),
+                sign,
+                delta,
+                e.hard_print_event
+                    .as_deref()
+                    .map(|h| format!("  [hard-print: {}]", h))
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Pure guard checks for a pending probability update against the same-day
+/// ledger. Enforces:
+///   1. Same-day conflict guard: a second update by a DIFFERENT proposer on
+///      the same day requires `--override-conflict`.
+///   2. Daily delta cap: today's cumulative |Δ| (including the pending move)
+///      must not exceed `SCENARIO_DAILY_DELTA_CAP_PP` — unless a hard data
+///      print is cited via `--hard-print`.
+pub fn check_probability_ledger_guards(
+    scenario_name: &str,
+    today_entries: &[ScenarioProbabilityLedgerEntry],
+    old_prob: f64,
+    new_prob: f64,
+    proposer: &str,
+    hard_print: Option<&str>,
+    override_conflict: bool,
+) -> Result<()> {
+    // Conflict guard first: silent same-day cross-proposer overwrites were the
+    // original failure mode (last-writer-wins between analyst layers).
+    let mut other_proposers: Vec<&str> = today_entries
+        .iter()
+        .filter_map(|e| e.proposer.as_deref())
+        .filter(|p| !p.eq_ignore_ascii_case(proposer))
+        .collect();
+    other_proposers.dedup();
+    if !other_proposers.is_empty() && !override_conflict {
+        bail!(
+            "same-day conflict: '{}' was already updated today by {} — a second update by a different proposer ('{}') requires --override-conflict.\nToday's ledger:\n{}\nIf you genuinely have newer information, re-run with --override-conflict and cite it in --evidence.",
+            scenario_name,
+            other_proposers.join(", "),
+            proposer,
+            format_probability_ledger(today_entries),
+        );
+    }
+
+    let prior_delta: f64 = today_entries.iter().map(|e| e.delta().abs()).sum();
+    let pending_delta = (new_prob - old_prob).abs();
+    let total = prior_delta + pending_delta;
+    if total > SCENARIO_DAILY_DELTA_CAP_PP + NORMALIZED_EPSILON && hard_print.is_none() {
+        let ledger = if today_entries.is_empty() {
+            "  (no prior updates today — this single move exceeds the cap)".to_string()
+        } else {
+            format_probability_ledger(today_entries)
+        };
+        bail!(
+            "daily delta cap: updating '{}' {:.1}% → {:.1}% would put today's cumulative |Δ| at {:.1}pp (cap {:.1}pp).\nToday's ledger:\n{}\nProbability beliefs should not swing this much without hard data. If a hard print justifies it, re-run with --hard-print \"<event>\" (e.g. --hard-print \"CPI 2026-06-10 print\").",
+            scenario_name,
+            old_prob,
+            new_prob,
+            total,
+            SCENARIO_DAILY_DELTA_CAP_PP,
+            ledger,
+        );
+    }
+
+    Ok(())
+}
+
+/// SQLite: load the probability-update ledger entries for one scenario on one
+/// UTC day (`YYYY-MM-DD`).
+fn probability_ledger_for_day(
+    conn: &Connection,
+    scenario_id: i64,
+    day: &str,
+) -> Result<Vec<ScenarioProbabilityLedgerEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT proposer, evidence, old_probability, new_probability, hard_print_event, created_at
+         FROM scenario_updates
+         WHERE scenario_id = ?1
+           AND date(created_at) = ?2
+           AND old_probability IS NOT NULL
+           AND new_probability IS NOT NULL
+         ORDER BY created_at ASC, id ASC",
+    )?;
+    let rows = stmt.query_map(params![scenario_id, day], |row| {
+        Ok(ScenarioProbabilityLedgerEntry {
+            proposer: row.get(0)?,
+            evidence: row.get(1)?,
+            old_probability: row.get(2)?,
+            new_probability: row.get(3)?,
+            hard_print_event: row.get(4)?,
+            created_at: row.get(5)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// SQLite: total |Δprobability| across ALL scenarios' ledger entries on one
+/// UTC day. Feeds `run_health.scenario_delta_total`.
+pub fn scenario_delta_total_for_day(conn: &Connection, day: &str) -> Result<f64> {
+    let total: f64 = conn.query_row(
+        "SELECT COALESCE(SUM(ABS(new_probability - old_probability)), 0.0)
+         FROM scenario_updates
+         WHERE date(created_at) = ?1
+           AND old_probability IS NOT NULL
+           AND new_probability IS NOT NULL",
+        params![day],
+        |row| row.get(0),
+    )?;
+    Ok(total)
+}
+
+/// Guarded probability update (epistemics R4): enforces evidence-cited,
+/// delta-capped, conflict-checked probability moves and records every update
+/// in the `scenario_updates` ledger with proposer + evidence.
+#[allow(clippy::too_many_arguments)]
+pub fn guarded_update_scenario_probability(
+    conn: &Connection,
+    id: i64,
+    probability: f64,
+    driver: Option<&str>,
+    proposer: &str,
+    evidence: &str,
+    hard_print: Option<&str>,
+    override_conflict: bool,
+) -> Result<()> {
+    let old_prob: f64 = conn.query_row(
+        "SELECT probability FROM scenarios WHERE id = ?",
+        params![id],
+        |row| row.get(0),
+    )?;
+    let scenario_name: String = conn.query_row(
+        "SELECT name FROM scenarios WHERE id = ?",
+        params![id],
+        |row| row.get(0),
+    )?;
+
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let today_entries = probability_ledger_for_day(conn, id, &today)?;
+    check_probability_ledger_guards(
+        &scenario_name,
+        &today_entries,
+        old_prob,
+        probability,
+        proposer,
+        hard_print,
+        override_conflict,
+    )?;
+
+    update_scenario_probability(conn, id, probability, driver)?;
+
+    let delta = probability - old_prob;
+    let sign = if delta >= 0.0 { "+" } else { "" };
+    let headline = format!(
+        "probability {:.1}% → {:.1}% ({}{:.1}pp)",
+        old_prob, probability, sign, delta
+    );
+    conn.execute(
+        "INSERT INTO scenario_updates
+            (scenario_id, headline, detail, severity, source_agent,
+             proposer, evidence, old_probability, new_probability, hard_print_event)
+         VALUES (?, ?, ?, 'normal', ?, ?, ?, ?, ?, ?)",
+        params![
+            id,
+            headline,
+            evidence,
+            proposer,
+            proposer,
+            evidence,
+            old_prob,
+            probability,
+            hard_print,
+        ],
+    )?;
+    Ok(())
+}
+
+/// SQLite: set (or update) a scenario's reference-class base rate.
+pub fn set_base_rate(conn: &Connection, id: i64, rate: f64, reference: &str) -> Result<()> {
+    if !rate.is_finite() || !(0.0..=100.0).contains(&rate) {
+        bail!("base rate must be a percentage in 0..=100, got {}", rate);
+    }
+    let affected = conn.execute(
+        "UPDATE scenarios SET base_rate = ?1, base_rate_reference = ?2,
+                updated_at = datetime('now')
+         WHERE id = ?3",
+        params![rate, reference, id],
+    )?;
+    if affected == 0 {
+        bail!("scenario id {} not found", id);
+    }
+    Ok(())
+}
+
 pub fn update_scenario(
     conn: &Connection,
     id: i64,
@@ -1363,16 +1615,59 @@ pub fn get_scenario_by_name_backend(
     )
 }
 
-pub fn update_scenario_probability_backend(
+/// Guarded probability update (epistemics R4): evidence-cited, delta-capped,
+/// conflict-checked. Records the move in the `scenario_updates` ledger.
+#[allow(clippy::too_many_arguments)]
+pub fn guarded_update_scenario_probability_backend(
     backend: &BackendConnection,
     id: i64,
     probability: f64,
     driver: Option<&str>,
+    proposer: &str,
+    evidence: &str,
+    hard_print: Option<&str>,
+    override_conflict: bool,
 ) -> Result<()> {
     query::dispatch(
         backend,
-        |conn| update_scenario_probability(conn, id, probability, driver),
-        |pool| update_scenario_probability_postgres(pool, id, probability, driver),
+        |conn| {
+            guarded_update_scenario_probability(
+                conn,
+                id,
+                probability,
+                driver,
+                proposer,
+                evidence,
+                hard_print,
+                override_conflict,
+            )
+        },
+        |pool| {
+            guarded_update_scenario_probability_postgres(
+                pool,
+                id,
+                probability,
+                driver,
+                proposer,
+                evidence,
+                hard_print,
+                override_conflict,
+            )
+        },
+    )
+}
+
+/// Set (or update) a scenario's reference-class base rate.
+pub fn set_base_rate_backend(
+    backend: &BackendConnection,
+    id: i64,
+    rate: f64,
+    reference: &str,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| set_base_rate(conn, id, rate, reference),
+        |pool| set_base_rate_postgres(pool, id, rate, reference),
     )
 }
 
@@ -1752,6 +2047,12 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
+        sqlx::query("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS base_rate DOUBLE PRECISION")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS base_rate_reference TEXT")
+            .execute(pool)
+            .await?;
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS scenario_signals (
                 id BIGSERIAL PRIMARY KEY,
@@ -1830,6 +2131,8 @@ fn scenario_from_ext_row(r: ScenarioExtRow) -> Scenario {
         phase: r.10,
         resolved_at: r.11,
         resolution_notes: r.12,
+        base_rate: r.13,
+        base_rate_reference: r.14,
     }
 }
 
@@ -1838,7 +2141,7 @@ fn list_scenarios_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result
     let rows: Vec<ScenarioExtRow> = if let Some(status) = status_filter {
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
-                    "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text, phase, resolved_at::text, resolution_notes
+                    "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text, phase, resolved_at::text, resolution_notes, base_rate, base_rate_reference
                      FROM scenarios
                      WHERE status = $1
                      ORDER BY probability DESC",
@@ -1850,7 +2153,7 @@ fn list_scenarios_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result
     } else {
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
-                    "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text, phase, resolved_at::text, resolution_notes
+                    "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text, phase, resolved_at::text, resolution_notes, base_rate, base_rate_reference
                      FROM scenarios
                      ORDER BY probability DESC",
                 )
@@ -1866,7 +2169,7 @@ fn get_scenario_by_name_postgres(pool: &PgPool, name: &str) -> Result<Option<Sce
     ensure_tables_postgres(pool)?;
     let row: Option<ScenarioExtRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-                "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text, phase, resolved_at::text, resolution_notes
+                "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text, phase, resolved_at::text, resolution_notes, base_rate, base_rate_reference
                  FROM scenarios
                  WHERE name = $1",
             )
@@ -1962,6 +2265,142 @@ fn update_scenario_probability_postgres(
         })?;
     }
 
+    Ok(())
+}
+
+/// Postgres: load the probability-update ledger entries for one scenario on
+/// one UTC day.
+fn probability_ledger_for_day_postgres(
+    pool: &PgPool,
+    scenario_id: i64,
+    day: &str,
+) -> Result<Vec<ScenarioProbabilityLedgerEntry>> {
+    type Row = (
+        Option<String>,
+        Option<String>,
+        Option<f64>,
+        Option<f64>,
+        Option<String>,
+        String,
+    );
+    let rows: Vec<Row> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
+            "SELECT proposer, evidence, old_probability, new_probability, hard_print_event, created_at::text
+             FROM scenario_updates
+             WHERE scenario_id = $1
+               AND created_at::date = $2::date
+               AND old_probability IS NOT NULL
+               AND new_probability IS NOT NULL
+             ORDER BY created_at ASC, id ASC",
+        )
+        .bind(scenario_id)
+        .bind(day)
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(proposer, evidence, old_probability, new_probability, hard_print_event, created_at)| {
+                ScenarioProbabilityLedgerEntry {
+                    proposer,
+                    evidence,
+                    old_probability,
+                    new_probability,
+                    hard_print_event,
+                    created_at,
+                }
+            },
+        )
+        .collect())
+}
+
+/// Postgres twin of `guarded_update_scenario_probability`.
+#[allow(clippy::too_many_arguments)]
+fn guarded_update_scenario_probability_postgres(
+    pool: &PgPool,
+    id: i64,
+    probability: f64,
+    driver: Option<&str>,
+    proposer: &str,
+    evidence: &str,
+    hard_print: Option<&str>,
+    override_conflict: bool,
+) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let (old_prob, scenario_name): (f64, String) = crate::db::pg_runtime::block_on(async {
+        let row: (f64, String) =
+            sqlx::query_as("SELECT probability, name FROM scenarios WHERE id = $1")
+                .bind(id)
+                .fetch_one(pool)
+                .await?;
+        Ok::<(f64, String), sqlx::Error>(row)
+    })?;
+
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let today_entries = probability_ledger_for_day_postgres(pool, id, &today)?;
+    check_probability_ledger_guards(
+        &scenario_name,
+        &today_entries,
+        old_prob,
+        probability,
+        proposer,
+        hard_print,
+        override_conflict,
+    )?;
+
+    update_scenario_probability_postgres(pool, id, probability, driver)?;
+
+    let delta = probability - old_prob;
+    let sign = if delta >= 0.0 { "+" } else { "" };
+    let headline = format!(
+        "probability {:.1}% → {:.1}% ({}{:.1}pp)",
+        old_prob, probability, sign, delta
+    );
+    crate::db::pg_runtime::block_on(async {
+        sqlx::query(
+            "INSERT INTO scenario_updates
+                (scenario_id, headline, detail, severity, source_agent,
+                 proposer, evidence, old_probability, new_probability, hard_print_event)
+             VALUES ($1, $2, $3, 'normal', $4, $5, $6, $7, $8, $9)",
+        )
+        .bind(id)
+        .bind(&headline)
+        .bind(evidence)
+        .bind(proposer)
+        .bind(proposer)
+        .bind(evidence)
+        .bind(old_prob)
+        .bind(probability)
+        .bind(hard_print)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+/// Postgres: set (or update) a scenario's reference-class base rate.
+fn set_base_rate_postgres(pool: &PgPool, id: i64, rate: f64, reference: &str) -> Result<()> {
+    if !rate.is_finite() || !(0.0..=100.0).contains(&rate) {
+        bail!("base rate must be a percentage in 0..=100, got {}", rate);
+    }
+    ensure_tables_postgres(pool)?;
+    let affected = crate::db::pg_runtime::block_on(async {
+        let result = sqlx::query(
+            "UPDATE scenarios SET base_rate = $1, base_rate_reference = $2, updated_at = NOW()
+             WHERE id = $3",
+        )
+        .bind(rate)
+        .bind(reference)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok::<u64, sqlx::Error>(result.rows_affected())
+    })?;
+    if affected == 0 {
+        bail!("scenario id {} not found", id);
+    }
     Ok(())
 }
 
@@ -2121,7 +2560,7 @@ fn list_scenarios_by_phase_postgres(pool: &PgPool, phase: &str) -> Result<Vec<Sc
     ensure_tables_postgres(pool)?;
     let rows: Vec<ScenarioExtRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text, phase, resolved_at::text, resolution_notes
+            "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text, phase, resolved_at::text, resolution_notes, base_rate, base_rate_reference
              FROM scenarios WHERE phase = $1 ORDER BY probability DESC",
         )
         .bind(phase)

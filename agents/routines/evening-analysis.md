@@ -84,7 +84,8 @@ Use the calibration output only in the footer or FEEDBACK.csv, not the market-in
 
 Update scenarios and convictions based on today's evidence:
 ```bash
-pftui journal scenario update "<name>" --probability <new> --notes "[evidence]: [why changed]: [reversal condition]"
+pftui journal scenario update "<name>" --probability <new> --proposer analyst-evening \
+  --evidence "[the data that moved it]" --notes "[why changed]: [reversal condition]"
 pftui analytics conviction set <SYMBOL> --score <n> --notes "Evening $(date +%Y-%m-%d): [reason]."
 ```
 

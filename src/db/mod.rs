@@ -86,6 +86,7 @@ pub mod regime_snapshots;
 pub mod risk_factor_mappings;
 pub mod research_questions;
 pub mod rss_feed_health;
+pub mod run_health;
 pub mod scan_queries;
 pub mod scenario_contract_mappings;
 pub mod scenarios;

@@ -599,34 +599,42 @@ fn run_agent_journal(
                 description,
                 impact,
                 triggers,
-                precedent,
+                precedent: _,
                 status,
                 driver,
                 notes,
+                evidence,
+                proposer,
+                hard_print,
+                override_conflict,
                 json,
             } => {
                 let merged_notes = driver.or(notes).or(note_pos);
-                commands::scenario::run(
+                commands::scenario::update(
                     backend,
-                    "update",
                     value.as_deref(),
                     id,
-                    None,
                     probability,
                     description.as_deref(),
                     impact.as_deref(),
                     triggers.as_deref(),
-                    precedent.as_deref(),
                     status.as_deref(),
                     merged_notes.as_deref(),
-                    merged_notes.as_deref(),
-                    None,
-                    None,
-                    None,
-                    None,
+                    commands::scenario::UpdateGuardOpts {
+                        proposer: proposer.as_deref(),
+                        evidence: evidence.as_deref(),
+                        hard_print: hard_print.as_deref(),
+                        override_conflict,
+                    },
                     json,
                 )
             }
+            cli::JournalScenarioCommand::SetBaseRate {
+                value,
+                rate,
+                reference,
+                json,
+            } => commands::scenario::set_base_rate(backend, &value, rate, &reference, json),
             cli::JournalScenarioCommand::Remove { value, json } => commands::scenario::run(
                 backend,
                 "remove",
@@ -4744,34 +4752,42 @@ fn run_cli(cli: Cli) -> Result<()> {
                     description,
                     impact,
                     triggers,
-                    precedent,
+                    precedent: _,
                     status,
                     driver,
                     notes,
+                    evidence,
+                    proposer,
+                    hard_print,
+                    override_conflict,
                     json,
                 } => {
                     let merged_notes = driver.or(notes).or(note_pos);
-                    commands::scenario::run(
+                    commands::scenario::update(
                         &backend,
-                        "update",
                         Some(&value),
-                        None,
                         None,
                         probability,
                         description.as_deref(),
                         impact.as_deref(),
                         triggers.as_deref(),
-                        precedent.as_deref(),
                         status.as_deref(),
                         merged_notes.as_deref(),
-                        merged_notes.as_deref(),
-                        None,
-                        None,
-                        None,
-                        None,
+                        commands::scenario::UpdateGuardOpts {
+                            proposer: proposer.as_deref(),
+                            evidence: evidence.as_deref(),
+                            hard_print: hard_print.as_deref(),
+                            override_conflict,
+                        },
                         json,
                     )
                 }
+                cli::AnalyticsScenarioCommand::SetBaseRate {
+                    value,
+                    rate,
+                    reference,
+                    json,
+                } => commands::scenario::set_base_rate(&backend, &value, rate, &reference, json),
                 cli::AnalyticsScenarioCommand::Remove { value, json } => commands::scenario::run(
                     &backend,
                     "remove",
@@ -4944,6 +4960,43 @@ fn run_cli(cli: Cli) -> Result<()> {
                         days.map(|d| d as usize),
                         json,
                     )
+                }
+            },
+            cli::AnalyticsCommand::Epistemics { command } => match command {
+                cli::AnalyticsEpistemicsCommand::Record {
+                    date,
+                    agreement,
+                    blind_divergence,
+                    panel_dispersion,
+                    novelty,
+                    fallback_warnings,
+                    scenario_delta_total,
+                    audit_pass_rate,
+                    agents,
+                    notes,
+                    json,
+                } => commands::epistemics::record(
+                    &backend,
+                    &date,
+                    agreement,
+                    blind_divergence,
+                    panel_dispersion,
+                    novelty,
+                    fallback_warnings,
+                    scenario_delta_total,
+                    audit_pass_rate,
+                    agents,
+                    notes.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsEpistemicsCommand::Show { date, json } => {
+                    commands::epistemics::show(&backend, date.as_deref(), json)
+                }
+                cli::AnalyticsEpistemicsCommand::History { limit, json } => {
+                    commands::epistemics::history(&backend, limit, json)
+                }
+                cli::AnalyticsEpistemicsCommand::Rivalry { json } => {
+                    commands::epistemics::rivalry(&backend, json)
                 }
             },
             cli::AnalyticsCommand::Conviction { command } => match command {

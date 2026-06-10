@@ -172,7 +172,8 @@ For each scenario:
 6. What would reverse this trend?
 
 ```bash
-pftui journal scenario update "<name>" --probability <new> --notes "[Evidence]: [Analytical chain]: [Reversal condition]"
+pftui journal scenario update "<name>" --probability <new> --proposer analyst-medium \
+  --evidence "[The data that moved it]" --notes "[Analytical chain]: [Reversal condition]"
 ```
 
 When a scenario update connects to an active situation, log the development:

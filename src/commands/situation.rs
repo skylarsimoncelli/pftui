@@ -1661,6 +1661,8 @@ mod tests {
             phase: "active".to_string(),
             resolved_at: None,
             resolution_notes: None,
+            base_rate: None,
+            base_rate_reference: None,
         };
         assert_eq!(classify_scenario_direction(&bull), 1.0);
 
@@ -1678,6 +1680,8 @@ mod tests {
             phase: "active".to_string(),
             resolved_at: None,
             resolution_notes: None,
+            base_rate: None,
+            base_rate_reference: None,
         };
         assert_eq!(classify_scenario_direction(&bear), -1.0);
     }

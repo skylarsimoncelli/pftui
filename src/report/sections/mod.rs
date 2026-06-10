@@ -6,6 +6,7 @@ pub mod private_conviction_trajectory;
 pub mod private_cross_layer_signals;
 pub mod private_parallels;
 pub mod private_decisions_pending;
+pub mod private_epistemic_health;
 pub mod private_investor_panel;
 pub mod private_closing;
 pub mod private_external_ta;

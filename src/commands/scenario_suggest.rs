@@ -633,6 +633,8 @@ mod tests {
             phase: "hypothesis".to_string(),
             resolved_at: None,
             resolution_notes: None,
+            base_rate: None,
+            base_rate_reference: None,
         };
 
         let signal_summary = compute_signal_summary(&[]);
@@ -661,6 +663,8 @@ mod tests {
             phase: "hypothesis".to_string(),
             resolved_at: None,
             resolution_notes: None,
+            base_rate: None,
+            base_rate_reference: None,
         };
 
         let signals = vec![
@@ -719,6 +723,8 @@ mod tests {
             phase: "hypothesis".to_string(),
             resolved_at: None,
             resolution_notes: None,
+            base_rate: None,
+            base_rate_reference: None,
         };
 
         let signals = vec![
@@ -777,6 +783,8 @@ mod tests {
             phase: "hypothesis".to_string(),
             resolved_at: None,
             resolution_notes: None,
+            base_rate: None,
+            base_rate_reference: None,
         };
 
         let signals = vec![scenarios::ScenarioSignal {
@@ -813,6 +821,8 @@ mod tests {
             phase: "hypothesis".to_string(),
             resolved_at: None,
             resolution_notes: None,
+            base_rate: None,
+            base_rate_reference: None,
         };
 
         let signals = vec![

@@ -36,6 +36,7 @@ pub mod drift;
 pub mod drawdown;
 pub mod economy;
 pub mod eod;
+pub mod epistemics;
 pub mod etf_flows;
 pub mod evening_brief;
 pub mod export;

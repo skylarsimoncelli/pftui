@@ -1819,6 +1819,86 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     // after one pass no row matches either predicate.
     normalize_analyst_view_conviction_signs(conn)?;
 
+    // Migration (epistemics R4): scenario base rates. Additive — idempotent
+    // via pragma_table_info check.
+    for (column, ddl) in &[
+        ("base_rate", "ALTER TABLE scenarios ADD COLUMN base_rate REAL"),
+        (
+            "base_rate_reference",
+            "ALTER TABLE scenarios ADD COLUMN base_rate_reference TEXT",
+        ),
+    ] {
+        let exists: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('scenarios') WHERE name = ?1")?
+            .query_row([column], |row| row.get::<_, i64>(0))
+            .unwrap_or(0)
+            > 0;
+        if !exists {
+            conn.execute_batch(ddl)?;
+        }
+    }
+
+    // Migration (epistemics R4): scenario probability ledger columns on
+    // scenario_updates. Every probability update is recorded here with the
+    // proposing layer, the evidence cited, the old→new probability move, and
+    // (when the daily delta cap was bypassed) the hard data print that
+    // justified it. Additive — idempotent via pragma_table_info check.
+    for (column, ddl) in &[
+        (
+            "proposer",
+            "ALTER TABLE scenario_updates ADD COLUMN proposer TEXT",
+        ),
+        (
+            "evidence",
+            "ALTER TABLE scenario_updates ADD COLUMN evidence TEXT",
+        ),
+        (
+            "old_probability",
+            "ALTER TABLE scenario_updates ADD COLUMN old_probability REAL",
+        ),
+        (
+            "new_probability",
+            "ALTER TABLE scenario_updates ADD COLUMN new_probability REAL",
+        ),
+        (
+            "hard_print_event",
+            "ALTER TABLE scenario_updates ADD COLUMN hard_print_event TEXT",
+        ),
+    ] {
+        let exists: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM pragma_table_info('scenario_updates') WHERE name = ?1",
+            )?
+            .query_row([column], |row| row.get::<_, i64>(0))
+            .unwrap_or(0)
+            > 0;
+        if !exists {
+            conn.execute_batch(ddl)?;
+        }
+    }
+
+    // Migration (epistemics R4): run_health — one row per report run with
+    // the epistemic-health instrumentation (echo risk, blind divergence,
+    // panel dispersion, novelty, fallbacks, scenario churn, audit pass rate).
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS run_health (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_date TEXT NOT NULL,
+            agreement_rate REAL,
+            blind_divergence REAL,
+            panel_dispersion REAL,
+            novelty_rate REAL,
+            fallback_warnings INTEGER,
+            scenario_delta_total REAL,
+            audit_pass_rate REAL,
+            agents_spawned INTEGER,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_run_health_run_date
+            ON run_health(run_date);",
+    )?;
+
     Ok(())
 }
 

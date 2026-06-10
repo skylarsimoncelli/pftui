@@ -910,6 +910,14 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
 
+        // Epistemics R4: scenario base rates
+        sqlx::query("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS base_rate DOUBLE PRECISION")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS base_rate_reference TEXT")
+            .execute(pool)
+            .await?;
+
         // F53: Situation Engine — new tables
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS scenario_branches (
@@ -1015,6 +1023,51 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_updates_created ON scenario_updates(created_at DESC)")
             .execute(pool)
             .await?;
+        // Epistemics R4: scenario probability ledger columns
+        sqlx::query("ALTER TABLE scenario_updates ADD COLUMN IF NOT EXISTS proposer TEXT")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE scenario_updates ADD COLUMN IF NOT EXISTS evidence TEXT")
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "ALTER TABLE scenario_updates ADD COLUMN IF NOT EXISTS old_probability DOUBLE PRECISION",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE scenario_updates ADD COLUMN IF NOT EXISTS new_probability DOUBLE PRECISION",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("ALTER TABLE scenario_updates ADD COLUMN IF NOT EXISTS hard_print_event TEXT")
+            .execute(pool)
+            .await?;
+
+        // Epistemics R4: run_health instrumentation table
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS run_health (
+                id BIGSERIAL PRIMARY KEY,
+                run_date TEXT NOT NULL,
+                agreement_rate DOUBLE PRECISION,
+                blind_divergence DOUBLE PRECISION,
+                panel_dispersion DOUBLE PRECISION,
+                novelty_rate DOUBLE PRECISION,
+                fallback_warnings BIGINT,
+                scenario_delta_total DOUBLE PRECISION,
+                audit_pass_rate DOUBLE PRECISION,
+                agents_spawned BIGINT,
+                notes TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_run_health_run_date ON run_health(run_date)",
+        )
+        .execute(pool)
+        .await?;
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS power_flows (

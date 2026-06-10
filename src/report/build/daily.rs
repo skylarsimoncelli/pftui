@@ -166,6 +166,10 @@ pub struct BuildContext {
     /// `private_synthesis` section. Empty when no synthesis notes exist for
     /// the report date.
     pub synthesis_notes: SynthesisNotes,
+    /// Epistemic-health instrumentation row (`run_health`) for the report
+    /// date. Surfaced by the `private_epistemic_health` section, which
+    /// auto-suppresses when no row was recorded for the date.
+    pub epistemic_health: Option<crate::db::run_health::RunHealth>,
 }
 
 /// One parallel-set result mirrored from `/tmp/pftui-parallels-<DATE>.json`.
@@ -1007,9 +1011,17 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             visibility: SectionVisibility::Private,
         },
         // Closing — synthesized conclusion (Gameplan / Portfolio
-        // reflection / What to Watch). Last section in the report.
+        // reflection / What to Watch). Last substantive section.
         SectionSpec {
             name: "private_closing",
+            visibility: SectionVisibility::Private,
+        },
+        // Epistemic Health — run_health instrumentation for the report
+        // date. Meta-content (how the machine ran, not what it believes),
+        // so it goes after the closing, at the very end. Auto-suppressed
+        // when no run_health row exists for the date.
+        SectionSpec {
+            name: "private_epistemic_health",
             visibility: SectionVisibility::Private,
         },
         // Sections intentionally dropped from the default plan per
@@ -1092,6 +1104,9 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
             sections::private_external_ta::render_private_external_ta(ctx)
         }
         "private_closing" => sections::private_closing::render_private_closing(ctx),
+        "private_epistemic_health" => {
+            sections::private_epistemic_health::render_private_epistemic_health(ctx)
+        }
         "private_synthesis" => sections::private_synthesis::render_private_synthesis(ctx),
         "private_portfolio_snapshot" => {
             sections::private_portfolio_snapshot::render_private_portfolio_snapshot(ctx)
@@ -1965,6 +1980,14 @@ impl BuildContext {
         //    days/weeks/months horizons per held asset.
         ctx.private_outlooks = outlooks_for_held(&all_views, &held_symbols);
 
+        // 10. epistemic_health — the run_health row for the report date,
+        //     surfaced as the final (meta) private section. Best-effort:
+        //     missing row or non-SQLite backend degrades to None.
+        ctx.epistemic_health = backend
+            .sqlite_native()
+            .and_then(|conn| crate::db::run_health::get_run_health(conn, report_date).ok())
+            .flatten();
+
         Ok(ctx)
     }
 
@@ -2367,6 +2390,10 @@ fn analyst_views_for(
 ) -> Vec<AnalystViewSummary> {
     let mut out: Vec<AnalystViewSummary> = Vec::new();
     for v in views {
+        // Measurement layers (blind, antithesis) never feed report cards.
+        if !crate::db::analyst_views::is_canonical_analyst(&v.analyst) {
+            continue;
+        }
         if !assets.iter().any(|a| a.eq_ignore_ascii_case(&v.asset)) {
             continue;
         }
@@ -3712,6 +3739,10 @@ fn load_conviction_trajectories(
         let asset: String = r.get(1)?;
         let conviction: i64 = r.get(2)?;
         let recorded_at: String = r.get(3)?;
+        // Measurement layers (blind, antithesis) never feed report cards.
+        if !crate::db::analyst_views::is_canonical_analyst(&analyst) {
+            continue;
+        }
         let asset_upper = asset.to_uppercase();
         if !held_upper.contains(&asset_upper) {
             continue;
@@ -3861,6 +3892,7 @@ pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
             populated: !ctx.private_asset_intelligence.is_empty(),
         },
         opt_row!("morning_brief", ctx.morning_brief),
+        opt_row!("epistemic_health", ctx.epistemic_health),
     ]
 }
 
@@ -5167,6 +5199,7 @@ mod assembler_tests {
             "private_external_ta",
             "private_parallels",
             "private_closing",
+            "private_epistemic_health",
         ];
         let pub_actual: Vec<&str> = public_section_plan()
             .iter()
@@ -5575,6 +5608,7 @@ mod assembler_tests {
         assert!(names.contains(&"cross_layer_signals"));
         assert!(names.contains(&"private_asset_intelligence"));
         assert!(names.contains(&"morning_brief"));
+        assert!(names.contains(&"epistemic_health"));
     }
 
     #[test]
@@ -5587,8 +5621,10 @@ mod assembler_tests {
         assert!(names.contains(&"private_parallels"));
         // private_overview must be first.
         assert_eq!(names[0], "private_overview");
-        // private_closing must be last.
-        assert_eq!(*names.last().unwrap(), "private_closing");
+        // private_epistemic_health (meta) must be last, after the closing.
+        assert!(names.contains(&"private_epistemic_health"));
+        assert_eq!(*names.last().unwrap(), "private_epistemic_health");
+        assert_eq!(names[names.len() - 2], "private_closing");
         // Sections intentionally dropped per 2026-06-08 polish:
         assert!(!names.contains(&"private_per_asset_convergence"));
         assert!(!names.contains(&"private_decisions_pending"));
