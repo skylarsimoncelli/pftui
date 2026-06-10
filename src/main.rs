@@ -2572,6 +2572,18 @@ fn run_cli(cli: Cli) -> Result<()> {
                     timeframe,
                     json,
                 }) => commands::technicals_structure::run(&backend, &symbol, &timeframe, json),
+                Some(cli::AnalyticsTechnicalsCommand::Cyber {
+                    symbol,
+                    timeframe,
+                    lookback_signals,
+                    json,
+                }) => commands::technicals_cyber::run(
+                    &backend,
+                    &symbol,
+                    &timeframe,
+                    lookback_signals,
+                    json,
+                ),
                 None => commands::analytics::run_technicals_cmd(
                     &backend,
                     symbol.as_deref(),

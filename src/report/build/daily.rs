@@ -391,6 +391,9 @@ pub struct AssetIntelligenceBlob {
     pub structure_verdict_weekly: Option<String>,
     /// Cycle-clock position verdict — BTC and GC=F only.
     pub cycle_clock_verdict: Option<String>,
+    /// One-line composite Cyber Dots verdict (daily bars) from the
+    /// `analytics::cyber` engine. None when history is too shallow.
+    pub cyber_verdict_daily: Option<String>,
 }
 
 /// Compact morning-brief summary used to prepend the public Executive
@@ -5179,10 +5182,11 @@ fn load_asset_intelligence_blob(
         return None;
     }
 
-    // Price-action structure verdicts (daily + weekly) and, for the cycle
-    // assets, the cycle-clock position line. All auto-skip (None) when the
-    // underlying history is too shallow for an honest read.
-    let (structure_verdict_daily, structure_verdict_weekly, cycle_clock_verdict) =
+    // Price-action structure verdicts (daily + weekly), the cycle-clock
+    // position line (cycle assets), and the composite Cyber Dots verdict.
+    // All auto-skip (None) when the underlying history is too shallow for
+    // an honest read.
+    let (structure_verdict_daily, structure_verdict_weekly, cycle_clock_verdict, cyber_verdict_daily) =
         load_structure_and_cycle_verdicts(backend, &sym);
 
     Some(AssetIntelligenceBlob {
@@ -5201,31 +5205,41 @@ fn load_asset_intelligence_blob(
         structure_verdict_daily,
         structure_verdict_weekly,
         cycle_clock_verdict,
+        cyber_verdict_daily,
     })
 }
 
-/// Compute the market-structure verdicts (daily + weekly bars) and — for
-/// BTC / GC=F — the cycle-clock verdict, for the per-asset report card.
+/// Compute the market-structure verdicts (daily + weekly bars), the
+/// composite Cyber Dots verdict (daily bars), and — for BTC / GC=F — the
+/// cycle-clock verdict, for the per-asset report card.
 /// Uses the deeper of `SYM` / `SYM-USD` history (the held `BTC` series is
 /// shallow; the deep series is `BTC-USD`). Every component degrades to
 /// None rather than erroring.
+#[allow(clippy::type_complexity)]
 fn load_structure_and_cycle_verdicts(
     backend: &BackendConnection,
     sym: &str,
-) -> (Option<String>, Option<String>, Option<String>) {
+) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
     use crate::analytics::market_structure::{analyze, Timeframe};
 
     let (series, history) =
         match crate::commands::technicals_structure::load_deep_history(backend, sym) {
             Ok(pair) => pair,
-            Err(_) => return (None, None, None),
+            Err(_) => return (None, None, None, None),
         };
     if history.is_empty() {
-        return (None, None, None);
+        return (None, None, None, None);
     }
 
     let daily = analyze(&series, Timeframe::Daily, &history).map(|r| r.verdict);
     let weekly = analyze(&series, Timeframe::Weekly, &history).map(|r| r.verdict);
+    let cyber = crate::analytics::cyber::analyze(
+        &series,
+        crate::analytics::cyber::CyberTimeframe::Daily,
+        &history,
+        3,
+    )
+    .map(|s| s.verdict);
 
     let cycle = match sym {
         "BTC" | "BTC-USD" => {
@@ -5246,7 +5260,7 @@ fn load_structure_and_cycle_verdicts(
         _ => None,
     };
 
-    (daily, weekly, cycle)
+    (daily, weekly, cycle, cyber)
 }
 
 /// Derive a `MorningBriefSummary` from the latest narrative snapshot. The

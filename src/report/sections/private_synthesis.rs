@@ -299,6 +299,11 @@ fn render_levels(intelligence: Option<&AssetIntelligenceBlob>) -> Option<String>
     if let Some(cycle) = blob.cycle_clock_verdict.as_deref() {
         bullets.push(format!("Cycle clock: {cycle}"));
     }
+    // Composite Cyber Dots verdict (auto-skipped when history was too
+    // shallow for the engine).
+    if let Some(cyber) = blob.cyber_verdict_daily.as_deref() {
+        bullets.push(format!("Cyber: {cyber}"));
+    }
     if let Some(pos) = blob.range_52w_position {
         bullets.push(format!("52w range position: {pos:.1}%"));
     }
@@ -473,6 +478,10 @@ mod tests {
                     "BTC: day 781 post-halving (Olson day-900 = 2026-10-06), cycle week 185 of ~208"
                         .to_string(),
                 ),
+                cyber_verdict_daily: Some(
+                    "CYBER (daily): QB bearish since 2026-05-20 (14 bars) | line down, price below"
+                        .to_string(),
+                ),
             },
         );
         let out = render_private_synthesis(&ctx).unwrap();
@@ -500,6 +509,7 @@ mod tests {
         assert!(out.contains("Structure: DAILY: downtrend"));
         assert!(out.contains("Structure: WEEKLY: downtrend"));
         assert!(out.contains("Cycle clock: BTC: day 781 post-halving"));
+        assert!(out.contains("Cyber: CYBER (daily): QB bearish since 2026-05-20"));
         assert!(out.contains("**What to watch / What would change my mind**"));
         assert!(out.contains("A net-positive ETF day."));
         assert!(out.contains("**Risk / Reward (next 7 days)**"));

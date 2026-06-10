@@ -4716,6 +4716,26 @@ pub enum AnalyticsTechnicalsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Composite Cyber Dots read — faithful port of the operator's
+    /// PineScript indicator (docs/reference/cyber-dots.pine): Gaussian
+    /// CyberBands QB state, Zone bands, CyberLine (VIDYA/Donchian/hybrid),
+    /// strength dots, Bollinger reversals, Pi Cycle top/bottom, MTF RSI
+    /// zones, and hybrid breakout arrows, with a one-line composite verdict
+    /// and a dated recent-signal list.
+    Cyber {
+        /// Symbol to analyze (e.g. BTC, GC=F, SPY). `BTC` falls back to the
+        /// deep `BTC-USD` series automatically.
+        symbol: String,
+        /// Bar timeframe: daily or weekly (weekly bars aggregated from
+        /// daily history; Pi Cycle always runs on daily closes)
+        #[arg(long, default_value = "daily")]
+        timeframe: String,
+        /// Number of most-recent dated signal events to list
+        #[arg(long = "lookback-signals", default_value_t = 10)]
+        lookback_signals: usize,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -9726,6 +9746,73 @@ mod tests {
 
         assert_eq!(symbol, "BTC");
         assert_eq!(timeframe, "daily");
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_technicals_cyber_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "technicals",
+            "cyber",
+            "BTC",
+            "--timeframe",
+            "weekly",
+            "--lookback-signals",
+            "5",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Technicals {
+                    command:
+                        Some(AnalyticsTechnicalsCommand::Cyber {
+                            symbol,
+                            timeframe,
+                            lookback_signals,
+                            json,
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics technicals cyber command");
+        };
+
+        assert_eq!(symbol, "BTC");
+        assert_eq!(timeframe, "weekly");
+        assert_eq!(lookback_signals, 5);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_technicals_cyber_defaults() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "technicals", "cyber", "GC=F"]).unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Technicals {
+                    command:
+                        Some(AnalyticsTechnicalsCommand::Cyber {
+                            symbol,
+                            timeframe,
+                            lookback_signals,
+                            json,
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics technicals cyber command");
+        };
+
+        assert_eq!(symbol, "GC=F");
+        assert_eq!(timeframe, "daily");
+        assert_eq!(lookback_signals, 10);
         assert!(!json);
     }
 
