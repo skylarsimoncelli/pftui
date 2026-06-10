@@ -2560,19 +2560,32 @@ fn run_cli(cli: Cli) -> Result<()> {
                 commands::options::run_analytics_gex(&backend, &symbol, json)
             }
             cli::AnalyticsCommand::Technicals {
+                command,
                 symbol,
                 timeframe,
                 limit,
                 include,
                 json,
-            } => commands::analytics::run_technicals_cmd(
-                &backend,
-                symbol.as_deref(),
-                &timeframe,
-                limit,
-                include.as_deref(),
-                json,
-            ),
+            } => match command {
+                Some(cli::AnalyticsTechnicalsCommand::Structure {
+                    symbol,
+                    timeframe,
+                    json,
+                }) => commands::technicals_structure::run(&backend, &symbol, &timeframe, json),
+                None => commands::analytics::run_technicals_cmd(
+                    &backend,
+                    symbol.as_deref(),
+                    &timeframe,
+                    limit,
+                    include.as_deref(),
+                    json,
+                ),
+            },
+            cli::AnalyticsCommand::Cycles { command } => match command {
+                cli::AnalyticsCyclesCommand::Clock { asset, json } => {
+                    commands::cycle_clock_cmd::run(&backend, asset.as_deref(), json)
+                }
+            },
             cli::AnalyticsCommand::Levels {
                 symbol,
                 level_type,

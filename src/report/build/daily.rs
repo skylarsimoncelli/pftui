@@ -312,6 +312,13 @@ pub struct AssetIntelligenceBlob {
     pub scenario_count: u32,
     pub open_predictions_count: u32,
     pub structural_context: Option<String>,
+    /// One-line price-action structure verdict (daily bars) from the
+    /// market-structure engine. None when history is too shallow.
+    pub structure_verdict_daily: Option<String>,
+    /// One-line price-action structure verdict (weekly bars).
+    pub structure_verdict_weekly: Option<String>,
+    /// Cycle-clock position verdict — BTC and GC=F only.
+    pub cycle_clock_verdict: Option<String>,
 }
 
 /// Compact morning-brief summary used to prepend the public Executive
@@ -5090,6 +5097,12 @@ fn load_asset_intelligence_blob(
         return None;
     }
 
+    // Price-action structure verdicts (daily + weekly) and, for the cycle
+    // assets, the cycle-clock position line. All auto-skip (None) when the
+    // underlying history is too shallow for an honest read.
+    let (structure_verdict_daily, structure_verdict_weekly, cycle_clock_verdict) =
+        load_structure_and_cycle_verdicts(backend, &sym);
+
     Some(AssetIntelligenceBlob {
         symbol: sym,
         spot_price: spot.as_ref().map(|q| format_price(q.price)),
@@ -5103,7 +5116,55 @@ fn load_asset_intelligence_blob(
         scenario_count,
         open_predictions_count,
         structural_context,
+        structure_verdict_daily,
+        structure_verdict_weekly,
+        cycle_clock_verdict,
     })
+}
+
+/// Compute the market-structure verdicts (daily + weekly bars) and — for
+/// BTC / GC=F — the cycle-clock verdict, for the per-asset report card.
+/// Uses the deeper of `SYM` / `SYM-USD` history (the held `BTC` series is
+/// shallow; the deep series is `BTC-USD`). Every component degrades to
+/// None rather than erroring.
+fn load_structure_and_cycle_verdicts(
+    backend: &BackendConnection,
+    sym: &str,
+) -> (Option<String>, Option<String>, Option<String>) {
+    use crate::analytics::market_structure::{analyze, Timeframe};
+
+    let (series, history) =
+        match crate::commands::technicals_structure::load_deep_history(backend, sym) {
+            Ok(pair) => pair,
+            Err(_) => return (None, None, None),
+        };
+    if history.is_empty() {
+        return (None, None, None);
+    }
+
+    let daily = analyze(&series, Timeframe::Daily, &history).map(|r| r.verdict);
+    let weekly = analyze(&series, Timeframe::Weekly, &history).map(|r| r.verdict);
+
+    let cycle = match sym {
+        "BTC" | "BTC-USD" => {
+            let deep = crate::db::price_history::get_history_backend(backend, "BTC-USD", 8000)
+                .unwrap_or_default();
+            let source = if deep.len() > history.len() {
+                &deep
+            } else {
+                &history
+            };
+            crate::analytics::cycle_clock::btc_cycle_clock("BTC-USD", source).map(|c| c.verdict)
+        }
+        "GC=F" => {
+            let deep = crate::db::price_history::get_history_backend(backend, "GC=F", 8000)
+                .unwrap_or_default();
+            crate::analytics::cycle_clock::gold_cycle_clock("GC=F", &deep).map(|c| c.verdict)
+        }
+        _ => None,
+    };
+
+    (daily, weekly, cycle)
 }
 
 /// Derive a `MorningBriefSummary` from the latest narrative snapshot. The

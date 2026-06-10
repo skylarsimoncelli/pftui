@@ -258,11 +258,22 @@ sqlite3 "$DB" "SELECT content FROM thesis WHERE section='cycle-frameworks'"     
 sqlite3 "$DB" "SELECT content FROM thesis WHERE section='btc-cycle-framework'"   # pftui-verified cycle table + indicator track record
 ```
 
+**Every run, execute the deterministic cycle clock for both cycle assets:**
+
+```bash
+pftui analytics cycles clock --asset BTC --json
+pftui analytics cycles clock --asset GC=F --json
+```
+
+The clock computes (from the deep `BTC-USD` and `GC=F` series): days/weeks since the 2024-04-19 halving, the Olson day-900 countdown, the Loukas 4-yr cycle week position vs the wk-187-229 low band (anchor: the verified 2022-11-21 cycle low), the midterm-year H2 flag, the Mayer Multiple, price vs the 200-week MA; and for gold, position within the ~7yr cycle (verified lows 2008-11, 2015-12, 2022-09), half-cycle position, and extension vs the 200d / 40wk MAs. Each anchor is verified against the actual `price_history` minimum — the JSON shows what was verified.
+
+**Position every HTF view explicitly inside the cycle.** Your structured view's reasoning must state the week/year position and band edges from the clock output (e.g. "cycle week 185 of ~208, 2 weeks from the Loukas low band" / "gold year 3.7 of ~6.9yr cycle, past half-cycle"). An HTF view that ignores cycle position must say WHY it is discounting the cycle this run — silence is not a position. (Gold post-mortem, 2026-06: the HIGH layer never used cycle analysis at all while gold worked through a multi-month markdown.)
+
 Rules (mirrored in `cycle-frameworks` — the thesis row is canonical):
 - Any BTC timing view must state where it sits vs the cycle clock: week-of-cycle, the external Oct-2026 / $40k-53k consensus cluster, and which framework(s) it leans on or rejects.
 - An early-low call (before Sep 2026) must explicitly invoke the Loukas ~25% short-cycle tail AND name which items on the confirm checklist (vol-crush→expansion, F&G cycle-low extreme, MVRV bottoming band + falling reserves, price at 200W MA, confirmed breakout) have actually printed.
-- Compute the 200W MA from the deep `BTC-USD` series (1400-row window), never the short `BTC` series.
-- The checklist confirms; the calendar does not. Cycle-date claims are not price predictions.
+- Compute the 200W MA from the deep `BTC-USD` series (1400-row window), never the short `BTC` series — `analytics cycles clock` already does this.
+- The checklist confirms; the calendar does not. Cycle-date claims are not price predictions, and the clock never emits one.
 
 ## Mandatory per-held-asset analyst view
 

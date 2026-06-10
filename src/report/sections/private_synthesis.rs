@@ -288,6 +288,17 @@ fn render_levels(intelligence: Option<&AssetIntelligenceBlob>) -> Option<String>
     if let Some(trend) = blob.trend.as_deref() {
         bullets.push(format!("Trend: {trend}"));
     }
+    // Price-action structure verdicts from the market-structure engine
+    // (auto-skipped when history was too shallow to compute them).
+    if let Some(daily) = blob.structure_verdict_daily.as_deref() {
+        bullets.push(format!("Structure: {daily}"));
+    }
+    if let Some(weekly) = blob.structure_verdict_weekly.as_deref() {
+        bullets.push(format!("Structure: {weekly}"));
+    }
+    if let Some(cycle) = blob.cycle_clock_verdict.as_deref() {
+        bullets.push(format!("Cycle clock: {cycle}"));
+    }
     if let Some(pos) = blob.range_52w_position {
         bullets.push(format!("52w range position: {pos:.1}%"));
     }
@@ -450,6 +461,18 @@ mod tests {
                 scenario_count: 0,
                 open_predictions_count: 0,
                 structural_context: None,
+                structure_verdict_daily: Some(
+                    "DAILY: downtrend (LH 65,800 May-26, LL 60,400 Jun-05), below falling 50d/200d MAs"
+                        .to_string(),
+                ),
+                structure_verdict_weekly: Some(
+                    "WEEKLY: downtrend (LH 68,000 May-10, LL 60,400 Jun-07), below falling 10wk/40wk MAs"
+                        .to_string(),
+                ),
+                cycle_clock_verdict: Some(
+                    "BTC: day 781 post-halving (Olson day-900 = 2026-10-06), cycle week 185 of ~208"
+                        .to_string(),
+                ),
             },
         );
         let out = render_private_synthesis(&ctx).unwrap();
@@ -473,6 +496,10 @@ mod tests {
         assert!(out.contains("$62,185"));
         assert!(out.contains("Support $60,000 · resistance $65,000"));
         assert!(out.contains("RSI(14) 18.0 (oversold)"));
+        // Structure + cycle-clock verdicts surface in the technicals block.
+        assert!(out.contains("Structure: DAILY: downtrend"));
+        assert!(out.contains("Structure: WEEKLY: downtrend"));
+        assert!(out.contains("Cycle clock: BTC: day 781 post-halving"));
         assert!(out.contains("**What to watch / What would change my mind**"));
         assert!(out.contains("A net-positive ETF day."));
         assert!(out.contains("**Risk / Reward (next 7 days)**"));

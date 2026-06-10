@@ -4684,6 +4684,36 @@ pub enum AnalyticsAlignmentCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsTechnicalsCommand {
+    /// Pure price-action market-structure read: swing highs/lows, trend
+    /// classification (uptrend/downtrend/range), break-of-structure events,
+    /// MA posture + extension. Computed straight from price_history.
+    Structure {
+        /// Symbol to analyze (e.g. GC=F, BTC, SPY)
+        symbol: String,
+        /// Bar timeframe: daily, weekly, or monthly (weekly/monthly bars
+        /// aggregated from daily history)
+        #[arg(long, default_value = "daily")]
+        timeframe: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsCyclesCommand {
+    /// Cycle-position read (BTC halving/4yr cycle, gold ~8yr cycle).
+    /// Position only — never a price prediction.
+    Clock {
+        /// Restrict to one asset: BTC or GC=F (default: both)
+        #[arg(long)]
+        asset: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsCommand {
     /// Full synthesized intelligence blob for a single asset
     Asset {
@@ -4702,6 +4732,8 @@ pub enum AnalyticsCommand {
     },
     /// Technical indicators for one or all assets (RSI, MACD, SMA, Bollinger, ATR)
     Technicals {
+        #[command(subcommand)]
+        command: Option<AnalyticsTechnicalsCommand>,
         /// Filter to a single symbol or a comma-separated symbol list (e.g. BTC,GC=F)
         #[arg(long, visible_alias = "symbols")]
         symbol: Option<String>,
@@ -4719,6 +4751,11 @@ pub enum AnalyticsCommand {
         include: Option<String>,
         #[arg(long)]
         json: bool,
+    },
+    /// Market cycle position clocks (BTC halving/4yr cycle, gold ~8yr cycle)
+    Cycles {
+        #[command(subcommand)]
+        command: AnalyticsCyclesCommand,
     },
     /// Market structure levels: support, resistance, moving averages, swing points, 52-week range
     Levels {
@@ -9570,6 +9607,112 @@ mod tests {
             Some("gaussian-channel,zone-channel,volatility-trend,donchian-trend")
         );
         assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_technicals_structure_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "technicals",
+            "structure",
+            "GC=F",
+            "--timeframe",
+            "weekly",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Technicals {
+                    command:
+                        Some(AnalyticsTechnicalsCommand::Structure {
+                            symbol,
+                            timeframe,
+                            json,
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics technicals structure command");
+        };
+
+        assert_eq!(symbol, "GC=F");
+        assert_eq!(timeframe, "weekly");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_technicals_structure_defaults_to_daily() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "technicals", "structure", "BTC"]).unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Technicals {
+                    command:
+                        Some(AnalyticsTechnicalsCommand::Structure {
+                            symbol,
+                            timeframe,
+                            json,
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics technicals structure command");
+        };
+
+        assert_eq!(symbol, "BTC");
+        assert_eq!(timeframe, "daily");
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_cycles_clock_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "cycles",
+            "clock",
+            "--asset",
+            "BTC",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Cycles {
+                    command: AnalyticsCyclesCommand::Clock { asset, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics cycles clock command");
+        };
+
+        assert_eq!(asset.as_deref(), Some("BTC"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_cycles_clock_no_asset() {
+        let cli = Cli::try_parse_from(["pftui", "analytics", "cycles", "clock"]).unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Cycles {
+                    command: AnalyticsCyclesCommand::Clock { asset, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics cycles clock command");
+        };
+
+        assert!(asset.is_none());
+        assert!(!json);
     }
 
     #[test]
