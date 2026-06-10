@@ -2266,6 +2266,7 @@ pub enum JournalEntryCommand {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum JournalPredictionCommand {
     /// Add a prediction. Timeframe accepts: low, medium, high, macro, macro-checkpoint (aliases: short=low, long=high).
     /// LOW analyst calls are capped at 5/hour unless --override-cap is passed.
@@ -2351,6 +2352,31 @@ pub enum JournalPredictionCommand {
         /// prediction's resolution_criteria. Companion to --inline.
         #[arg(long = "with-adversary")]
         with_adversary: bool,
+        /// Machine-scoreable success condition for this prediction — the
+        /// condition that, if met, scores the prediction CORRECT.
+        /// Deterministic grammar (no LLM):
+        /// "<SYMBOL> <close|closes|stays|prints> <above|below|between|in-range|in-band>
+        /// <value> [<value2>] by <YYYY-MM-DD>".
+        /// close-*/prints-* = at least one daily close beyond the threshold
+        /// inside the window (prints-* uses daily closes; intraday data is
+        /// unavailable). stays-* = every daily close inside the window must
+        /// satisfy the condition (scoreable only after the window ends).
+        /// Examples: --falsify "BTC close below 50000 by 2026-09-30",
+        /// --falsify "BTC stays in-range 45000 85000 by 2026-12-31".
+        /// A parse failure records an unstructured (non-auto-scoreable)
+        /// rule and caps confidence at 0.3; omitting --falsify entirely
+        /// also caps confidence at 0.3 (unfalsifiable prediction).
+        #[arg(long)]
+        falsify: Option<String>,
+        /// Bypass the calibration-derived confidence clamp. Requires
+        /// --cap-rationale; the rationale is appended to the prediction's
+        /// resolution_criteria as "[cap-override: <text>]".
+        #[arg(long = "override-confidence-cap")]
+        override_confidence_cap: bool,
+        /// Why the calibration confidence clamp does not apply to this
+        /// prediction (required with --override-confidence-cap).
+        #[arg(long = "cap-rationale")]
+        cap_rationale: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -2485,8 +2511,19 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Auto-score due predictions from structured falsification rules and market data.
-    #[command(name = "auto-score", alias = "autoscore")]
+    /// Auto-score predictions mechanically from structured falsification rules
+    /// and price_history daily closes. A rule encodes the claim's SUCCESS
+    /// CONDITION: close-*/prints-* rules score CORRECT on the first qualifying
+    /// daily close inside the window and WRONG once the window expires without
+    /// one; stays-* rules score WRONG on the first violating close and CORRECT
+    /// only after the window expires clean. Already-scored predictions are
+    /// never overwritten (use --force to allow). Also runs automatically as a
+    /// tail step of `pftui data refresh`.
+    #[command(
+        name = "auto-score",
+        alias = "autoscore",
+        visible_alias = "score-auto"
+    )]
     AutoScore {
         /// Only evaluate rules whose eval_date_end is on or after this YYYY-MM-DD date
         #[arg(long)]

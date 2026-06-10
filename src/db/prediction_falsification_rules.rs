@@ -42,6 +42,26 @@ pub struct PredictionFalsificationRule {
     pub parse_confidence: String,
 }
 
+/// Write-shape for a new falsification rule. Column names are resolved
+/// against the live table at insert time (`detect_columns`) so both the
+/// repo shape (`symbol`/`threshold_value`/`threshold_low`/`threshold_high`)
+/// and the alternate deployed shape (`asset`/`threshold_lower`/
+/// `threshold_upper`/`threshold_text`) are supported.
+#[derive(Debug, Clone, Serialize)]
+pub struct NewFalsificationRule {
+    pub prediction_id: i64,
+    pub rule_type: String,
+    pub symbol: Option<String>,
+    pub threshold_value: Option<f64>,
+    pub threshold_low: Option<f64>,
+    pub threshold_high: Option<f64>,
+    pub threshold_text: Option<String>,
+    pub eval_date_start: String,
+    pub eval_date_end: String,
+    pub auto_score_eligible: bool,
+    pub parse_confidence: String,
+}
+
 #[derive(Debug, Clone)]
 struct RuleColumns {
     id: String,
@@ -51,6 +71,7 @@ struct RuleColumns {
     threshold_value: Option<String>,
     threshold_low: Option<String>,
     threshold_high: Option<String>,
+    threshold_text: Option<String>,
     eval_date_start: Option<String>,
     eval_date_end: String,
     parse_confidence: Option<String>,
@@ -67,6 +88,7 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
             threshold_value REAL,
             threshold_low REAL,
             threshold_high REAL,
+            threshold_text TEXT,
             eval_date_start TEXT,
             eval_date_end TEXT NOT NULL,
             parse_confidence TEXT NOT NULL DEFAULT 'medium',
@@ -78,7 +100,105 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_prediction_falsification_rules_prediction
             ON prediction_falsification_rules(prediction_id);",
     )?;
+    // Self-heal pre-existing tables that lack the raw-text column used by
+    // unstructured (`rule_type='unstructured'`) rules.
+    let has_text_col: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('prediction_falsification_rules')
+             WHERE name = 'threshold_text'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_text_col {
+        conn.execute(
+            "ALTER TABLE prediction_falsification_rules ADD COLUMN threshold_text TEXT",
+            [],
+        )?;
+    }
     Ok(())
+}
+
+/// Insert a falsification rule, tolerating both known on-disk column
+/// shapes. Single-threshold rules write `threshold_value` when that column
+/// exists, otherwise fall back to the lower-threshold column so the value
+/// is never silently dropped.
+pub fn insert_rule(conn: &Connection, rule: &NewFalsificationRule) -> Result<i64> {
+    ensure_table(conn)?;
+    let columns = detect_columns(conn)?;
+
+    let mut cols: Vec<String> = vec![
+        columns.prediction_id.clone(),
+        columns.rule_type.clone(),
+        columns.eval_date_end.clone(),
+    ];
+    let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![
+        Box::new(rule.prediction_id),
+        Box::new(rule.rule_type.clone()),
+        Box::new(rule.eval_date_end.clone()),
+    ];
+
+    if let Some(col) = &columns.symbol {
+        cols.push(col.clone());
+        values.push(Box::new(rule.symbol.clone()));
+    }
+    let mut threshold_low = rule.threshold_low;
+    if let Some(col) = &columns.threshold_value {
+        cols.push(col.clone());
+        values.push(Box::new(rule.threshold_value));
+    } else if threshold_low.is_none() {
+        // Alternate shape without threshold_value: keep the single
+        // threshold in the lower-bound column.
+        threshold_low = rule.threshold_value;
+    }
+    if let Some(col) = &columns.threshold_low {
+        cols.push(col.clone());
+        values.push(Box::new(threshold_low));
+    }
+    if let Some(col) = &columns.threshold_high {
+        cols.push(col.clone());
+        values.push(Box::new(rule.threshold_high));
+    }
+    if let Some(col) = &columns.threshold_text {
+        cols.push(col.clone());
+        values.push(Box::new(rule.threshold_text.clone()));
+    }
+    if let Some(col) = &columns.eval_date_start {
+        cols.push(col.clone());
+        values.push(Box::new(rule.eval_date_start.clone()));
+    }
+    if let Some(col) = &columns.parse_confidence {
+        cols.push(col.clone());
+        values.push(Box::new(rule.parse_confidence.clone()));
+    }
+    if let Some(col) = &columns.auto_score_eligible {
+        cols.push(col.clone());
+        values.push(Box::new(rule.auto_score_eligible as i64));
+    }
+
+    let placeholders = (1..=cols.len())
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "INSERT INTO prediction_falsification_rules ({}) VALUES ({})",
+        cols.join(", "),
+        placeholders
+    );
+    let params_slice: Vec<&dyn rusqlite::ToSql> = values.iter().map(|b| b.as_ref()).collect();
+    conn.execute(&sql, params_slice.as_slice())?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn insert_rule_backend(
+    backend: &BackendConnection,
+    rule: &NewFalsificationRule,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| insert_rule(conn, rule),
+        |pool| insert_rule_postgres(pool, rule),
+    )
 }
 
 /// Generic list for the `pftui analytics falsifications` CLI. Filters by
@@ -192,22 +312,24 @@ pub fn ensure_table_backend(backend: &BackendConnection) -> Result<()> {
     query::dispatch(backend, ensure_table, ensure_table_postgres)
 }
 
-pub fn list_due_auto_score_rules_backend(
+/// List every auto-score-eligible rule regardless of whether its evaluation
+/// window has closed. Open-window rules can still be decided early:
+/// `close-*`/`prints-*` rules score CORRECT as soon as one qualifying close
+/// prints, and `stays-*` rules score WRONG on the first violating close.
+pub fn list_active_auto_score_rules_backend(
     backend: &BackendConnection,
     since: Option<&str>,
-    today: &str,
 ) -> Result<Vec<PredictionFalsificationRule>> {
     query::dispatch(
         backend,
-        |conn| list_due_auto_score_rules(conn, since, today),
-        |pool| list_due_auto_score_rules_postgres(pool, since, today),
+        |conn| list_active_auto_score_rules(conn, since),
+        |pool| list_active_auto_score_rules_postgres(pool, since),
     )
 }
 
-fn list_due_auto_score_rules(
+fn list_active_auto_score_rules(
     conn: &Connection,
     since: Option<&str>,
-    today: &str,
 ) -> Result<Vec<PredictionFalsificationRule>> {
     ensure_table(conn)?;
     let columns = detect_columns(conn)?;
@@ -243,12 +365,12 @@ fn list_due_auto_score_rules(
         .map(|c| format!("r.{c}"))
         .unwrap_or_else(|| "'medium'".to_string());
 
-    let mut where_parts = vec![format!("r.{} <= ?1", columns.eval_date_end)];
+    let mut where_parts = vec!["r.rule_type != 'unstructured'".to_string()];
     if let Some(eligible) = columns.auto_score_eligible.as_ref() {
         where_parts.push(format!("COALESCE(r.{eligible}, 0) = 1"));
     }
     if since.is_some() {
-        where_parts.push(format!("r.{} >= ?2", columns.eval_date_end));
+        where_parts.push(format!("r.{} >= ?1", columns.eval_date_end));
     }
 
     let sql = format!(
@@ -279,9 +401,9 @@ fn list_due_auto_score_rules(
 
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = if let Some(since) = since {
-        stmt.query(rusqlite::params![today, since])?
+        stmt.query(rusqlite::params![since])?
     } else {
-        stmt.query(rusqlite::params![today])?
+        stmt.query([])?
     };
 
     let mut out = Vec::new();
@@ -325,15 +447,16 @@ fn detect_columns(conn: &Connection) -> Result<RuleColumns> {
     };
 
     Ok(RuleColumns {
-        id: required(&["id"])?,
+        id: required(&["id", "prediction_id"])?,
         prediction_id: required(&["prediction_id", "user_prediction_id"])?,
         rule_type: required(&["rule_type"])?,
-        symbol: optional(&names, &["symbol", "asset_symbol", "ticker"]),
+        symbol: optional(&names, &["symbol", "asset", "asset_symbol", "ticker"]),
         threshold_value: optional(&names, &["threshold_value", "threshold", "target_value"]),
         threshold_low: optional(
             &names,
             &[
                 "threshold_low",
+                "threshold_lower",
                 "lower_threshold",
                 "threshold_min",
                 "min_value",
@@ -343,11 +466,13 @@ fn detect_columns(conn: &Connection) -> Result<RuleColumns> {
             &names,
             &[
                 "threshold_high",
+                "threshold_upper",
                 "upper_threshold",
                 "threshold_max",
                 "max_value",
             ],
         ),
+        threshold_text: optional(&names, &["threshold_text"]),
         eval_date_start: optional(&names, &["eval_date_start", "start_date", "window_start"]),
         eval_date_end: required(&["eval_date_end", "end_date", "window_end", "target_date"])?,
         parse_confidence: optional(&names, &["parse_confidence", "confidence"]),
@@ -373,12 +498,19 @@ fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
                 threshold_value DOUBLE PRECISION,
                 threshold_low DOUBLE PRECISION,
                 threshold_high DOUBLE PRECISION,
+                threshold_text TEXT,
                 eval_date_start TEXT,
                 eval_date_end TEXT NOT NULL,
                 parse_confidence TEXT NOT NULL DEFAULT 'medium',
                 auto_score_eligible BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE prediction_falsification_rules
+                ADD COLUMN IF NOT EXISTS threshold_text TEXT",
         )
         .execute(pool)
         .await?;
@@ -399,10 +531,37 @@ fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-fn list_due_auto_score_rules_postgres(
+fn insert_rule_postgres(pool: &PgPool, rule: &NewFalsificationRule) -> Result<i64> {
+    ensure_table_postgres(pool)?;
+    let id: i64 = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO prediction_falsification_rules
+                (prediction_id, rule_type, symbol, threshold_value, threshold_low,
+                 threshold_high, threshold_text, eval_date_start, eval_date_end,
+                 parse_confidence, auto_score_eligible)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             RETURNING id",
+        )
+        .bind(rule.prediction_id)
+        .bind(&rule.rule_type)
+        .bind(&rule.symbol)
+        .bind(rule.threshold_value)
+        .bind(rule.threshold_low)
+        .bind(rule.threshold_high)
+        .bind(&rule.threshold_text)
+        .bind(&rule.eval_date_start)
+        .bind(&rule.eval_date_end)
+        .bind(&rule.parse_confidence)
+        .bind(rule.auto_score_eligible)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_active_auto_score_rules_postgres(
     pool: &PgPool,
     since: Option<&str>,
-    today: &str,
 ) -> Result<Vec<PredictionFalsificationRule>> {
     ensure_table_postgres(pool)?;
     let rows = crate::db::pg_runtime::block_on(async {
@@ -424,9 +583,8 @@ fn list_due_auto_score_rules_postgres(
              FROM prediction_falsification_rules r
              JOIN user_predictions p ON p.id = r.prediction_id
              WHERE r.auto_score_eligible = TRUE
-               AND r.eval_date_end <= ",
+               AND r.rule_type != 'unstructured'",
         );
-        query.push_bind(today);
         if let Some(since) = since {
             query.push(" AND r.eval_date_end >= ");
             query.push_bind(since);

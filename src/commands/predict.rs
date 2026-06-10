@@ -154,6 +154,259 @@ fn enforce_low_prediction_cap(
     Ok(())
 }
 
+/// Confidence ceiling applied to predictions without a machine-parseable
+/// falsification rule. An unfalsifiable claim cannot be mechanically scored,
+/// so its stated confidence is capped to keep the calibration loop honest.
+pub const UNFALSIFIABLE_CONFIDENCE_CAP: f64 = 0.3;
+
+/// Margin added to the trailing calibration hit rate when clamping
+/// over-confident predictions at write time.
+pub const CALIBRATION_CAP_MARGIN: f64 = 0.15;
+
+/// Minimum scored sample size before the calibration matrix is allowed to
+/// clamp stated confidence.
+pub const CALIBRATION_CAP_MIN_N: i64 = 8;
+
+/// Structured result of parsing a `--falsify` rule string.
+///
+/// Grammar (deterministic, no LLM):
+///   `<SYMBOL> <verb> <comparator> <value> [<value2>] by <YYYY-MM-DD>`
+/// with verb ∈ {close, closes, stays, prints} and comparator ∈
+/// {above, below, between, in-range, in-band}.
+///
+/// `--falsify` encodes THE CLAIM'S SUCCESS CONDITION: the condition that,
+/// if met, scores the prediction CORRECT.
+/// - `close-*` / `prints-*`: at least ONE daily close beyond the threshold
+///   inside the evaluation window scores CORRECT (prints-* rules are
+///   evaluated against daily closes because intraday data is unavailable).
+/// - `stays-*`: EVERY daily close inside the window must satisfy the
+///   condition; the rule scores CORRECT only after the window expires clean,
+///   and WRONG immediately on the first violating close.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ParsedFalsifyRule {
+    pub rule_type: String,
+    pub asset: String,
+    pub threshold_value: Option<f64>,
+    pub threshold_low: Option<f64>,
+    pub threshold_high: Option<f64>,
+    pub eval_date_end: String,
+}
+
+fn parse_falsify_number(token: &str) -> Option<f64> {
+    let cleaned = token.replace(',', "");
+    let value: f64 = cleaned.parse().ok()?;
+    if value.is_finite() {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+/// Deterministic parser for `--falsify` rule strings. See
+/// [`ParsedFalsifyRule`] for the grammar.
+pub fn parse_falsify_rule(raw: &str) -> Result<ParsedFalsifyRule> {
+    let tokens: Vec<&str> = raw.split_whitespace().collect();
+    if tokens.len() < 5 {
+        bail!(
+            "falsify rule too short: expected '<SYMBOL> <verb> <comparator> <value> [<value2>] by <YYYY-MM-DD>', got '{}'",
+            raw
+        );
+    }
+
+    let asset = tokens[0].to_string();
+    if parse_falsify_number(&asset).is_some() {
+        bail!(
+            "falsify rule must start with an asset symbol, got numeric token '{}'",
+            asset
+        );
+    }
+
+    let verb = match tokens[1].to_ascii_lowercase().as_str() {
+        "close" | "closes" => "close",
+        "stays" => "stays",
+        "prints" => "prints",
+        other => bail!(
+            "unknown falsify verb '{}'. Expected close, closes, stays, or prints",
+            other
+        ),
+    };
+
+    let comparator = tokens[2].to_ascii_lowercase();
+    let (needs_two, suffix) = match comparator.as_str() {
+        "above" => (false, "above"),
+        "below" => (false, "below"),
+        "between" | "in-range" | "in-band" => (true, "range"),
+        other => bail!(
+            "unknown falsify comparator '{}'. Expected above, below, between, in-range, or in-band",
+            other
+        ),
+    };
+
+    let rule_type = match (verb, suffix) {
+        ("close", "above") => "close-above",
+        ("close", "below") => "close-below",
+        ("close", "range") => "close-between",
+        ("stays", "above") => "stays-above",
+        ("stays", "below") => "stays-below",
+        ("stays", "range") => "stays-in-range",
+        ("prints", "above") => "prints-above",
+        ("prints", "below") => "prints-below",
+        ("prints", "range") => "prints-in-band",
+        _ => unreachable!("verb and comparator are validated above"),
+    };
+
+    let value_count = if needs_two { 2 } else { 1 };
+    let expected_len = 3 + value_count + 2; // tokens + 'by' + date
+    if tokens.len() != expected_len {
+        bail!(
+            "falsify rule '{}' has {} tokens; expected {} for '{} {}' form",
+            raw,
+            tokens.len(),
+            expected_len,
+            verb,
+            comparator
+        );
+    }
+
+    let first = parse_falsify_number(tokens[3])
+        .ok_or_else(|| anyhow::anyhow!("falsify threshold '{}' is not a number", tokens[3]))?;
+    let (threshold_value, threshold_low, threshold_high) = if needs_two {
+        let second = parse_falsify_number(tokens[4])
+            .ok_or_else(|| anyhow::anyhow!("falsify threshold '{}' is not a number", tokens[4]))?;
+        let (low, high) = if first <= second {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        (None, Some(low), Some(high))
+    } else {
+        (Some(first), None, None)
+    };
+
+    let by_idx = 3 + value_count;
+    if !tokens[by_idx].eq_ignore_ascii_case("by") {
+        bail!(
+            "falsify rule must end with 'by <YYYY-MM-DD>', found '{}' instead of 'by'",
+            tokens[by_idx]
+        );
+    }
+    let end = NaiveDate::parse_from_str(tokens[by_idx + 1], "%Y-%m-%d").map_err(|_| {
+        anyhow::anyhow!(
+            "falsify rule deadline '{}' is not a valid YYYY-MM-DD date",
+            tokens[by_idx + 1]
+        )
+    })?;
+
+    Ok(ParsedFalsifyRule {
+        rule_type: rule_type.to_string(),
+        asset,
+        threshold_value,
+        threshold_low,
+        threshold_high,
+        eval_date_end: end.format("%Y-%m-%d").to_string(),
+    })
+}
+
+/// Bucket a conviction value into a calibration band. Accepts both the
+/// textual conviction used by `user_predictions` (low/medium/high) and the
+/// numeric -5..=+5 conviction used by analyst views (|c| <= 1 → low,
+/// 2-3 → medium, 4-5 → high).
+pub fn conviction_band(conviction: Option<&str>) -> &'static str {
+    let raw = match conviction {
+        Some(v) => v.trim(),
+        None => return "medium",
+    };
+    if let Ok(value) = raw.parse::<f64>() {
+        let magnitude = value.abs();
+        return if magnitude <= 1.0 {
+            "low"
+        } else if magnitude <= 3.0 {
+            "medium"
+        } else {
+            "high"
+        };
+    }
+    match raw.to_ascii_lowercase().as_str() {
+        "low" | "weak" => "low",
+        "high" | "strong" => "high",
+        _ => "medium",
+    }
+}
+
+/// Trailing calibration evidence for one (layer, topic, conviction band)
+/// cell of `calibration_matrix`.
+#[derive(Debug, Clone, Copy)]
+pub struct CalibrationCapEvidence {
+    pub n_scored: i64,
+    pub hit_rate: f64,
+}
+
+/// Tolerant read of the calibration matrix cell for (layer, topic, band).
+/// Handles both the current shape (`conviction_band`, `n`, `hit_rate`) and
+/// legacy/alternate column names (`conviction`, `n_scored`,
+/// `partial_credit_rate`). Returns Ok(None) when the table or cell is
+/// missing so write paths never fail because calibration data is absent.
+fn calibration_matrix_cell(
+    conn: &rusqlite::Connection,
+    layer: &str,
+    topic: &str,
+    band: &str,
+) -> Result<Option<CalibrationCapEvidence>> {
+    let mut stmt = match conn.prepare("PRAGMA table_info('calibration_matrix')") {
+        Ok(stmt) => stmt,
+        Err(_) => return Ok(None),
+    };
+    let names: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(|row| row.ok())
+        .collect();
+    if names.is_empty() {
+        return Ok(None);
+    }
+    let pick = |candidates: &[&str]| -> Option<String> {
+        candidates
+            .iter()
+            .find(|c| names.iter().any(|n| n == **c))
+            .map(|c| (*c).to_string())
+    };
+    let (Some(layer_col), Some(band_col), Some(n_col), Some(rate_col)) = (
+        pick(&["layer", "timeframe"]),
+        pick(&["conviction_band", "conviction"]),
+        pick(&["n", "n_scored", "n_total"]),
+        pick(&["hit_rate", "partial_credit_rate"]),
+    ) else {
+        return Ok(None);
+    };
+    let topic_col = pick(&["topic"]);
+
+    let mut sql = format!(
+        "SELECT {n_col}, {rate_col} FROM calibration_matrix
+         WHERE {layer_col} = ?1 AND {band_col} = ?2"
+    );
+    if topic_col.is_some() {
+        sql.push_str(" AND topic = ?3");
+    }
+    sql.push_str(" LIMIT 1");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mapper = |row: &rusqlite::Row<'_>| {
+        Ok(CalibrationCapEvidence {
+            n_scored: row.get::<_, Option<i64>>(0)?.unwrap_or(0),
+            hit_rate: row.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
+        })
+    };
+    let cell = if topic_col.is_some() {
+        stmt.query_row(rusqlite::params![layer, band, topic], mapper)
+    } else {
+        stmt.query_row(rusqlite::params![layer, band], mapper)
+    };
+    match cell {
+        Ok(evidence) => Ok(Some(evidence)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
 fn extract_date(raw: &str) -> Option<NaiveDate> {
     timestamp_date_in_timezone(raw, local_fixed_offset())
 }
@@ -1029,6 +1282,7 @@ struct AutoScoreResult {
     rule_id: i64,
     claim: String,
     symbol: Option<String>,
+    series: String,
     rule_type: String,
     eval_date_start: Option<String>,
     eval_date_end: String,
@@ -1052,20 +1306,59 @@ struct RuleDecision {
     outcome: &'static str,
     observed: Decimal,
     threshold: String,
+    series: String,
+    evidence: String,
 }
 
-/// Auto-score pending predictions whose target_date has passed.
-/// Uses structured falsification rules when present instead of reparsing claims.
-pub fn run_auto_score(
+/// Counts returned to non-CLI callers (e.g. the `data refresh` tail step).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct AutoScoreSummary {
+    pub scored: usize,
+    pub correct: usize,
+    pub wrong: usize,
+    pub skipped: usize,
+    pub failures: usize,
+}
+
+struct AutoScoreRun {
+    scoreable: Vec<AutoScoreResult>,
+    skipped: Vec<serde_json::Value>,
+    failures: Vec<AutoScoreFailure>,
+    total_rules: usize,
+}
+
+impl AutoScoreRun {
+    fn summary(&self) -> AutoScoreSummary {
+        AutoScoreSummary {
+            scored: self.scoreable.len(),
+            correct: self
+                .scoreable
+                .iter()
+                .filter(|r| r.outcome == "correct")
+                .count(),
+            wrong: self
+                .scoreable
+                .iter()
+                .filter(|r| r.outcome == "wrong")
+                .count(),
+            skipped: self.skipped.len(),
+            failures: self.failures.len(),
+        }
+    }
+}
+
+/// Evaluate falsification rules against daily closes and (unless dry_run)
+/// write decided outcomes. Rules whose window is still open and undecided
+/// are skipped without error. Already-scored predictions are never
+/// overwritten unless `force` is set.
+fn compute_auto_score(
     backend: &BackendConnection,
     since: Option<&str>,
     dry_run: bool,
     confidence_floor: &str,
     force: bool,
-    json_output: bool,
-) -> Result<()> {
+) -> Result<AutoScoreRun> {
     let today = Utc::now().date_naive();
-    let today_str = today.format("%Y-%m-%d").to_string();
     if let Some(since) = since {
         NaiveDate::parse_from_str(since, "%Y-%m-%d")
             .map_err(|_| anyhow::anyhow!("--since must be YYYY-MM-DD"))?;
@@ -1073,9 +1366,8 @@ pub fn run_auto_score(
     let floor = AutoScoreConfidenceFloor::parse(confidence_floor)?;
 
     prediction_falsification_rules::ensure_table_backend(backend)?;
-    let rules = prediction_falsification_rules::list_due_auto_score_rules_backend(
-        backend, since, &today_str,
-    )?;
+    let rules =
+        prediction_falsification_rules::list_active_auto_score_rules_backend(backend, since)?;
 
     let mut scoreable: Vec<AutoScoreResult> = Vec::new();
     let mut skipped: Vec<serde_json::Value> = Vec::new();
@@ -1102,11 +1394,13 @@ pub fn run_auto_score(
             continue;
         }
 
-        match evaluate_falsification_rule(backend, rule) {
-            Ok(decision) => {
+        match evaluate_falsification_rule(backend, rule, today) {
+            Ok(Some(decision)) => {
                 let note = format!(
-                    "Auto-scored: rule_type={}, threshold={}, observed={}, decision={}",
-                    rule.rule_type, decision.threshold, decision.observed, decision.outcome
+                    "auto-scored: {} — {} [series {}]",
+                    restate_rule(rule, &decision.threshold),
+                    decision.evidence,
+                    decision.series,
                 );
                 scoreable.push(AutoScoreResult {
                     id: rule.prediction_id,
@@ -1116,6 +1410,7 @@ pub fn run_auto_score(
                         .symbol
                         .clone()
                         .or_else(|| rule.prediction_symbol.clone()),
+                    series: decision.series,
                     rule_type: rule.rule_type.clone(),
                     eval_date_start: rule.eval_date_start.clone(),
                     eval_date_end: rule.eval_date_end.clone(),
@@ -1125,6 +1420,14 @@ pub fn run_auto_score(
                     note,
                 });
             }
+            Ok(None) => {
+                skipped.push(json!({
+                    "id": rule.prediction_id,
+                    "rule_id": rule.id,
+                    "reason": "window_open_undecided",
+                    "eval_date_end": rule.eval_date_end,
+                }));
+            }
             Err(err) => {
                 failures.push(AutoScoreFailure {
                     id: rule.prediction_id,
@@ -1133,7 +1436,6 @@ pub fn run_auto_score(
                     reason: "evaluation_failed".to_string(),
                     detail: err.to_string(),
                 });
-                continue;
             }
         }
     }
@@ -1150,6 +1452,42 @@ pub fn run_auto_score(
         }
     }
 
+    Ok(AutoScoreRun {
+        scoreable,
+        skipped,
+        failures,
+        total_rules: rules.len(),
+    })
+}
+
+/// Auto-score entry point for `pftui data refresh`: scores due rules with
+/// default settings and returns counts for a one-line summary.
+pub fn auto_score_for_refresh(backend: &BackendConnection) -> Result<AutoScoreSummary> {
+    Ok(compute_auto_score(backend, None, false, "medium", false)?.summary())
+}
+
+/// Auto-score pending predictions from their falsification rules.
+/// `close-*`/`prints-*` rules score CORRECT on the first qualifying daily
+/// close inside the window and WRONG once the window expires without one;
+/// `stays-*` rules score WRONG on the first violating close and CORRECT
+/// only after the window expires clean.
+pub fn run_auto_score(
+    backend: &BackendConnection,
+    since: Option<&str>,
+    dry_run: bool,
+    confidence_floor: &str,
+    force: bool,
+    json_output: bool,
+) -> Result<()> {
+    let run = compute_auto_score(backend, since, dry_run, confidence_floor, force)?;
+    let summary = run.summary();
+    let AutoScoreRun {
+        scoreable,
+        skipped,
+        failures,
+        total_rules,
+    } = run;
+
     if json_output {
         let payload = json!({
             "dry_run": dry_run,
@@ -1157,11 +1495,13 @@ pub fn run_auto_score(
             "force": force,
             "scored": scoreable,
             "scored_count": scoreable.len(),
+            "correct_count": summary.correct,
+            "wrong_count": summary.wrong,
             "skipped": skipped,
             "skipped_count": skipped.len(),
             "failures": failures,
             "failure_count": failures.len(),
-            "total_rules": rules.len(),
+            "total_rules": total_rules,
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else if scoreable.is_empty() {
@@ -1181,7 +1521,7 @@ pub fn run_auto_score(
         println!("{} {} prediction(s):", action, scoreable.len());
         for r in &scoreable {
             println!(
-                "  #{} [{}] {} -> {} (observed: {}, threshold: {})",
+                "  #{} [{}] {} -> {} (observed: {}, threshold: {}, series: {})",
                 r.id,
                 r.rule_type,
                 if r.claim.len() > 50 {
@@ -1192,8 +1532,13 @@ pub fn run_auto_score(
                 r.outcome,
                 r.observed,
                 r.threshold,
+                r.series,
             );
         }
+        println!(
+            "  Summary: {} scored ({} correct / {} wrong).",
+            summary.scored, summary.correct, summary.wrong
+        );
         if !skipped.is_empty() {
             println!("  {} rule(s) skipped.", skipped.len());
         }
@@ -1205,20 +1550,50 @@ pub fn run_auto_score(
     Ok(())
 }
 
+/// Human-readable restatement of the success condition a rule encodes.
+fn restate_rule(rule: &PredictionFalsificationRule, threshold: &str) -> String {
+    let symbol = rule
+        .symbol
+        .as_deref()
+        .or(rule.prediction_symbol.as_deref())
+        .unwrap_or("?");
+    let window = match rule.eval_date_start.as_deref() {
+        Some(start) => format!("{}..{}", start, rule.eval_date_end),
+        None => format!("by {}", rule.eval_date_end),
+    };
+    format!(
+        "{} {} {} within {}",
+        rule.rule_type, symbol, threshold, window
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RuleCondition {
+    Above,
+    Below,
+    InRange,
+}
+
 fn evaluate_falsification_rule(
     backend: &BackendConnection,
     rule: &PredictionFalsificationRule,
-) -> Result<RuleDecision> {
+    today: NaiveDate,
+) -> Result<Option<RuleDecision>> {
+    // prints-* rules are evaluated against daily closes: intraday data is
+    // not available, so a "print" is approximated by a close.
     match rule.rule_type.as_str() {
-        "close-above" => evaluate_close_rule(backend, rule, true),
-        "close-below" => evaluate_close_rule(backend, rule, false),
-        "close-between" => evaluate_between_rule(backend, rule, false),
-        "stays-above" => evaluate_stays_rule(backend, rule, true),
-        "stays-below" => evaluate_stays_rule(backend, rule, false),
-        "stays-in-range" => evaluate_between_rule(backend, rule, true),
-        "prints-above" | "prints-below" | "prints-in-band" => {
-            bail!("missing_macro_cache_data: print rule evaluation is not available for this rule yet")
+        "close-above" | "prints-above" => {
+            evaluate_breach_rule(backend, rule, today, RuleCondition::Above)
         }
+        "close-below" | "prints-below" => {
+            evaluate_breach_rule(backend, rule, today, RuleCondition::Below)
+        }
+        "close-between" | "prints-in-band" => {
+            evaluate_breach_rule(backend, rule, today, RuleCondition::InRange)
+        }
+        "stays-above" => evaluate_stays_rule(backend, rule, today, RuleCondition::Above),
+        "stays-below" => evaluate_stays_rule(backend, rule, today, RuleCondition::Below),
+        "stays-in-range" => evaluate_stays_rule(backend, rule, today, RuleCondition::InRange),
         "correlation-above" | "correlation-below" => {
             bail!("unsupported_data_source: correlation rule evaluation is not implemented")
         }
@@ -1226,104 +1601,203 @@ fn evaluate_falsification_rule(
     }
 }
 
-fn evaluate_close_rule(
-    backend: &BackendConnection,
-    rule: &PredictionFalsificationRule,
-    above: bool,
-) -> Result<RuleDecision> {
-    let symbol = rule_symbol(rule)?;
-    let threshold = decimal_threshold(rule)?;
-    let observed =
-        get_price_at_date_backend(backend, &symbol, &rule.eval_date_end)?.ok_or_else(|| {
-            anyhow::anyhow!(
-                "missing_price_history: {} on or before {}",
-                symbol,
-                rule.eval_date_end
-            )
-        })?;
-    let correct = if above {
-        observed >= threshold
-    } else {
-        observed <= threshold
-    };
-    Ok(RuleDecision {
-        outcome: if correct { "correct" } else { "wrong" },
-        observed,
-        threshold: threshold.to_string(),
-    })
+struct RuleWindow<'a> {
+    start: &'a str,
+    end_capped: String,
+    expired: bool,
 }
 
+fn rule_window(rule: &PredictionFalsificationRule, today: NaiveDate) -> RuleWindow<'_> {
+    let today_str = today.format("%Y-%m-%d").to_string();
+    let expired = today_str.as_str() > rule.eval_date_end.as_str();
+    let end_capped = if expired {
+        rule.eval_date_end.clone()
+    } else {
+        today_str
+    };
+    RuleWindow {
+        start: rule
+            .eval_date_start
+            .as_deref()
+            .unwrap_or(&rule.eval_date_end),
+        end_capped,
+        expired,
+    }
+}
+
+fn condition_bounds(
+    rule: &PredictionFalsificationRule,
+    condition: RuleCondition,
+) -> Result<(Decimal, Option<Decimal>, String)> {
+    match condition {
+        RuleCondition::Above | RuleCondition::Below => {
+            let threshold = decimal_threshold(rule)?;
+            let symbol = if condition == RuleCondition::Above {
+                ">"
+            } else {
+                "<"
+            };
+            Ok((threshold, None, format!("{} {}", symbol, threshold)))
+        }
+        RuleCondition::InRange => {
+            let low = decimal_from_f64(rule.threshold_low, "threshold_low")?;
+            let high = decimal_from_f64(rule.threshold_high, "threshold_high")?;
+            Ok((low, Some(high), format!("{}..{}", low, high)))
+        }
+    }
+}
+
+fn close_satisfies(
+    condition: RuleCondition,
+    close: Decimal,
+    low: Decimal,
+    high: Option<Decimal>,
+) -> bool {
+    match condition {
+        RuleCondition::Above => close > low,
+        RuleCondition::Below => close < low,
+        RuleCondition::InRange => {
+            let high = high.unwrap_or(low);
+            close >= low && close <= high
+        }
+    }
+}
+
+/// `close-*` / `prints-*` semantics: the prediction is CORRECT as soon as at
+/// least one daily close inside the evaluation window satisfies the success
+/// condition; WRONG once the window has expired without one; undecided
+/// (None) while the window is still open.
+fn evaluate_breach_rule(
+    backend: &BackendConnection,
+    rule: &PredictionFalsificationRule,
+    today: NaiveDate,
+    condition: RuleCondition,
+) -> Result<Option<RuleDecision>> {
+    let symbol = rule_symbol(rule)?;
+    let (low, high, threshold_desc) = condition_bounds(rule, condition)?;
+    let window = rule_window(rule, today);
+    let Some((series, rows)) =
+        load_series_window(backend, &symbol, window.start, &window.end_capped)?
+    else {
+        if window.expired {
+            bail!(
+                "missing_price_history: {} between {} and {}",
+                symbol,
+                window.start,
+                window.end_capped
+            );
+        }
+        return Ok(None);
+    };
+
+    if let Some((date, close)) = rows
+        .iter()
+        .find(|(_, close)| close_satisfies(condition, *close, low, high))
+    {
+        return Ok(Some(RuleDecision {
+            outcome: "correct",
+            observed: *close,
+            threshold: threshold_desc,
+            series,
+            evidence: format!("{} close {} met the success condition", date, close),
+        }));
+    }
+
+    if window.expired {
+        // Decided wrong: report the close that came nearest to qualifying.
+        let (date, close) = match condition {
+            RuleCondition::Below => rows
+                .iter()
+                .min_by(|a, b| a.1.cmp(&b.1))
+                .cloned()
+                .unwrap_or_default(),
+            _ => rows
+                .iter()
+                .max_by(|a, b| a.1.cmp(&b.1))
+                .cloned()
+                .unwrap_or_default(),
+        };
+        return Ok(Some(RuleDecision {
+            outcome: "wrong",
+            observed: close,
+            threshold: threshold_desc,
+            series,
+            evidence: format!(
+                "window expired {}; nearest close {} on {} never met the success condition",
+                rule.eval_date_end, close, date
+            ),
+        }));
+    }
+
+    Ok(None)
+}
+
+/// `stays-*` semantics: every daily close inside the window must satisfy
+/// the condition. WRONG immediately on the first violating close; CORRECT
+/// only once the window has expired clean; undecided (None) while open.
 fn evaluate_stays_rule(
     backend: &BackendConnection,
     rule: &PredictionFalsificationRule,
-    above: bool,
-) -> Result<RuleDecision> {
+    today: NaiveDate,
+    condition: RuleCondition,
+) -> Result<Option<RuleDecision>> {
     let symbol = rule_symbol(rule)?;
-    let threshold = decimal_threshold(rule)?;
-    let start = rule
-        .eval_date_start
-        .as_deref()
-        .unwrap_or(&rule.eval_date_end);
-    let prices = price_history_range_backend(backend, &symbol, start, &rule.eval_date_end)?;
-    if prices.is_empty() {
-        bail!(
-            "missing_price_history: {} between {} and {}",
-            symbol,
-            start,
-            rule.eval_date_end
-        );
-    }
-    let observed = if above {
-        prices.iter().copied().fold(Decimal::MAX, Decimal::min)
-    } else {
-        prices.iter().copied().fold(Decimal::ZERO, Decimal::max)
+    let (low, high, threshold_desc) = condition_bounds(rule, condition)?;
+    let window = rule_window(rule, today);
+    let Some((series, rows)) =
+        load_series_window(backend, &symbol, window.start, &window.end_capped)?
+    else {
+        if window.expired {
+            bail!(
+                "missing_price_history: {} between {} and {}",
+                symbol,
+                window.start,
+                window.end_capped
+            );
+        }
+        return Ok(None);
     };
-    let correct = if above {
-        prices.iter().all(|value| *value >= threshold)
-    } else {
-        prices.iter().all(|value| *value <= threshold)
-    };
-    Ok(RuleDecision {
-        outcome: if correct { "correct" } else { "wrong" },
-        observed,
-        threshold: threshold.to_string(),
-    })
-}
 
-fn evaluate_between_rule(
-    backend: &BackendConnection,
-    rule: &PredictionFalsificationRule,
-    range: bool,
-) -> Result<RuleDecision> {
-    let symbol = rule_symbol(rule)?;
-    let low = decimal_from_f64(rule.threshold_low, "threshold_low")?;
-    let high = decimal_from_f64(rule.threshold_high, "threshold_high")?;
-    let start = rule
-        .eval_date_start
-        .as_deref()
-        .unwrap_or(&rule.eval_date_end);
-    let prices = if range {
-        price_history_range_backend(backend, &symbol, start, &rule.eval_date_end)?
-    } else {
-        get_price_at_date_backend(backend, &symbol, &rule.eval_date_end)?
-            .map(|value| vec![value])
-            .unwrap_or_default()
-    };
-    if prices.is_empty() {
-        bail!(
-            "missing_price_history: {} between {} and {}",
-            symbol,
-            start,
-            rule.eval_date_end
-        );
+    if let Some((date, close)) = rows
+        .iter()
+        .find(|(_, close)| !close_satisfies(condition, *close, low, high))
+    {
+        return Ok(Some(RuleDecision {
+            outcome: "wrong",
+            observed: *close,
+            threshold: threshold_desc,
+            series,
+            evidence: format!("{} close {} violated the stays condition", date, close),
+        }));
     }
-    let observed = *prices.last().unwrap_or(&Decimal::ZERO);
-    let correct = prices.iter().all(|value| *value >= low && *value <= high);
-    Ok(RuleDecision {
-        outcome: if correct { "correct" } else { "wrong" },
-        observed,
-        threshold: format!("{}..{}", low, high),
-    })
+
+    if window.expired {
+        // Window closed with every close satisfying the condition.
+        let (date, close) = match condition {
+            RuleCondition::Above => rows
+                .iter()
+                .min_by(|a, b| a.1.cmp(&b.1))
+                .cloned()
+                .unwrap_or_default(),
+            _ => rows
+                .iter()
+                .max_by(|a, b| a.1.cmp(&b.1))
+                .cloned()
+                .unwrap_or_default(),
+        };
+        return Ok(Some(RuleDecision {
+            outcome: "correct",
+            observed: close,
+            threshold: threshold_desc,
+            series,
+            evidence: format!(
+                "window expired {} with every close satisfying the condition (tightest close {} on {})",
+                rule.eval_date_end, close, date
+            ),
+        }));
+    }
+
+    Ok(None)
 }
 
 fn rule_symbol(rule: &PredictionFalsificationRule) -> Result<String> {
@@ -1338,7 +1812,9 @@ fn rule_symbol(rule: &PredictionFalsificationRule) -> Result<String> {
 
 fn decimal_threshold(rule: &PredictionFalsificationRule) -> Result<Decimal> {
     decimal_from_f64(
-        rule.threshold_value.or(rule.threshold_high),
+        rule.threshold_value
+            .or(rule.threshold_high)
+            .or(rule.threshold_low),
         "threshold_value",
     )
 }
@@ -1348,30 +1824,64 @@ fn decimal_from_f64(value: Option<f64>, field: &str) -> Result<Decimal> {
     Decimal::from_f64_retain(value).ok_or_else(|| anyhow::anyhow!("invalid_{}", field))
 }
 
-fn price_history_range_backend(
+/// Candidate price series for a rule symbol, in preference order. The rule's
+/// own symbol is canonical; the `-USD` suffixed (or de-suffixed) alias is a
+/// fallback for crypto series stored under either convention.
+fn series_candidates(symbol: &str) -> Vec<String> {
+    let mut candidates = vec![symbol.to_string()];
+    if let Some(base) = symbol.strip_suffix("-USD") {
+        candidates.push(base.to_string());
+    } else {
+        candidates.push(format!("{symbol}-USD"));
+    }
+    candidates
+}
+
+/// (resolved series symbol, ordered (date, close) rows) for a rule window.
+type SeriesWindowRows = (String, Vec<(String, Decimal)>);
+
+/// Load (date, close) rows for the first candidate series with coverage in
+/// the window. Returns None when no candidate has any rows.
+fn load_series_window(
     backend: &BackendConnection,
     symbol: &str,
     start: &str,
     end: &str,
-) -> Result<Vec<Decimal>> {
+) -> Result<Option<SeriesWindowRows>> {
+    for candidate in series_candidates(symbol) {
+        let rows = price_history_rows_backend(backend, &candidate, start, end)?;
+        if !rows.is_empty() {
+            return Ok(Some((candidate, rows)));
+        }
+    }
+    Ok(None)
+}
+
+fn price_history_rows_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    start: &str,
+    end: &str,
+) -> Result<Vec<(String, Decimal)>> {
     crate::db::query::dispatch(
         backend,
         |conn| {
             let mut stmt = conn.prepare(
-                "SELECT close FROM price_history
+                "SELECT date, close FROM price_history
                  WHERE symbol = ?1 AND date >= ?2 AND date <= ?3
                  ORDER BY date ASC",
             )?;
             let rows = stmt.query_map(rusqlite::params![symbol, start, end], |row| {
-                let close: String = row.get(0)?;
-                Ok(close.parse::<Decimal>().unwrap_or(Decimal::ZERO))
+                let date: String = row.get(0)?;
+                let close: String = row.get(1)?;
+                Ok((date, close.parse::<Decimal>().unwrap_or(Decimal::ZERO)))
             })?;
             Ok(rows.filter_map(|row| row.ok()).collect())
         },
         |pool| {
-            let rows: Vec<String> = crate::db::pg_runtime::block_on(async {
-                sqlx::query_scalar(
-                    "SELECT close FROM price_history
+            let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
+                sqlx::query_as(
+                    "SELECT date, close FROM price_history
                      WHERE symbol = $1 AND date >= $2 AND date <= $3
                      ORDER BY date ASC",
                 )
@@ -1383,7 +1893,7 @@ fn price_history_range_backend(
             })?;
             Ok(rows
                 .into_iter()
-                .map(|close| close.parse::<Decimal>().unwrap_or(Decimal::ZERO))
+                .map(|(date, close)| (date, close.parse::<Decimal>().unwrap_or(Decimal::ZERO)))
                 .collect())
         },
     )
@@ -2158,6 +2668,9 @@ pub fn run_add_with_preflight(
     inline: bool,
     preflight_threshold: Option<u32>,
     with_adversary: bool,
+    falsify: Option<&str>,
+    override_confidence_cap: bool,
+    cap_rationale: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
     // Validate inputs early so callers see the same errors regardless of
@@ -2174,6 +2687,96 @@ pub fn run_add_with_preflight(
             bail!("invalid confidence '{}'. Valid range: 0.0..=1.0", conf);
         }
     }
+    if override_confidence_cap && cap_rationale.map(|r| r.trim().is_empty()).unwrap_or(true) {
+        bail!("--override-confidence-cap requires --cap-rationale \"<text>\" explaining why the calibration clamp does not apply");
+    }
+
+    // ── Falsification rule parse (deterministic grammar, no LLM) ──────
+    let today_str = Local::now().date_naive().format("%Y-%m-%d").to_string();
+    let falsify_parse: Option<std::result::Result<ParsedFalsifyRule, String>> =
+        falsify.map(|raw| parse_falsify_rule(raw).map_err(|e| e.to_string()));
+    let falsifiable = matches!(falsify_parse, Some(Ok(_)));
+
+    // ── Write-time confidence discipline ──────────────────────────────
+    let mut effective_confidence = confidence;
+    let mut confidence_cap_notes: Vec<String> = Vec::new();
+
+    if !falsifiable {
+        let reason = match &falsify_parse {
+            Some(Err(err)) => format!("--falsify did not parse ({err})"),
+            _ => "no --falsify rule supplied".to_string(),
+        };
+        if let Some(conf) = effective_confidence {
+            if conf > UNFALSIFIABLE_CONFIDENCE_CAP {
+                effective_confidence = Some(UNFALSIFIABLE_CONFIDENCE_CAP);
+                confidence_cap_notes.push(format!(
+                    "unfalsifiable prediction — confidence capped at {:.2} (stated {:.2}; {})",
+                    UNFALSIFIABLE_CONFIDENCE_CAP, conf, reason
+                ));
+            }
+        }
+        if !json_output {
+            eprintln!(
+                "Warning: unfalsifiable prediction — confidence capped at {:.2} ({}). Supply --falsify \"<SYMBOL> <close|closes|stays|prints> <above|below|between|in-range|in-band> <value> [<value2>] by <YYYY-MM-DD>\" to lift the cap.",
+                UNFALSIFIABLE_CONFIDENCE_CAP, reason
+            );
+        }
+    }
+
+    // Calibration-derived clamp: if the trailing scored record for this
+    // (layer, topic, conviction band) shows the stated confidence is more
+    // than CALIBRATION_CAP_MARGIN above the realized hit rate, clamp it.
+    let mut cap_override_note: Option<String> = None;
+    if let (Some(conf), Some(conn)) = (effective_confidence, backend.sqlite_native()) {
+        let cap_layer = resolved_timeframe.as_deref().unwrap_or("medium");
+        let cap_topic = crate::db::news_source_accuracy::normalize_topic(topic)?;
+        let band = conviction_band(conviction);
+        if let Some(evidence) = calibration_matrix_cell(conn, cap_layer, &cap_topic, band)? {
+            let ceiling = evidence.hit_rate + CALIBRATION_CAP_MARGIN;
+            if evidence.n_scored >= CALIBRATION_CAP_MIN_N && conf > ceiling {
+                if override_confidence_cap {
+                    let rationale = cap_rationale.unwrap_or_default().trim().to_string();
+                    cap_override_note = Some(format!("[cap-override: {rationale}]"));
+                    if !json_output {
+                        println!(
+                            "Calibration cap overridden: trailing hit rate for ({}, {}, {}) is {:.0}% over {} scored calls (cap would be {:.2}); rationale recorded.",
+                            cap_layer,
+                            cap_topic,
+                            band,
+                            evidence.hit_rate * 100.0,
+                            evidence.n_scored,
+                            ceiling
+                        );
+                    }
+                } else {
+                    effective_confidence = Some(ceiling.clamp(0.0, 1.0));
+                    confidence_cap_notes.push(format!(
+                        "calibration cap: ({}, {}, {}) trailing hit rate {:.0}% over {} scored calls — confidence clamped from {:.2} to {:.2}",
+                        cap_layer,
+                        cap_topic,
+                        band,
+                        evidence.hit_rate * 100.0,
+                        evidence.n_scored,
+                        conf,
+                        ceiling.clamp(0.0, 1.0)
+                    ));
+                    if !json_output {
+                        println!(
+                            "Calibration cap: trailing hit rate for ({}, {}, {}) is {:.0}% over {} scored calls — confidence clamped from {:.2} to {:.2}. Pass --override-confidence-cap --cap-rationale \"...\" to bypass.",
+                            cap_layer,
+                            cap_topic,
+                            band,
+                            evidence.hit_rate * 100.0,
+                            evidence.n_scored,
+                            conf,
+                            ceiling.clamp(0.0, 1.0)
+                        );
+                    }
+                }
+            }
+        }
+    }
+    let confidence = effective_confidence;
 
     let threshold = preflight_threshold
         .unwrap_or(crate::db::preflight::DEFAULT_PREFLIGHT_ABORT_THRESHOLD);
@@ -2275,6 +2878,12 @@ pub fn run_add_with_preflight(
             None => adv_summary.clone(),
         });
     }
+    if let Some(note) = cap_override_note.as_ref() {
+        resolution_with_inline = Some(match resolution_with_inline {
+            Some(existing) => format!("{} {}", existing, note),
+            None => note.clone(),
+        });
+    }
 
     enforce_low_prediction_cap(
         backend,
@@ -2297,6 +2906,60 @@ pub fn run_add_with_preflight(
         topic,
         source_article_id,
     )?;
+
+    // ── Persist the falsification rule (or its unstructured fallback) ──
+    let mut persisted_falsification: Option<serde_json::Value> = None;
+    if let Some(parse_result) = falsify_parse.as_ref() {
+        let new_rule = match parse_result {
+            Ok(parsed) => crate::db::prediction_falsification_rules::NewFalsificationRule {
+                prediction_id: new_id,
+                rule_type: parsed.rule_type.clone(),
+                symbol: Some(parsed.asset.clone()),
+                threshold_value: parsed.threshold_value,
+                threshold_low: parsed.threshold_low,
+                threshold_high: parsed.threshold_high,
+                threshold_text: None,
+                eval_date_start: today_str.clone(),
+                eval_date_end: parsed.eval_date_end.clone(),
+                auto_score_eligible: true,
+                parse_confidence: "high".to_string(),
+            },
+            Err(_) => crate::db::prediction_falsification_rules::NewFalsificationRule {
+                prediction_id: new_id,
+                rule_type: "unstructured".to_string(),
+                symbol: symbol.map(|s| s.to_string()),
+                threshold_value: None,
+                threshold_low: None,
+                threshold_high: None,
+                threshold_text: falsify.map(|s| s.to_string()),
+                eval_date_start: today_str.clone(),
+                eval_date_end: target_date
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| today_str.clone()),
+                auto_score_eligible: false,
+                parse_confidence: "low".to_string(),
+            },
+        };
+        let rule_id =
+            crate::db::prediction_falsification_rules::insert_rule_backend(backend, &new_rule)?;
+        persisted_falsification = Some(serde_json::json!({
+            "rule_id": rule_id,
+            "rule": new_rule,
+            "parse_error": parse_result.as_ref().err(),
+        }));
+        if !json_output {
+            match parse_result {
+                Ok(parsed) => println!(
+                    "  + falsification rule #{} recorded: {} {} (window {}..{}, auto-score eligible)",
+                    rule_id, parsed.rule_type, parsed.asset, today_str, parsed.eval_date_end
+                ),
+                Err(err) => println!(
+                    "  + unstructured falsification rule #{} recorded (not auto-scoreable): {}",
+                    rule_id, err
+                ),
+            }
+        }
+    }
 
     let mut persisted_adversary_view_id: Option<i64> = None;
     if let Some(view) = adversary_view_for_persist.as_ref() {
@@ -2328,11 +2991,16 @@ pub fn run_add_with_preflight(
                 "prediction": row,
                 "adversary_view_id": persisted_adversary_view_id,
                 "adversary_view": adversary_view_for_persist,
+                "falsification": persisted_falsification,
+                "confidence_caps_applied": confidence_cap_notes,
             });
             println!("{}", serde_json::to_string_pretty(&payload)?);
         }
     } else {
         println!("Added prediction #{}", new_id);
+        for note in &confidence_cap_notes {
+            println!("  ! {}", note);
+        }
         if let Some(adv_id) = persisted_adversary_view_id {
             println!("  + adversary_view #{} persisted", adv_id);
         }
@@ -2909,7 +3577,7 @@ mod tests {
     }
 
     #[test]
-    fn autoscore_rule_scores_synthetic_price_history() {
+    fn autoscore_close_above_scores_correct_on_qualifying_close() {
         let conn = db::open_in_memory();
         let prediction_id = seed_autoscore_prediction(
             &conn,
@@ -2920,10 +3588,12 @@ mod tests {
             None,
             None,
             "high",
+            "2026-05-30",
         );
         conn.execute(
             "INSERT INTO price_history (symbol, date, close, source)
-             VALUES ('BTC-USD', '2026-05-30', '101', 'test')",
+             VALUES ('BTC-USD', '2026-05-15', '101', 'test'),
+                    ('BTC-USD', '2026-05-30', '95', 'test')",
             [],
         )
         .unwrap();
@@ -2938,12 +3608,307 @@ mod tests {
             .find(|row| row.id == prediction_id)
             .unwrap();
 
+        // One qualifying close inside the window is enough even though the
+        // final close fell back below the threshold.
+        assert_eq!(scored.outcome, "correct");
+        let notes = scored.score_notes.as_deref().unwrap();
+        assert!(notes.contains("auto-scored: close-above"), "notes: {notes}");
+        assert!(notes.contains("2026-05-15 close 101"), "notes: {notes}");
+        assert!(notes.contains("[series BTC-USD]"), "notes: {notes}");
+    }
+
+    #[test]
+    fn autoscore_close_above_scores_wrong_after_window_expires() {
+        let conn = db::open_in_memory();
+        let prediction_id = seed_autoscore_prediction(
+            &conn,
+            "BTC closes above 100 by end of window",
+            "BTC-USD",
+            "close-above",
+            Some(100.0),
+            None,
+            None,
+            "high",
+            "2026-05-30",
+        );
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('BTC-USD', '2026-05-15', '98', 'test'),
+                    ('BTC-USD', '2026-05-30', '92', 'test')",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+
+        run_auto_score(&backend, Some("2026-05-01"), false, "medium", false, true).unwrap();
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let scored = rows
+            .into_iter()
+            .find(|row| row.id == prediction_id)
+            .unwrap();
+
+        assert_eq!(scored.outcome, "wrong");
+        let notes = scored.score_notes.as_deref().unwrap();
+        assert!(notes.contains("window expired 2026-05-30"), "notes: {notes}");
+        assert!(notes.contains("98"), "notes: {notes}");
+    }
+
+    #[test]
+    fn autoscore_open_window_without_qualifying_close_stays_pending() {
+        let conn = db::open_in_memory();
+        let far_future = (Utc::now().date_naive() + Duration::days(60))
+            .format("%Y-%m-%d")
+            .to_string();
+        let prediction_id = seed_autoscore_prediction(
+            &conn,
+            "BTC closes above 100 eventually",
+            "BTC-USD",
+            "close-above",
+            Some(100.0),
+            None,
+            None,
+            "high",
+            &far_future,
+        );
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('BTC-USD', '2026-05-15', '95', 'test')",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+
+        run_auto_score(&backend, Some("2026-05-01"), false, "medium", false, true).unwrap();
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let prediction = rows
+            .into_iter()
+            .find(|row| row.id == prediction_id)
+            .unwrap();
+
+        // No qualifying close yet and the window is still open → undecided.
+        assert_eq!(prediction.outcome, "pending");
+        assert!(prediction.score_notes.is_none());
+    }
+
+    #[test]
+    fn autoscore_stays_above_scores_wrong_on_first_violation_even_in_open_window() {
+        let conn = db::open_in_memory();
+        let far_future = (Utc::now().date_naive() + Duration::days(60))
+            .format("%Y-%m-%d")
+            .to_string();
+        let prediction_id = seed_autoscore_prediction(
+            &conn,
+            "BTC stays above 100 for the window",
+            "BTC-USD",
+            "stays-above",
+            Some(100.0),
+            None,
+            None,
+            "high",
+            &far_future,
+        );
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('BTC-USD', '2026-05-15', '105', 'test'),
+                    ('BTC-USD', '2026-05-16', '99', 'test')",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+
+        run_auto_score(&backend, Some("2026-05-01"), false, "medium", false, true).unwrap();
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let scored = rows
+            .into_iter()
+            .find(|row| row.id == prediction_id)
+            .unwrap();
+
+        assert_eq!(scored.outcome, "wrong");
+        let notes = scored.score_notes.as_deref().unwrap();
+        assert!(
+            notes.contains("2026-05-16 close 99 violated"),
+            "notes: {notes}"
+        );
+    }
+
+    #[test]
+    fn autoscore_stays_in_range_scores_correct_only_after_window_expires_clean() {
+        let conn = db::open_in_memory();
+
+        // Open window, all closes inside the band → still pending.
+        let far_future = (Utc::now().date_naive() + Duration::days(60))
+            .format("%Y-%m-%d")
+            .to_string();
+        let open_id = seed_autoscore_prediction(
+            &conn,
+            "BTC stays in range for the open window",
+            "BTC-USD",
+            "stays-in-range",
+            None,
+            Some(90.0),
+            Some(110.0),
+            "high",
+            &far_future,
+        );
+        // Expired window, all closes inside the band → correct.
+        let expired_id = seed_autoscore_prediction(
+            &conn,
+            "BTC stayed in range for the closed window",
+            "BTC-USD",
+            "stays-in-range",
+            None,
+            Some(90.0),
+            Some(110.0),
+            "high",
+            "2026-05-30",
+        );
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('BTC-USD', '2026-05-15', '95', 'test'),
+                    ('BTC-USD', '2026-05-20', '108', 'test')",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+
+        run_auto_score(&backend, Some("2026-05-01"), false, "medium", false, true).unwrap();
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let open = rows.iter().find(|row| row.id == open_id).unwrap();
+        let expired = rows.iter().find(|row| row.id == expired_id).unwrap();
+
+        assert_eq!(open.outcome, "pending");
+        assert_eq!(expired.outcome, "correct");
+        assert!(expired
+            .score_notes
+            .as_deref()
+            .unwrap()
+            .contains("window expired 2026-05-30 with every close satisfying"));
+    }
+
+    #[test]
+    fn autoscore_never_overwrites_already_scored_prediction() {
+        let conn = db::open_in_memory();
+        let prediction_id = seed_autoscore_prediction(
+            &conn,
+            "BTC closes above 100 by end of window",
+            "BTC-USD",
+            "close-above",
+            Some(100.0),
+            None,
+            None,
+            "high",
+            "2026-05-30",
+        );
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('BTC-USD', '2026-05-15', '101', 'test')",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+        crate::db::user_predictions::score_prediction_backend(
+            &backend,
+            prediction_id,
+            "wrong",
+            Some("manually scored by operator"),
+            None,
+        )
+        .unwrap();
+
+        run_auto_score(&backend, Some("2026-05-01"), false, "medium", false, true).unwrap();
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let prediction = rows
+            .into_iter()
+            .find(|row| row.id == prediction_id)
+            .unwrap();
+
+        assert_eq!(prediction.outcome, "wrong");
+        assert_eq!(
+            prediction.score_notes.as_deref(),
+            Some("manually scored by operator")
+        );
+    }
+
+    #[test]
+    fn autoscore_prints_rule_uses_daily_closes() {
+        let conn = db::open_in_memory();
+        let prediction_id = seed_autoscore_prediction(
+            &conn,
+            "DXY prints below 96.5 before deadline",
+            "DX-Y.NYB",
+            "prints-below",
+            Some(96.5),
+            None,
+            None,
+            "high",
+            "2026-05-30",
+        );
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('DX-Y.NYB', '2026-05-12', '96.1', 'test')",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+
+        run_auto_score(&backend, Some("2026-05-01"), false, "medium", false, true).unwrap();
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let scored = rows
+            .into_iter()
+            .find(|row| row.id == prediction_id)
+            .unwrap();
+        assert_eq!(scored.outcome, "correct");
+    }
+
+    #[test]
+    fn autoscore_falls_back_to_usd_suffixed_series_and_notes_it() {
+        let conn = db::open_in_memory();
+        let prediction_id = seed_autoscore_prediction(
+            &conn,
+            "BTC closes above 100 by end of window",
+            "BTC",
+            "close-above",
+            Some(100.0),
+            None,
+            None,
+            "high",
+            "2026-05-30",
+        );
+        // No 'BTC' series rows in the window — only 'BTC-USD'.
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('BTC-USD', '2026-05-15', '102', 'test')",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+
+        run_auto_score(&backend, Some("2026-05-01"), false, "medium", false, true).unwrap();
+        let rows =
+            crate::db::user_predictions::list_predictions_backend(&backend, None, None, None, None)
+                .unwrap();
+        let scored = rows
+            .into_iter()
+            .find(|row| row.id == prediction_id)
+            .unwrap();
         assert_eq!(scored.outcome, "correct");
         assert!(scored
             .score_notes
             .as_deref()
             .unwrap()
-            .contains("Auto-scored: rule_type=close-above"));
+            .contains("[series BTC-USD]"));
     }
 
     #[test]
@@ -2958,6 +3923,7 @@ mod tests {
             None,
             None,
             "high",
+            "2026-05-30",
         );
         let backend = BackendConnection::Sqlite { conn };
 
@@ -2971,15 +3937,19 @@ mod tests {
             .unwrap();
 
         assert_eq!(prediction.outcome, "pending");
-        let rules = crate::db::prediction_falsification_rules::list_due_auto_score_rules_backend(
+        let rules =
+            crate::db::prediction_falsification_rules::list_active_auto_score_rules_backend(
+                &backend,
+                Some("2026-05-01"),
+            )
+            .unwrap();
+        let err = evaluate_falsification_rule(
             &backend,
-            Some("2026-05-01"),
-            "2026-06-01",
+            &rules[0],
+            NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
         )
-        .unwrap();
-        let err = evaluate_falsification_rule(&backend, &rules[0])
-            .unwrap_err()
-            .to_string();
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("missing_price_history"));
     }
 
@@ -2995,6 +3965,7 @@ mod tests {
             None,
             None,
             "medium",
+            "2026-05-30",
         );
         conn.execute(
             "INSERT INTO price_history (symbol, date, close, source)
@@ -3027,6 +3998,7 @@ mod tests {
         threshold_low: Option<f64>,
         threshold_high: Option<f64>,
         confidence: &str,
+        eval_date_end: &str,
     ) -> i64 {
         let id = crate::db::user_predictions::add_prediction(
             conn,
@@ -3036,7 +4008,7 @@ mod tests {
             Some("medium"),
             Some(0.7),
             Some("test-agent"),
-            Some("2026-05-30"),
+            Some(eval_date_end),
             None,
         )
         .unwrap();
@@ -3044,7 +4016,7 @@ mod tests {
             "INSERT INTO prediction_falsification_rules
                 (prediction_id, rule_type, symbol, threshold_value, threshold_low, threshold_high,
                  eval_date_start, eval_date_end, parse_confidence, auto_score_eligible)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, '2026-05-01', '2026-05-30', ?7, 1)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, '2026-05-01', ?7, ?8, 1)",
             rusqlite::params![
                 id,
                 rule_type,
@@ -3052,11 +4024,410 @@ mod tests {
                 threshold_value,
                 threshold_low,
                 threshold_high,
+                eval_date_end,
                 confidence
             ],
         )
         .unwrap();
         id
+    }
+
+    // ── --falsify grammar parser ───────────────────────────────────────
+
+    #[test]
+    fn falsify_parser_close_below() {
+        let rule = parse_falsify_rule("BTC close below 50000 by 2026-09-30").unwrap();
+        assert_eq!(rule.rule_type, "close-below");
+        assert_eq!(rule.asset, "BTC");
+        assert_eq!(rule.threshold_value, Some(50000.0));
+        assert_eq!(rule.threshold_low, None);
+        assert_eq!(rule.threshold_high, None);
+        assert_eq!(rule.eval_date_end, "2026-09-30");
+    }
+
+    #[test]
+    fn falsify_parser_closes_above() {
+        let rule = parse_falsify_rule("GC=F closes above 4670 by 2026-08-01").unwrap();
+        assert_eq!(rule.rule_type, "close-above");
+        assert_eq!(rule.asset, "GC=F");
+        assert_eq!(rule.threshold_value, Some(4670.0));
+        assert_eq!(rule.eval_date_end, "2026-08-01");
+    }
+
+    #[test]
+    fn falsify_parser_stays_in_range_with_two_thresholds() {
+        let rule = parse_falsify_rule("BTC stays in-range 45000 85000 by 2026-12-31").unwrap();
+        assert_eq!(rule.rule_type, "stays-in-range");
+        assert_eq!(rule.asset, "BTC");
+        assert_eq!(rule.threshold_value, None);
+        assert_eq!(rule.threshold_low, Some(45000.0));
+        assert_eq!(rule.threshold_high, Some(85000.0));
+        assert_eq!(rule.eval_date_end, "2026-12-31");
+    }
+
+    #[test]
+    fn falsify_parser_prints_below() {
+        let rule = parse_falsify_rule("DX-Y.NYB prints below 96.5 by 2027-01-31").unwrap();
+        assert_eq!(rule.rule_type, "prints-below");
+        assert_eq!(rule.asset, "DX-Y.NYB");
+        assert_eq!(rule.threshold_value, Some(96.5));
+        assert_eq!(rule.eval_date_end, "2027-01-31");
+    }
+
+    #[test]
+    fn falsify_parser_close_between_and_band_aliases() {
+        let between = parse_falsify_rule("SPY close between 600 700 by 2026-07-31").unwrap();
+        assert_eq!(between.rule_type, "close-between");
+        assert_eq!(between.threshold_low, Some(600.0));
+        assert_eq!(between.threshold_high, Some(700.0));
+
+        let band = parse_falsify_rule("SPY prints in-band 600 700 by 2026-07-31").unwrap();
+        assert_eq!(band.rule_type, "prints-in-band");
+
+        let stays_below = parse_falsify_rule("GLD stays below 5000 by 2026-10-01").unwrap();
+        assert_eq!(stays_below.rule_type, "stays-below");
+
+        let stays_above = parse_falsify_rule("GLD stays above 4000 by 2026-10-01").unwrap();
+        assert_eq!(stays_above.rule_type, "stays-above");
+    }
+
+    #[test]
+    fn falsify_parser_normalizes_swapped_range_bounds_and_commas() {
+        let rule = parse_falsify_rule("BTC stays between 85,000 45,000 by 2026-12-31").unwrap();
+        assert_eq!(rule.threshold_low, Some(45000.0));
+        assert_eq!(rule.threshold_high, Some(85000.0));
+    }
+
+    #[test]
+    fn falsify_parser_rejects_malformed_strings() {
+        for malformed in [
+            "BTC will probably go up a lot soon",
+            "close below 50000 by 2026-09-30", // missing symbol → verb slot wrong
+            "BTC drifts below 50000 by 2026-09-30", // unknown verb
+            "BTC close near 50000 by 2026-09-30", // unknown comparator
+            "BTC close below fifty-thousand by 2026-09-30", // non-numeric threshold
+            "BTC close below 50000 by September", // bad date
+            "BTC close below 50000",           // missing deadline
+            "BTC close between 1 by 2026-09-30", // range form with one value
+            "50000 close below BTC by 2026-09-30", // numeric symbol slot
+        ] {
+            assert!(
+                parse_falsify_rule(malformed).is_err(),
+                "expected parse failure for: {malformed}"
+            );
+        }
+    }
+
+    // ── conviction banding ─────────────────────────────────────────────
+
+    #[test]
+    fn conviction_band_handles_text_and_numeric_forms() {
+        assert_eq!(conviction_band(None), "medium");
+        assert_eq!(conviction_band(Some("low")), "low");
+        assert_eq!(conviction_band(Some("HIGH")), "high");
+        assert_eq!(conviction_band(Some("medium")), "medium");
+        assert_eq!(conviction_band(Some("1")), "low");
+        assert_eq!(conviction_band(Some("-1")), "low");
+        assert_eq!(conviction_band(Some("3")), "medium");
+        assert_eq!(conviction_band(Some("-2")), "medium");
+        assert_eq!(conviction_band(Some("4")), "high");
+        assert_eq!(conviction_band(Some("-5")), "high");
+    }
+
+    // ── write-time confidence discipline ───────────────────────────────
+
+    #[allow(clippy::too_many_arguments)]
+    fn add_prediction_via_cli_path(
+        backend: &BackendConnection,
+        claim: &str,
+        confidence: Option<f64>,
+        conviction: Option<&str>,
+        falsify: Option<&str>,
+        override_confidence_cap: bool,
+        cap_rationale: Option<&str>,
+    ) -> Result<()> {
+        run_add_with_preflight(
+            backend,
+            claim,
+            Some("BTC-USD"),
+            conviction,
+            Some("medium"),
+            confidence,
+            Some("test-agent"),
+            Some("2026-12-31"),
+            None,
+            None,
+            Some("crypto"),
+            None,
+            false,
+            None,
+            true, // skip_preflight — preflight substrate not under test here
+            false,
+            false,
+            None,
+            false,
+            falsify,
+            override_confidence_cap,
+            cap_rationale,
+            true, // json output keeps test stdout structured
+        )
+    }
+
+    fn latest_prediction(
+        backend: &BackendConnection,
+    ) -> crate::db::user_predictions::UserPrediction {
+        crate::db::user_predictions::list_predictions_backend(backend, None, None, None, None)
+            .unwrap()
+            .into_iter()
+            .max_by_key(|p| p.id)
+            .unwrap()
+    }
+
+    #[test]
+    fn add_without_falsify_caps_confidence_at_unfalsifiable_ceiling() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC structurally repriced higher",
+            Some(0.85),
+            Some("high"),
+            None,
+            false,
+            None,
+        )
+        .unwrap();
+
+        let row = latest_prediction(&backend);
+        assert_eq!(row.confidence, Some(UNFALSIFIABLE_CONFIDENCE_CAP));
+    }
+
+    #[test]
+    fn add_with_valid_falsify_keeps_confidence_and_records_rule() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC capitulates to the low cluster",
+            Some(0.7),
+            Some("medium"),
+            Some("BTC close below 50000 by 2026-09-30"),
+            false,
+            None,
+        )
+        .unwrap();
+
+        let row = latest_prediction(&backend);
+        assert_eq!(row.confidence, Some(0.7), "valid --falsify must not cap");
+
+        let conn = backend.sqlite_native().unwrap();
+        let (rule_type, symbol, threshold, end, eligible, parse_conf): (
+            String,
+            String,
+            f64,
+            String,
+            i64,
+            String,
+        ) = conn
+            .query_row(
+                "SELECT rule_type, symbol, threshold_value, eval_date_end,
+                        auto_score_eligible, parse_confidence
+                 FROM prediction_falsification_rules
+                 WHERE prediction_id = ?1",
+                rusqlite::params![row.id],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(rule_type, "close-below");
+        assert_eq!(symbol, "BTC");
+        assert_eq!(threshold, 50000.0);
+        assert_eq!(end, "2026-09-30");
+        assert_eq!(eligible, 1);
+        assert_eq!(parse_conf, "high");
+    }
+
+    #[test]
+    fn add_with_malformed_falsify_records_unstructured_rule_and_caps_confidence() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC goes parabolic",
+            Some(0.9),
+            Some("high"),
+            Some("BTC moons hard sometime soon"),
+            false,
+            None,
+        )
+        .unwrap();
+
+        let row = latest_prediction(&backend);
+        assert_eq!(row.confidence, Some(UNFALSIFIABLE_CONFIDENCE_CAP));
+
+        let conn = backend.sqlite_native().unwrap();
+        let (rule_type, threshold_text, eligible, parse_conf): (String, String, i64, String) =
+            conn.query_row(
+                "SELECT rule_type, threshold_text, auto_score_eligible, parse_confidence
+                 FROM prediction_falsification_rules
+                 WHERE prediction_id = ?1",
+                rusqlite::params![row.id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(rule_type, "unstructured");
+        assert_eq!(threshold_text, "BTC moons hard sometime soon");
+        assert_eq!(eligible, 0);
+        assert_eq!(parse_conf, "low");
+    }
+
+    fn seed_calibration_cell(
+        backend: &BackendConnection,
+        layer: &str,
+        topic: &str,
+        band: &str,
+        n: i64,
+        hit_rate: f64,
+    ) {
+        let conn = backend.sqlite_native().unwrap();
+        conn.execute(
+            "INSERT INTO calibration_matrix (layer, topic, conviction_band, n, hit_rate)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![layer, topic, band, n, hit_rate],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn calibration_cap_clamps_overconfident_prediction() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        // Trailing record: 40% hit rate over 10 scored calls → ceiling 0.55.
+        seed_calibration_cell(&backend, "medium", "crypto", "medium", 10, 0.40);
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC reclaims the range high",
+            Some(0.9),
+            Some("medium"),
+            Some("BTC close above 90000 by 2026-12-31"),
+            false,
+            None,
+        )
+        .unwrap();
+
+        let row = latest_prediction(&backend);
+        let conf = row.confidence.unwrap();
+        assert!(
+            (conf - (0.40 + CALIBRATION_CAP_MARGIN)).abs() < 1e-9,
+            "expected clamp to 0.55, got {conf}"
+        );
+    }
+
+    #[test]
+    fn calibration_cap_skips_small_samples() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        // Only 7 scored calls — below CALIBRATION_CAP_MIN_N.
+        seed_calibration_cell(&backend, "medium", "crypto", "medium", 7, 0.40);
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC reclaims the range high",
+            Some(0.9),
+            Some("medium"),
+            Some("BTC close above 90000 by 2026-12-31"),
+            false,
+            None,
+        )
+        .unwrap();
+
+        let row = latest_prediction(&backend);
+        assert_eq!(row.confidence, Some(0.9));
+    }
+
+    #[test]
+    fn calibration_cap_override_keeps_confidence_and_records_rationale() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        seed_calibration_cell(&backend, "medium", "crypto", "medium", 12, 0.35);
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC reclaims the range high",
+            Some(0.9),
+            Some("medium"),
+            Some("BTC close above 90000 by 2026-12-31"),
+            true,
+            Some("regime changed: post-halving supply shock not in trailing sample"),
+        )
+        .unwrap();
+
+        let row = latest_prediction(&backend);
+        assert_eq!(row.confidence, Some(0.9));
+        let criteria = row.resolution_criteria.unwrap_or_default();
+        assert!(
+            criteria.contains("[cap-override: regime changed"),
+            "resolution_criteria must carry the rationale, got: {criteria}"
+        );
+    }
+
+    #[test]
+    fn calibration_cap_override_requires_rationale() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        let err = add_prediction_via_cli_path(
+            &backend,
+            "BTC reclaims the range high",
+            Some(0.9),
+            Some("medium"),
+            Some("BTC close above 90000 by 2026-12-31"),
+            true,
+            None,
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("--cap-rationale"));
+    }
+
+    #[test]
+    fn calibration_matrix_cell_tolerates_legacy_column_shape() {
+        // Legacy shape: `conviction` TEXT instead of `conviction_band`, and
+        // alternate count/rate column names. Built raw (no migrations) so the
+        // self-healing migration cannot rewrite it first.
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE calibration_matrix (
+                layer TEXT,
+                topic TEXT,
+                conviction TEXT,
+                n_scored INTEGER,
+                partial_credit_rate REAL
+            );
+            INSERT INTO calibration_matrix VALUES ('low', 'crypto', 'high', 9, 0.42);",
+        )
+        .unwrap();
+
+        let cell = calibration_matrix_cell(&conn, "low", "crypto", "high")
+            .unwrap()
+            .expect("legacy cell must be readable");
+        assert_eq!(cell.n_scored, 9);
+        assert!((cell.hit_rate - 0.42).abs() < 1e-9);
+
+        // Missing cell → None, not an error.
+        assert!(calibration_matrix_cell(&conn, "macro", "fed", "low")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -3322,6 +4693,9 @@ mod tests {
             false, // inline
             None,  // threshold (default 50)
             false, // with_adversary
+            None,  // falsify
+            false, // override_confidence_cap
+            None,  // cap_rationale
             false,
         );
         let err = result.unwrap_err();
@@ -3353,6 +4727,9 @@ mod tests {
             false, // inline
             None,
             false, // with_adversary
+            None,  // falsify
+            false, // override_confidence_cap
+            None,  // cap_rationale
             true,  // json (suppresses pretty)
         );
         assert!(result.is_ok(), "skip-preflight must bypass abort: {result:?}");
@@ -3383,6 +4760,9 @@ mod tests {
             true,  // inline -> resolution_criteria appended
             None,
             false, // with_adversary
+            None,  // falsify
+            false, // override_confidence_cap
+            None,  // cap_rationale
             true,
         );
         assert!(result.is_ok(), "accept-preflight must commit: {result:?}");
@@ -3418,6 +4798,9 @@ mod tests {
             false,
             None,
             false, // with_adversary
+            None,  // falsify
+            false, // override_confidence_cap
+            None,  // cap_rationale
             true,
         );
         assert!(result.is_ok(), "low-score claim must commit: {result:?}");
@@ -3505,6 +4888,9 @@ mod tests {
             false, // inline (preflight)
             None,
             true,  // with_adversary
+            None,  // falsify
+            false, // override_confidence_cap
+            None,  // cap_rationale
             false, // pretty output
         );
         assert!(result.is_ok(), "with-adversary must commit: {result:?}");

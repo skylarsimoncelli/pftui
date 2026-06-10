@@ -2260,6 +2260,58 @@ fn run_pipeline(
         });
     }
 
+    // Tail step: mechanically score pending predictions from their
+    // falsification rules against the daily closes refreshed above. This
+    // system has no daemon, so refresh is the recurring surface that keeps
+    // the prediction learning loop closed. Idempotent — decided predictions
+    // are never overwritten.
+    let autoscore_start = Instant::now();
+    match crate::commands::predict::auto_score_for_refresh(backend) {
+        Ok(summary) => {
+            info_ln!(
+                verbose,
+                "✓ Prediction auto-score: {} scored ({} correct / {} wrong)",
+                summary.scored,
+                summary.correct,
+                summary.wrong
+            );
+            dag_result.add(SourceResult {
+                name: "prediction_autoscore".to_string(),
+                label: "Prediction Auto-Score".to_string(),
+                status: SourceStatus::Ok,
+                items_attempted: None,
+                items_failed: None,
+                failed_symbols: None,
+                items_updated: Some(summary.scored),
+                duration_ms: autoscore_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: Some(format!(
+                    "{} correct / {} wrong / {} skipped / {} failed",
+                    summary.correct, summary.wrong, summary.skipped, summary.failures
+                )),
+            });
+        }
+        Err(e) => {
+            info_ln!(verbose, "  ⚠ Prediction auto-score failed: {}", e);
+            dag_result.add(SourceResult {
+                name: "prediction_autoscore".to_string(),
+                label: "Prediction Auto-Score".to_string(),
+                status: SourceStatus::Failed,
+                items_attempted: None,
+                items_failed: None,
+                failed_symbols: None,
+                items_updated: None,
+                duration_ms: autoscore_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: Some(e.to_string()),
+                detail: None,
+            });
+        }
+    }
+
     // Idempotent: classify today's regime from the latest scenario state and
     // upsert into `regime_history`. Safe to run multiple times per day; the
     // most recent classification wins via `ON CONFLICT(date) DO UPDATE`.
