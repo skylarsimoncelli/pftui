@@ -17,7 +17,13 @@ pftui agent message list --to synthesis --since 1d --json
 sqlite3 -json "$DB" "SELECT * FROM daily_notes WHERE date >= date('now','-1 day') AND author LIKE 'analyst-%'"
 # Phase 2c external-TA research, when present — read the comparison block
 sqlite3 -json "$DB" "SELECT content FROM daily_notes WHERE author='analyst-synthesis' AND content LIKE '[synthesis-external-ta%' AND date = '{DATE_ISO}'"
+# Phase 1b blind-analyst + Phase 2d antithesis views — the independence layer
+sqlite3 -json "$DB" "SELECT analyst, asset, direction, conviction, reasoning_summary FROM analyst_views WHERE analyst IN ('blind','antithesis')"
+# Phase 1 per-layer "where the operator is most likely wrong" messages
+pftui agent message list --to synthesis --since 1d --json   # filter bodies prefixed [operator-wrong ...]
 ```
+
+**Independence-layer comparison (REQUIRED when blind/antithesis rows exist):** compare the four-layer house convergence per asset against the `blind` row (same data, no house priors) and the `antithesis` row (the rival worldview). State the house-vs-blind and house-vs-antithesis divergences EXPLICITLY in your cross-layer signals (section 4) — per asset where they diverge, name the direction/conviction gap and whose evidence is stronger. A house view the blind analyst independently reproduced is data-driven; a house view the blind analyst doesn't share needs a stated reason beyond "the framework says so".
 
 When the external-TA note is present, use it to inform your Bull / Bear / What-Would-Change blocks — specifically, cite outside levels / desk targets / on-chain readings that **diverge** from our convergence. The point is to surface "we say X, the crowd says Y" tensions in the per-asset cards, not bury them.
 
@@ -105,6 +111,15 @@ pftui journal notes add "[synthesis-closing]
 <300-500 words>" --section analysis --author analyst-synthesis
 ```
 
+## 2d. Where you're most likely wrong (one note — REQUIRED)
+
+Aggregate the per-layer `[operator-wrong <layer>]` agent messages (each Phase-1 analyst sent one) plus the blind analyst's divergence from the house view into a single 100-200 word "Where you're most likely wrong" block addressed to the operator. The composition step surfaces this in the private report. Name the 1-3 highest-probability errors in the operator's current beliefs/positioning, each with the observable that would demonstrate it. Where the blind analyst's data-only read diverges from the house convergence, that divergence belongs here. "Nowhere" is not an acceptable output — if the layers found nothing, write the strongest candidate and why it survives.
+
+```bash
+pftui journal notes add "[synthesis-operator-wrong]
+<100-200 words>" --section analysis --author analyst-synthesis
+```
+
 ## 3. Risk-reward framing per active prediction
 
 For each open prediction resolving in next 7d. Content is POSITIONAL; valid `--category` is `signal|feedback|alert|handoff|escalation` and valid `--layer` is `low|medium|high|macro|cross`:
@@ -125,4 +140,4 @@ pftui agent message send "Strongest cross-timeframe signal: <one-line summary + 
 
 # Return
 
-A structured summary under 600 words: which held assets you wrote synthesis for, the dominant bull/bear/change-mind themes, the economy paragraph's headline, the top 3 cross-layer signals, and how the operator-focus shaped your synthesis.
+A structured summary under 600 words: which held assets you wrote synthesis for, the dominant bull/bear/change-mind themes, the economy paragraph's headline, the top 3 cross-layer signals, the headline of the `[synthesis-operator-wrong]` block, the largest house-vs-blind and house-vs-antithesis divergences, and how the operator-focus shaped your synthesis.

@@ -1,3 +1,5 @@
+> **DEPRECATED 2026-06-10** — replaced by the blind analyst (phase1b) + anti-thesis agent (phase2d). Rationale: the steelman pairs and moderator shared the house substrate and priors, so they produced redundant restatements of the adversary's counter-case rather than independent challenge (epistemics audit, 2026-06-09). Not invoked by the /pftui-report skill anymore. Kept for reference.
+
 # Phase 6 — Debate Moderator
 
 > Variables expected: `{OPERATOR_FOCUS}`, `{HELD_ASSETS}`, `{DATE_ISO}`.
