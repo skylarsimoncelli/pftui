@@ -38,8 +38,9 @@ The above content is the canonical source of Skylar's analytical lens — first 
 
 # Phase-1 enrichment context (per-run continuity)
 
-## Operator journal — last 7 days
-What the operator (Skylar) has been actively thinking about this week. Their evolving conviction shifts often precede the cleanest analytical reads — if you're about to write a view that contradicts a recent skylar-authored note, address that contradiction explicitly rather than ignoring it.
+## Operator journal — last 7 days (BELIEF INPUT — NOT MARKET EVIDENCE)
+These are the operator's beliefs, intents, and reads. They tell you what the operator is wrestling with — they are NOT data points about markets, and citing them as supporting evidence for a market view is an error. Your job includes pricing the probability the operator is wrong.
+For each operator belief relevant to your layer, state explicitly in your output whether your layer's data AGREES or DISAGREES, with one reason each way (symmetric — agreement requires justification exactly as much as disagreement).
 
 {SKYLAR_JOURNAL_7D}
 
@@ -144,6 +145,12 @@ After writing the views, run `pftui analytics views list --analyst {LAYER} --jso
 - `pftui journal scenario update` — update probabilities for any scenario your layer touches; record the driver in the update notes. **The MACRO layer must additionally create any active scenario that's missing** — the report's Macro Context section is blank when the `scenarios` table is empty.
 - `pftui journal conviction update` — update conviction for assets where your layer has a view; note evidence shift.
 - `pftui agent message send --from analyst-{LAYER} --to synthesis --priority normal --category signal --layer {LAYER}` — send 3-6 cross-layer signals: things higher/lower timeframes need to know.
+- **REQUIRED — operator-wrong message.** Send your single top "Where the operator is most likely wrong" item (see the Final output section below) as its own agent message so synthesis can aggregate it across layers. Body MUST be prefixed `[operator-wrong {LAYER}]`:
+
+  ```bash
+  pftui agent message send "[operator-wrong {LAYER}] <the highest-probability error in the operator's current beliefs/positioning as seen from your layer, plus the observable that would demonstrate it>" \
+    --from analyst-{LAYER} --to synthesis --priority normal --category feedback --layer {LAYER}
+  ```
 
 Bias toward writing MORE to the DB this run, not less. The synthesis layer will downsample.
 
@@ -176,6 +183,9 @@ Return a structured summary (under 800 words):
 
 ## Operator-focus payload
 [1-2 paragraphs specifically addressing {OPERATOR_FOCUS} — what your layer's analysis says about that question. Required even if your layer's natural read is adjacent rather than direct.]
+
+## Where the operator is most likely wrong
+[1-3 bullets. The single highest-probability error in the operator's current beliefs/positioning as seen from your layer's data, with the observable that would demonstrate it. This section is REQUIRED — "nowhere" is not an acceptable answer; if you genuinely cannot find one, state the strongest candidate and why it survives.]
 
 ## Open questions for synthesis
 [2-4 items where your layer can't resolve alone]
