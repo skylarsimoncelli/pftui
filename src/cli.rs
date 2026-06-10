@@ -2790,6 +2790,9 @@ pub enum JournalScenarioCommand {
         json: bool,
     },
     /// Update a scenario's probability, description, triggers, or status
+    #[command(
+        after_help = "Probability updates are ledger-disciplined:\n  --evidence is REQUIRED for any --probability change\n  --proposer identifies the updating layer (default: synthesis)\n  cumulative |Δprobability| per scenario per day is capped at 5pp;\n    a hard data print bypasses the cap via --hard-print \"<event>\"\n  a same-day update by a DIFFERENT proposer requires --override-conflict\n\nExamples:\n  pftui journal scenario update \"Inflation Resurgence\" --probability 30 \\\n    --evidence \"CPI 2026-06-10 printed 2.4% vs 2.6% expected\" --proposer analyst-medium\n  pftui journal scenario update \"Inflation Resurgence\" --probability 38 \\\n    --evidence \"hot CPI + 5y5y breakevens +20bp\" --hard-print \"CPI 2026-06-10 print\""
+    )]
     Update {
         #[arg(required_unless_present = "id")]
         value: Option<String>,
@@ -2813,6 +2816,35 @@ pub enum JournalScenarioCommand {
         driver: Option<String>,
         #[arg(long)]
         notes: Option<String>,
+        /// Evidence behind a probability move (REQUIRED with --probability)
+        #[arg(long)]
+        evidence: Option<String>,
+        /// Layer proposing this update (default: synthesis)
+        #[arg(long)]
+        proposer: Option<String>,
+        /// Hard data print justifying a daily-delta-cap (5pp) bypass
+        #[arg(long = "hard-print")]
+        hard_print: Option<String>,
+        /// Acknowledge a same-day update by a different proposer
+        #[arg(long = "override-conflict")]
+        override_conflict: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set a scenario's reference-class base rate (anchors probability vs history)
+    #[command(
+        name = "set-base-rate",
+        after_help = "Records the reference-class frequency a scenario probability should be\nanchored against. `scenario list` then shows the deviation\n(probability − base_rate).\n\nExample:\n  pftui journal scenario set-base-rate \"US Equities Up Year\" --rate 70 \\\n    --reference \"US equities up-years frequency 1950-2025 ~70%\""
+    )]
+    SetBaseRate {
+        /// Scenario name
+        value: String,
+        /// Base rate percentage (0-100)
+        #[arg(long)]
+        rate: f64,
+        /// Reference class description (e.g. "US recessions per decade 1950-2025")
+        #[arg(long)]
+        reference: String,
         #[arg(long)]
         json: bool,
     },
@@ -3855,6 +3887,9 @@ pub enum AnalyticsScenarioCommand {
         json: bool,
     },
     /// Update a scenario's probability, description, triggers, or status
+    #[command(
+        after_help = "Probability updates are ledger-disciplined:\n  --evidence is REQUIRED for any --probability change\n  --proposer identifies the updating layer (default: synthesis)\n  cumulative |Δprobability| per scenario per day is capped at 5pp;\n    a hard data print bypasses the cap via --hard-print \"<event>\"\n  a same-day update by a DIFFERENT proposer requires --override-conflict"
+    )]
     Update {
         value: String,
         /// History note / driver (positional shorthand)
@@ -3875,6 +3910,32 @@ pub enum AnalyticsScenarioCommand {
         driver: Option<String>,
         #[arg(long)]
         notes: Option<String>,
+        /// Evidence behind a probability move (REQUIRED with --probability)
+        #[arg(long)]
+        evidence: Option<String>,
+        /// Layer proposing this update (default: synthesis)
+        #[arg(long)]
+        proposer: Option<String>,
+        /// Hard data print justifying a daily-delta-cap (5pp) bypass
+        #[arg(long = "hard-print")]
+        hard_print: Option<String>,
+        /// Acknowledge a same-day update by a different proposer
+        #[arg(long = "override-conflict")]
+        override_conflict: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set a scenario's reference-class base rate (anchors probability vs history)
+    #[command(name = "set-base-rate")]
+    SetBaseRate {
+        /// Scenario name
+        value: String,
+        /// Base rate percentage (0-100)
+        #[arg(long)]
+        rate: f64,
+        /// Reference class description (e.g. "US recessions per decade 1950-2025")
+        #[arg(long)]
+        reference: String,
         #[arg(long)]
         json: bool,
     },
@@ -3940,6 +4001,72 @@ pub enum AnalyticsScenarioCommand {
         #[arg(long)]
         days: Option<u32>,
         /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsEpistemicsCommand {
+    /// Record (upsert) a run's epistemic-health metrics for a date
+    #[command(
+        after_help = "Upserts the run_health row for --date. Metrics the orchestrator\ncomputes are passed as flags; metrics Rust can derive itself are\ncomputed automatically when omitted:\n  blind_divergence      from same-day analyst_views (blind vs canonical mean)\n  scenario_delta_total  from today's scenario_updates probability ledger\n\nExample:\n  pftui analytics epistemics record --date 2026-06-10 \\\n    --agreement 0.72 --panel-dispersion 6.4 --fallback-warnings 2 \\\n    --audit-pass-rate 0.92 --agents 14 --notes \"full both-mode run\""
+    )]
+    Record {
+        /// Run date (YYYY-MM-DD)
+        #[arg(long)]
+        date: String,
+        /// Share of voices agreeing with the operator stance (0-1)
+        #[arg(long)]
+        agreement: Option<f64>,
+        /// Mean |house conviction − blind conviction| across held assets (derived from analyst_views when omitted)
+        #[arg(long = "blind-divergence")]
+        blind_divergence: Option<f64>,
+        /// Stddev of panel persona confidences
+        #[arg(long = "panel-dispersion")]
+        panel_dispersion: Option<f64>,
+        /// Share of this run's notes that are novel (0-1)
+        #[arg(long)]
+        novelty: Option<f64>,
+        /// Count of empty-state fallbacks hit during the run
+        #[arg(long = "fallback-warnings")]
+        fallback_warnings: Option<i64>,
+        /// Sum of |Δprobability| across scenarios today (derived from scenario_updates when omitted)
+        #[arg(long = "scenario-delta-total")]
+        scenario_delta_total: Option<f64>,
+        /// Accuracy-audit claims_passed/claims_total (0-1)
+        #[arg(long = "audit-pass-rate")]
+        audit_pass_rate: Option<f64>,
+        /// Number of agents spawned during the run
+        #[arg(long)]
+        agents: Option<i64>,
+        /// Free-form run notes
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show one run's health row with threshold flags
+    Show {
+        /// Run date (YYYY-MM-DD); defaults to the latest recorded run
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Trend table across recorded runs
+    History {
+        /// Maximum rows (newest first; default 30)
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// House-vs-rival scoreboard: scored-prediction hit rates by source agent
+    #[command(
+        after_help = "Compares scored user_predictions (outcome != pending) grouped by\nsource_agent — the antithesis rival ledger vs the canonical analyst-*\nlayers. Renders an accrual notice while the antithesis layer still has\nonly pending predictions."
+    )]
+    Rivalry {
         #[arg(long)]
         json: bool,
     },
@@ -4896,6 +5023,14 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
     Scenario {
         #[command(subcommand)]
         command: AnalyticsScenarioCommand,
+    },
+    /// Run-health instrumentation: echo risk, blind divergence, scenario churn, rivalry scoreboard
+    #[command(
+        after_help = "Per-run epistemic health of the multi-agent intelligence system.\n\nMetrics:\n  agreement_rate        share of voices agreeing with the operator stance (0-1);\n                        > 0.85 flags echo risk\n  blind_divergence      mean |house conviction − blind conviction| across held\n                        assets; > 2.0 flags a house view far from the raw-data read\n  panel_dispersion      stddev of panel persona confidences; < 4.0 flags persona washing\n  novelty_rate          share of the run's notes that are novel\n  scenario_delta_total  sum |Δprobability| across scenarios today\n  audit_pass_rate       accuracy-audit claims_passed/claims_total\n\nWorkflows:\n  pftui analytics epistemics record --date 2026-06-10 --agreement 0.7 --panel-dispersion 6.2\n  pftui analytics epistemics show --date 2026-06-10 --json\n  pftui analytics epistemics history --limit 14\n  pftui analytics epistemics rivalry --json   # house vs antithesis scoreboard"
+    )]
+    Epistemics {
+        #[command(subcommand)]
+        command: AnalyticsEpistemicsCommand,
     },
     /// Asset conviction tracking: set, list, history, and recent changes (-5 to +5 scale)
     Conviction {

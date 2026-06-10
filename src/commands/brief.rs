@@ -4696,6 +4696,8 @@ mod tests {
                 phase: "hypothesis".to_string(),
                 resolved_at: None,
                 resolution_notes: None,
+            base_rate: None,
+            base_rate_reference: None,
             },
             Scenario {
                 id: 2,
@@ -4711,6 +4713,8 @@ mod tests {
                 phase: "active".to_string(),
                 resolved_at: None,
                 resolution_notes: None,
+            base_rate: None,
+            base_rate_reference: None,
             },
         ];
         let result = scenarios_to_summary(scenarios, &std::collections::HashMap::new());

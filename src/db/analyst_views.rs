@@ -3,7 +3,9 @@
 //! a view per asset on every run.
 //!
 //! Table: `analyst_views`
-//!   - analyst: low | medium | high | macro
+//!   - analyst: low | medium | high | macro (canonical voting layers) or
+//!     blind | antithesis (measurement layers — stored and listed, but
+//!     excluded from convergence voting/averaging)
 //!   - asset: symbol (e.g. BTC, GLD, TSLA)
 //!   - direction: bull | bear | neutral
 //!   - conviction: -5 to +5 (negative = bearish conviction, positive = bullish)
@@ -249,13 +251,40 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
 // Validation
 // ---------------------------------------------------------------------------
 
+/// The four canonical timeframe layers. Only these vote in convergence
+/// aggregation, matrices, and report cards.
+pub const CANONICAL_ANALYSTS: [&str; 4] = ["low", "medium", "high", "macro"];
+
+/// Measurement layers: accepted writers whose views are stored and listed but
+/// NEVER counted in convergence voting/averaging.
+///   - `blind`      — control-group analyst (raw data only, no house context)
+///   - `antithesis` — scored rival worldview (house-vs-rival ledger)
+pub const MEASUREMENT_ANALYSTS: [&str; 2] = ["blind", "antithesis"];
+
+/// True when the analyst layer is one of the four canonical voting layers.
+pub fn is_canonical_analyst(value: &str) -> bool {
+    CANONICAL_ANALYSTS.contains(&value)
+}
+
+/// Classify an analyst layer for JSON consumers: `canonical` layers vote in
+/// convergence; `measurement` layers (blind, antithesis) are stored and
+/// listed but excluded from aggregation.
+pub fn layer_class(value: &str) -> &'static str {
+    if is_canonical_analyst(value) {
+        "canonical"
+    } else {
+        "measurement"
+    }
+}
+
 pub fn validate_analyst(value: &str) -> Result<()> {
-    match value {
-        "low" | "medium" | "high" | "macro" => Ok(()),
-        _ => anyhow::bail!(
-            "invalid analyst '{}'. Valid: low, medium, high, macro",
+    if CANONICAL_ANALYSTS.contains(&value) || MEASUREMENT_ANALYSTS.contains(&value) {
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "invalid analyst '{}'. Valid: low, medium, high, macro (canonical) or blind, antithesis (measurement)",
             value
-        ),
+        )
     }
 }
 
@@ -972,7 +1001,10 @@ fn divergences_from_matrix(
 ) -> Vec<ViewDivergence> {
     let mut divergences: Vec<ViewDivergence> = Vec::new();
 
-    for row in matrix {
+    for mut row in matrix {
+        // Divergence is a canonical-layer vote spread; measurement layers
+        // (blind, antithesis) never participate.
+        row.views.retain(|v| is_canonical_analyst(&v.analyst));
         if row.views.len() < 2 {
             continue; // need at least 2 analysts to have divergence
         }
@@ -1641,9 +1673,14 @@ type LatestEntry = (
 /// Build a `ConvergenceReport` from a flat list of historical view rows for one asset.
 fn build_report_for_asset(
     asset: &str,
-    rows: Vec<ConvergenceRow>,
+    mut rows: Vec<ConvergenceRow>,
     as_of: &str,
 ) -> ConvergenceReport {
+    // Measurement layers (blind, antithesis) are excluded from convergence:
+    // they are accepted writers but never voters. Exclusion happens here at
+    // the aggregation layer so `classify_convergence` stays the single
+    // source of truth for the classification formula.
+    rows.retain(|row| is_canonical_analyst(&row.0));
     // De-duplicate per-analyst: keep the most recent view per analyst layer in the window.
     let mut latest: std::collections::BTreeMap<String, LatestEntry> =
         std::collections::BTreeMap::new();
@@ -3080,6 +3117,66 @@ mod tests {
 
         let r = convergence_for(&conn, "QQQ");
         assert_eq!(r.summary, "convergent-bear");
+    }
+
+    #[test]
+    fn test_validate_analyst_accepts_measurement_layers() {
+        assert!(validate_analyst("blind").is_ok());
+        assert!(validate_analyst("antithesis").is_ok());
+        assert!(validate_analyst("low").is_ok());
+        assert!(validate_analyst("adversary").is_err());
+    }
+
+    #[test]
+    fn test_layer_class_buckets() {
+        assert_eq!(layer_class("low"), "canonical");
+        assert_eq!(layer_class("macro"), "canonical");
+        assert_eq!(layer_class("blind"), "measurement");
+        assert_eq!(layer_class("antithesis"), "measurement");
+    }
+
+    #[test]
+    fn test_measurement_layers_can_write_views() {
+        let conn = setup_db();
+        upsert_view(&conn, "blind", "BTC", "bear", -2, "raw data read", None, None, None).unwrap();
+        upsert_view(&conn, "antithesis", "BTC", "bear", -3, "rival read", None, None, None)
+            .unwrap();
+        let views = list_views(&conn, None, Some("BTC"), None).unwrap();
+        assert_eq!(views.len(), 2);
+    }
+
+    #[test]
+    fn test_convergence_excludes_measurement_layers() {
+        let conn = setup_db();
+        // 4 canonical bull views ... and a strongly bearish blind row that
+        // must NOT vote: stats and classification come from canonical only.
+        upsert_view(&conn, "low", "BTC", "bull", 4, "r", None, None, None).unwrap();
+        upsert_view(&conn, "medium", "BTC", "bull", 3, "r", None, None, None).unwrap();
+        upsert_view(&conn, "high", "BTC", "bull", 4, "r", None, None, None).unwrap();
+        upsert_view(&conn, "macro", "BTC", "bull", 5, "r", None, None, None).unwrap();
+        upsert_view(&conn, "blind", "BTC", "bear", -5, "raw data read", None, None, None)
+            .unwrap();
+
+        let r = convergence_for(&conn, "BTC");
+        assert_eq!(r.stats.n_views, 4, "blind row must not be counted");
+        assert!(r.views.iter().all(|v| v.analyst != "blind"));
+        assert_eq!(r.summary, "strong-convergent-bull");
+        assert_eq!(r.stats.min_conviction, 3);
+    }
+
+    #[test]
+    fn test_divergence_excludes_measurement_layers() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "GLD", "bull", 3, "r", None, None, None).unwrap();
+        upsert_view(&conn, "medium", "GLD", "bull", 2, "r", None, None, None).unwrap();
+        // Antithesis at -5 would create a spread of 8 if it voted.
+        upsert_view(&conn, "antithesis", "GLD", "bear", -5, "rival", None, None, None).unwrap();
+
+        let divs = compute_divergence(&conn, 2, Some("GLD"), None, None).unwrap();
+        assert!(
+            divs.is_empty(),
+            "canonical-only spread is 1; antithesis must not widen it"
+        );
     }
 
     #[test]

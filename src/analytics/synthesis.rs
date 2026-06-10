@@ -709,9 +709,13 @@ fn watch_tomorrow_candidates(
 fn build_conviction_matrix(backend: &BackendConnection) -> Vec<ConvictionMatrixEntry> {
     let views = analyst_views::list_views_backend(backend, None, None, None).unwrap_or_default();
 
-    // Group views by asset
+    // Group views by asset. Measurement layers (blind, antithesis) are
+    // excluded — they never contribute to net conviction or alignment.
     let mut by_asset: HashMap<String, Vec<analyst_views::AnalystView>> = HashMap::new();
     for view in views {
+        if !analyst_views::is_canonical_analyst(&view.analyst) {
+            continue;
+        }
         by_asset
             .entry(view.asset.to_uppercase())
             .or_default()

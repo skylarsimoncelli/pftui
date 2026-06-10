@@ -75,7 +75,7 @@ Ask one at a time. Open-ended, not multiple choice. Let the operator type freely
 
 2. If the answer contains a specific conviction shift, target, scenario probability, or position-change intent, mirror it into the structured tables:
    - Conviction → `pftui journal conviction set <SYM> <SCORE> "operator interview {DATE_ISO}: ..."`
-   - Scenario → `pftui journal scenario update "<name>" --probability <X> --notes "operator interview ..."`
+   - Scenario → `pftui journal scenario update "<name>" --probability <X> --proposer skylar --evidence "operator stated view, interview {DATE_ISO}" --notes "operator interview ..."` (add `--override-conflict` if an analyst layer already moved this scenario today)
    - Position intent → `pftui agent message send "<plan>" --from skylar --to synthesis --priority high --category operator-intent`
 
 The question sequence:

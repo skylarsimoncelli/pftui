@@ -258,7 +258,8 @@ The `regime_history` table records one classification per UTC date with the full
 | Command | What It Does |
 |---|---|
 | `pftui journal scenario add "NAME" --probability N` | Add macro scenario with initial probability |
-| `pftui journal scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
+| `pftui journal scenario update "NAME" --probability N --evidence "DATA THAT MOVED IT" [--proposer LAYER] [--driver "WHY"\|--notes "WHY"] [--hard-print "EVENT"] [--override-conflict]` | Update scenario probability and auto-log history. `--evidence` is REQUIRED for probability moves; cumulative \|Δ\| per scenario per day is capped at 5pp unless `--hard-print "<event>"` cites a hard data print; a same-day update by a different `--proposer` requires `--override-conflict` |
+| `pftui journal scenario set-base-rate "NAME" --rate N --reference "REFERENCE CLASS"` | Anchor a scenario to its reference-class base rate; `scenario list` then shows the deviation (probability − base_rate) |
 | `pftui journal scenario signal add "SIGNAL" --scenario "NAME"` | Attach a tracked signal to a scenario |
 | `pftui journal scenario history "NAME" --limit N --json` | Show scenario probability history |
 | `pftui journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low\|medium\|high\|macro\|macro-checkpoint] [--confidence 0.7] [--source-agent low-agent] [--topic fed] [--source-article-id 123] [--lessons 218,240] [--override-cap]` | Add a prediction call for later scoring, optionally recording lesson IDs and news-source attribution. LOW analyst calls are capped at 5/hour unless `--override-cap` is passed. `--timeframe macro-checkpoint` is reserved for falsifiable 90-day sub-claims attached to a multi-year macro thesis (claim MUST embed `[thesis=<slug>]`) |
@@ -301,6 +302,10 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui analytics recap --date yesterday --json` | Chronological event recap for a given day |
 | `pftui analytics narrative --json` | Structured analytical memory: recap, scenario/conviction/trend shifts, scorecard, surprises, lessons, catalyst outcomes |
 | `pftui analytics calibration --by-layer --json [--window-days 90]` | Scenario-vs-market divergences plus realised prediction calibration by layer, sample size, 1σ uncertainty, and conviction band |
+| `pftui analytics epistemics record --date YYYY-MM-DD [--agreement X] [--blind-divergence X] [--panel-dispersion X] [--novelty X] [--fallback-warnings N] [--scenario-delta-total X] [--audit-pass-rate X] [--agents N] [--notes "..."] [--json]` | Upsert (field-wise merge) the `run_health` row for a run date. When omitted, Rust derives `blind_divergence` (same-day analyst_views: mean \|canonical-mean − blind\| per asset) and `scenario_delta_total` (today's scenario probability ledger) itself |
+| `pftui analytics epistemics show [--date D] [--json]` | One run's health row with threshold flags: agreement > 0.85 → echo risk, panel_dispersion < 4.0 → persona washing, blind_divergence > 2.0 → house view far from raw-data read |
+| `pftui analytics epistemics history [--limit N] [--json]` | Run-health trend table, newest first |
+| `pftui analytics epistemics rivalry [--json]` | House-vs-antithesis scoreboard: scored `user_predictions` grouped by `source_agent` (n, correct, wrong, partial, hit rate); shows "rivalry accruing" while antithesis only has pending predictions |
 | `pftui analytics narrative-divergence --json [--hours 24]` | Active scenario narrative-vs-money scores from topic news pressure versus mapped prediction-market movement |
 | `pftui analytics narrative-divergence rebuild --since 90d --json` | Backfill `narrative_money_history` from existing news_cache + predictions_history; one row per (scenario, day) |
 | `pftui analytics news-silence --json [--window-days 90]` | Tier-1/2 topic article volume versus rolling weekday baselines, including silent/saturated status changes |

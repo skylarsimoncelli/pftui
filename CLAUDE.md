@@ -89,6 +89,8 @@ Canonical author identifiers:
 | `analyst-high` | High-timeframe analyst routine (quarters–years) |
 | `analyst-macro` | Macro-timeframe analyst routine (Dalio/Fourth Turning) |
 | `analyst-adversary` | Synthesis-time adversary pseudo-layer (`agents/routines/adversary-analyst.md`) — argues against the four-layer convergence using only the same data |
+| `analyst-blind` | Blind control-group analyst (`agents/report-prompts/phase1b-blind-analyst.md`) — raw market data only, no house context; writes views as `--analyst blind` (measurement layer, never votes in convergence) |
+| `analyst-antithesis` | Scored rival worldview (`agents/report-prompts/phase2d-antithesis.md`) — maintains the strongest coherent opposite worldview; writes views as `--analyst antithesis` (measurement layer) and predictions scored against the house on the rivalry scoreboard |
 | `analyst-evening` | Evening analysis routine |
 | `analyst-morning` | Morning brief routine |
 | `analyst-newsletter` | Public daily newsletter routine |
@@ -102,6 +104,8 @@ When adding a new agent or routine, mint a new `analyst-*` or `agent-*` identifi
 ## Analyst Views & Convergence
 
 The `analyst_views` table records each analyst's structured per-asset view (direction, conviction -5..+5, reasoning, evidence, blind spots, allocation bias). The 4 timeframe-analyst routines populate this for every held position on every run.
+
+Accepted analyst layers: `low|medium|high|macro` (canonical, voting) and `blind|antithesis` (measurement — accepted writers, listed with `layer_class: "measurement"` in `analytics views list --json`, but ALWAYS excluded from convergence voting/averaging, matrices, and report cards). Exclusion happens at the aggregation/loader layer (`build_report_for_asset` and the report BuildContext loaders), never inside `classify_convergence`.
 
 Deterministic convergence aggregation:
 - `pftui analytics views convergence --asset <SYM>` — one asset

@@ -302,7 +302,8 @@ Update / create commands:
 
 ```bash
 # Update an existing scenario's probability + driver:
-pftui journal scenario update "[name]" --probability [X] \
+pftui journal scenario update "[name]" --probability [X] --proposer analyst-macro \
+  --evidence "[The data that moved it]" \
   --notes "[Which lens provided the evidence. Source quality. Narrative/money status. What shifted and why.]"
 
 # Create a new one if a regime shift means a previously-inactive scenario is back on the table:

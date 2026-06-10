@@ -99,7 +99,23 @@ pub fn list(
     let items = analyst_views::list_views_backend(backend, analyst, asset, limit)?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&items)?);
+        // Annotate each view with its layer class so agents can tell voting
+        // (canonical) layers apart from measurement layers (blind,
+        // antithesis) without hardcoding the layer list.
+        let annotated: Vec<serde_json::Value> = items
+            .iter()
+            .map(|v| {
+                let mut value = serde_json::to_value(v)?;
+                if let Some(obj) = value.as_object_mut() {
+                    obj.insert(
+                        "layer_class".to_string(),
+                        json!(analyst_views::layer_class(&v.analyst)),
+                    );
+                }
+                Ok(value)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        println!("{}", serde_json::to_string_pretty(&annotated)?);
     } else if items.is_empty() {
         println!("No analyst views found.");
         if analyst.is_some() || asset.is_some() {
