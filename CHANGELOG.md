@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-06-11 — fix(agents): `decision-card` is a valid agent-message category
+
+- What: `agent message send --category decision-card` now passes validation (validator + help text + tests); `agents/report-prompts/phase4-decision-architect.md` restored from the raw-SQL workaround to the proper CLI write. TODO item removed.
+- Why: the R6 docs sweep found the report's decision-card loader filters on `category='decision-card'` while the CLI validator rejected it — the documented Phase-4 write path was impossible, forcing raw SQL. The loader's contract and the writer's vocabulary must agree.
+
+
 ### 2026-06-11 — docs: verification-driven accuracy sweep — every example executes, no-daemon truth, doc-drift tests (R6)
 
 - What: R6 of the rearchitecture — the documentation-accuracy sweep. Every fenced/inline `pftui` example in README.md, AGENTS.md, docs/ARCHITECTURE.md, docs/ANALYTICS-SPEC.md, WEB_DASHBOARD.md, docs/KEYBINDINGS.md, agents/routines/*.md, and agents/report-prompts/*.md was executed against the freshly built binary (`--help` walks + flag checks, ~930 invocations); everything broken was fixed. **Per-file fixes (what was wrong):**
