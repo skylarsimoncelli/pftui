@@ -36,7 +36,6 @@ pub struct DataCoverageEntry {
 const ENRICHMENT_TABLES: &[(&str, i64, &str)] = &[
     ("news_source_accuracy", 1, "news"),
     ("rss_feed_health", 1, "news"),
-    ("narrative_money_history", 4, "news"),
     ("news_silence_baselines", 7, "news"),
     ("calibration_matrix", 1, "calibration"),
     ("calibration_adjustments", 1, "calibration"),
@@ -48,10 +47,8 @@ const ENRICHMENT_TABLES: &[(&str, i64, &str)] = &[
     ("scenario_prediction_links", 1, "scenarios"),
     ("regime_history", 1, "scenarios"),
     ("lesson_fragment_edges", 1, "lessons"),
-    ("thesis_citations", 1, "lessons"),
     ("operator_replies", 1, "journal"),
     ("prediction_falsification_rules", 1, "predictions"),
-    ("conviction_durability", 1, "predictions"),
 ];
 
 pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
@@ -208,12 +205,12 @@ mod tests {
         run_migrations(&conn).unwrap();
         let backend = BackendConnection::Sqlite { conn };
         let report = build_report(&backend).unwrap();
-        // narrative_money_history should be created by migrations and be empty.
-        let nmh = report
+        // news_silence_baselines is created by migrations and starts empty.
+        let nsb = report
             .tables
             .iter()
-            .find(|e| e.table == "narrative_money_history")
+            .find(|e| e.table == "news_silence_baselines")
             .unwrap();
-        assert!(matches!(nmh.status.as_str(), "empty" | "below"));
+        assert!(matches!(nsb.status.as_str(), "empty" | "below"));
     }
 }

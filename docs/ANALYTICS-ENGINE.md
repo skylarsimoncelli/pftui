@@ -66,7 +66,7 @@ This is pftui's core differentiator: no other retail tool offers structured mult
 `refresh`, `macro`, `movers`, `sentiment`, `predictions`, `calendar`, `etf-flows`, `correlations`, `alerts`, `sector`, `heatmap`, `scan`, `options`, `oil`, `crisis`
 
 **Database tables:**
-`price_cache`, `price_history`, `prediction_cache`, `predictions_history`, `calendar_events`, `sentiment_cache`, `sentiment_history`, `onchain_cache`, `fx_cache`, `news_cache`, `alerts`, `correlation_snapshots` (F31.9), `regime_snapshots` (F31.10)
+`price_cache`, `price_history`, `predictions_cache`, `predictions_history`, `calendar_events`, `sentiment_cache`, `sentiment_history`, `onchain_cache`, `fx_cache`, `news_cache`, `alerts`, `correlation_snapshots` (F31.9), `regime_snapshots` (F31.10)
 
 ---
 

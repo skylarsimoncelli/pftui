@@ -59,8 +59,9 @@ of truth for which table lives where.
 ```
 
 DEAD: no code writer AND no code reader (grep `src/`), or zero rows with no
-writer. DEAD tables stay in the catalog (so the conformance test still
-passes) until R3 archives or drops them.
+writer. A DEAD table stays in the catalog (so the conformance test still
+passes) until it is archived-then-dropped; the R3 cull (2026-06-11) cleared
+the original DEAD list.
 
 ## The rules
 
@@ -104,7 +105,34 @@ passes) until R3 archives or drops them.
 
 A new table without an entry fails CI with a message pointing here.
 
-## Census summary (2026-06-11)
+## The series registry (R3) — registration, not physical migration
+
+`series_registry` is the L1 meta-table: one row per canonical time series,
+naming WHERE the series physically lives (`storage_table` + `storage_filter`
++ `date_column`), its canonical symbol (and deep alias, e.g. BTC→BTC-USD),
+source, units, and the freshness SLA it must meet. Seeded at migration with
+the core series: the major price symbols (GC=F, SI=F, BTC, GLD, SPY, ^GSPC,
+^VIX, DX-Y.NYB, ^TNX, CL=F), both Fear & Greed gauges, every plausible-range
+economic indicator, BTC ETF flows, exchange reserves, and the four COT
+contracts. Seeding is `INSERT OR IGNORE` — operator edits (e.g. a tightened
+SLA) survive restarts.
+
+Freshness machinery driven by the registry:
+
+- `pftui data series status [--json]` — per-series last datapoint, age,
+  staleness vs SLA (glyph table).
+- `pftui system doctor` — warns, naming each series, when any registered
+  series is past **2× its SLA** (a feed gone dark, not routine drift).
+
+**Physical consolidation of the underlying tables is explicitly deferred:
+registration now, physical merge when a consumer needs it.** The registry
+makes "where does this series live and is it fresh?" answerable without
+moving a single row; merging `sentiment_history` / `onchain_cache` / etc.
+into one physical series table buys nothing until something needs to query
+across them — when that consumer appears, the registry rows already define
+the mapping the migration would follow.
+
+## Census summary (2026-06-11, updated post-R3 cull)
 
 Full machine-readable detail in `docs/db-catalog.toml`; regenerate raw census
 data with `scripts/db_census.py` (metadata-only: names, schemas, rowcounts,
@@ -112,21 +140,25 @@ MAX(timestamp) — never row contents).
 
 | Layer | Tables | Notes |
 |---|---|---|
-| L0 ingest | 19 | 3 dormant scaffolds (capital_flows, options_chain_snapshots, prediction_cache→DEAD) |
-| L1 canonical series | 4 | price_history, sentiment_history, real_yields_history, predictions_history (dormant) |
+| L0 ingest | 19 | 2 dormant scaffolds (capital_flows, options_chain_snapshots) |
+| L1 canonical series | 5 | price_history, sentiment_history, real_yields_history, predictions_history (dormant), series_registry (meta) |
 | L2 derived | 20 | includes the two largest tables (technical_snapshots 1.4M, correlation_snapshots 1.3M rows) |
-| L3 ledgers | 42 | largest layer — every epistemic mechanism ships its own ledger |
+| L3 ledgers | 41 | largest layer — every epistemic mechanism ships its own ledger |
 | L4 knowledge | 32 | thesis/lessons/rules + operator config (watchlist, groups, alerts) |
-| DEAD | 3 | see below |
-| **Total** | **120** | |
+| DEAD | 0 | R3 cull complete — see below |
+| **Total** | **117** | |
 
-**DEAD list** (R3 to archive/drop/migrate):
+**R3 cull (2026-06-11)** — all four DEAD tables archived (JSON in
+`~/pftui-archives/`, non-empty tables only) then dropped by migration; the
+migration is a no-op on fresh DBs and skips the drop if the archive write
+fails:
 
-| Table | Rows | Why dead | Recommendation |
-|---|---|---|---|
-| `prediction_cache` | 0 | 0 external call sites; superseded by `predictions_cache` | drop module + table |
-| `conviction_durability` | 15 | no code writer or reader; rows via agent raw SQL | migrate to a code path or drop |
-| `thesis_citations` | 5,136 | no code writer or reader; rows via agent raw SQL | adopt with a code path or archive |
+| Table | Rows at drop | Why dead |
+|---|---|---|
+| `prediction_cache` | 0 | superseded by `predictions_cache`; module deleted |
+| `conviction_durability` | 15 | no code writer/reader (agent raw SQL); archived |
+| `thesis_citations` | 5,136 | no code writer/reader (agent raw SQL); archived |
+| `narrative_money_history` | 107 | write-only ingestion, no reader; archived; refresh write removed |
 
 **Legacy list** (live DB but not code-created): **none** — every table in the
 live DB is created by code. The drift problem here is staleness and
@@ -136,16 +168,85 @@ classification, not orphaned schema.
 
 - `run_health` has **0 rows** — the EPISTEMICS instrumentation spine has
   never been recorded on this machine.
-- `narrative_money_history` is write-only: 107 rows ingested, no production
-  reader. Wasted ingestion until a reader ships.
 - `scenario_prediction_links` (3,416 rows) has readers but **no code
   writer** — populated via agent raw SQL; needs a writer command.
 - `cot_cache` and `futures_cache` last wrote 2026-05-25 — COT is past its
-  192h SLA (weekly report; ~17 days stale at census time).
-- 22 tables have 0 rows; most are wired scaffolds awaiting their feature
-  (`recommendation_outcomes`, `news_source_accuracy`, `alignment_score_history`,
-  `dividends`, `gex_snapshots`, ...). Empty + wired ≠ DEAD, but each one is a
-  promised loop that has never closed.
+  192h SLA (weekly report; ~17 days stale at census time). Now surfaced by
+  the registry-driven doctor check.
+
+## Empty scaffolds — close the loop or cull next
+
+21 zero-row tables remain after the R3 cull (22 at census; `prediction_cache`
+dropped). Empty + wired ≠ DEAD, but each is a promised loop that has never
+closed. One-line verdicts:
+
+| Table | Verdict |
+|---|---|
+| `alignment_score_history` | CLOSE LOOP — writer wired (`analytics alignment current`); routines never call it |
+| `annotations` | CULL CANDIDATE — chart-annotation feature never shipped a writer path users reach |
+| `broker_connections` | CULL CANDIDATE — broker-import scaffold, no provider ever wired |
+| `capital_flows` | CULL CANDIDATE — F59 scaffold, provider never wired (or wire a provider with a named consumer) |
+| `chart_state` | CULL CANDIDATE — saved-chart-state feature never shipped |
+| `debate_scores` | CULL NEXT — debate mechanism formally retired per EPISTEMICS; transcripts (debates/debate_rounds) retained, scores table never used |
+| `dividends` | KEEP — working CLI ledger; portfolio currently holds no dividend payers |
+| `gex_snapshots` | BLOCKED — depends on options_chain_snapshots ingest that has never run; wire or cull both together |
+| `group_members`, `groups` | KEEP — operator config feature, zero-cost until used |
+| `mobile_timeframe_scores` | KEEP — populated only when the mobile API serves; rebuildable L2 |
+| `news_source_accuracy` (+ `_events`) | CLOSE LOOP — writer wired into refresh; needs the first scored news-derived prediction to populate |
+| `options_chain_snapshots` | BLOCKED — Yahoo options ingest never wired into refresh; wire or cull with gex_snapshots |
+| `portfolio_allocations` | KEEP — allocation-% mode (alternative to transactions); mode unused but supported |
+| `predictions_history` | CLOSE LOOP (priority) — L1 series with live readers (narrative-divergence 24h deltas silently degrade without it); needs a writer in the predictions refresh path |
+| `recommendation_outcomes` | CLOSE LOOP — scoring side of recommendations; R4 shadow-book territory |
+| `regime_overrides` | KEEP — operator override escape hatch, used on demand |
+| `research_questions` | CULL CANDIDATE — backlog table never adopted by any routine |
+| `risk_factor_mappings` | CULL CANDIDATE — curated mappings never seeded, no consumer |
+| `run_health` | CLOSE LOOP (priority) — the EPISTEMICS spine; report runs must write it or the instrumentation story is fiction |
+
+## Backups
+
+The live DB is irreplaceable personal financial state on one laptop. Back it
+up. Archives must live OUTSIDE the repo (default `~/pftui-archives/`) and
+are never committed.
+
+- **What**: the active SQLite DB (`pftui system db-info` shows the path),
+  plus `config.toml` if you want API keys back after a reinstall.
+- **How**: `pftui system archive-db` — atomic `VACUUM INTO` copy, prints
+  path + size. `--out PATH` to target an external volume;
+  `--table X` exports a single table as JSON instead.
+- **Cadence**: weekly, plus before any schema-touching upgrade. The R3 cull
+  migration takes its own per-table JSON archives automatically, but those
+  are not a substitute for a full backup.
+
+Suggested launchd job (documented, NOT installed — operator's call). Save as
+`~/Library/LaunchAgents/com.pftui.backup.plist`, then
+`launchctl load ~/Library/LaunchAgents/com.pftui.backup.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.pftui.backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/pftui</string>
+    <string>system</string>
+    <string>archive-db</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>1</integer>
+    <key>Hour</key><integer>9</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key><string>/tmp/pftui-backup.log</string>
+  <key>StandardErrorPath</key><string>/tmp/pftui-backup.log</string>
+</dict>
+</plist>
+```
+
+Prune old archives by hand; `archive-db` never deletes anything.
 
 ## Research harness (R1a) — the L2 expectancy flow
 

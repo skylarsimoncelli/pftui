@@ -228,19 +228,6 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             UNIQUE(date, name)
         );
 
-        CREATE TABLE IF NOT EXISTS prediction_cache (
-            market_id TEXT PRIMARY KEY,
-            question TEXT NOT NULL,
-            outcome_yes_price TEXT NOT NULL,
-            outcome_no_price TEXT NOT NULL,
-            volume TEXT NOT NULL,
-            category TEXT NOT NULL,
-            end_date TEXT NOT NULL,
-            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_prediction_category ON prediction_cache(category);
-        CREATE INDEX IF NOT EXISTS idx_prediction_volume ON prediction_cache(volume);
-
         CREATE TABLE IF NOT EXISTS predictions_cache (
             id TEXT PRIMARY KEY,
             question TEXT NOT NULL,
@@ -357,21 +344,6 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             id INTEGER PRIMARY KEY CHECK(id = 1),
             seeded_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-
-        CREATE TABLE IF NOT EXISTS narrative_money_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
-            recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
-            news_volume REAL NOT NULL,
-            news_sentiment REAL NOT NULL,
-            market_price REAL,
-            market_delta_24h REAL,
-            divergence_score REAL NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_narrative_money_history_scenario
-            ON narrative_money_history(scenario_id, recorded_at);
-        CREATE INDEX IF NOT EXISTS idx_narrative_money_history_recorded
-            ON narrative_money_history(recorded_at);
 
         CREATE TABLE IF NOT EXISTS news_silence_baselines (
             topic TEXT NOT NULL,
@@ -1714,24 +1686,6 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             PRIMARY KEY (lesson_id, fragment_id)
         );
 
-        CREATE TABLE IF NOT EXISTS thesis_citations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            thesis_id INTEGER NOT NULL,
-            source_type TEXT NOT NULL,
-            source_id INTEGER,
-            citation_text TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS conviction_durability (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            prediction_id INTEGER NOT NULL,
-            window_days INTEGER NOT NULL,
-            conviction_drift REAL NOT NULL DEFAULT 0.0,
-            note TEXT,
-            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
         CREATE TABLE IF NOT EXISTS options_chain_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT NOT NULL,
@@ -1985,6 +1939,20 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_signal_expectancy_asset_asof
             ON signal_expectancy(asset, as_of);",
     )?;
+
+    // ── R3: canonical-series registry + dead-table cull ─────────────────
+    //
+    // series_registry (L1 meta): one row per canonical time series with its
+    // physical home (storage_table + storage_filter + date_column) and
+    // freshness SLA. Seeded idempotently; operator edits survive.
+    crate::db::series_registry::ensure_and_seed(conn)?;
+
+    // Dead-table cull: prediction_cache (superseded), conviction_durability
+    // + thesis_citations (agent-raw-SQL orphans), narrative_money_history
+    // (write-only ingestion). Non-empty tables are archived as JSON to
+    // ~/pftui-archives/ BEFORE the drop; a failed archive skips the drop.
+    // No-op on fresh DBs — the CREATE TABLE statements were removed above.
+    crate::db::archive::archive_and_drop_dead_tables(conn)?;
 
     Ok(())
 }

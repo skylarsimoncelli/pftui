@@ -18,6 +18,7 @@ pub mod alerts;
 pub mod allocation_targets;
 pub mod allocations;
 pub mod annotations;
+pub mod archive;
 pub mod backend;
 #[allow(dead_code)] // Infrastructure for F24.1+ consumers (BLS indicators, Economy tab)
 pub mod bls_cache;
@@ -50,7 +51,6 @@ pub mod groups;
 pub mod journal;
 pub mod macro_events;
 pub mod mobile_timeframe_scores;
-pub mod narrative_money;
 pub mod narrative_snapshots;
 pub mod news_silence;
 #[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
@@ -68,8 +68,6 @@ pub mod opportunity_cost;
 pub mod pg_runtime;
 pub mod power_flows;
 pub mod postgres_schema;
-#[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)
-pub mod prediction_cache;
 pub mod prediction_contracts;
 pub mod prediction_falsification_rules;
 pub mod prediction_lessons;
@@ -92,6 +90,7 @@ pub mod scan_queries;
 pub mod scenario_contract_mappings;
 pub mod scenarios;
 pub mod schema;
+pub mod series_registry;
 pub mod signal_expectancy;
 #[allow(dead_code)] // Infrastructure for F19.1+ consumers (sentiment gauges, CLI)
 pub mod sentiment_cache;

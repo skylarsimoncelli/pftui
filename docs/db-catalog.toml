@@ -125,12 +125,6 @@ purpose = "External consensus calls tracked for later scoring"
 writers = ["src/db/consensus.rs"]
 readers = ["src/db/consensus.rs"]
 
-[tables.conviction_durability]
-layer = "DEAD"
-purpose = "No code writer or reader (rows exist via agent raw SQL; only referenced in data_coverage metadata) — R3: migrate or drop"
-writers = []
-readers = []
-
 [tables.convictions]
 layer = "L3"
 purpose = "Per-analyst conviction records over time"
@@ -311,13 +305,6 @@ writers = ["src/db/mobile_timeframe_scores.rs"]
 readers = ["src/db/mobile_timeframe_scores.rs"]
 rebuildable = true
 
-[tables.narrative_money_history]
-layer = "L3"
-purpose = "Scenario news-pressure vs prediction-market movement ledger — WRITE-ONLY: no production reader"
-writers = ["src/db/narrative_money.rs"]
-readers = []
-append_only = true
-
 [tables.narrative_snapshots]
 layer = "L3"
 purpose = "Structured narrative recaps (analytical memory)"
@@ -444,12 +431,6 @@ purpose = "Append-only history of power-metric scores"
 writers = ["src/db/structural.rs"]
 readers = ["src/db/structural.rs"]
 append_only = true
-
-[tables.prediction_cache]
-layer = "DEAD"
-purpose = "0 rows, 0 external call sites; superseded by predictions_cache — R3: drop module + table"
-writers = ["src/db/prediction_cache.rs"]
-readers = ["src/db/prediction_cache.rs"]
 
 [tables.prediction_falsification_rules]
 layer = "L3"
@@ -653,6 +634,12 @@ writers = ["src/db/sentiment_cache.rs"]
 readers = ["src/db/sentiment_cache.rs"]
 freshness_sla_hours = 72
 
+[tables.series_registry]
+layer = "L1"
+purpose = "Meta-registry of canonical series: one row per series naming its physical home (storage_table+filter+date_column) and freshness SLA; drives `data series status` and the doctor staleness check. Registry rows are config; per-series SLAs live in the rows themselves"
+writers = ["src/db/series_registry.rs"]
+readers = ["src/db/series_registry.rs", "src/commands/series_status.rs", "src/commands/doctor.rs"]
+
 [tables.signal_expectancy]
 layer = "L2"
 purpose = "Event-study expectancy per (signal, version, asset, horizon, as_of): hit/mean vs baseline lift, MAE/MFE, binomial significance - rebuilt by `pftui research backtest`"
@@ -731,12 +718,6 @@ layer = "L4"
 purpose = "Standing thesis rows with review dates"
 writers = ["src/db/thesis.rs"]
 readers = ["src/db/thesis.rs", "src/db/thesis_chain_extract.rs"]
-
-[tables.thesis_citations]
-layer = "DEAD"
-purpose = "No code writer or reader (5136 rows written via agent raw SQL) — R3: adopt with a code path or archive"
-writers = []
-readers = []
 
 [tables.thesis_dependencies]
 layer = "L4"

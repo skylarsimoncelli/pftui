@@ -406,6 +406,11 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Canonical-series registry: per-series freshness vs SLA
+    Series {
+        #[command(subcommand)]
+        command: DataSeriesCommand,
+    },
     /// Pre-built dashboard views
     Dashboard {
         #[command(subcommand)]
@@ -1971,6 +1976,25 @@ pub enum UniverseCommand {
 }
 
 #[derive(Subcommand)]
+pub enum DataSeriesCommand {
+    /// Per-series last datapoint, age, and staleness vs its freshness SLA
+    ///
+    /// Reads the `series_registry` table (the L1 series catalog): each row
+    /// names where a canonical series physically lives and the SLA it must
+    /// meet. Glyphs: ok=within SLA, STALE=past SLA, DEAD?=past 2x SLA or no
+    /// data at all (also surfaced by `pftui system doctor`).
+    ///
+    /// EXAMPLES:
+    ///   pftui data series status
+    ///   pftui data series status --json
+    Status {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum SystemCommand {
     /// Run as a background daemon: refresh data + evaluate alerts on a loop
     Daemon {
@@ -1992,6 +2016,29 @@ pub enum SystemCommand {
     /// Show active database backend details and table row counts
     #[command(name = "db-info")]
     DbInfo {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Back up the database (or export one table as JSON) to ~/pftui-archives
+    ///
+    /// Whole-DB mode uses SQLite `VACUUM INTO` — an atomic, consistent,
+    /// compacted copy. Table mode (`--table X`) exports every row of one
+    /// table as a JSON document. Archives always land OUTSIDE the repo.
+    ///
+    /// EXAMPLES:
+    ///   pftui system archive-db
+    ///   pftui system archive-db --out /Volumes/backup/pftui-20260611.db
+    ///   pftui system archive-db --table journal
+    #[command(name = "archive-db")]
+    ArchiveDb {
+        /// Destination path (default: ~/pftui-archives/pftui-backup-<timestamp>.db
+        /// or <table>-<timestamp>.json in table mode)
+        #[arg(long)]
+        out: Option<String>,
+        /// Export a single table as JSON instead of backing up the whole DB
+        #[arg(long)]
+        table: Option<String>,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -4630,22 +4677,6 @@ pub enum AnalyticsCalibrationMatrixCommand {
 }
 
 #[derive(Subcommand)]
-pub enum AnalyticsNarrativeDivergenceCommand {
-    /// Backfill `narrative_money_history` from existing `news_cache` and
-    /// `predictions_history` over the trailing `--since` window.
-    ///
-    /// EXAMPLES:
-    ///   pftui analytics narrative-divergence rebuild --since 90d --json
-    Rebuild {
-        /// Lookback window: Nh / Nd / Nw / Nm (default: 90d)
-        #[arg(long, default_value = "90d")]
-        since: String,
-        #[arg(long)]
-        json: bool,
-    },
-}
-
-#[derive(Subcommand)]
 pub enum AnalyticsNewsSilenceCommand {
     /// Re-compute per-(topic, day-of-week) baselines from the trailing
     /// `--since` window of `news_cache` rows.
@@ -4941,10 +4972,8 @@ pub enum AnalyticsCommand {
         command: AnalyticsCalibrationMatrixCommand,
     },
     /// Compare scenario news pressure against mapped prediction-market movement
-    #[command(name = "narrative-divergence", after_help = "Scores each active scenario by comparing 24h topic-tagged news pressure\nagainst mapped prediction-market movement. Positive scores mean narrative\nis running ahead of money; negative scores mean pricing moved with little\nheadline confirmation.\n\nExamples:\n  pftui analytics narrative-divergence --json\n  pftui analytics narrative-divergence --hours 48 --threshold 1.5\n  pftui analytics narrative-divergence rebuild --since 90d --json\n\nSee also: data news topics, data predictions map, analytics calibration")]
+    #[command(name = "narrative-divergence", after_help = "Scores each active scenario by comparing 24h topic-tagged news pressure\nagainst mapped prediction-market movement. Positive scores mean narrative\nis running ahead of money; negative scores mean pricing moved with little\nheadline confirmation. Computed live from news_cache + contract mappings;\nnothing is persisted.\n\nExamples:\n  pftui analytics narrative-divergence --json\n  pftui analytics narrative-divergence --hours 48 --threshold 1.5\n\nSee also: data news topics, data predictions map, analytics calibration")]
     NarrativeDivergence {
-        #[command(subcommand)]
-        command: Option<AnalyticsNarrativeDivergenceCommand>,
         /// News lookback window in hours
         #[arg(long, default_value = "24")]
         hours: i64,
@@ -8236,7 +8265,6 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::NarrativeDivergence {
-                    command: subcmd,
                     hours,
                     threshold,
                     json,
@@ -8245,36 +8273,8 @@ mod tests {
         else {
             panic!("expected analytics narrative divergence command");
         };
-        assert!(subcmd.is_none());
         assert_eq!(hours, 48);
         assert!((threshold - 1.5).abs() < f64::EPSILON);
-        assert!(json);
-    }
-
-    #[test]
-    fn parse_analytics_narrative_divergence_rebuild() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "narrative-divergence",
-            "rebuild",
-            "--since",
-            "90d",
-            "--json",
-        ])
-        .unwrap();
-
-        let Some(Command::Analytics {
-            command:
-                AnalyticsCommand::NarrativeDivergence {
-                    command: Some(AnalyticsNarrativeDivergenceCommand::Rebuild { since, json }),
-                    ..
-                },
-        }) = cli.command
-        else {
-            panic!("expected analytics narrative-divergence rebuild command");
-        };
-        assert_eq!(since, "90d");
         assert!(json);
     }
 

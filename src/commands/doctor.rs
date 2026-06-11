@@ -50,6 +50,9 @@ pub async fn run(json_output: bool) -> Result<()> {
             Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         {
             checks.push(btc_series_divergence_check(&conn));
+            // 5. Registered-series freshness vs 2x SLA (driven by
+            // series_registry — see `pftui data series status`).
+            checks.push(series_registry_staleness_check(&conn));
         }
     }
 
@@ -729,6 +732,84 @@ fn btc_series_divergence_check(conn: &Connection) -> DiagnosticCheck {
     }
 }
 
+/// Registered-series freshness check (R3): every `series_registry` row past
+/// 2x its freshness SLA is named in a warning. Within 1x-2x SLA is treated
+/// as routine drift (the refresh loop's job); past 2x means a feed has gone
+/// dark — the precursor to "stale data infecting the loops".
+fn series_registry_staleness_check(conn: &Connection) -> DiagnosticCheck {
+    let mk = |passed: bool, message: String| DiagnosticCheck {
+        name: "Registered Series Freshness".to_string(),
+        category: "Data Health".to_string(),
+        passed,
+        critical: false,
+        message,
+        duration_ms: None,
+    };
+
+    // Read-only connection: the registry may not exist yet on a DB that has
+    // never run the R3 migration. That's a pass, not a failure.
+    match crate::db::archive::table_exists(conn, "series_registry") {
+        Ok(false) => {
+            return mk(
+                true,
+                "series_registry not initialized yet (created on next normal startup)"
+                    .to_string(),
+            )
+        }
+        Err(e) => return mk(false, format!("could not inspect series_registry: {e}")),
+        Ok(true) => {}
+    }
+
+    let entries = match crate::db::series_registry::list(conn) {
+        Ok(entries) => entries,
+        Err(e) => return mk(false, format!("could not read series_registry: {e}")),
+    };
+    let now = chrono::Utc::now();
+    let mut past_2x: Vec<String> = Vec::new();
+    let mut stale_count = 0usize;
+    for entry in &entries {
+        match crate::db::series_registry::status_for(conn, entry, now) {
+            Ok(status) => {
+                if status.stale {
+                    stale_count += 1;
+                }
+                if status.past_2x_sla {
+                    let age = status
+                        .age_hours
+                        .map(|h| format!("{:.0}h old", h))
+                        .unwrap_or_else(|| "no data".to_string());
+                    past_2x.push(format!(
+                        "{} ({age}, SLA {}h)",
+                        entry.series_id, entry.freshness_sla_hours
+                    ));
+                }
+            }
+            Err(e) => past_2x.push(format!("{} (status error: {e})", entry.series_id)),
+        }
+    }
+    if past_2x.is_empty() {
+        mk(
+            true,
+            format!(
+                "{} registered series; {} past SLA, none past 2x SLA",
+                entries.len(),
+                stale_count
+            ),
+        )
+    } else {
+        mk(
+            false,
+            format!(
+                "{} of {} registered series past 2x freshness SLA: {} — run `pftui data refresh` \
+                 (detail: pftui data series status)",
+                past_2x.len(),
+                entries.len(),
+                past_2x.join(", ")
+            ),
+        )
+    }
+}
+
 fn output_json(checks: &[DiagnosticCheck]) -> Result<()> {
     let output = serde_json::json!({
         "checks": checks,
@@ -898,5 +979,44 @@ mod tests {
         let check = btc_series_divergence_check(&conn);
         assert!(check.passed);
         assert!(check.message.contains("No recent data"));
+    }
+
+    #[test]
+    fn series_staleness_passes_when_registry_missing() {
+        // A read-only DB that has never run the R3 migration.
+        let conn = Connection::open_in_memory().unwrap();
+        let check = series_registry_staleness_check(&conn);
+        assert!(check.passed);
+        assert!(check.message.contains("not initialized"));
+    }
+
+    #[test]
+    fn series_staleness_names_series_past_2x_sla() {
+        let conn = setup_conn();
+        // Migrated registry, all series empty -> everything past 2x SLA.
+        let check = series_registry_staleness_check(&conn);
+        assert!(!check.passed);
+        assert!(check.message.contains("past 2x freshness SLA"));
+        assert!(
+            check.message.contains("gold"),
+            "stale series should be named: {}",
+            check.message
+        );
+
+        // Fresh datapoint clears one series; it must drop out of the warning
+        // (cot-gold is still listed — match on the exact list item).
+        insert_close(&conn, "GC=F", &recent_date(0), "3350");
+        let check = series_registry_staleness_check(&conn);
+        assert!(!check.passed); // others still dark
+        let flags_gold = check
+            .message
+            .split(&[',', ':'][..])
+            .map(str::trim)
+            .any(|part| part.starts_with("gold ("));
+        assert!(
+            !flags_gold,
+            "fresh gold series should not be flagged: {}",
+            check.message
+        );
     }
 }

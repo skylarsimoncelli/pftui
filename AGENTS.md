@@ -222,6 +222,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui analytics flows summary [--since 7d] [--json]` | Per-asset rolling-window aggregate of `capital_flows`: net flow, top inflow, top outflow. Redemptions and outflows are signed negative. Output sorted alphabetically by asset for deterministic agent consumption. Daily-report per-asset hook lives in `src/report/sections/capital_flows.rs::render_capital_flows_block`; emits a one-liner when the asset has at least one row in the last 7 days. |
 | `pftui data dashboard global --json` | World Bank macro data (GDP, debt, reserves) |
 | `pftui data status --json` | Data source freshness plus daemon health — includes `daemon` heartbeat and `news_feeds` RSS health |
+| `pftui data series status [--json]` | Registry-driven freshness for every canonical series (`series_registry`): last datapoint, age vs SLA, 2x-SLA flags. The report skill's Step-10 data-freshness section should consume this instead of ad-hoc per-table checks. |
 
 ### Portfolio Management
 
@@ -315,6 +316,8 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui research forecasts score [--json]` | Retroactive forecast scoring: score every `analyst_view_history` row not yet in `forecast_scores` at its layer's canonical horizon (low 7 trading days, medium 45d, high 135d, macro 365d; blind/antithesis at ALL FOUR — see `src/research/forecast_scoring.rs`), plus fill pendings whose horizons elapsed. Direction-authoritative conviction; `SYM` → `SYM-USD` series fallback recorded in `series_used`. Idempotent — scored rows never mutated. Also runs in the `data refresh` tail |
 | `pftui research forecasts report [--layer X] [--asset Y] [--window-days N] [--json]` | Per (layer × asset × horizon): n scored, n neutral, hit rate, mean weighted score (sign-match × \|conviction\|/5), mean realized when bullish vs bearish, current wrong-sign streak; plus per-layer TOTALS rows |
 | `pftui research forecasts streaks [--threshold 5] [--json]` | Every (layer, asset, horizon) whose CURRENT consecutive wrong-sign streak ≥ threshold, with date span and the cumulative realized move against the calls. Stable structured feed for misalignment tripwires |
+| `pftui analytics narrative-divergence --json [--hours 24]` | Active scenario narrative-vs-money scores from topic news pressure versus mapped prediction-market movement (computed live; nothing persisted — the old `rebuild` backfill and `narrative_money_history` table were culled in R3) |
+
 | `pftui research misalignments [--all] [--json]` | Active forecast misalignments (default) or the full episode ledger (`--all`). A misalignment trips when a canonical layer's current wrong-sign streak on one asset reaches 5 (detected in the `data refresh` tail). While ACTIVE: the layer's views on that asset are on PROBATION (listed but excluded from convergence voting — `analytics views list/convergence` mark `probation: true`), `journal prediction add` caps that layer's confidence on the symbol at 0.25, and `analytics epistemics record` counts it into `run_health.active_misalignments`. Recovery is mechanical: a scored direction hit ends the episode |
 | `pftui analytics narrative-divergence --json [--hours 24]` | Active scenario narrative-vs-money scores from topic news pressure versus mapped prediction-market movement |
 | `pftui analytics narrative-divergence rebuild --since 90d --json` | Backfill `narrative_money_history` from existing news_cache + predictions_history; one row per (scenario, day) |
@@ -406,6 +409,7 @@ The research harness converts the deterministic engines (market structure, Cyber
 | `pftui system schema repair --dry-run [--json]` | Preview safe missing-table/column/index repair SQL |
 | `pftui system schema repair --confirm [--json]` | Apply safe schema repairs after reviewing the dry-run plan |
 | `pftui system data-coverage [--json]` | Per-enrichment-table row count vs expected minimum; surfaces 0-row and missing tables loudly |
+| `pftui system archive-db [--out PATH] [--table X] [--json]` | Back up the whole SQLite DB (`VACUUM INTO`, prints path + size) or export one table as JSON. Default destination `~/pftui-archives/` — always OUTSIDE the repo; never commit archives. |
 | `pftui system snapshot` | Render full TUI to stdout (for sharing or screenshots) |
 | `pftui system demo` | Launch with sample data (for testing, no real data) |
 | `pftui system daemon start [--interval N] [--json]` | Run the always-on daemon loop for refresh + analytics + alerts + cleanup |
@@ -439,11 +443,11 @@ The active backend database is the single source of truth. All interfaces (TUI, 
 ├── news_topic_markets             # News-topic to prediction-market contract bindings
 ├── news_source_accuracy           # Per-domain/topic prediction outcome counts for article-derived calls
 ├── news_source_accuracy_events    # One scored prediction → source-domain outcome event for trailing windows
-├── narrative_money_history        # Scenario news-pressure vs prediction-market movement history
 ├── news_silence_baselines         # Rolling weekday topic-volume baselines and silent/saturated regimes
 ├── rss_feed_health                # Per-feed RSS status, failure counters, and disable state
 ├── sentiment_cache                # Fear & Greed indices
-├── prediction_cache               # Polymarket odds
+├── predictions_cache              # Polymarket odds
+├── series_registry                # Canonical-series registry: storage home + freshness SLA per series
 ├── cot_cache                      # CFTC COT positioning
 ├── comex_cache                    # COMEX inventory
 ├── bls_cache                      # BLS economic data (CPI, NFP)
