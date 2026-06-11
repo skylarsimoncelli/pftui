@@ -100,6 +100,7 @@ pub mod repair_pairs;
 pub mod report;
 pub mod research;
 pub mod research_harness;
+pub mod research_forecasts;
 pub mod scan;
 pub mod scenario;
 pub mod scenario_detect;
