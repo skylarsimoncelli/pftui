@@ -218,6 +218,13 @@ writers = ["src/db/fedwatch_cache.rs"]
 readers = ["src/db/fedwatch_cache.rs"]
 freshness_sla_hours = 72
 
+[tables.forecast_scores]
+layer = "L3"
+purpose = "Retroactive per-(view, horizon) forecast scores over analyst_view_history — the judgment stream as a scored corpus (lazily created; scoring fills pending cells, scored rows never mutated)"
+writers = ["src/research/forecast_scoring.rs"]
+readers = ["src/research/forecast_scoring.rs", "src/commands/research_forecasts.rs"]
+append_only = true
+
 [tables.futures_cache]
 layer = "L0"
 purpose = "Futures quotes fetch cache (lazily created)"

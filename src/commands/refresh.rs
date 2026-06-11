@@ -2365,6 +2365,65 @@ fn run_pipeline(
         }
     }
 
+    // Tail step: retroactive forecast scoring — score analyst_view_history
+    // rows at their layer's canonical horizons (src/research/forecast_scoring)
+    // against the daily closes refreshed above. Same rationale as the
+    // prediction auto-score: no daemon, refresh is the recurring surface.
+    // Idempotent — scored cells are never re-examined; pendings fill as
+    // horizons elapse.
+    let forecast_start = Instant::now();
+    match crate::commands::research_forecasts::auto_score_for_refresh(backend) {
+        Ok(summary) => {
+            info_ln!(
+                verbose,
+                "✓ Forecast retro-score: {} newly scored ({} pending, {} unscorable); corpus {} scored / {}",
+                summary.newly_scored,
+                summary.pending,
+                summary.unscorable,
+                summary.corpus_scored_total,
+                summary.corpus_total
+            );
+            dag_result.add(SourceResult {
+                name: "forecast_retro_score".to_string(),
+                label: "Forecast Retro-Score".to_string(),
+                status: SourceStatus::Ok,
+                items_attempted: None,
+                items_failed: None,
+                failed_symbols: None,
+                items_updated: Some(summary.newly_scored),
+                duration_ms: forecast_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: Some(format!(
+                    "{} examined, {} newly scored ({} neutral), {} pending, {} unscorable",
+                    summary.examined,
+                    summary.newly_scored,
+                    summary.neutral_scored,
+                    summary.pending,
+                    summary.unscorable
+                )),
+            });
+        }
+        Err(e) => {
+            info_ln!(verbose, "  ⚠ Forecast retro-score failed: {}", e);
+            dag_result.add(SourceResult {
+                name: "forecast_retro_score".to_string(),
+                label: "Forecast Retro-Score".to_string(),
+                status: SourceStatus::Failed,
+                items_attempted: None,
+                items_failed: None,
+                failed_symbols: None,
+                items_updated: None,
+                duration_ms: forecast_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: Some(e.to_string()),
+                detail: None,
+            });
+        }
+    }
+
     // Idempotent: classify today's regime from the latest scenario state and
     // upsert into `regime_history`. Safe to run multiple times per day; the
     // most recent classification wins via `ON CONFLICT(date) DO UPDATE`.

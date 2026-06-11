@@ -6306,6 +6306,14 @@ pub enum Command {
 
 #[derive(Subcommand)]
 pub enum ResearchCommand {
+    /// Retroactive forecast scoring: the analyst judgment stream as a scored corpus
+    #[command(
+        after_help = "Horizon conventions (canonical, fixed — src/research/forecast_scoring.rs):\n  low    7 trading days      medium 45 calendar days\n  high   135 calendar days   macro  365 calendar days\n  blind / antithesis score at ALL FOUR horizons (measurement layers)\n\nWorkflows:\n  pftui research forecasts score                 Backfill + fill elapsed pendings (idempotent)\n  pftui research forecasts report --asset GC=F   Per layer × asset hit rates and streaks\n  pftui research forecasts streaks --threshold 5 Current wrong-sign streak feed"
+    )]
+    Forecasts {
+        #[command(subcommand)]
+        command: ResearchForecastsCommand,
+    },
     /// Signal registry: canonical deterministic event emitters (id, version, description)
     Signals {
         #[command(subcommand)]
@@ -6358,6 +6366,38 @@ pub enum ResearchCommand {
 pub enum ResearchSignalsCommand {
     /// List every registered signal with version and description
     List {
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+
+#[derive(Subcommand)]
+pub enum ResearchForecastsCommand {
+    /// Score every analyst_view_history row not yet scored + fill elapsed pendings (idempotent)
+    Score {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Per (layer × asset × horizon) scored-forecast report with per-layer TOTALS
+    Report {
+        /// Filter to one layer (low|medium|high|macro|blind|antithesis)
+        #[arg(long)]
+        layer: Option<String>,
+        /// Filter to one asset symbol
+        #[arg(long)]
+        asset: Option<String>,
+        /// Only views recorded in the last N days
+        #[arg(long)]
+        window_days: Option<i64>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Current consecutive wrong-sign streaks ≥ threshold per (layer, asset)
+    Streaks {
+        /// Minimum current streak length to report
+        #[arg(long, default_value_t = 5)]
+        threshold: usize,
         #[arg(long)]
         json: bool,
     },
@@ -6477,6 +6517,69 @@ mod tests {
             );
         }
         Ok(())
+    }
+
+    #[test]
+    fn parses_research_forecasts_commands() {
+        let cli = Cli::try_parse_from(["pftui", "research", "forecasts", "score", "--json"])
+            .expect("score parses");
+        assert!(matches!(
+            cli.command,
+            Some(Command::Research {
+                command: ResearchCommand::Forecasts {
+                    command: ResearchForecastsCommand::Score { json: true }
+                }
+            })
+        ));
+
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "research",
+            "forecasts",
+            "report",
+            "--layer",
+            "low",
+            "--asset",
+            "GC=F",
+            "--window-days",
+            "90",
+        ])
+        .expect("report parses");
+        match cli.command {
+            Some(Command::Research {
+                command:
+                    ResearchCommand::Forecasts {
+                        command:
+                            ResearchForecastsCommand::Report {
+                                layer,
+                                asset,
+                                window_days,
+                                json,
+                            },
+                    },
+            }) => {
+                assert_eq!(layer.as_deref(), Some("low"));
+                assert_eq!(asset.as_deref(), Some("GC=F"));
+                assert_eq!(window_days, Some(90));
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+
+        let cli = Cli::try_parse_from(["pftui", "research", "forecasts", "streaks"])
+            .expect("streaks parses");
+        match cli.command {
+            Some(Command::Research {
+                command:
+                    ResearchCommand::Forecasts {
+                        command: ResearchForecastsCommand::Streaks { threshold, json },
+                    },
+            }) => {
+                assert_eq!(threshold, 5, "default threshold");
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
     }
 
     #[test]
