@@ -2553,28 +2553,6 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             },
         },
-        Some(Command::Research { command }) => match command {
-            cli::ResearchCommand::Forecasts { command } => match command {
-                cli::ResearchForecastsCommand::Score { json } => {
-                    commands::research_forecasts::score_cmd(&backend, json)
-                }
-                cli::ResearchForecastsCommand::Report {
-                    layer,
-                    asset,
-                    window_days,
-                    json,
-                } => commands::research_forecasts::report_cmd(
-                    &backend,
-                    layer.as_deref(),
-                    asset.as_deref(),
-                    window_days,
-                    json,
-                ),
-                cli::ResearchForecastsCommand::Streaks { threshold, json } => {
-                    commands::research_forecasts::streaks_cmd(&backend, threshold, json)
-                }
-            },
-        },
         Some(Command::Analytics { command }) => match command {
             cli::AnalyticsCommand::Asset { symbol, json } => {
                 commands::analytics::run_asset_intelligence(&backend, &symbol, json)
@@ -5679,6 +5657,26 @@ fn run_cli(cli: Cli) -> Result<()> {
 
         // Research harness (R1a): signal registry + event-study engine.
         Some(Command::Research { command }) => match command {
+            cli::ResearchCommand::Forecasts { command } => match command {
+                cli::ResearchForecastsCommand::Score { json } => {
+                    commands::research_forecasts::score_cmd(&backend, json)
+                }
+                cli::ResearchForecastsCommand::Report {
+                    layer,
+                    asset,
+                    window_days,
+                    json,
+                } => commands::research_forecasts::report_cmd(
+                    &backend,
+                    layer.as_deref(),
+                    asset.as_deref(),
+                    window_days,
+                    json,
+                ),
+                cli::ResearchForecastsCommand::Streaks { threshold, json } => {
+                    commands::research_forecasts::streaks_cmd(&backend, threshold, json)
+                }
+            },
             cli::ResearchCommand::Signals { command } => match command {
                 cli::ResearchSignalsCommand::List { json } => {
                     commands::research_harness::run_signals_list(json)

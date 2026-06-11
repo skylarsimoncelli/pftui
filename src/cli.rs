@@ -6284,12 +6284,6 @@ pub enum Command {
         command: ReportCommand,
     },
 
-    /// Research harness: scored judgment corpora and self-evaluation surfaces
-    Research {
-        #[command(subcommand)]
-        command: ResearchCommand,
-    },
-
     /// Multi-timeframe analytics engine views (includes scenario, situation, signals, synthesis)
     #[command(name = "analytics", after_help = "Key subcommands:\n  alerts     Alert rules: add, list, check, ack, seed-defaults (also: data alerts)\n  scenario   Macro scenario tracking: probabilities, triggers, history (alias: scenarios)\n  situation  Situation Room: active situations, regime, branches, indicators\n  signals    Technical and cross-timeframe signals\n  synthesis  Cross-timeframe alignment and divergence analysis")]
     Analytics {
@@ -6312,6 +6306,14 @@ pub enum Command {
 
 #[derive(Subcommand)]
 pub enum ResearchCommand {
+    /// Retroactive forecast scoring: the analyst judgment stream as a scored corpus
+    #[command(
+        after_help = "Horizon conventions (canonical, fixed — src/research/forecast_scoring.rs):\n  low    7 trading days      medium 45 calendar days\n  high   135 calendar days   macro  365 calendar days\n  blind / antithesis score at ALL FOUR horizons (measurement layers)\n\nWorkflows:\n  pftui research forecasts score                 Backfill + fill elapsed pendings (idempotent)\n  pftui research forecasts report --asset GC=F   Per layer × asset hit rates and streaks\n  pftui research forecasts streaks --threshold 5 Current wrong-sign streak feed"
+    )]
+    Forecasts {
+        #[command(subcommand)]
+        command: ResearchForecastsCommand,
+    },
     /// Signal registry: canonical deterministic event emitters (id, version, description)
     Signals {
         #[command(subcommand)]
@@ -6369,17 +6371,6 @@ pub enum ResearchSignalsCommand {
     },
 }
 
-#[derive(Subcommand)]
-pub enum ResearchCommand {
-    /// Retroactive forecast scoring: the analyst judgment stream as a scored corpus
-    #[command(
-        after_help = "Horizon conventions (canonical, fixed — src/research/forecast_scoring.rs):\n  low    7 trading days      medium 45 calendar days\n  high   135 calendar days   macro  365 calendar days\n  blind / antithesis score at ALL FOUR horizons (measurement layers)\n\nWorkflows:\n  pftui research forecasts score                 Backfill + fill elapsed pendings (idempotent)\n  pftui research forecasts report --asset GC=F   Per layer × asset hit rates and streaks\n  pftui research forecasts streaks --threshold 5 Current wrong-sign streak feed"
-    )]
-    Forecasts {
-        #[command(subcommand)]
-        command: ResearchForecastsCommand,
-    },
-}
 
 #[derive(Subcommand)]
 pub enum ResearchForecastsCommand {
