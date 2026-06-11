@@ -6290,6 +6290,77 @@ pub enum Command {
         #[command(subcommand)]
         command: AnalyticsCommand,
     },
+
+    /// Research harness: the signal registry and event-study engine — measured
+    /// expectancy (baseline lift, MAE/MFE, significance) instead of narrative
+    #[command(after_help = "The research harness converts deterministic engine signals\n(market structure, Cyber, cycle engine, SMA/RSI/Mayer thresholds) into\nMEASURED expectancy: per signal x asset x horizon forward-return stats\nwith baseline lift, MAE/MFE, overlap-honest significance and walk-forward\nas-of semantics.\n\nWorkflows:\n  pftui research signals list --json          # the registry (ids, versions)\n  pftui research backtest                     # all signals x held assets + SPY\n  pftui research backtest --asset GC=F --json # one asset, persist + print\n  pftui research expectancy --signal cyber_qb_flip_bear --json\n  pftui research events --signal structure_weekly_flip_down --asset BTC-USD")]
+    Research {
+        #[command(subcommand)]
+        command: ResearchCommand,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// Research harness (R1a): signal registry + event-study engine
+// ---------------------------------------------------------------------------
+
+#[derive(Subcommand)]
+pub enum ResearchCommand {
+    /// Signal registry: canonical deterministic event emitters (id, version, description)
+    Signals {
+        #[command(subcommand)]
+        command: ResearchSignalsCommand,
+    },
+    /// Run event studies (signals x assets), persist expectancy rows, print the table
+    Backtest {
+        /// Restrict to one signal id (default: every registry signal)
+        #[arg(long)]
+        signal: Option<String>,
+        /// Restrict to one asset/symbol (default: held assets + SPY; deep
+        /// series like BTC-USD are substituted automatically)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Walk-forward cutoff date YYYY-MM-DD (default: today). Only events
+        /// and forward windows fully resolved by this date enter the stats
+        #[arg(long = "as-of")]
+        as_of: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read the persisted expectancy table (latest as_of per signal x asset)
+    Expectancy {
+        /// Filter by signal id
+        #[arg(long)]
+        signal: Option<String>,
+        /// Filter by asset/symbol
+        #[arg(long)]
+        asset: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Raw dated event list for one signal x asset with per-event forward returns
+    Events {
+        /// Signal id (see `research signals list`)
+        #[arg(long)]
+        signal: String,
+        /// Asset/symbol (deep series substituted automatically)
+        #[arg(long)]
+        asset: String,
+        /// Show only the most recent N events
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ResearchSignalsCommand {
+    /// List every registered signal with version and description
+    List {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -14819,5 +14890,128 @@ mod tests {
         assert!(!override_confidence_cap);
         assert!(cap_rationale.is_none());
         assert!(!skip_preflight, "preflight must be ON by default, like journal add");
+    }
+    // ── Research harness (R1a) ──────────────────────────────────────────
+
+    #[test]
+    fn parse_research_signals_list() {
+        let cli =
+            Cli::try_parse_from(["pftui", "research", "signals", "list", "--json"]).unwrap();
+        let Some(Command::Research {
+            command: ResearchCommand::Signals {
+                command: ResearchSignalsCommand::List { json },
+            },
+        }) = cli.command
+        else {
+            panic!("expected research signals list");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_research_backtest_with_filters() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "research",
+            "backtest",
+            "--signal",
+            "cyber_qb_flip_bear",
+            "--asset",
+            "GC=F",
+            "--as-of",
+            "2026-06-01",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Research {
+            command:
+                ResearchCommand::Backtest {
+                    signal,
+                    asset,
+                    as_of,
+                    json,
+                },
+        }) = cli.command
+        else {
+            panic!("expected research backtest");
+        };
+        assert_eq!(signal.as_deref(), Some("cyber_qb_flip_bear"));
+        assert_eq!(asset.as_deref(), Some("GC=F"));
+        assert_eq!(as_of.as_deref(), Some("2026-06-01"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_research_backtest_defaults() {
+        let cli = Cli::try_parse_from(["pftui", "research", "backtest"]).unwrap();
+        let Some(Command::Research {
+            command:
+                ResearchCommand::Backtest {
+                    signal,
+                    asset,
+                    as_of,
+                    json,
+                },
+        }) = cli.command
+        else {
+            panic!("expected research backtest");
+        };
+        assert!(signal.is_none() && asset.is_none() && as_of.is_none() && !json);
+    }
+
+    #[test]
+    fn parse_research_expectancy_and_events() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "research",
+            "expectancy",
+            "--asset",
+            "BTC-USD",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Research {
+                command: ResearchCommand::Expectancy { .. }
+            })
+        ));
+
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "research",
+            "events",
+            "--signal",
+            "structure_weekly_flip_down",
+            "--asset",
+            "BTC-USD",
+            "--limit",
+            "12",
+        ])
+        .unwrap();
+        let Some(Command::Research {
+            command:
+                ResearchCommand::Events {
+                    signal,
+                    asset,
+                    limit,
+                    json,
+                },
+        }) = cli.command
+        else {
+            panic!("expected research events");
+        };
+        assert_eq!(signal, "structure_weekly_flip_down");
+        assert_eq!(asset, "BTC-USD");
+        assert_eq!(limit, 12);
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_research_events_requires_signal_and_asset() {
+        assert!(Cli::try_parse_from(["pftui", "research", "events"]).is_err());
+        assert!(
+            Cli::try_parse_from(["pftui", "research", "events", "--signal", "x"]).is_err()
+        );
     }
 }

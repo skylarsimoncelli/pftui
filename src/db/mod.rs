@@ -91,6 +91,7 @@ pub mod scan_queries;
 pub mod scenario_contract_mappings;
 pub mod scenarios;
 pub mod schema;
+pub mod signal_expectancy;
 #[allow(dead_code)] // Infrastructure for F19.1+ consumers (sentiment gauges, CLI)
 pub mod sentiment_cache;
 pub mod situation_snapshots;

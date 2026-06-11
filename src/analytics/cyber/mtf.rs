@@ -79,6 +79,12 @@ pub struct MtfRsiRead {
     pub up_signal_series: Vec<bool>,
     #[serde(skip)]
     pub dn_signal_series: Vec<bool>,
+    /// Per-bar zone-membership series (internal — the research signal
+    /// registry derives zone ENTER transitions from these).
+    #[serde(skip)]
+    pub green_series: Vec<bool>,
+    #[serde(skip)]
+    pub red_series: Vec<bool>,
 }
 
 /// Bucket key for a date under a ladder timeframe.
@@ -285,6 +291,8 @@ pub fn compute_mtf(
         recent_signals: events,
         up_signal_series,
         dn_signal_series,
+        green_series: green,
+        red_series: red,
     })
 }
 

@@ -394,6 +394,11 @@ pub struct AssetIntelligenceBlob {
     /// One-line composite Cyber Dots verdict (daily bars) from the
     /// `analytics::cyber` engine. None when history is too shallow.
     pub cyber_verdict_daily: Option<String>,
+    /// Measured signal expectancy for registry signals that fired within
+    /// the last 10 days, cited from the persisted `signal_expectancy` table
+    /// (90d horizon vs baseline). None when nothing fired recently or no
+    /// stats are persisted (run `pftui research backtest`).
+    pub signal_expectancy: Option<String>,
 }
 
 /// Compact morning-brief summary used to prepend the public Executive
@@ -5189,6 +5194,8 @@ fn load_asset_intelligence_blob(
     let (structure_verdict_daily, structure_verdict_weekly, cycle_clock_verdict, cyber_verdict_daily) =
         load_structure_and_cycle_verdicts(backend, &sym);
 
+    let signal_expectancy = load_signal_expectancy_line(backend, &sym);
+
     Some(AssetIntelligenceBlob {
         symbol: sym,
         spot_price: spot.as_ref().map(|q| format_price(q.price)),
@@ -5206,7 +5213,91 @@ fn load_asset_intelligence_blob(
         structure_verdict_weekly,
         cycle_clock_verdict,
         cyber_verdict_daily,
+        signal_expectancy,
     })
+}
+
+/// "Signal expectancy" line for the per-asset card: cite the persisted 90d
+/// event-study stats (vs baseline) for any registry signal that FIRED for
+/// this asset within the last 10 days of its history. Auto-skips (None)
+/// when nothing fired recently, history is shallow, or no stats are
+/// persisted (the expectancy table is L2 — rebuilt by `pftui research
+/// backtest`). Citations are lookahead-free: stats carry their own as_of.
+fn load_signal_expectancy_line(backend: &BackendConnection, sym: &str) -> Option<String> {
+    use crate::research::registry::{self, AssetContext, SignalEmitter};
+
+    let conn = backend.sqlite_native()?;
+    let (series, history) =
+        crate::commands::research_harness::load_deep_history_full(backend, sym).ok()?;
+    if history.len() < 250 {
+        return None;
+    }
+    let last_date =
+        chrono::NaiveDate::parse_from_str(&history.last()?.date, "%Y-%m-%d").ok()?;
+    let cutoff = (last_date - chrono::Duration::days(10))
+        .format("%Y-%m-%d")
+        .to_string();
+    let ctx = AssetContext::build(sym, &series, &history)?;
+    let persisted =
+        crate::db::signal_expectancy::latest_rows(conn, None, Some(&ctx.series)).ok()?;
+    if persisted.is_empty() {
+        return None;
+    }
+
+    let fmt = |v: Option<f64>| {
+        v.map(|x| format!("{x:+.1}%"))
+            .unwrap_or_else(|| "n/a".to_string())
+    };
+    let mut parts: Vec<String> = Vec::new();
+    for def in registry::registry() {
+        let events = def.emit(&ctx);
+        let Some(last_event) = events.last() else {
+            continue;
+        };
+        if last_event.date < cutoff {
+            continue;
+        }
+        let Some(row) = persisted
+            .iter()
+            .find(|r| r.signal_id == def.id() && r.horizon_days == 90)
+        else {
+            continue;
+        };
+        if row.n_nonoverlap == 0 {
+            continue;
+        }
+        let fired = chrono::NaiveDate::parse_from_str(&last_event.date, "%Y-%m-%d")
+            .map(|d| d.format("%b-%d").to_string())
+            .unwrap_or_else(|_| last_event.date.clone());
+        let since = events
+            .first()
+            .map(|e| e.date.chars().take(4).collect::<String>())
+            .unwrap_or_default();
+        let qualifier = if row.n_nonoverlap < 10 {
+            " [anecdotal n<10]"
+        } else if row.significant {
+            " [significant]"
+        } else {
+            ""
+        };
+        parts.push(format!(
+            "{} fired {fired}: n={} since {since}, 90d mean {} vs baseline {} (lift {}), MAE mean {}{qualifier}",
+            def.id(),
+            row.n_nonoverlap,
+            fmt(row.mean_pct),
+            fmt(row.baseline_mean_pct),
+            fmt(row.mean_lift).replace('%', "pp"),
+            fmt(row.mae_mean),
+        ));
+        if parts.len() >= 2 {
+            break; // keep the card line compact
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("; "))
+    }
 }
 
 /// Compute the market-structure verdicts (daily + weekly bars), the

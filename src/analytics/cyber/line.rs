@@ -220,6 +220,35 @@ pub fn compute_line(
     })
 }
 
+/// ALL price/CyberLine crosses over the series, oldest first — the dated
+/// event stream behind [`LineRead::last_cross`] (identical semantics:
+/// Pine `ta.crossover/crossunder(close, trend)` on the default Volatility
+/// Weighted line, Medium sensitivity len 18). Used by the research signal
+/// registry; `compute_line` keeps emitting only the most recent cross.
+pub fn compute_line_crosses(closes: &[f64], dates: &[String]) -> Vec<LineCross> {
+    if closes.len() < SENSITIVITY_MEDIUM_LEN * 3 {
+        return Vec::new();
+    }
+    let trend = vidya_series(closes, SENSITIVITY_MEDIUM_LEN);
+    let closes_opt: Vec<Option<f64>> = closes.iter().map(|v| Some(*v)).collect();
+    let trend_opt: Vec<Option<f64>> = trend.iter().map(|v| Some(*v)).collect();
+    let mut out = Vec::new();
+    for (i, date) in dates.iter().enumerate().take(closes.len()).skip(1) {
+        if primitives::crossover_at(&closes_opt, &trend_opt, i) {
+            out.push(LineCross {
+                date: date.clone(),
+                direction: "above".to_string(),
+            });
+        } else if primitives::crossunder_at(&closes_opt, &trend_opt, i) {
+            out.push(LineCross {
+                date: date.clone(),
+                direction: "below".to_string(),
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

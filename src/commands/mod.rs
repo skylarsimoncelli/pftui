@@ -99,6 +99,7 @@ pub mod remove_tx;
 pub mod repair_pairs;
 pub mod report;
 pub mod research;
+pub mod research_harness;
 pub mod scan;
 pub mod scenario;
 pub mod scenario_detect;

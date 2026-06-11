@@ -1950,6 +1950,42 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     // prediction_lessons (see `db/standing_rules.rs`).
     crate::db::standing_rules::ensure_table(conn)?;
 
+    // Migration (research harness R1a): signal_expectancy — persisted
+    // event-study expectancy per (signal, version, asset, horizon, as_of).
+    // L2 derived: deterministically rebuildable from price_history via
+    // `pftui research backtest`. Stats columns are REAL (statistics, not
+    // monetary values — the Decimal-strings rule applies to money).
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS signal_expectancy (
+            signal_id TEXT NOT NULL,
+            signal_version TEXT NOT NULL,
+            asset TEXT NOT NULL,
+            horizon_days INTEGER NOT NULL,
+            as_of TEXT NOT NULL,
+            n_total INTEGER NOT NULL,
+            n_evaluable INTEGER NOT NULL,
+            n_nonoverlap INTEGER NOT NULL,
+            hit_rate REAL,
+            baseline_hit_rate REAL,
+            hit_lift REAL,
+            mean_pct REAL,
+            baseline_mean_pct REAL,
+            mean_lift REAL,
+            median_pct REAL,
+            p25 REAL,
+            p75 REAL,
+            mae_mean REAL,
+            mae_worst REAL,
+            mfe_mean REAL,
+            p_value REAL,
+            significant INTEGER NOT NULL DEFAULT 0,
+            computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (signal_id, signal_version, asset, horizon_days, as_of)
+        );
+        CREATE INDEX IF NOT EXISTS idx_signal_expectancy_asset_asof
+            ON signal_expectancy(asset, as_of);",
+    )?;
+
     Ok(())
 }
 

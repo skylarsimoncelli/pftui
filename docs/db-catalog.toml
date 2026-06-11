@@ -639,6 +639,13 @@ writers = ["src/db/sentiment_cache.rs"]
 readers = ["src/db/sentiment_cache.rs"]
 freshness_sla_hours = 72
 
+[tables.signal_expectancy]
+layer = "L2"
+purpose = "Event-study expectancy per (signal, version, asset, horizon, as_of): hit/mean vs baseline lift, MAE/MFE, binomial significance - rebuilt by `pftui research backtest`"
+writers = ["src/db/signal_expectancy.rs"]
+readers = ["src/db/signal_expectancy.rs", "src/commands/research_harness.rs", "src/report/build/daily.rs"]
+rebuildable = true
+
 [tables.situation_snapshots]
 layer = "L3"
 purpose = "Persisted situation-room baselines for delta detection"

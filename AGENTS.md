@@ -379,6 +379,17 @@ JSON shape (single symbol, `--include all`):
 ```
 | `pftui analytics technicals --symbols SYM --include mtf-rsi,pi-cycle,mtf-breakout,bollinger-reversal,rsi-extreme [--json]` | Extended signals subset: multi-timeframe RSI alignment, pi-cycle top/bottom crossover, multi-timeframe breakout composite, Bollinger reversal with multi-bar confirmation, RSI extreme highlighting. Pass `--include all` to enable every extended output known to the binary (channels + signals). |
 
+### Research Harness (measured signal expectancy)
+
+The research harness converts the deterministic engines (market structure, Cyber, cycle engine, SMA/RSI/Mayer thresholds) into MEASURED expectancy: dated signal EVENTS (state transitions, never states) studied for forward returns vs the asset's own baseline drift. Stats bind to `(signal_id, signal_version)` and carry a walk-forward `as_of` so citations are lookahead-free. n<10 renders as anecdotal; significance is an exact two-sided binomial test vs the BASELINE up-rate after overlap exclusion.
+
+| Command | What It Does |
+|---|---|
+| `pftui research signals list [--json]` | The signal registry: ~27 canonical emitters with id, version, description (structure flips/BOS, Cyber QB flips/dots/line crosses/Pi Cycle/MTF RSI/breakouts, cycle timing-band entries/FLD crosses/failed cycles/VTL breaks, 200dma extension/window, RSI(14)<25, Mayer<0.85) |
+| `pftui research backtest [--signal X] [--asset Y] [--as-of D] [--json]` | Run event studies (default: all signals x held assets + SPY; deep series like BTC-USD substituted automatically), persist `signal_expectancy` rows (L2, rebuildable), print the expectancy table with baseline lift + significance flags. Horizons 5/30/90/180 calendar days; per horizon: n_total/n_evaluable/n_nonoverlap, hit rate vs baseline, mean/median/P25/P75, MAE/MFE, p-value |
+| `pftui research expectancy [--signal X] [--asset Y] [--json]` | Read the persisted expectancy table (latest as_of per signal x asset) without recomputing |
+| `pftui research events --signal X --asset Y [--limit N] [--json]` | The raw dated event list with per-event forward returns at every horizon ("show me the 12 instances"), plus the overlap-pruned stats summary |
+
 ### Utility
 
 | Command | What It Does |

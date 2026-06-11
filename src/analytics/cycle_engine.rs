@@ -429,6 +429,10 @@ pub struct DegreeStatus {
     pub unit: String,
     /// Dated low list (most recent ≤ 24 emitted; stats use all).
     pub lows: Vec<CycleLow>,
+    /// FULL low list, oldest first (internal — the research signal registry
+    /// derives dated cycle events from it; JSON output keeps the ≤24 cap).
+    #[serde(skip)]
+    pub all_lows: Vec<CycleLow>,
     pub n_lows_total: usize,
     pub last_confirmed_low: Option<CycleLow>,
     /// Final pivot printed but swing-low not yet confirmed.
@@ -1388,6 +1392,7 @@ fn analyze_degree(
         detector: cfg.detector,
         unit,
         lows: lows_emitted,
+        all_lows: lows,
         n_lows_total,
         last_confirmed_low,
         candidate_low,
