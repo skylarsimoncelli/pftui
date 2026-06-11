@@ -4749,6 +4749,32 @@ pub enum AnalyticsCyclesCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Deterministic multi-degree cycle-theory report: cycle lows per
+    /// degree, low-to-low timing bands (P15-P85), translation ledger,
+    /// FLD/VTL state, failed-cycle + half-cycle + inversion flags, nesting
+    /// clarity. Timing only — a window, never a date, never a price
+    /// prediction. Doctrine: docs/CYCLE-THEORY.md
+    Analyze {
+        /// Symbol to analyze (BTC falls back to the deep BTC-USD series)
+        symbol: String,
+        /// Restrict output to one degree (e.g. daily, investor, 4-year,
+        /// intermediate, major)
+        #[arg(long)]
+        degree: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Translation ledger for one degree: per completed cycle the length,
+    /// top position, LT/MID/RT class, and failed flag
+    Ledger {
+        /// Symbol to analyze
+        symbol: String,
+        /// Degree name (e.g. daily, investor, 4-year, intermediate, major)
+        #[arg(long)]
+        degree: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -9859,6 +9885,104 @@ mod tests {
 
         assert!(asset.is_none());
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_cycles_analyze_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "cycles",
+            "analyze",
+            "GC=F",
+            "--degree",
+            "major",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Cycles {
+                    command:
+                        AnalyticsCyclesCommand::Analyze {
+                            symbol,
+                            degree,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics cycles analyze command");
+        };
+
+        assert_eq!(symbol, "GC=F");
+        assert_eq!(degree.as_deref(), Some("major"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_cycles_analyze_no_degree() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "cycles", "analyze", "BTC"]).unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Cycles {
+                    command:
+                        AnalyticsCyclesCommand::Analyze {
+                            symbol,
+                            degree,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics cycles analyze command");
+        };
+
+        assert_eq!(symbol, "BTC");
+        assert!(degree.is_none());
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_cycles_ledger_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "cycles",
+            "ledger",
+            "BTC",
+            "--degree",
+            "investor",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Cycles {
+                    command:
+                        AnalyticsCyclesCommand::Ledger {
+                            symbol,
+                            degree,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics cycles ledger command");
+        };
+
+        assert_eq!(symbol, "BTC");
+        assert_eq!(degree, "investor");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_cycles_ledger_requires_degree() {
+        assert!(Cli::try_parse_from(["pftui", "analytics", "cycles", "ledger", "BTC"]).is_err());
     }
 
     #[test]

@@ -24,6 +24,7 @@
 | **[docs/DATA-ARCHITECTURE.md](docs/DATA-ARCHITECTURE.md)** | The DB layer model (L0 ingest → L1 series → L2 derived → L3 ledgers → L4 knowledge) — READ BEFORE adding any table or command that stores data. Every table needs a `docs/db-catalog.toml` entry (enforced by `tests/schema_conformance.rs`) |
 | **[docs/ANALYTICS-SPEC.md](docs/ANALYTICS-SPEC.md)** | Feature specifications for analytics, scenarios, journal |
 | **[docs/EPISTEMICS.md](docs/EPISTEMICS.md)** | The self-checking architecture — independence layer, binding learning loop, scenario/probability discipline, memory consolidation, run-health instrumentation. Read before touching predictions, scenarios, analyst views, or report prompts |
+| **[docs/CYCLE-THEORY.md](docs/CYCLE-THEORY.md)** | Market cycle theory — Hurst/Bressert/Loukas doctrine, exact formulas, asset chapters (BTC 4-year, gold ~6.9y), and the deterministic engine map (Part VII). Read before touching `analytics/cycle_engine.rs` or any cycle analysis |
 | **[docs/API-SOURCES.md](docs/API-SOURCES.md)** | Free data source reference — endpoints, rate limits, field mappings |
 | **[docs/VISION.md](docs/VISION.md)** | Design principles, quality bar, target feature set |
 | **[docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)** | Full keyboard shortcut reference |

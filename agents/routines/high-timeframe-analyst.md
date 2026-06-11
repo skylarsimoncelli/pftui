@@ -258,16 +258,20 @@ sqlite3 "$DB" "SELECT content FROM thesis WHERE section='cycle-frameworks'"     
 sqlite3 "$DB" "SELECT content FROM thesis WHERE section='btc-cycle-framework'"   # pftui-verified cycle table + indicator track record
 ```
 
-**Every run, execute the deterministic cycle clock for both cycle assets:**
+**Every run, execute the deterministic cycle ENGINE for both cycle assets (primary), plus the clock (halving/anchor framing):**
 
 ```bash
+pftui analytics cycles analyze BTC --json
+pftui analytics cycles analyze GC=F --json
 pftui analytics cycles clock --asset BTC --json
 pftui analytics cycles clock --asset GC=F --json
 ```
 
-The clock computes (from the deep `BTC-USD` and `GC=F` series): days/weeks since the 2024-04-19 halving, the Olson day-900 countdown, the Loukas 4-yr cycle week position vs the wk-187-229 low band (anchor: the verified 2022-11-21 cycle low), the midterm-year H2 flag, the Mayer Multiple, price vs the 200-week MA; and for gold, position within the ~7yr cycle (verified lows 2008-11, 2015-12, 2022-09), half-cycle position, and extension vs the 200d / 40wk MAs. Each anchor is verified against the actual `price_history` minimum — the JSON shows what was verified.
+`analyze` is the PRIMARY cycle command (engine: `analytics/cycle_engine.rs`, doctrine: docs/CYCLE-THEORY.md — do NOT re-derive cycle math agentically). Per degree (BTC: daily/investor/4-year; gold: intermediate/major) it emits the dated cycle-low list, the low-to-low timing band (empirical P15-P85), cycle age + band position (pre_band/in_band/over_band) + the next-low WINDOW, the translation ledger (LT/MID/RT — the first LT after an RT string is the canonical top warning), FLD state + measured-move target, VTL (a break confirms the peak of the next-longer degree), failed-cycle and possible-inversion flags, and a clarity grade (red-clarity counts are not acted on). For BTC it emits BOTH the halving clock and the pure low-to-low count, labeled — cite whichever framing you lean on. `pftui analytics cycles ledger <SYM> --degree <d> --json` gives the full per-cycle translation table.
 
-**Position every HTF view explicitly inside the cycle.** Your structured view's reasoning must state the week/year position and band edges from the clock output (e.g. "cycle week 185 of ~208, 2 weeks from the Loukas low band" / "gold year 3.7 of ~6.9yr cycle, past half-cycle"). An HTF view that ignores cycle position must say WHY it is discounting the cycle this run — silence is not a position. (Gold post-mortem, 2026-06: the HIGH layer never used cycle analysis at all while gold worked through a multi-month markdown.)
+The clock stays the halving/anchor framing: days/weeks since the 2024-04-19 halving, the Olson day-900 countdown, the Loukas 4-yr cycle week position vs the wk-187-229 low band (anchor: the verified 2022-11-21 cycle low), the midterm-year H2 flag, the Mayer Multiple, price vs the 200-week MA; and for gold, position within the ~7yr cycle (verified lows 2008-11, 2015-12, 2022-09), half-cycle position, and extension vs the 200d / 40wk MAs. Each anchor is verified against the actual `price_history` minimum — the JSON shows what was verified.
+
+**Position every HTF view explicitly inside the cycle.** Your structured view's reasoning must state the degree position and band edges from the engine/clock output (e.g. "4-year in_band yr 3.5/3.9, RT string intact, daily degree failed-cycle" / "gold major yr 3.6/6.8 pre_band, intermediate VTL broken — confirms major-degree peak"). An HTF view that ignores cycle position must say WHY it is discounting the cycle this run — silence is not a position. (Gold post-mortem, 2026-06: the HIGH layer never used cycle analysis at all while gold worked through a multi-month markdown.)
 
 Rules (mirrored in `cycle-frameworks` — the thesis row is canonical):
 - Any BTC timing view must state where it sits vs the cycle clock: week-of-cycle, the external Oct-2026 / $40k-53k consensus cluster, and which framework(s) it leans on or rejects.

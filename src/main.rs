@@ -2597,6 +2597,21 @@ fn run_cli(cli: Cli) -> Result<()> {
                 cli::AnalyticsCyclesCommand::Clock { asset, json } => {
                     commands::cycle_clock_cmd::run(&backend, asset.as_deref(), json)
                 }
+                cli::AnalyticsCyclesCommand::Analyze {
+                    symbol,
+                    degree,
+                    json,
+                } => commands::cycle_engine_cmd::run_analyze(
+                    &backend,
+                    &symbol,
+                    degree.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsCyclesCommand::Ledger {
+                    symbol,
+                    degree,
+                    json,
+                } => commands::cycle_engine_cmd::run_ledger(&backend, &symbol, &degree, json),
             },
             cli::AnalyticsCommand::Levels {
                 symbol,
