@@ -43,7 +43,9 @@ pub fn render_private_synthesis(ctx: &BuildContext) -> Result<String> {
         // Suppress the per-asset section entirely when synthesis didn't
         // write any per-asset notes. Empty-state filler bloated prior
         // reports.
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no per-asset [synthesis-SYM] notes for the report date",
+        ));
     }
 
     let mut output = String::from("## Per-Asset Briefing\n\n");
@@ -501,7 +503,9 @@ mod tests {
     fn suppressed_when_no_asset_notes() {
         let ctx = BuildContext::default();
         let out = render_private_synthesis(&ctx).unwrap();
-        assert!(out.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&out)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("no per-asset"), "unexpected reason: {reason}");
     }
 
     #[test]

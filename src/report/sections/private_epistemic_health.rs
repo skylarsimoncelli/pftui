@@ -111,7 +111,9 @@ pub fn render_private_epistemic_health(ctx: &BuildContext) -> Result<String> {
     // Render when either the run_health row or scored ledger lines exist;
     // suppress entirely only when both are absent.
     if ctx.epistemic_health.is_none() && ctx.recommendation_scoreboard.is_empty() {
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no run_health row for the report date and no scored recommendation-ledger lines",
+        ));
     }
 
     let mut output = String::from("## Epistemic Health — how the machine ran today\n\n");
@@ -190,7 +192,9 @@ mod tests {
     fn suppressed_without_run_health_row() {
         let ctx = BuildContext::default();
         let out = render_private_epistemic_health(&ctx).unwrap();
-        assert!(out.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&out)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("no run_health row"), "unexpected reason: {reason}");
     }
 
     #[test]

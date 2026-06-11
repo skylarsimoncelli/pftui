@@ -25,7 +25,9 @@ pub fn render_private_parallels(ctx: &BuildContext) -> Result<String> {
     if actionable.is_empty() {
         // Whole section suppressed when nothing landed AND no errors —
         // empty-state filler bloats the PDF.
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no parallel sets matched for the report date and no runner errors to surface",
+        ));
     }
 
     let mut output = String::from("## Quantitative Parallels\n\n");
@@ -123,7 +125,9 @@ mod tests {
         // was operator-noise.
         let ctx = BuildContext::default();
         let out = render_private_parallels(&ctx).unwrap();
-        assert!(out.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&out)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("no parallel sets matched"), "unexpected reason: {reason}");
     }
 
     #[test]

@@ -24,7 +24,9 @@ pub fn render_private_operator_deep_dive(ctx: &BuildContext) -> Result<String> {
         .filter(|s| !s.is_empty());
 
     let Some(body) = body else {
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no [synthesis-deep-dive] note — run had no operator focus prompt",
+        ));
     };
 
     let mut output = String::from("## Deep Dive\n\n");
@@ -45,7 +47,9 @@ mod tests {
     fn suppressed_when_no_deep_dive_note() {
         let ctx = BuildContext::default();
         let out = render_private_operator_deep_dive(&ctx).unwrap();
-        assert!(out.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&out)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("synthesis-deep-dive"), "unexpected reason: {reason}");
     }
 
     #[test]

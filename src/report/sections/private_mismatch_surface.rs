@@ -26,7 +26,7 @@ struct MismatchCard {
 pub fn render_private_mismatch_surface(ctx: &BuildContext) -> Result<String> {
     let held = qualifying_positions(&ctx.private_positions);
     if held.is_empty() {
-        return Ok(String::new());
+        return Ok(super::suppressed("no qualifying held positions to scan"));
     }
 
     let cards = mismatch_cards(
@@ -36,7 +36,9 @@ pub fn render_private_mismatch_surface(ctx: &BuildContext) -> Result<String> {
     );
     if cards.is_empty() {
         // Alignment is the default state — suppress when nothing diverges.
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no conviction-allocation mismatches — alignment is the default state",
+        ));
     }
 
     let mut output = String::from("## Mismatch Surface - Skylar's view vs analyst convergence\n\n");
@@ -194,7 +196,9 @@ mod tests {
         // analyst convergence for every held asset, the section emits
         // nothing rather than a placeholder.
         let rendered = render_private_mismatch_surface(&aligned_fixture()).unwrap();
-        assert!(rendered.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&rendered)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("alignment is the default state"), "unexpected reason: {reason}");
     }
 
     #[test]

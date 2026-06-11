@@ -87,6 +87,8 @@ struct BuildDailyDryRunJson<'a> {
     date: &'a str,
     section_plan: Vec<BuildDailyPlanRowJson>,
     data_availability: Vec<BuildDailyDataRowJson>,
+    section_outcomes: Vec<BuildDailySectionOutcomeJson>,
+    staleness_warnings: Vec<BuildDailyStalenessJson>,
     output_paths: Vec<String>,
     privacy_audit_status: &'a str,
     dry_run: bool,
@@ -102,6 +104,27 @@ struct BuildDailyPlanRowJson {
 struct BuildDailyDataRowJson {
     field: &'static str,
     populated: bool,
+    /// One of `populated` / `no_data` / `upstream_not_run` / `loader_error`.
+    status: &'static str,
+    /// Loader error text, upstream-not-run explanation, or no-data note.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct BuildDailySectionOutcomeJson {
+    name: &'static str,
+    visibility: &'static str,
+    rendered: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    suppression_reason: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct BuildDailyStalenessJson {
+    input: &'static str,
+    message: String,
+    sections: Vec<&'static str>,
 }
 
 #[derive(serde::Serialize)]
@@ -148,6 +171,30 @@ pub fn run_build_daily(
                 .map(|row| BuildDailyDataRowJson {
                     field: row.field,
                     populated: row.populated,
+                    status: row.status.as_str(),
+                    reason: row.reason.clone(),
+                })
+                .collect();
+            let outcome_rows: Vec<BuildDailySectionOutcomeJson> = summary
+                .section_outcomes
+                .iter()
+                .map(|o| BuildDailySectionOutcomeJson {
+                    name: o.name,
+                    visibility: match o.visibility {
+                        build_daily::SectionVisibility::Public => "public",
+                        build_daily::SectionVisibility::Private => "private",
+                    },
+                    rendered: o.rendered,
+                    suppression_reason: o.suppression_reason.clone(),
+                })
+                .collect();
+            let staleness_rows: Vec<BuildDailyStalenessJson> = summary
+                .staleness
+                .iter()
+                .map(|w| BuildDailyStalenessJson {
+                    input: w.input,
+                    message: w.message.clone(),
+                    sections: w.sections.clone(),
                 })
                 .collect();
             let output_paths: Vec<String> = summary
@@ -160,6 +207,8 @@ pub fn run_build_daily(
                 date: &date,
                 section_plan: plan_rows,
                 data_availability: data_rows,
+                section_outcomes: outcome_rows,
+                staleness_warnings: staleness_rows,
                 output_paths,
                 privacy_audit_status: summary.privacy_audit_status.as_str(),
                 dry_run: true,

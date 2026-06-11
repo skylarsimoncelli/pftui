@@ -38,3 +38,17 @@ pub mod public_news_catalysts;
 pub mod public_scenario_dashboard;
 pub mod real_rates_macro;
 pub mod thesis_chains_macro;
+
+/// Prefix of the suppression-reason marker a section renderer returns when
+/// its empty-state condition fires. The assembler strips the marker (it
+/// never reaches the report) and records the reason in the section-outcome
+/// accounting + integrity footer, so an auto-suppressed section is always
+/// explainable. Use [`suppressed`] to build one — never return a bare empty
+/// string from a section's empty state.
+pub const SUPPRESSED_PREFIX: &str = "<!-- suppressed: ";
+
+/// Build a suppression marker carrying the renderer's empty-state reason.
+/// Returned INSTEAD of an empty string from a section's auto-suppress path.
+pub fn suppressed(reason: &str) -> String {
+    format!("{SUPPRESSED_PREFIX}{} -->", reason.replace("-->", "—"))
+}

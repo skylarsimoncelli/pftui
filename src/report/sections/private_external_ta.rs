@@ -22,7 +22,9 @@ pub fn render_private_external_ta(ctx: &BuildContext) -> Result<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty());
     let Some(body) = body else {
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no [synthesis-external-ta] note attached — Phase 2c external-TA research did not run",
+        ));
     };
     let mut output = String::from("## External TA & Comparison\n\n");
     output.push_str(
@@ -45,7 +47,9 @@ mod tests {
     fn suppressed_when_no_external_ta_note() {
         let ctx = BuildContext::default();
         let out = render_private_external_ta(&ctx).unwrap();
-        assert!(out.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&out)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("synthesis-external-ta"), "unexpected reason: {reason}");
     }
 
     #[test]

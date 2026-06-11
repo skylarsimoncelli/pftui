@@ -20,7 +20,9 @@ pub fn render_private_closing(ctx: &BuildContext) -> Result<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty());
     let Some(body) = body else {
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no [synthesis-closing] note for the report date — synthesis writer did not author a closing",
+        ));
     };
     let mut output = String::from("## Closing — Gameplan, Portfolio, What to Watch\n\n");
     output.push_str(
@@ -41,7 +43,9 @@ mod tests {
     fn suppressed_when_no_closing_note() {
         let ctx = BuildContext::default();
         let out = render_private_closing(&ctx).unwrap();
-        assert!(out.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&out)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("synthesis-closing"), "unexpected reason: {reason}");
     }
 
     #[test]

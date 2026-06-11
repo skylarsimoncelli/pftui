@@ -287,3 +287,66 @@ changes MUST bump the signal's version string — stats bind to
 changed definition. Documented parameter-snapshot exceptions (cycle
 timing-band percentiles and FLD offset come from the engine's
 as-of-truncated full-sample stats) live in the `registry.rs` module docs.
+
+## Report integrity (R5) — the pipeline cannot mask
+
+The operator's only interaction with the system is the private PDF. A
+misconfigured report pipeline could mask key details, obscure issues, or lie
+about missing data — so the assembler (`src/report/build/daily.rs`) carries
+four structural guarantees:
+
+### 1. Slot-conformance availability (cannot fall behind)
+
+Every data-bearing field on the report build context is a "slot".
+`data_availability()` emits one row per slot, and the
+`every_build_context_slot_is_tracked` test parses the struct definition out
+of the source and fails when a new field ships without a matching
+availability row (metadata fields are declared in
+`BUILD_CONTEXT_META_FIELDS`). The schema-conformance pattern, applied to the
+report: a new loader without availability tracking is a red test. Do NOT
+weaken the test — add the `vec_slot!`/`opt_slot!` row.
+
+### 2. Loader-error honesty (four slot states)
+
+A loader failure must never abort the build (resilience) and must never be
+silent (honesty). Every slot resolves to one of:
+
+| status | meaning |
+|---|---|
+| `populated` | data loaded |
+| `no_data` | query succeeded, genuinely nothing there |
+| `upstream_not_run` | rows exist for EARLIER dates but none for the report date — the writing phase (parallels runner, investor panel, synthesis writer, decision architect…) did not run today |
+| `loader_error` | the query/computation FAILED — carries the error string |
+
+Loaders record `SlotIssue` into the context's `slot_issues` map;
+`data_availability()` classifies from it. `loader_error` and `no_data` must
+never render identically.
+
+### 3. The integrity footer (private report, unconditional)
+
+`assemble_private*` appends a final small-print block after the last
+section, opened by `<!-- integrity-footer: do not remove -->`:
+
+```
+Report integrity: N/M slots populated. No data: […]. Upstream not run: […].
+LOADER ERRORS: slot: error text (bold). Sections: N rendered, M
+auto-suppressed (with each empty-state reason). Stale inputs: […].
+```
+
+When everything is populated it collapses to one quiet line. The composition
+step edits ABOVE the marker and never removes the block. The full per-slot
+table with reasons is the operator's audit surface:
+`pftui report build daily --mode private --dry-run --json`
+(`data_availability[].status/reason`, `section_outcomes[]`,
+`staleness_warnings[]`).
+
+### 4. Staleness annotations + suppression accounting
+
+At build time the assembler compares inputs against their freshness
+expectations (analyst views: the 6h skill gate; prices: last fetch vs report
+date; economic/sentiment series: their registered `series_registry` SLAs)
+and injects a `> ⚠ …` blockquote under the affected section headings —
+annotate, never suppress. Section renderers' empty states return
+`sections::suppressed(reason)` instead of a bare empty string, so every
+auto-suppressed section carries an explicit, machine-readable reason
+(enforced by `every_section_empty_state_carries_a_suppression_reason`).
