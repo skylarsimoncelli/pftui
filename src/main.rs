@@ -1289,6 +1289,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 only,
                 skip,
                 stale,
+                accept_outlier,
             } => {
                 if cached_only {
                     if json {
@@ -1319,6 +1320,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     } else {
                         commands::refresh::RefreshPlan::full()
                     };
+                    let plan = plan.with_accept_outliers(accept_outlier);
                     if json {
                         commands::refresh::run_json_with_plan(
                             &backend,
@@ -1552,10 +1554,16 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
             cli::DataCommand::Sovereign { json } => commands::sovereign::run(&backend, json),
             cli::DataCommand::Prices {
+                command,
                 market,
                 json,
                 auto_refresh,
-            } => commands::prices::run(&backend, &config, market, json, auto_refresh),
+            } => match command {
+                Some(cli::DataPricesCommand::Audit { symbol, json }) => {
+                    commands::prices::run_audit(&backend, symbol.as_deref(), json)
+                }
+                None => commands::prices::run(&backend, &config, market, json, auto_refresh),
+            },
             cli::DataCommand::OilInventory { weeks, json } => {
                 commands::oil_inventory::run(&config, weeks, json)
             }

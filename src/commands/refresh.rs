@@ -22,8 +22,9 @@ use crate::db::fedwatch_cache;
 use crate::db::price_cache::{
     get_all_cached_prices_backend, get_cached_price_backend, upsert_price_backend,
 };
+use crate::db::price_guard;
 use crate::db::price_history::{
-    get_history_backend, get_price_at_date_backend, upsert_history_backend,
+    get_history_backend, get_latest_close_before_backend, get_price_at_date_backend,
 };
 use crate::db::snapshots::{upsert_portfolio_snapshot_backend, upsert_position_snapshot_backend};
 use crate::db::technical_levels;
@@ -91,6 +92,10 @@ pub struct RefreshPlan {
     pub alerts: bool,
     pub cleanup: bool,
     pub options: bool,
+    /// Symbols (uppercased on use) whose >20% d/d prints are admitted past
+    /// the price-ingest plausibility guard this run — the operator override
+    /// for genuine gap events (`pftui data refresh --accept-outlier SYM`).
+    pub accept_outliers: Vec<String>,
 }
 
 impl RefreshPlan {
@@ -141,6 +146,7 @@ impl RefreshPlan {
             alerts: true,
             cleanup: true,
             options: true,
+            accept_outliers: Vec::new(),
         }
     }
 
@@ -167,6 +173,7 @@ impl RefreshPlan {
             alerts: false,
             cleanup: false,
             options: false,
+            accept_outliers: Vec::new(),
         }
     }
 
@@ -175,6 +182,12 @@ impl RefreshPlan {
         let mut plan = Self::none();
         plan.prices = true;
         plan
+    }
+
+    /// Attach the operator's `--accept-outlier` symbol list to this plan.
+    pub fn with_accept_outliers(mut self, symbols: Vec<String>) -> Self {
+        self.accept_outliers = symbols;
+        self
     }
 
     /// Build a plan that only enables the named sources.
@@ -993,6 +1006,158 @@ async fn fetch_spot_fallbacks(
         }
     }
     notes
+}
+
+// ── Price-ingest plausibility guard (today's close stamping) ────────────────
+//
+// price_history is the canonical L1 series. Two structural rules apply at
+// the stamping stage:
+//
+// 1. NEVER stamp a stale cached price onto today's date. A failed fetch
+//    means today's bar simply does not get written — the cached value's true
+//    dated row already exists, and the spot layer (price_cache, with its
+//    fetched_at timestamp) keeps serving it as an explicitly stale quote.
+//    (P1 bug 2026-06-11: a 6-day-old cached BTC close was stamped onto the
+//    report date with source='cache' and fired false market-structure
+//    verdicts downstream.)
+// 2. Every live print passes the day-over-day plausibility guard
+//    (db::price_guard): >20% d/d is SUSPECT and must be corroborated by an
+//    independent secondary source (within 5%) or explicitly admitted via
+//    `--accept-outlier SYM`; otherwise it is rejected loudly.
+
+/// Fetch an independent same-day spot quote to corroborate a SUSPECT print.
+/// BTC: mempool.space — unless the suspect print itself came from
+/// mempool.space, in which case CoinGecko is consulted instead. Gold
+/// futures (GC=F): GeckoTerminal XAUT proxy. Other symbols have no wired
+/// secondary and return None (the guard then rejects, override required).
+fn fetch_corroboration_spot(
+    rt: &tokio::runtime::Runtime,
+    symbol: &str,
+    primary_source: &str,
+) -> Option<Decimal> {
+    match symbol.to_uppercase().as_str() {
+        "BTC" | "BTC-USD" => {
+            if primary_source == "mempool.space" {
+                rt.block_on(async {
+                    tokio::time::timeout(
+                        PRICE_REQUEST_TIMEOUT,
+                        coingecko::fetch_prices(&["BTC".to_string()]),
+                    )
+                    .await
+                    .ok()?
+                    .ok()?
+                    .first()
+                    .map(|q| q.price)
+                })
+            } else {
+                rt.block_on(async {
+                    tokio::time::timeout(PRICE_REQUEST_TIMEOUT, mempool::fetch_btc_spot_usd())
+                        .await
+                        .ok()?
+                        .ok()
+                })
+            }
+        }
+        "GC=F" => {
+            if primary_source == "geckoterminal-xaut" {
+                None
+            } else {
+                rt.block_on(async {
+                    tokio::time::timeout(PRICE_REQUEST_TIMEOUT, geckoterminal::fetch_xaut_usd())
+                        .await
+                        .ok()?
+                        .ok()
+                })
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Outcome of stamping today's live quotes into price_history.
+#[derive(Debug, Default)]
+struct HistoryStampSummary {
+    /// Rows written (guard-accepted).
+    ok: usize,
+    /// DB write errors.
+    err: usize,
+    /// Sample DB-error strings (max 3).
+    examples: Vec<String>,
+    /// Loud per-print guard rejection lines.
+    guard_warnings: Vec<String>,
+    /// Informational accept notes (corroborated / overridden prints).
+    guard_notes: Vec<String>,
+}
+
+/// Stamp today's close for every LIVE quote into price_history, through the
+/// plausibility guard. Quotes are the only input — symbols whose fetch
+/// failed are simply absent and get NO row for today (rule 1 above).
+///
+/// `fetch_secondary(symbol, primary_source)` is invoked lazily, only when a
+/// print is suspect and not already overridden — tests inject a mock.
+fn stamp_live_quotes_into_history(
+    backend: &BackendConnection,
+    quotes: &[PriceQuote],
+    today: &str,
+    accept_outliers: &HashSet<String>,
+    fetch_secondary: &mut dyn FnMut(&str, &str) -> Option<Decimal>,
+) -> HistoryStampSummary {
+    let mut summary = HistoryStampSummary::default();
+    for quote in quotes {
+        if quote.source == "static" {
+            continue;
+        }
+        let accept_outlier = accept_outliers.contains(&quote.symbol.to_uppercase());
+        // Lazy secondary lookup: only hit the network when the print is
+        // suspect and the operator has not already overridden it.
+        let secondary = if accept_outlier {
+            None
+        } else {
+            match get_latest_close_before_backend(backend, &quote.symbol, today) {
+                Ok(Some((_, prev))) if prev > Decimal::ZERO => {
+                    let pct = price_guard::signed_change_pct(quote.price, prev).abs();
+                    if pct > price_guard::MAX_DD_CHANGE_PCT {
+                        fetch_secondary(&quote.symbol, &quote.source)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        };
+        let record = HistoryRecord {
+            date: today.to_string(),
+            close: quote.price,
+            volume: None,
+            open: None,
+            high: None,
+            low: None,
+        };
+        match price_guard::upsert_history_guarded_backend(
+            backend,
+            &quote.symbol,
+            &quote.source,
+            &[record],
+            secondary,
+            accept_outlier,
+        ) {
+            Ok(outcome) => {
+                summary.ok += outcome.accepted;
+                summary
+                    .guard_warnings
+                    .extend(outcome.rejections.iter().map(|r| r.warning_line()));
+                summary.guard_notes.extend(outcome.corroborated);
+                summary.guard_notes.extend(outcome.overridden);
+            }
+            Err(e) => {
+                summary.err += 1;
+                if summary.examples.len() < 3 {
+                    summary.examples.push(format!("{}: {}", quote.symbol, e));
+                }
+            }
+        }
+    }
+    summary
 }
 
 /// Fetch prices for all given symbols and return
@@ -1860,70 +2025,39 @@ fn run_pipeline(
                 warn_ln!(verbose, "Failed to cache {}: {}", quote.symbol, e);
             }
         }
-        // Stamp today's close into price_history
+        // Stamp today's close into price_history — LIVE quotes only, through
+        // the plausibility guard. Symbols whose fetch failed get NO row for
+        // today: a stale cached price must never be persisted as a new dated
+        // close (it stays available as an explicitly stale spot via
+        // price_cache). See the guard rules above stamp_live_quotes_into_history.
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        let mut history_stamp_ok = 0usize;
-        let mut history_stamp_err = 0usize;
-        let mut history_stamp_examples: Vec<String> = Vec::new();
-        for quote in &quotes {
-            if quote.source == "static" {
-                continue;
-            }
-            let record = HistoryRecord {
-                date: today.clone(),
-                close: quote.price,
-                volume: None,
-                open: None,
-                high: None,
-                low: None,
-            };
-            match upsert_history_backend(backend, &quote.symbol, &quote.source, &[record]) {
-                Ok(_) => history_stamp_ok += 1,
-                Err(e) => {
-                    history_stamp_err += 1;
-                    if history_stamp_examples.len() < 3 {
-                        history_stamp_examples.push(format!("{}: {}", quote.symbol, e));
-                    }
-                }
-            }
-        }
-
-        // Stamp cached prices for symbols that failed live fetch
-        let live_symbols: HashSet<String> = quotes
+        let accept_outliers: HashSet<String> = plan
+            .accept_outliers
             .iter()
-            .filter(|q| q.source != "static")
-            .map(|q| q.symbol.clone())
+            .map(|s| s.trim().to_uppercase())
             .collect();
-        let cached_prices = get_all_cached_prices_backend(backend).unwrap_or_default();
-        for cached in cached_prices {
-            if live_symbols.contains(&cached.symbol) || cached.source == "static" {
-                continue;
-            }
-            let record = HistoryRecord {
-                date: today.clone(),
-                close: cached.price,
-                volume: None,
-                open: None,
-                high: None,
-                low: None,
-            };
-            match upsert_history_backend(backend, &cached.symbol, "cache", &[record]) {
-                Ok(_) => history_stamp_ok += 1,
-                Err(e) => {
-                    history_stamp_err += 1;
-                    if history_stamp_examples.len() < 3 {
-                        history_stamp_examples.push(format!("{}: {}", cached.symbol, e));
-                    }
-                }
-            }
+        let mut secondary_fetch =
+            |symbol: &str, primary: &str| fetch_corroboration_spot(&rt, symbol, primary);
+        let stamp = stamp_live_quotes_into_history(
+            backend,
+            &quotes,
+            &today,
+            &accept_outliers,
+            &mut secondary_fetch,
+        );
+        for warning in &stamp.guard_warnings {
+            warn_ln!(verbose, "{}", warning);
         }
-        if history_stamp_err > 0 {
+        for note in &stamp.guard_notes {
+            info_ln!(verbose, "  price guard: {}", note);
+        }
+        if stamp.err > 0 {
             info_ln!(
                 verbose,
                 "⚠ Price history stamp issues: {} writes failed ({} ok). Sample: {}",
-                history_stamp_err,
-                history_stamp_ok,
-                history_stamp_examples.join(" | ")
+                stamp.err,
+                stamp.ok,
+                stamp.examples.join(" | ")
             );
         }
 
@@ -2025,10 +2159,19 @@ fn run_pipeline(
                     error_count, total_attempted
                 ))
             },
-            detail: if fallback_notes.is_empty() {
-                None
-            } else {
-                Some(format!("via fallback: {}", fallback_notes.join(", ")))
+            detail: {
+                let mut parts = Vec::new();
+                if !fallback_notes.is_empty() {
+                    parts.push(format!("via fallback: {}", fallback_notes.join(", ")));
+                }
+                if !stamp.guard_warnings.is_empty() {
+                    parts.push(stamp.guard_warnings.join(" | "));
+                }
+                if parts.is_empty() {
+                    None
+                } else {
+                    Some(parts.join("; "))
+                }
             },
         });
 
@@ -2052,12 +2195,27 @@ fn run_pipeline(
                 continue;
             }
             history_attempted += 1;
-            match rt.block_on(fetch_history_for_symbol(sym, *cat, 180)) {
-                Ok((records, source)) if !records.is_empty()
-                    && upsert_history_backend(backend, sym, source, &records).is_ok() => {
+            if let Ok((records, source)) = rt.block_on(fetch_history_for_symbol(sym, *cat, 180)) {
+                if records.is_empty() {
+                    continue;
+                }
+                // Backfill batches go through the same plausibility guard,
+                // checked bar-by-bar (no single-print secondary applies).
+                if let Ok(outcome) = price_guard::upsert_history_guarded_backend(
+                    backend,
+                    sym,
+                    source,
+                    &records,
+                    None,
+                    accept_outliers.contains(&sym.to_uppercase()),
+                ) {
+                    if outcome.accepted > 0 {
                         history_updated += 1;
                     }
-                _ => {}
+                    for rejection in &outcome.rejections {
+                        warn_ln!(verbose, "{} (backfill)", rejection.warning_line());
+                    }
+                }
             }
         }
         if history_attempted > 0 {
@@ -6785,5 +6943,231 @@ mod tests {
             .detail
             .as_deref()
             .is_some_and(|msg| msg.contains("cache fallback for 1")));
+    }
+
+    // ── Price-history stamping: stale-cache no-stamp + plausibility guard ──
+
+    use rust_decimal::Decimal;
+
+    fn quote(symbol: &str, price: Decimal, source: &str) -> PriceQuote {
+        PriceQuote {
+            symbol: symbol.to_string(),
+            price,
+            currency: "USD".to_string(),
+            source: source.to_string(),
+            fetched_at: chrono::Utc::now().to_rfc3339(),
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+            previous_close: None,
+        }
+    }
+
+    fn seed_history(backend: &BackendConnection, symbol: &str, date: &str, close: Decimal) {
+        crate::db::price_history::upsert_history(
+            backend.sqlite_native().unwrap(),
+            symbol,
+            "test",
+            &[HistoryRecord {
+                date: date.to_string(),
+                close,
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        )
+        .unwrap();
+    }
+
+    fn history_close(backend: &BackendConnection, symbol: &str, date: &str) -> Option<Decimal> {
+        backend
+            .sqlite_native()
+            .unwrap()
+            .query_row(
+                "SELECT close FROM price_history WHERE symbol=?1 AND date=?2",
+                rusqlite::params![symbol, date],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|s| s.parse().ok())
+    }
+
+    /// THE regression test for the 2026-06-11 P1: a failed live fetch must
+    /// NOT stamp the symbol's stale cached price onto today's date. The
+    /// cached BTC quote sits in price_cache; only live quotes get a dated
+    /// row.
+    #[test]
+    fn failed_fetch_does_not_stamp_cached_price_as_todays_close() {
+        use rust_decimal_macros::dec;
+        let backend = housekeeping_backend();
+        // Stale spot cache entry for BTC-USD (the Jun-5 close, fetch failing
+        // ever since) + its true dated row.
+        crate::db::price_cache::upsert_price_backend(
+            &backend,
+            &quote("BTC-USD", dec!(77414), "coingecko"),
+        )
+        .unwrap();
+        seed_history(&backend, "BTC-USD", "2026-06-05", dec!(77414));
+
+        // Today's refresh: only AAPL came back live; BTC-USD fetch failed.
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        seed_history(&backend, "AAPL", "2026-06-05", dec!(200));
+        let quotes = vec![quote("AAPL", dec!(201), "yahoo")];
+        let mut no_secondary = |_: &str, _: &str| None;
+        let stamp = stamp_live_quotes_into_history(
+            &backend,
+            &quotes,
+            &today,
+            &HashSet::new(),
+            &mut no_secondary,
+        );
+
+        assert_eq!(stamp.ok, 1, "only the live AAPL quote is stamped");
+        assert_eq!(history_close(&backend, "AAPL", &today), Some(dec!(201)));
+        // The bug shape: NO BTC-USD row may exist for today.
+        assert_eq!(history_close(&backend, "BTC-USD", &today), None);
+        assert!(stamp.guard_warnings.is_empty());
+    }
+
+    #[test]
+    fn static_quotes_are_never_stamped() {
+        use rust_decimal_macros::dec;
+        let backend = housekeeping_backend();
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let quotes = vec![quote("CAD", dec!(1), "static")];
+        let mut no_secondary = |_: &str, _: &str| None;
+        let stamp = stamp_live_quotes_into_history(
+            &backend,
+            &quotes,
+            &today,
+            &HashSet::new(),
+            &mut no_secondary,
+        );
+        assert_eq!(stamp.ok, 0);
+        assert_eq!(history_close(&backend, "CAD", &today), None);
+    }
+
+    #[test]
+    fn suspect_print_rejected_when_secondary_contradicts() {
+        use rust_decimal_macros::dec;
+        let backend = housekeeping_backend();
+        seed_history(&backend, "BTC-USD", "2026-06-05", dec!(62064));
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        // Corrupt +24.7% print; mock secondary says the old level is right.
+        let quotes = vec![quote("BTC-USD", dec!(77414), "yahoo")];
+        let mut secondary_calls = 0usize;
+        let mut secondary = |sym: &str, _primary: &str| {
+            secondary_calls += 1;
+            assert_eq!(sym, "BTC-USD");
+            Some(dec!(62580))
+        };
+        let stamp = stamp_live_quotes_into_history(
+            &backend,
+            &quotes,
+            &today,
+            &HashSet::new(),
+            &mut secondary,
+        );
+        assert_eq!(secondary_calls, 1, "secondary consulted exactly once");
+        assert_eq!(stamp.ok, 0);
+        assert_eq!(history_close(&backend, "BTC-USD", &today), None);
+        assert_eq!(stamp.guard_warnings.len(), 1);
+        let line = &stamp.guard_warnings[0];
+        assert!(line.contains("price guard"), "{line}");
+        assert!(line.contains("BTC-USD print 77,414 rejected"), "{line}");
+        assert!(line.contains("secondary says 62,580"), "{line}");
+    }
+
+    #[test]
+    fn suspect_print_accepted_when_secondary_corroborates() {
+        use rust_decimal_macros::dec;
+        let backend = housekeeping_backend();
+        seed_history(&backend, "BTC-USD", "2026-06-10", dec!(100000));
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        // Genuine -35% crash; mock secondary confirms within 5%.
+        let quotes = vec![quote("BTC-USD", dec!(65000), "coingecko")];
+        let mut secondary = |_: &str, _: &str| Some(dec!(64800));
+        let stamp = stamp_live_quotes_into_history(
+            &backend,
+            &quotes,
+            &today,
+            &HashSet::new(),
+            &mut secondary,
+        );
+        assert_eq!(stamp.ok, 1);
+        assert!(stamp.guard_warnings.is_empty());
+        assert_eq!(stamp.guard_notes.len(), 1, "corroboration noted");
+        assert_eq!(history_close(&backend, "BTC-USD", &today), Some(dec!(65000)));
+    }
+
+    #[test]
+    fn suspect_print_rejected_when_no_secondary_available() {
+        use rust_decimal_macros::dec;
+        let backend = housekeeping_backend();
+        seed_history(&backend, "OBSCURE", "2026-06-10", dec!(10));
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let quotes = vec![quote("OBSCURE", dec!(15), "yahoo")];
+        let mut no_secondary = |_: &str, _: &str| None;
+        let stamp = stamp_live_quotes_into_history(
+            &backend,
+            &quotes,
+            &today,
+            &HashSet::new(),
+            &mut no_secondary,
+        );
+        assert_eq!(stamp.ok, 0);
+        assert_eq!(history_close(&backend, "OBSCURE", &today), None);
+        assert_eq!(stamp.guard_warnings.len(), 1);
+        assert!(
+            stamp.guard_warnings[0].contains("--accept-outlier OBSCURE"),
+            "{}",
+            stamp.guard_warnings[0]
+        );
+    }
+
+    #[test]
+    fn accept_outlier_override_stamps_genuine_gap() {
+        use rust_decimal_macros::dec;
+        let backend = housekeeping_backend();
+        seed_history(&backend, "OBSCURE", "2026-06-10", dec!(10));
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let quotes = vec![quote("OBSCURE", dec!(4), "yahoo")];
+        let accept: HashSet<String> = ["OBSCURE".to_string()].into_iter().collect();
+        let mut secondary_calls = 0usize;
+        let mut secondary = |_: &str, _: &str| {
+            secondary_calls += 1;
+            None
+        };
+        let stamp =
+            stamp_live_quotes_into_history(&backend, &quotes, &today, &accept, &mut secondary);
+        assert_eq!(secondary_calls, 0, "override skips the secondary fetch");
+        assert_eq!(stamp.ok, 1);
+        assert!(stamp.guard_warnings.is_empty());
+        assert_eq!(stamp.guard_notes.len(), 1, "override noted");
+        assert_eq!(history_close(&backend, "OBSCURE", &today), Some(dec!(4)));
+    }
+
+    #[test]
+    fn normal_print_does_not_consult_secondary() {
+        use rust_decimal_macros::dec;
+        let backend = housekeeping_backend();
+        seed_history(&backend, "AAPL", "2026-06-10", dec!(200));
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let quotes = vec![quote("AAPL", dec!(205), "yahoo")];
+        let mut secondary_calls = 0usize;
+        let mut secondary = |_: &str, _: &str| {
+            secondary_calls += 1;
+            None
+        };
+        let stamp = stamp_live_quotes_into_history(
+            &backend,
+            &quotes,
+            &today,
+            &HashSet::new(),
+            &mut secondary,
+        );
+        assert_eq!(secondary_calls, 0);
+        assert_eq!(stamp.ok, 1);
     }
 }

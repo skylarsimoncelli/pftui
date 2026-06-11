@@ -613,6 +613,136 @@ fn format_pct_opt(v: Option<Decimal>) -> String {
     }
 }
 
+// ── Retro price audit: `pftui data prices audit` ────────────────────────────
+//
+// Read-only scan of price_history for the spike-and-revert signature of a
+// corrupt print: a close that jumped >AUDIT_JUMP_PCT day-over-day and then
+// reverted >AUDIT_REVERT_PCT (in the opposite direction) on the very next
+// bar. Genuine crashes persist on subsequent bars and are NOT flagged.
+//
+// Deliberately read-only: auto-deleting rows from the canonical L1 series is
+// more dangerous than reporting them — a genuine event misclassified as
+// corruption would silently destroy history every downstream engine trusts.
+// Repair stays a manual, operator-reviewed DELETE.
+
+/// Day-over-day jump that makes a bar suspect.
+const AUDIT_JUMP_PCT: Decimal = dec!(20);
+/// Opposite-direction next-bar move that confirms the spike-and-revert shape.
+const AUDIT_REVERT_PCT: Decimal = dec!(15);
+
+/// One suspect spike-and-revert print found by the retro audit.
+#[derive(Debug, Clone, Serialize)]
+pub struct SuspectPrint {
+    pub symbol: String,
+    pub prev_date: String,
+    pub prev_close: Decimal,
+    pub spike_date: String,
+    pub spike_close: Decimal,
+    pub spike_source: String,
+    pub next_date: String,
+    pub next_close: Decimal,
+    /// Signed d/d % jump into the spike bar.
+    pub jump_pct: Decimal,
+    /// Signed % move from the spike bar to the next bar.
+    pub revert_pct: Decimal,
+}
+
+/// Pure spike-and-revert scan over one symbol's chronological close series.
+pub fn scan_spike_reverts(
+    symbol: &str,
+    series: &[crate::db::price_history::DatedClose],
+) -> Vec<SuspectPrint> {
+    let mut findings = Vec::new();
+    for window in series.windows(3) {
+        let (prev, spike, next) = (&window[0], &window[1], &window[2]);
+        if prev.close <= Decimal::ZERO || spike.close <= Decimal::ZERO {
+            continue;
+        }
+        let jump_pct = (spike.close - prev.close) / prev.close * dec!(100);
+        if jump_pct.abs() <= AUDIT_JUMP_PCT {
+            continue;
+        }
+        let revert_pct = (next.close - spike.close) / spike.close * dec!(100);
+        // Spike-and-revert: the next bar moves back >15% in the OPPOSITE
+        // direction. A genuine crash/melt-up persists (small revert) and is
+        // not flagged.
+        let opposite = (jump_pct > Decimal::ZERO) != (revert_pct > Decimal::ZERO);
+        if opposite && revert_pct.abs() > AUDIT_REVERT_PCT {
+            findings.push(SuspectPrint {
+                symbol: symbol.to_string(),
+                prev_date: prev.date.clone(),
+                prev_close: prev.close,
+                spike_date: spike.date.clone(),
+                spike_close: spike.close,
+                spike_source: spike.source.clone(),
+                next_date: next.date.clone(),
+                next_close: next.close,
+                jump_pct: jump_pct.round_dp(1),
+                revert_pct: revert_pct.round_dp(1),
+            });
+        }
+    }
+    findings
+}
+
+/// `pftui data prices audit [--symbol X] [--json]` — read-only retro-scan.
+pub fn run_audit(backend: &BackendConnection, symbol: Option<&str>, json: bool) -> Result<()> {
+    let symbols: Vec<String> = match symbol {
+        Some(s) => vec![s.to_string()],
+        None => crate::db::price_history::get_distinct_symbols_backend(backend)?,
+    };
+    let mut findings: Vec<SuspectPrint> = Vec::new();
+    let mut scanned = 0usize;
+    for sym in &symbols {
+        let series = crate::db::price_history::get_history_with_sources_backend(backend, sym)?;
+        if series.is_empty() {
+            continue;
+        }
+        scanned += 1;
+        findings.extend(scan_spike_reverts(sym, &series));
+    }
+
+    if json {
+        let payload = serde_json::json!({
+            "symbols_scanned": scanned,
+            "jump_threshold_pct": AUDIT_JUMP_PCT,
+            "revert_threshold_pct": AUDIT_REVERT_PCT,
+            "suspect_prints": findings,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
+    println!(
+        "Price history audit — spike-and-revert scan ({} symbols, >{}% d/d jump reverting >{}% next bar)",
+        scanned, AUDIT_JUMP_PCT, AUDIT_REVERT_PCT
+    );
+    if findings.is_empty() {
+        println!("✓ No suspect prints found.");
+        return Ok(());
+    }
+    println!(
+        "⚠ {} suspect print(s) — read-only report; repair is a manual, operator-reviewed DELETE:",
+        findings.len()
+    );
+    for f in &findings {
+        println!(
+            "  {}  {}  close {} (source {}) — {:+}% from {} on {}, then {:+}% to {} on {}",
+            f.symbol,
+            f.spike_date,
+            f.spike_close,
+            f.spike_source,
+            f.jump_pct,
+            f.prev_close,
+            f.prev_date,
+            f.revert_pct,
+            f.next_close,
+            f.next_date
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1601,5 +1731,120 @@ mod tests {
         }];
         annotate_per_symbol_staleness(&mut rows);
         assert!(!rows[0].market_closed, "crypto should never be market_closed");
+    }
+
+    // ── Retro price audit: spike-and-revert detection ──────────────────
+
+    use crate::db::price_history::DatedClose;
+
+    fn dc(date: &str, close: Decimal, source: &str) -> DatedClose {
+        DatedClose {
+            date: date.to_string(),
+            close,
+            source: source.to_string(),
+        }
+    }
+
+    #[test]
+    fn audit_flags_spike_and_revert() {
+        // The corruption signature: 62,064 → 77,414 (+24.7%) → 62,580
+        // (-19.2% revert). Spike row carries source='cache'.
+        let series = vec![
+            dc("2026-06-04", dec!(62500), "coingecko"),
+            dc("2026-06-05", dec!(62064), "coingecko"),
+            dc("2026-06-11", dec!(77414), "cache"),
+            dc("2026-06-12", dec!(62580), "coingecko"),
+        ];
+        let findings = scan_spike_reverts("BTC-USD", &series);
+        assert_eq!(findings.len(), 1);
+        let f = &findings[0];
+        assert_eq!(f.spike_date, "2026-06-11");
+        assert_eq!(f.spike_close, dec!(77414));
+        assert_eq!(f.spike_source, "cache");
+        assert_eq!(f.prev_date, "2026-06-05");
+        assert!(f.jump_pct > dec!(20), "jump {}", f.jump_pct);
+        assert!(f.revert_pct < dec!(-15), "revert {}", f.revert_pct);
+    }
+
+    #[test]
+    fn audit_does_not_flag_genuine_crash() {
+        // Genuine -35% crash that PERSISTS: no revert on the next bars.
+        let series = vec![
+            dc("2026-06-09", dec!(101000), "coingecko"),
+            dc("2026-06-10", dec!(100000), "coingecko"),
+            dc("2026-06-11", dec!(65000), "coingecko"),
+            dc("2026-06-12", dec!(64000), "coingecko"),
+            dc("2026-06-13", dec!(66500), "coingecko"),
+        ];
+        let findings = scan_spike_reverts("BTC-USD", &series);
+        assert!(findings.is_empty(), "genuine crash must not be flagged: {findings:?}");
+    }
+
+    #[test]
+    fn audit_does_not_flag_jump_without_revert() {
+        // Genuine melt-up: +25% that holds.
+        let series = vec![
+            dc("2026-06-10", dec!(100), "yahoo"),
+            dc("2026-06-11", dec!(125), "yahoo"),
+            dc("2026-06-12", dec!(127), "yahoo"),
+        ];
+        assert!(scan_spike_reverts("X", &series).is_empty());
+    }
+
+    #[test]
+    fn audit_flags_downward_spike_with_upward_revert() {
+        // Corrupt low print: -30% then +35% back.
+        let series = vec![
+            dc("2026-06-10", dec!(100), "yahoo"),
+            dc("2026-06-11", dec!(70), "cache"),
+            dc("2026-06-12", dec!(95), "yahoo"),
+        ];
+        let findings = scan_spike_reverts("X", &series);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].jump_pct < Decimal::ZERO);
+        assert!(findings[0].revert_pct > Decimal::ZERO);
+    }
+
+    #[test]
+    fn audit_ignores_small_moves_and_short_series() {
+        let series = vec![
+            dc("2026-06-10", dec!(100), "yahoo"),
+            dc("2026-06-11", dec!(110), "yahoo"),
+            dc("2026-06-12", dec!(100), "yahoo"),
+        ];
+        assert!(scan_spike_reverts("X", &series).is_empty());
+        assert!(scan_spike_reverts("X", &series[..2]).is_empty());
+        assert!(scan_spike_reverts("X", &[]).is_empty());
+    }
+
+    #[test]
+    fn run_audit_reports_seeded_spike_via_db() {
+        let conn = open_in_memory();
+        let backend = to_backend(conn);
+        let recs: Vec<crate::models::price::HistoryRecord> = [
+            ("2026-06-05", dec!(62064)),
+            ("2026-06-11", dec!(77414)),
+            ("2026-06-12", dec!(62580)),
+        ]
+        .iter()
+        .map(|(d, c)| crate::models::price::HistoryRecord {
+            date: d.to_string(),
+            close: *c,
+            volume: None,
+            open: None,
+            high: None,
+            low: None,
+        })
+        .collect();
+        crate::db::price_history::upsert_history(
+            backend.sqlite_native().unwrap(),
+            "BTC-USD",
+            "cache",
+            &recs,
+        )
+        .unwrap();
+        // Smoke both output modes; detection itself is covered above.
+        assert!(run_audit(&backend, Some("BTC-USD"), true).is_ok());
+        assert!(run_audit(&backend, None, false).is_ok());
     }
 }

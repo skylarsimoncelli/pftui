@@ -9,6 +9,13 @@ use crate::db::backend::BackendConnection;
 use crate::db::query;
 use crate::models::price::HistoryRecord;
 
+/// Raw, UNGUARDED upsert into price_history.
+///
+/// Production fetch paths must NOT call this directly — go through
+/// `db::price_guard::upsert_history_guarded_backend`, which applies the
+/// day-over-day plausibility guard (suspect prints >20% d/d are rejected
+/// unless corroborated by a secondary source or explicitly overridden).
+/// Direct use is reserved for tests and deliberate, operator-driven imports.
 pub fn upsert_history(
     conn: &Connection,
     symbol: &str,
@@ -70,6 +77,144 @@ pub fn get_history(conn: &Connection, symbol: &str, limit: u32) -> Result<Vec<Hi
     let mut result: Vec<HistoryRecord> = rows.filter_map(|r| r.ok()).collect();
     result.reverse(); // chronological order (oldest first)
     Ok(result)
+}
+
+/// Get the latest stored close STRICTLY BEFORE the given date for a symbol.
+/// Returns `(date, close)` of that prior bar, or None when no earlier
+/// history exists. This is the day-over-day baseline for the price-ingest
+/// plausibility guard (`db::price_guard`).
+pub fn get_latest_close_before(
+    conn: &Connection,
+    symbol: &str,
+    date: &str,
+) -> Result<Option<(String, Decimal)>> {
+    let mut stmt = conn.prepare(
+        "SELECT date, close FROM price_history
+         WHERE symbol = ?1 AND date < ?2
+         ORDER BY date DESC
+         LIMIT 1",
+    )?;
+    let result = stmt
+        .query_row(params![symbol, date], |row| {
+            let d: String = row.get(0)?;
+            let close_str: String = row.get(1)?;
+            Ok((d, close_str.parse::<Decimal>().unwrap_or(Decimal::ZERO)))
+        })
+        .ok();
+    Ok(result)
+}
+
+fn get_latest_close_before_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    date: &str,
+) -> Result<Option<(String, Decimal)>> {
+    ensure_tables_postgres(pool)?;
+    let row: Option<(String, String)> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
+            "SELECT date, close FROM price_history
+             WHERE symbol = $1 AND date < $2
+             ORDER BY date DESC
+             LIMIT 1",
+        )
+        .bind(symbol)
+        .bind(date)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(row.map(|(d, c)| (d, c.parse().unwrap_or(Decimal::ZERO))))
+}
+
+pub fn get_latest_close_before_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    date: &str,
+) -> Result<Option<(String, Decimal)>> {
+    query::dispatch(
+        backend,
+        |conn| get_latest_close_before(conn, symbol, date),
+        |pool| get_latest_close_before_postgres(pool, symbol, date),
+    )
+}
+
+/// One dated close with provenance, for the retro price audit.
+#[derive(Debug, Clone)]
+pub struct DatedClose {
+    pub date: String,
+    pub close: Decimal,
+    pub source: String,
+}
+
+/// Full chronological close series with per-row source for one symbol.
+pub fn get_history_with_sources(conn: &Connection, symbol: &str) -> Result<Vec<DatedClose>> {
+    let mut stmt = conn.prepare(
+        "SELECT date, close, source FROM price_history
+         WHERE symbol = ?1
+         ORDER BY date ASC",
+    )?;
+    let rows = stmt.query_map(params![symbol], |row| {
+        let close_str: String = row.get(1)?;
+        Ok(DatedClose {
+            date: row.get(0)?,
+            close: close_str.parse().unwrap_or(Decimal::ZERO),
+            source: row.get(2)?,
+        })
+    })?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+fn get_history_with_sources_postgres(pool: &PgPool, symbol: &str) -> Result<Vec<DatedClose>> {
+    ensure_tables_postgres(pool)?;
+    let rows: Vec<(String, String, String)> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
+            "SELECT date, close, source FROM price_history
+             WHERE symbol = $1
+             ORDER BY date ASC",
+        )
+        .bind(symbol)
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|(date, close, source)| DatedClose {
+            date,
+            close: close.parse().unwrap_or(Decimal::ZERO),
+            source,
+        })
+        .collect())
+}
+
+pub fn get_history_with_sources_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+) -> Result<Vec<DatedClose>> {
+    query::dispatch(
+        backend,
+        |conn| get_history_with_sources(conn, symbol),
+        |pool| get_history_with_sources_postgres(pool, symbol),
+    )
+}
+
+/// All distinct symbols present in price_history.
+pub fn get_distinct_symbols(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT DISTINCT symbol FROM price_history ORDER BY symbol")?;
+    let rows = stmt.query_map([], |row| row.get(0))?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+fn get_distinct_symbols_postgres(pool: &PgPool) -> Result<Vec<String>> {
+    ensure_tables_postgres(pool)?;
+    let rows: Vec<String> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar("SELECT DISTINCT symbol FROM price_history ORDER BY symbol")
+            .fetch_all(pool)
+            .await
+    })?;
+    Ok(rows)
+}
+
+pub fn get_distinct_symbols_backend(backend: &BackendConnection) -> Result<Vec<String>> {
+    query::dispatch(backend, get_distinct_symbols, get_distinct_symbols_postgres)
 }
 
 /// Get the closest price on or before the given date for a symbol.

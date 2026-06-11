@@ -76,6 +76,7 @@ pub mod predictions_cache;
 pub mod predictions_history;
 pub mod recommendations;
 pub mod price_cache;
+pub mod price_guard;
 pub mod price_history;
 pub mod query;
 #[allow(dead_code)] // Infrastructure for P3 real-yields ingestion (TIPS, breakevens, G10)

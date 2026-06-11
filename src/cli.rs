@@ -376,7 +376,7 @@ pub enum DashboardCommand {
 #[derive(Subcommand)]
 pub enum DataCommand {
     /// Fetch and cache current prices for tracked symbols
-    #[command(after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n  pftui data refresh --stale                    # only stale/empty status-tracked feeds\n  pftui data refresh --timeout 90 --json        # return partial JSON if the run exceeds 90s\n\n--only, --skip, and --stale are mutually exclusive.")]
+    #[command(after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n  pftui data refresh --stale                    # only stale/empty status-tracked feeds\n  pftui data refresh --timeout 90 --json        # return partial JSON if the run exceeds 90s\n  pftui data refresh --accept-outlier BTC-USD   # admit a genuine >20% d/d gap past the price guard\n\n--only, --skip, and --stale are mutually exclusive.\n\nPrice-ingest guard: closes that move >20% day-over-day are SUSPECT and are\nrejected unless corroborated by a wired secondary source (BTC: mempool.space\n/ CoinGecko; GC=F: GeckoTerminal XAUT) within 5%, or admitted explicitly via\n--accept-outlier. Failed fetches never stamp a stale cached price onto\ntoday's date. Retro-scan stored history with: pftui data prices audit")]
     Refresh {
         /// Send OS notification for newly triggered alerts
         #[arg(long)]
@@ -396,6 +396,11 @@ pub enum DataCommand {
         /// Refresh only feeds currently marked stale/empty by `data status`.
         #[arg(long, conflicts_with_all = ["only", "skip"])]
         stale: bool,
+        /// Admit a >20% day-over-day price print for SYM past the ingest
+        /// plausibility guard (genuine crash/halt gaps only). Repeatable or
+        /// comma-separated.
+        #[arg(long = "accept-outlier", value_name = "SYM", value_delimiter = ',')]
+        accept_outlier: Vec<String>,
     },
     /// Show data freshness status for all cached sources
     Status {
@@ -618,8 +623,10 @@ pub enum DataCommand {
         json: bool,
     },
     /// Consolidated closing prices for all portfolio + watchlist symbols
-    #[command(alias = "quotes", after_help = "Aliases: `data quotes` also works.\n\nFor overnight futures specifically, see: pftui data futures\nFor market overview symbols, add --market flag.\nUse --auto-refresh to automatically refresh stale (>2h) prices before returning.")]
+    #[command(alias = "quotes", after_help = "Aliases: `data quotes` also works.\n\nFor overnight futures specifically, see: pftui data futures\nFor market overview symbols, add --market flag.\nUse --auto-refresh to automatically refresh stale (>2h) prices before returning.\nRetro-scan stored history for corrupt prints: pftui data prices audit")]
     Prices {
+        #[command(subcommand)]
+        command: Option<DataPricesCommand>,
         /// Include all market overview symbols (indices, commodities, crypto, forex, bonds)
         #[arg(long)]
         market: bool,
@@ -2005,6 +2012,32 @@ pub enum DataSeriesCommand {
     ///   pftui data series status
     ///   pftui data series status --json
     Status {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DataPricesCommand {
+    /// Retro-scan price_history for suspect spike-and-revert prints (read-only)
+    ///
+    /// Flags bars whose close jumped >20% day-over-day AND reverted >15% on
+    /// the next bar — the spike-and-revert signature of a corrupt print.
+    /// Genuine crashes persist on the following bars and are NOT flagged.
+    ///
+    /// Read-only by design: auto-deleting historical rows from the canonical
+    /// L1 series is more dangerous than reporting them (a genuine event
+    /// misclassified would silently destroy real history every downstream
+    /// engine trusts). Repair stays a manual, operator-reviewed DELETE.
+    ///
+    /// EXAMPLES:
+    ///   pftui data prices audit
+    ///   pftui data prices audit --symbol BTC-USD --json
+    Audit {
+        /// Limit the scan to one symbol (default: every symbol in price_history)
+        #[arg(long)]
+        symbol: Option<String>,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -13360,7 +13393,7 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json, auto_refresh: _ } = command else {
+        let DataCommand::Prices { market, json, auto_refresh: _, command: _ } = command else {
             panic!("expected Prices");
         };
         assert!(market);
@@ -13373,7 +13406,7 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json, auto_refresh: _ } = command else {
+        let DataCommand::Prices { market, json, auto_refresh: _, command: _ } = command else {
             panic!("expected Prices");
         };
         assert!(!market);
@@ -13387,7 +13420,7 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json, auto_refresh: _ } = command else {
+        let DataCommand::Prices { market, json, auto_refresh: _, command: _ } = command else {
             panic!("expected Prices via quotes alias");
         };
         assert!(!market);
@@ -13401,7 +13434,7 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json, auto_refresh: _ } = command else {
+        let DataCommand::Prices { market, json, auto_refresh: _, command: _ } = command else {
             panic!("expected Prices via quotes alias");
         };
         assert!(market);
@@ -13414,11 +13447,65 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json, auto_refresh: _ } = command else {
+        let DataCommand::Prices { market, json, auto_refresh: _, command: _ } = command else {
             panic!("expected Prices via quotes alias");
         };
         assert!(!market);
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_data_prices_audit_subcommand() {
+        let cli = Cli::try_parse_from([
+            "pftui", "data", "prices", "audit", "--symbol", "BTC-USD", "--json",
+        ])
+        .unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Prices { command: Some(DataPricesCommand::Audit { symbol, json }), .. } =
+            command
+        else {
+            panic!("expected Prices audit subcommand");
+        };
+        assert_eq!(symbol.as_deref(), Some("BTC-USD"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_prices_audit_defaults() {
+        let cli = Cli::try_parse_from(["pftui", "data", "prices", "audit"]).unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Prices { command: Some(DataPricesCommand::Audit { symbol, json }), .. } =
+            command
+        else {
+            panic!("expected Prices audit subcommand");
+        };
+        assert!(symbol.is_none());
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_data_refresh_accept_outlier() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "refresh",
+            "--accept-outlier",
+            "BTC-USD,GC=F",
+            "--accept-outlier",
+            "OBSCURE",
+        ])
+        .unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Refresh { accept_outlier, .. } = command else {
+            panic!("expected Refresh");
+        };
+        assert_eq!(accept_outlier, vec!["BTC-USD", "GC=F", "OBSCURE"]);
     }
 
     #[test]
@@ -13438,6 +13525,7 @@ mod tests {
             market,
             json,
             auto_refresh,
+            command: _,
         } = command
         else {
             panic!("expected Prices");
@@ -13464,6 +13552,7 @@ mod tests {
             market,
             json,
             auto_refresh,
+            command: _,
         } = command
         else {
             panic!("expected Prices via quotes alias");
