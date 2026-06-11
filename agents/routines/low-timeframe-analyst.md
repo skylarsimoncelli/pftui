@@ -200,7 +200,7 @@ This is the objective market-structure read: swing sequence (HH/HL vs LH/LL), tr
 
 ## Every Run: Write Structured Views
 
-**Author ALL journal entries and notes with `--author analyst-low`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps.**
+**Author ALL journal entries and notes with `--author analyst-low`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps. Write every `journal notes add` with `--stamp` so the note opens with the market snapshot line (`pftui data snapshot-line`: date | SPX | BTC | GOLD | SILVER | DXY | VIX) — stamped notes self-contextualize for retro-scoring and post-mortems.**
 
 7b. After completing your analysis, write a structured view for each held and watched asset you assessed this run. This makes your reasoning transparent, trackable, and queryable by the evening analyst and other agents.
 
@@ -300,7 +300,7 @@ pftui journal prediction score <id> --outcome <correct|wrong|partial> --notes "[
 Write reflection note for wrong calls:
 ```bash
 pftui journal notes add "LOW PREDICTION REVIEW: [prediction] — [outcome]. [If wrong: expected [X] because [reason], got [Y] because [actual cause]. Should have watched [specific indicator].]" \
-  --date $(date +%Y-%m-%d) --section analysis --author analyst-low
+  --date $(date +%Y-%m-%d) --section analysis --author analyst-low --stamp
 ```
 
 ## Market Close Run
@@ -328,7 +328,7 @@ pftui agent message send "LOW EOD DIGEST [date]: ${DIGEST}" \
 
 ```bash
 pftui journal notes add "[Pre-market/Midday/Close]: [key data points] | Alerts: [X] | News flags: [X] | Predictions: [made X / scored Y / Z% correct] | Mismatches: [X]" \
-  --date $(date +%Y-%m-%d) --section market --author analyst-low
+  --date $(date +%Y-%m-%d) --section market --author analyst-low --stamp
 ```
 
 ## Rules

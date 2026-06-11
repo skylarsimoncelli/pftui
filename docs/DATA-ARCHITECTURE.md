@@ -196,7 +196,7 @@ closed. One-line verdicts:
 | `options_chain_snapshots` | BLOCKED — Yahoo options ingest never wired into refresh; wire or cull with gex_snapshots |
 | `portfolio_allocations` | KEEP — allocation-% mode (alternative to transactions); mode unused but supported |
 | `predictions_history` | CLOSE LOOP (priority) — L1 series with live readers (narrative-divergence 24h deltas silently degrade without it); needs a writer in the predictions refresh path |
-| `recommendation_outcomes` | CLOSE LOOP — scoring side of recommendations; R4 shadow-book territory |
+| `recommendation_outcomes` | CLOSE LOOP — scoring side of decision-card recommendations (the R4 shadow book deliberately persists nothing: `research shadowbook` computes shadow-vs-actual-vs-hold on demand from the ledger + prices + transactions) |
 | `regime_overrides` | KEEP — operator override escape hatch, used on demand |
 | `research_questions` | CULL CANDIDATE — backlog table never adopted by any routine |
 | `risk_factor_mappings` | CULL CANDIDATE — curated mappings never seeded, no consumer |

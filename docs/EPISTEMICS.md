@@ -21,6 +21,7 @@
 | Memory consolidation | novelty scoring, standing rules, thesis review dates, stale-view detection | `daily_notes.novelty_score`, `analytics lessons rules`, `analytics thesis review-due`, `analytics views stale` |
 | Data integrity | economic-data quarantine, BTC-series divergence doctor check, analyst spot-check audit | `economic_data.quarantined`, `system doctor`, report-skill Step 5.5 |
 | Instrumentation | run_health table, epistemics command family, report section | `analytics epistemics record/show/history/rivalry`, `private_epistemic_health` |
+| Existence proof | shadow book: mechanical execution of the recommendations ledger vs actual vs hold (policy v1, accruing <90d) | `research shadowbook`, summary line in `analytics epistemics show` |
 
 ## 1. Independence layer (anti-sycophancy)
 

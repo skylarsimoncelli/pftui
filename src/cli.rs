@@ -411,6 +411,15 @@ pub enum DataCommand {
         #[command(subcommand)]
         command: DataSeriesCommand,
     },
+    /// One deterministic market-context line from latest closes (for stamping notes/entries)
+    #[command(
+        name = "snapshot-line",
+        after_help = "Format: <YYYY-MM-DD> | SPX <close> | BTC <close> | GOLD <close> |\nSILVER <close> | DXY <close> | VIX <close>\n\nBuilt from the latest cached closes (BTC falls back to the deep BTC-USD\nseries; a series with no history is omitted, never invented). Journal\nwriters use `--stamp` on `journal notes add` / `journal entry add` to\nprepend this line, so every note self-contextualizes for retro-scoring\nand post-mortems.\n\nExamples:\n  pftui data snapshot-line\n  pftui data snapshot-line --json\n  pftui journal notes add \"...\" --author analyst-low --stamp"
+    )]
+    SnapshotLine {
+        #[arg(long)]
+        json: bool,
+    },
     /// Pre-built dashboard views
     Dashboard {
         #[command(subcommand)]
@@ -559,6 +568,10 @@ pub enum DataCommand {
         /// Search question text/topics (e.g. "ceasefire", "Fed rate")
         #[arg(long)]
         search: Option<String>,
+
+        /// Curated geopolitics relevance filter: keyword-matched contracts only, excluding contracts resolving >12 months out, already past resolution, or with zero 24h volume
+        #[arg(long, conflicts_with = "category")]
+        geo: bool,
 
         /// Maximum number of markets to show (default: 10)
         #[arg(long, default_value = "10")]
@@ -1058,6 +1071,10 @@ pub enum DataPredictionsCommand {
         /// Search question text/topics
         #[arg(long)]
         search: Option<String>,
+
+        /// Curated geopolitics relevance filter: keyword-matched contracts only, excluding contracts resolving >12 months out, already past resolution, or with zero 24h volume
+        #[arg(long, conflicts_with = "category")]
+        geo: bool,
 
         /// Maximum number of markets to show (default: 10)
         #[arg(long, default_value = "10")]
@@ -2297,6 +2314,8 @@ pub enum JournalEntryCommand {
         conviction: Option<String>,
         #[arg(long, help = "Entry author (e.g. skylar, analyst-low, analyst-medium, analyst-high, analyst-macro, analyst-evening, analyst-morning). Defaults to 'system'.")]
         author: Option<String>,
+        #[arg(long, help = "Prepend the market snapshot line (see `pftui data snapshot-line`) so the entry self-contextualizes.")]
+        stamp: bool,
         #[arg(long)]
         json: bool,
     },
@@ -2774,6 +2793,8 @@ pub enum JournalNotesCommand {
         section: Option<String>,
         #[arg(long, help = "Note author (e.g. skylar, analyst-low, analyst-medium, analyst-high, analyst-macro, analyst-evening, analyst-morning, analyst-brief). Defaults to 'system'.")]
         author: Option<String>,
+        #[arg(long, help = "Prepend the market snapshot line (see `pftui data snapshot-line`) so the note self-contextualizes.")]
+        stamp: bool,
         #[arg(long)]
         json: bool,
     },
@@ -5285,6 +5306,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         #[arg(long)]
         search: Option<String>,
 
+        /// Curated geopolitics relevance filter: keyword-matched contracts only, excluding contracts resolving >12 months out, already past resolution, or with zero 24h volume
+        #[arg(long, conflicts_with = "category")]
+        geo: bool,
+
         /// Maximum number of markets to show (default: 10)
         #[arg(long, default_value = "10")]
         limit: usize,
@@ -6416,6 +6441,14 @@ pub enum ResearchCommand {
         /// Show only the most recent N events
         #[arg(long, default_value_t = 20)]
         limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Shadow book: counterfactual portfolio that mechanically executes every recommendations-ledger row
+    #[command(
+        after_help = "The shadow book answers \"does following the desk beat ignoring it?\"\nwith a number. Three books, all seeded with the operator's ACTUAL\nholdings at inception (the first recommendations-ledger row's run_date),\nso shadow-vs-actual is a pure decisions-since-inception comparison:\n\n  SHADOW  executes every ledger row under the mechanical policy\n  ACTUAL  the operator's real transactions, valued daily\n  HOLD    inception holdings frozen — the do-nothing benchmark\n\nMechanical policy v1 (versioned — published numbers bind to it):\n  add  → +1.0pp of total NAV from cash into the symbol at the row's\n         entry_price (skipped with a warning when cash < 1pp)\n  trim → −1.0pp symbol→cash (capped at held value)\n  wait/hold/avoid → no trade; same-day rows apply in id order\n\nComputed on demand from recommendations + price_history + transactions —\nno shadow position tables. Under 90 days of ledger history the output\ncarries a BENCHMARK ACCRUING banner.\n\nExamples:\n  pftui research shadowbook\n  pftui research shadowbook --json"
+    )]
+    Shadowbook {
         #[arg(long)]
         json: bool,
     },
@@ -11265,6 +11298,7 @@ mod tests {
             command: subcmd,
             category,
             search,
+            geo: _,
             limit,
             json,
         } = command
@@ -11299,6 +11333,7 @@ mod tests {
             command: _,
             category,
             search,
+            geo: _,
             limit,
             json,
         } = command
@@ -11592,6 +11627,7 @@ mod tests {
             Some(DataPredictionsCommand::Markets {
                 category,
                 search,
+                geo: _,
                 limit,
                 json,
             }) => {

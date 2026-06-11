@@ -61,6 +61,27 @@ fn parse_since_to_days(value: &str) -> Result<i64> {
     Ok(days)
 }
 
+/// Prepend the market snapshot line (`pftui data snapshot-line`) to journal
+/// content when `--stamp` is passed. Best-effort: a missing line (empty price
+/// history, non-SQLite backend) warns to stderr and writes unstamped — a
+/// journal write must never fail because the stamp could not be built.
+fn apply_stamp(
+    backend: &crate::db::backend::BackendConnection,
+    content: String,
+    stamp: bool,
+) -> String {
+    if !stamp {
+        return content;
+    }
+    match commands::snapshot_line::stamp_prefix(backend) {
+        Some(line) => format!("{line}\n{content}"),
+        None => {
+            eprintln!("warning: --stamp requested but no snapshot line available (no cached closes); writing unstamped");
+            content
+        }
+    }
+}
+
 fn run_agent_journal(
     backend: &crate::db::backend::BackendConnection,
     command: Option<cli::JournalCommand>,
@@ -77,6 +98,7 @@ fn run_agent_journal(
                 symbol,
                 conviction,
                 author,
+                stamp,
                 json,
             } => {
                 let resolved = content.or(value).ok_or_else(|| {
@@ -88,6 +110,7 @@ fn run_agent_journal(
                          Run 'pftui journal entry add --help' for all options."
                     )
                 })?;
+                let resolved = apply_stamp(backend, resolved, stamp);
                 let normalized_tags = commands::journal::normalize_tags(&tag, tags.as_deref());
                 commands::journal::run_add(
                     backend,
@@ -483,11 +506,12 @@ fn run_agent_journal(
                 date,
                 section,
                 author,
+                stamp,
                 json,
             } => commands::notes::run(
                 backend,
                 "add",
-                Some(&value),
+                Some(&apply_stamp(backend, value, stamp)),
                 None,
                 date.as_deref(),
                 section.as_deref(),
@@ -870,27 +894,30 @@ fn dispatch_predictions(
     command: Option<cli::DataPredictionsCommand>,
     category: Option<String>,
     search: Option<String>,
+    geo: bool,
     limit: usize,
     json: bool,
 ) -> Result<()> {
     match command {
         None | Some(cli::DataPredictionsCommand::Markets { .. }) => {
             // Merge top-level flags with subcommand flags (subcommand wins if present)
-            let (cat, srch, lim, js) = match command {
+            let (cat, srch, geo, lim, js) = match command {
                 Some(cli::DataPredictionsCommand::Markets {
                     category: sc,
                     search: ss,
+                    geo: sg,
                     limit: sl,
                     json: sj,
                 }) => (
                     sc.or(category),
                     ss.or(search),
+                    sg || geo,
                     sl, // subcommand limit takes precedence (has its own default)
                     sj || json,
                 ),
-                _ => (category, search, limit, json),
+                _ => (category, search, geo, limit, json),
             };
-            commands::predictions::run(backend, cat.as_deref(), srch.as_deref(), lim, js)
+            commands::predictions::run(backend, cat.as_deref(), srch.as_deref(), geo, lim, js)
         }
         Some(cli::DataPredictionsCommand::Stats {
             timeframe,
@@ -1312,6 +1339,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             }
             cli::DataCommand::Status { json, .. } => commands::status::run_backend(&backend, json),
+            cli::DataCommand::SnapshotLine { json } => {
+                commands::snapshot_line::run(&backend, json)
+            }
             cli::DataCommand::Series { command } => match command {
                 cli::DataSeriesCommand::Status { json } => {
                     commands::series_status::run(&backend, json)
@@ -1492,9 +1522,10 @@ fn run_cli(cli: Cli) -> Result<()> {
                 command,
                 category,
                 search,
+                geo,
                 limit,
                 json,
-            } => dispatch_predictions(&backend, command, category, search, limit, json),
+            } => dispatch_predictions(&backend, command, category, search, geo, limit, json),
             cli::DataCommand::Options { command } => match command {
                 cli::DataOptionsCommand::Refresh {
                     symbol,
@@ -5174,9 +5205,10 @@ fn run_cli(cli: Cli) -> Result<()> {
                 command,
                 category,
                 search,
+                geo,
                 limit,
                 json,
-            } => dispatch_predictions(&backend, command, category, search, limit, json),
+            } => dispatch_predictions(&backend, command, category, search, geo, limit, json),
             cli::AnalyticsCommand::PowerFlow { command } => match command {
                 cli::AnalyticsPowerFlowCommand::Add {
                     event,
@@ -5743,6 +5775,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 limit,
                 json,
             } => commands::research_harness::run_events(&backend, &signal, &asset, limit, json),
+            cli::ResearchCommand::Shadowbook { json } => {
+                commands::shadow_book::run(&backend, json)
+            }
         },
     };
 

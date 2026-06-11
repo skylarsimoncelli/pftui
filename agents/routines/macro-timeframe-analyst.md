@@ -362,7 +362,7 @@ pftui analytics macro log add --date $(date +%Y-%m-%d) \
 
 ## Write Structured Views
 
-**Author ALL journal entries and notes with `--author analyst-macro`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps.**
+**Author ALL journal entries and notes with `--author analyst-macro`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps. Write every `journal notes add` with `--stamp` so the note opens with the market snapshot line (`pftui data snapshot-line`: date | SPX | BTC | GOLD | SILVER | DXY | VIX) — stamped notes self-contextualize for retro-scoring and post-mortems.**
 
 After completing your macro analysis, write a structured view for each asset where the MACRO layer has a meaningful structural opinion. These views represent the deepest timeframe perspective — the empire cycle and generational forces that constrain all shorter-term analysis.
 

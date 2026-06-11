@@ -213,7 +213,7 @@ pftui analytics conviction set <SYMBOL> --score <n> --notes "MEDIUM [date]: [Wha
 
 ## Write Structured Views
 
-**Author ALL journal entries and notes with `--author analyst-medium`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps.**
+**Author ALL journal entries and notes with `--author analyst-medium`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps. Write every `journal notes add` with `--stamp` so the note opens with the market snapshot line (`pftui data snapshot-line`: date | SPX | BTC | GOLD | SILVER | DXY | VIX) — stamped notes self-contextualize for retro-scoring and post-mortems.**
 
 After completing your analysis, write a structured view for each held and watched asset you assessed this run. This makes your reasoning transparent, trackable, and queryable across the system.
 
@@ -280,7 +280,7 @@ For EVERY wrong MEDIUM prediction, deep reflection:
 ```bash
 pftui journal prediction score <id> --outcome <correct|wrong|partial> --notes "[Evidence that resolved it]"
 pftui journal notes add "MEDIUM WRONG CALL: [prediction]. Expected [X] because [thesis]. Got [Y] because [actual force]. Underweighted: [specific indicator]. Adjusting: [what to watch differently]." \
-  --date $(date +%Y-%m-%d) --section analysis --author analyst-medium
+  --date $(date +%Y-%m-%d) --section analysis --author analyst-medium --stamp
 ```
 
 ## Backtest Review

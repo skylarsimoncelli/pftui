@@ -159,9 +159,16 @@ This tells the reader where the system's internal debate is sharpest.]
 
 ## Overnight Developments
 
-[2-4 key developments since yesterday's close. For each: what happened, why it
-matters structurally, and how it connects to active scenarios. 2-3 sentences per
-item. No unexplained jargon.]
+[**Editorial contract — wire-service discipline.** Numbered stories (1., 2., …),
+2-4 developments since yesterday's close, ranked by market consequence. Every
+story is EXACTLY two bullets, no more and no fewer:
+
+- **What happened** — facts, numbers, dates, source. No interpretation here.
+- **Why it matters** — the second-order market consequence: the structural
+  read, which active scenarios it touches, what repricing follows. No
+  unexplained jargon.
+
+A story that cannot fill both bullets is not a story — cut it.]
 
 ## Prediction Scorecard
 
@@ -233,7 +240,7 @@ This way, even if the PDF send fails, Skylar gets actionable morning intelligenc
 
 ## After Sending
 
-**Author ALL journal entries and notes with `--author analyst-morning`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps.**
+**Author ALL journal entries and notes with `--author analyst-morning`. Be prolific — your thinking should show up in the journal, not just the synthesis. Aim for 5-10 substantive entries per session beyond the formal scoring steps. Write every `journal notes add` with `--stamp` so the note opens with the market snapshot line (`pftui data snapshot-line`: date | SPX | BTC | GOLD | SILVER | DXY | VIX) — stamped notes self-contextualize for retro-scoring and post-mortems.**
 
 WRITE TO PFTUI BEFORE SENDING BRIEF.
 
@@ -248,7 +255,7 @@ pftui journal prediction add "[cause] will [effect] by [date]" --symbol [SYM] \
 Capture the morning's situational state as a journal entry so it's queryable later:
 ```bash
 pftui journal entry add "MORNING: [headline takeaway]. Alignment: [status]. Key watch: [items]." \
-  --date $(date +%Y-%m-%d) --author analyst-morning
+  --date $(date +%Y-%m-%d) --author analyst-morning --stamp
 ```
 
 Acknowledge all consumed agent messages before sending the user-facing brief:

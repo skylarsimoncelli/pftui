@@ -197,6 +197,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui portfolio watchlist --json` | All watched symbols with prices, day change, 52W range |
 | `pftui analytics movers --json [--threshold N] [--overnight]` | Significant daily/overnight moves (default >3%) |
 | `pftui data predictions --json [--limit N]` | Polymarket prediction market odds |
+| `pftui data predictions --geo [--json] [--limit N]` | Curated geopolitics relevance filter over prediction markets: ~45-term keyword list (war/ceasefire/sanctions/nuclear/taiwan/iran/russia/opec/...) matched on word boundaries against question + event title, with stale contracts excluded (resolving >12 months out, already past resolution, or zero 24h volume). Spans all categories — Polymarket's own labels under-tag geopolitics. Conflicts with `--category` |
 | `pftui data predictions map --auto-suggest [--scenario "<name>"] [--json]` | Auto-suggest top-3 scenario↔contract mapping candidates per active scenario, scored by keyword overlap and category fit. Restrict to one scenario with `--scenario`. |
 | `pftui data predictions map --scenario "<name>" --contract-id <id> [--json]` | Explicit mapping write: link a Polymarket contract to a scenario. `--contract-id` is a visible alias for `--contract`. |
 | `pftui data sentiment --json` | Crypto + traditional Fear & Greed, COT positioning |
@@ -223,6 +224,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui data dashboard global --json` | World Bank macro data (GDP, debt, reserves) |
 | `pftui data status --json` | Data source freshness plus daemon health — includes `daemon` heartbeat and `news_feeds` RSS health |
 | `pftui data series status [--json]` | Registry-driven freshness for every canonical series (`series_registry`): last datapoint, age vs SLA, 2x-SLA flags. The report skill's Step-10 data-freshness section should consume this instead of ad-hoc per-table checks. |
+| `pftui data snapshot-line [--json]` | One deterministic market-context line `<YYYY-MM-DD> \| SPX <close> \| BTC <close> \| GOLD <close> \| SILVER <close> \| DXY <close> \| VIX <close>` from latest cached closes (BTC falls back to the deep BTC-USD series; a series with no history is omitted). Used by `journal notes add --stamp` / `journal entry add --stamp` so notes self-contextualize for retro-scoring |
 
 ### Portfolio Management
 
@@ -275,7 +277,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui agent message flag "ISSUE" --id N --from agent-b` | Escalate data-quality/risk issue on message `N` |
 | `pftui agent message list [--from agent-a] [--unacked] --json` | Query queued agent messages |
 | `pftui agent message ack --id N` | Acknowledge a single message |
-| `pftui journal notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
+| `pftui journal notes add "TEXT" --section market [--date YYYY-MM-DD] [--stamp]` | Add a date-keyed daily narrative note. `--stamp` prepends the market snapshot line (`data snapshot-line`) so the note records the tape it was written under; `journal entry add` accepts `--stamp` too |
 | `pftui journal notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
 | `pftui journal notes repetition [--author analyst-medium] [--days 30] [--json]` | Cluster an author's recent notes by mutual trigram similarity ≥0.85 and surface repeated clusters ("you have written this note 9 times"). `notes add` also stores a per-note `novelty_score` (1 − max similarity vs the author's last 20 notes) and warns when a new note is ≥85% similar to an existing one — consolidate into the thesis table instead of re-deriving |
 | `pftui portfolio opportunity add "EVENT" [--asset SYM] [--missed_gain_usd N] [--avoided_loss_usd N]` | Log an opportunity-cost event |
@@ -397,6 +399,7 @@ The research harness converts the deterministic engines (market structure, Cyber
 | `pftui research expectancy [--signal X] [--asset Y] [--json]` | Read the persisted expectancy table (latest as_of per signal x asset) without recomputing |
 | `pftui research events --signal X --asset Y [--limit N] [--json]` | The raw dated event list with per-event forward returns at every horizon ("show me the 12 instances"), plus the overlap-pruned stats summary |
 | `pftui research dossier <ta\|cycles\|macro> [--asset X] [--json]` | Competence dossier compiled from EXISTING measured data only: (a) the domain's `signal_expectancy` rows (ta → `structure_`/`cyber_`, cycles → `cycle_`; macro → scenario-ledger discipline stats instead), (b) the scored-forecast record for the domain's layers (ta → low+medium, cycles → medium+high, macro → macro) with current streaks, (c) worked precedents: the 3 highest-\|lift\| SIGNIFICANT signals with dated event lists + forward returns. Empty sections render "no measured evidence yet" — never invented prose |
+| `pftui research shadowbook [--json]` | The shadow book: counterfactual portfolio that mechanically executes every recommendations-ledger row (policy v1: add → +1.0pp NAV cash→symbol at the row's entry_price, skipped when cash < 1pp; trim → −1.0pp symbol→cash capped at held value; wait/hold/avoid → no trade; same-day rows in id order). Three books seeded with the operator's ACTUAL holdings at ledger inception: SHADOW (followed the desk), ACTUAL (real transactions), HOLD (frozen) — so "does following the desk beat ignoring it?" is a number. Computed on demand from recommendations + price_history + transactions (no state tables); <90 days of ledger history renders a BENCHMARK ACCRUING banner; a one-line summary appears in `analytics epistemics show` once ≥30 days accrue |
 
 ### Utility
 
