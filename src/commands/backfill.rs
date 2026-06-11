@@ -4,9 +4,7 @@ use anyhow::Result;
 use serde_json::json;
 
 use crate::db::backend::BackendConnection;
-use crate::db::price_history::{
-    find_symbols_needing_backfill_backend, upsert_history_backend, BackfillSymbolStatus,
-};
+use crate::db::price_history::{find_symbols_needing_backfill_backend, BackfillSymbolStatus};
 use crate::price::yahoo;
 
 /// Delay between sequential Yahoo Finance API requests to avoid rate limiting.
@@ -147,8 +145,6 @@ fn backfill_symbols(
                     .into_iter()
                     .filter(|r| r.open.is_some() && r.high.is_some() && r.low.is_some())
                     .collect();
-                let ohlcv_count = ohlcv_records.len() as u32;
-
                 if ohlcv_records.is_empty() {
                     if human_output {
                         println!("skipped (fetched {} rows but none had OHLCV)", count);
@@ -167,18 +163,37 @@ fn backfill_symbols(
                     continue;
                 }
 
-                match upsert_history_backend(backend, &sym_status.symbol, "yahoo", &ohlcv_records) {
-                    Ok(()) => {
+                // Guarded write: implausible >20% d/d prints inside the
+                // fetched batch are rejected, not written (db::price_guard).
+                match crate::db::price_guard::upsert_history_guarded_backend(
+                    backend,
+                    &sym_status.symbol,
+                    "yahoo",
+                    &ohlcv_records,
+                    None,
+                    false,
+                ) {
+                    Ok(outcome) => {
                         if human_output {
-                            println!("✅ {} rows with OHLCV", ohlcv_count);
+                            println!("✅ {} rows with OHLCV", outcome.accepted);
+                            for rejection in &outcome.rejections {
+                                println!("   {}", rejection.warning_line());
+                            }
                         }
                         results.push(SymbolBackfillResult {
                             symbol: sym_status.symbol.clone(),
                             total_rows: sym_status.total_rows,
                             rows_before: sym_status.missing_ohlcv_rows,
-                            rows_fetched: ohlcv_count,
+                            rows_fetched: outcome.accepted as u32,
                             status: "ok",
-                            error: None,
+                            error: if outcome.rejections.is_empty() {
+                                None
+                            } else {
+                                Some(format!(
+                                    "{} print(s) rejected by price guard",
+                                    outcome.rejections.len()
+                                ))
+                            },
                         });
                     }
                     Err(e) => {

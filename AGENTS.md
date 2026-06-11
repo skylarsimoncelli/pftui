@@ -200,7 +200,8 @@ The `regime_history` table records one classification per UTC date with the full
 
 | Command | What It Returns |
 |---|---|
-| `pftui data refresh` | Fetches ALL data sources (19+ sources) and runs the recurring tail: prediction auto-score, recommendation forward-score, forecast retro-score, misalignment detection, regime classification, housekeeping summary |
+| `pftui data refresh` | Fetches ALL data sources (19+ sources) and runs the recurring tail: prediction auto-score, recommendation forward-score, forecast retro-score, misalignment detection, regime classification, housekeeping summary. Price-ingest guard: a close moving >20% d/d is SUSPECT — rejected unless a wired secondary source (BTC: mempool.space/CoinGecko; GC=F: GeckoTerminal XAUT) confirms within 5%; failed fetches never stamp a stale cached price onto today's date. `--accept-outlier SYM` (repeatable/comma-separated) admits a genuine >20% gap (crash/halt) past the guard |
+| `pftui data prices audit [--symbol X] [--json]` | Read-only retro-scan of `price_history` for corrupt prints: bars that jumped >20% d/d AND reverted >15% the next bar (the spike-and-revert signature; genuine crashes persist and are NOT flagged). Reports symbol, dates, closes, sources, jump/revert %. Never deletes — repair is a manual, operator-reviewed DELETE because auto-deleting canonical L1 history is more dangerous than reporting it |
 | `pftui data dashboard macro --json` | DXY, VIX, yields, currencies, commodities, derived ratios |
 | `pftui data fear-greed --json` | Latest crypto + traditional Fear & Greed readings with optional history |
 | `pftui portfolio watchlist --json` | All watched symbols with prices, day change, 52W range |

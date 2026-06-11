@@ -2607,7 +2607,12 @@ impl App {
                     _ => "yahoo",
                 })
                 .unwrap_or("yahoo");
-            let _ = price_history::upsert_history_backend(&backend, symbol, source, records);
+            // Guarded write: implausible >20% d/d prints are dropped here
+            // (the TUI has no refresh log); `data refresh` is the loud path
+            // and `data prices audit` the retro-scan.
+            let _ = crate::db::price_guard::upsert_history_guarded_backend(
+                &backend, symbol, source, records, None, false,
+            );
         }
     }
 
