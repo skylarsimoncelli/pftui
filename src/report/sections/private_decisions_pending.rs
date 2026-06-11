@@ -981,6 +981,8 @@ mod tests {
             analyst: analyst.to_string(),
             conviction,
             reasoning_summary: reasoning.to_string(),
+            probation: false,
+            probation_streak: None,
         }
     }
 

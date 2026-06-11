@@ -57,6 +57,13 @@ pub struct RunHealth {
     /// and the matching held asset's closes over the trailing window.
     /// > 0.6 flags "momentum dressed as structure" (standing rule 15).
     pub conviction_price_corr: Option<f64>,
+    /// Overall scored direction-hit rate over the trailing 30d of
+    /// `forecast_scores` (non-neutral scored cells). Self-derived by
+    /// `analytics epistemics record` when the flag is omitted.
+    pub forecast_hit_rate: Option<f64>,
+    /// Count of ACTIVE `forecast_misalignments` rows at record time.
+    /// > 0 flags the run — probation is in force somewhere.
+    pub active_misalignments: Option<i64>,
 }
 
 /// Metrics payload for an upsert. All fields optional — provided values win,
@@ -75,6 +82,8 @@ pub struct RunHealthInput {
     pub agents_spawned: Option<i64>,
     pub notes: Option<String>,
     pub conviction_price_corr: Option<f64>,
+    pub forecast_hit_rate: Option<f64>,
+    pub active_misalignments: Option<i64>,
 }
 
 fn ensure_table(conn: &Connection) -> Result<()> {
@@ -92,22 +101,33 @@ fn ensure_table(conn: &Connection) -> Result<()> {
             agents_spawned INTEGER,
             notes TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            conviction_price_corr REAL
+            conviction_price_corr REAL,
+            forecast_hit_rate REAL,
+            active_misalignments INTEGER
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_run_health_run_date
             ON run_health(run_date);",
     )?;
-    // Additive migration (gold post-mortem T2): conviction_price_corr on
-    // run_health tables created before the column existed. Idempotent via
-    // pragma_table_info; appended last so legacy and fresh tables share
-    // column order.
-    let exists: bool = conn
-        .prepare("SELECT COUNT(*) FROM pragma_table_info('run_health') WHERE name = 'conviction_price_corr'")?
-        .query_row([], |row| row.get::<_, i64>(0))
-        .unwrap_or(0)
-        > 0;
-    if !exists {
-        conn.execute_batch("ALTER TABLE run_health ADD COLUMN conviction_price_corr REAL")?;
+    // Additive migrations: columns appended after the table first shipped.
+    // Idempotent via pragma_table_info; appended last so legacy and fresh
+    // tables share column order.
+    //   conviction_price_corr — gold post-mortem T2
+    //   forecast_hit_rate / active_misalignments — misalignment tripwires (R2)
+    for (column, kind) in [
+        ("conviction_price_corr", "REAL"),
+        ("forecast_hit_rate", "REAL"),
+        ("active_misalignments", "INTEGER"),
+    ] {
+        let exists: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('run_health') WHERE name = ?1")?
+            .query_row(params![column], |row| row.get::<_, i64>(0))
+            .unwrap_or(0)
+            > 0;
+        if !exists {
+            conn.execute_batch(&format!(
+                "ALTER TABLE run_health ADD COLUMN {column} {kind}"
+            ))?;
+        }
     }
     Ok(())
 }
@@ -120,8 +140,8 @@ pub fn upsert_run_health(conn: &Connection, run_date: &str, input: &RunHealthInp
         "INSERT INTO run_health
             (run_date, agreement_rate, blind_divergence, panel_dispersion, novelty_rate,
              fallback_warnings, scenario_delta_total, audit_pass_rate, agents_spawned, notes,
-             conviction_price_corr)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             conviction_price_corr, forecast_hit_rate, active_misalignments)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
          ON CONFLICT(run_date) DO UPDATE SET
             agreement_rate = COALESCE(excluded.agreement_rate, run_health.agreement_rate),
             blind_divergence = COALESCE(excluded.blind_divergence, run_health.blind_divergence),
@@ -132,7 +152,9 @@ pub fn upsert_run_health(conn: &Connection, run_date: &str, input: &RunHealthInp
             audit_pass_rate = COALESCE(excluded.audit_pass_rate, run_health.audit_pass_rate),
             agents_spawned = COALESCE(excluded.agents_spawned, run_health.agents_spawned),
             notes = COALESCE(excluded.notes, run_health.notes),
-            conviction_price_corr = COALESCE(excluded.conviction_price_corr, run_health.conviction_price_corr)",
+            conviction_price_corr = COALESCE(excluded.conviction_price_corr, run_health.conviction_price_corr),
+            forecast_hit_rate = COALESCE(excluded.forecast_hit_rate, run_health.forecast_hit_rate),
+            active_misalignments = COALESCE(excluded.active_misalignments, run_health.active_misalignments)",
         params![
             run_date,
             input.agreement_rate,
@@ -145,6 +167,8 @@ pub fn upsert_run_health(conn: &Connection, run_date: &str, input: &RunHealthInp
             input.agents_spawned,
             input.notes,
             input.conviction_price_corr,
+            input.forecast_hit_rate,
+            input.active_misalignments,
         ],
     )?;
     let id: i64 = conn.query_row(
@@ -170,12 +194,15 @@ fn row_to_run_health(row: &rusqlite::Row) -> Result<RunHealth, rusqlite::Error> 
         notes: row.get(10)?,
         created_at: row.get(11)?,
         conviction_price_corr: row.get(12)?,
+        forecast_hit_rate: row.get(13)?,
+        active_misalignments: row.get(14)?,
     })
 }
 
 const RUN_HEALTH_COLUMNS: &str = "id, run_date, agreement_rate, blind_divergence, \
      panel_dispersion, novelty_rate, fallback_warnings, scenario_delta_total, \
-     audit_pass_rate, agents_spawned, notes, created_at, conviction_price_corr";
+     audit_pass_rate, agents_spawned, notes, created_at, conviction_price_corr, \
+     forecast_hit_rate, active_misalignments";
 
 /// Fetch one run's row by date.
 pub fn get_run_health(conn: &Connection, run_date: &str) -> Result<Option<RunHealth>> {
@@ -265,7 +292,51 @@ pub fn threshold_flags(row: &RunHealth) -> Vec<(&'static str, String)> {
             ));
         }
     }
+    if let Some(n) = row.active_misalignments {
+        if n > 0 {
+            flags.push((
+                "active_misalignments",
+                format!(
+                    "⚠ {n} active forecast misalignment(s) — probation in force (`pftui research misalignments`)"
+                ),
+            ));
+        }
+    }
     flags
+}
+
+/// Overall scored direction-hit rate (0..1) over the trailing `window_days`
+/// of `forecast_scores` (non-neutral scored cells, all layers/horizons).
+/// `None` when the table doesn't exist yet or nothing scored in the window.
+/// Self-derived into `run_health.forecast_hit_rate` by
+/// `analytics epistemics record` when the flag is omitted.
+pub fn compute_forecast_hit_rate(conn: &Connection, window_days: i64) -> Result<Option<f64>> {
+    let table_exists: i64 = conn
+        .prepare(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'table' AND name = 'forecast_scores'",
+        )?
+        .query_row([], |row| row.get(0))
+        .unwrap_or(0);
+    if table_exists == 0 {
+        return Ok(None);
+    }
+    let cutoff = (chrono::Utc::now().date_naive() - chrono::Duration::days(window_days))
+        .format("%Y-%m-%d")
+        .to_string();
+    let (hits, total): (i64, i64) = conn.query_row(
+        "SELECT COALESCE(SUM(direction_hit), 0), COUNT(*)
+         FROM forecast_scores
+         WHERE status = 'scored' AND direction_hit IS NOT NULL AND view_date >= ?1",
+        params![cutoff],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    if total == 0 {
+        return Ok(None);
+    }
+    Ok(Some(
+        (hits as f64 / total as f64 * 1000.0).round() / 1000.0,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -933,6 +1004,95 @@ mod tests {
         .unwrap();
         let clean = get_run_health(&conn, "2026-06-11").unwrap().unwrap();
         assert!(threshold_flags(&clean).is_empty());
+    }
+
+    #[test]
+    fn forecast_fields_merge_and_misalignment_flag_fires() {
+        let conn = setup();
+        upsert_run_health(
+            &conn,
+            "2026-06-11",
+            &RunHealthInput {
+                agreement_rate: Some(0.7),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        // Later record call adds the R2 fields (field-wise merge).
+        upsert_run_health(
+            &conn,
+            "2026-06-11",
+            &RunHealthInput {
+                forecast_hit_rate: Some(0.41),
+                active_misalignments: Some(2),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let row = get_run_health(&conn, "2026-06-11").unwrap().unwrap();
+        assert_eq!(row.agreement_rate, Some(0.7));
+        assert_eq!(row.forecast_hit_rate, Some(0.41));
+        assert_eq!(row.active_misalignments, Some(2));
+        let flags = threshold_flags(&row);
+        assert!(flags
+            .iter()
+            .any(|(m, w)| *m == "active_misalignments"
+                && w.contains("2 active forecast misalignment(s)")));
+
+        // Zero misalignments → no flag.
+        upsert_run_health(
+            &conn,
+            "2026-06-12",
+            &RunHealthInput {
+                active_misalignments: Some(0),
+                forecast_hit_rate: Some(0.6),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let clean = get_run_health(&conn, "2026-06-12").unwrap().unwrap();
+        assert!(threshold_flags(&clean).is_empty());
+    }
+
+    #[test]
+    fn forecast_hit_rate_derives_over_trailing_window() {
+        let conn = setup();
+        crate::research::forecast_scoring::ensure_table(&conn).unwrap();
+        // No scored rows yet → None.
+        assert_eq!(compute_forecast_hit_rate(&conn, 30).unwrap(), None);
+
+        let recent = (chrono::Utc::now().date_naive() - chrono::Duration::days(5))
+            .format("%Y-%m-%d")
+            .to_string();
+        let stale = (chrono::Utc::now().date_naive() - chrono::Duration::days(90))
+            .format("%Y-%m-%d")
+            .to_string();
+        let insert = |id: i64, date: &str, hit: Option<bool>, status: &str| {
+            conn.execute(
+                "INSERT INTO forecast_scores
+                    (view_history_id, analyst, asset, direction, conviction, horizon_days,
+                     view_date, direction_hit, status)
+                 VALUES (?1, 'medium', 'GC=F', 'bull', 3, 45, ?2, ?3, ?4)",
+                params![id, date, hit.map(|h| h as i64), status],
+            )
+            .unwrap();
+        };
+        insert(1, &recent, Some(true), "scored");
+        insert(2, &recent, Some(false), "scored");
+        insert(3, &recent, Some(false), "scored");
+        insert(4, &recent, None, "scored"); // neutral — excluded
+        insert(5, &recent, None, "pending"); // unscored — excluded
+        insert(6, &stale, Some(true), "scored"); // outside window — excluded
+
+        let rate = compute_forecast_hit_rate(&conn, 30).unwrap().unwrap();
+        assert!((rate - 1.0 / 3.0).abs() < 1e-3, "got {rate}");
+        // Wider window picks up the stale hit: 2/4.
+        let rate = compute_forecast_hit_rate(&conn, 120).unwrap().unwrap();
+        assert!((rate - 0.5).abs() < 1e-9, "got {rate}");
+
+        // Missing table degrades to None.
+        let bare = Connection::open_in_memory().unwrap();
+        assert_eq!(compute_forecast_hit_rate(&bare, 30).unwrap(), None);
     }
 
     #[test]

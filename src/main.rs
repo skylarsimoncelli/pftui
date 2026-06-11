@@ -5075,6 +5075,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                     agents,
                     notes,
                     conviction_price_corr,
+                    forecast_hit_rate,
+                    active_misalignments,
                     json,
                 } => commands::epistemics::record(
                     &backend,
@@ -5089,6 +5091,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                     agents,
                     notes.as_deref(),
                     conviction_price_corr,
+                    forecast_hit_rate,
+                    active_misalignments,
                     json,
                 ),
                 cli::AnalyticsEpistemicsCommand::Show { date, json } => {
@@ -5677,6 +5681,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                     commands::research_forecasts::streaks_cmd(&backend, threshold, json)
                 }
             },
+            cli::ResearchCommand::Misalignments { all, json } => {
+                commands::research_forecasts::misalignments_cmd(&backend, all, json)
+            }
+            cli::ResearchCommand::Dossier { domain, asset, json } => {
+                commands::research_dossier::run(&backend, &domain, asset.as_deref(), json)
+            }
             cli::ResearchCommand::Signals { command } => match command {
                 cli::ResearchSignalsCommand::List { json } => {
                     commands::research_harness::run_signals_list(json)

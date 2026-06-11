@@ -31,6 +31,7 @@ Every variable the skill can provide. Templates declare what they need at the to
 | `{MACRO_TAPE_7D}` | Step 2d | 7d delta block (CPI/PCE/yields/DXY/VIX/SPX/gold/oil). |
 | `{INBOX_FROM_AGENTS}` | Step 2d | Unread agent_messages for the operator. |
 | `{LESSON_BOOK}` | Step 2c | Trailing-25 prediction_lessons rendered as bullets. |
+| `{MISALIGNMENT_DOSSIER}` | Step 2d (per-layer) | This layer's ACTIVE forecast misalignments from `pftui research misalignments --json` (streak length, span, cumulative move against) — "none active" when clean. |
 | `{MANDATORY_CONTEXT}` | Step 2c-mandatory | Skylar's analytical framework + first principles. |
 | `{LAYER}` | Per-call | One of `low` / `medium` / `high` / `macro`. |
 | `{ASSET}` | Per-call | A single symbol when the template is per-asset. |

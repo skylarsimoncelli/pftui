@@ -218,11 +218,18 @@ writers = ["src/db/fedwatch_cache.rs"]
 readers = ["src/db/fedwatch_cache.rs"]
 freshness_sla_hours = 72
 
+[tables.forecast_misalignments]
+layer = "L3"
+purpose = "Misalignment episodes: (canonical layer, asset) wrong-sign streaks >= 5 detected from forecast_scores in the refresh tail; ACTIVE rows drive convergence probation, the prediction confidence cap, and run_health.active_misalignments (lazily created; only outcome fills mutate — streak extension + active->recovered transition)"
+writers = ["src/db/forecast_misalignments.rs"]
+readers = ["src/db/forecast_misalignments.rs", "src/db/analyst_views.rs", "src/commands/research_forecasts.rs", "src/commands/research_dossier.rs", "src/commands/analyst_views.rs", "src/commands/predict.rs", "src/commands/epistemics.rs", "src/commands/refresh.rs"]
+append_only = true
+
 [tables.forecast_scores]
 layer = "L3"
 purpose = "Retroactive per-(view, horizon) forecast scores over analyst_view_history — the judgment stream as a scored corpus (lazily created; scoring fills pending cells, scored rows never mutated)"
 writers = ["src/research/forecast_scoring.rs"]
-readers = ["src/research/forecast_scoring.rs", "src/commands/research_forecasts.rs"]
+readers = ["src/research/forecast_scoring.rs", "src/commands/research_forecasts.rs", "src/db/forecast_misalignments.rs", "src/db/run_health.rs", "src/commands/research_dossier.rs"]
 append_only = true
 
 [tables.futures_cache]

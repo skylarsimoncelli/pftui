@@ -168,6 +168,77 @@ pub fn report_cmd(
     Ok(())
 }
 
+/// Refresh-tail misalignment detection (runs right after the retro-score).
+/// Skips silently on Postgres, same contract as the scoring passes.
+pub fn detect_misalignments_for_refresh(
+    backend: &BackendConnection,
+) -> Result<crate::db::forecast_misalignments::DetectionSummary> {
+    let Some(conn) = backend.sqlite_native() else {
+        return Ok(Default::default());
+    };
+    crate::db::forecast_misalignments::detect_and_update(conn)
+}
+
+/// `pftui research misalignments [--all] [--json]`
+pub fn misalignments_cmd(backend: &BackendConnection, all: bool, json: bool) -> Result<()> {
+    use crate::db::forecast_misalignments as fm;
+    let conn = require_sqlite(backend)?;
+    let rows = if all {
+        fm::list_all(conn)?
+    } else {
+        fm::active_misalignments(conn)?
+    };
+    if json {
+        return print_json(&serde_json::json!({
+            "scope": if all { "all" } else { "active" },
+            "threshold": fm::MISALIGNMENT_STREAK_THRESHOLD,
+            "misalignments": rows,
+        }));
+    }
+    if rows.is_empty() {
+        if all {
+            println!("No misalignment episodes recorded yet.");
+        } else {
+            println!(
+                "No active forecast misalignments (streak threshold {}).",
+                fm::MISALIGNMENT_STREAK_THRESHOLD
+            );
+        }
+        return Ok(());
+    }
+    println!(
+        "FORECAST MISALIGNMENTS ({}; wrong-sign streak ≥ {})",
+        if all { "full ledger" } else { "active" },
+        fm::MISALIGNMENT_STREAK_THRESHOLD
+    );
+    println!(
+        "  {:<4} {:<8} {:<9} {:>6} {:<5} {:<23} {:>9}  {:<12} recovered_at",
+        "id", "layer", "asset", "streak", "call", "span", "against", "status"
+    );
+    for m in &rows {
+        println!(
+            "  {:<4} {:<8} {:<9} {:>6} {:<5} {:<23} {:>8.1}%  {:<12} {}",
+            m.id,
+            m.layer,
+            m.asset,
+            m.streak_len,
+            m.call,
+            format!("{} → {}", m.span_start, m.span_end),
+            m.cum_realized_against_pct,
+            m.status,
+            m.recovered_at.as_deref().unwrap_or("—"),
+        );
+    }
+    let active_count = rows.iter().filter(|m| m.status == "active").count();
+    if active_count > 0 {
+        println!(
+            "\n{} active — probation in force: these (layer, asset) views are excluded from convergence voting and prediction confidence is capped at 0.25.",
+            active_count
+        );
+    }
+    Ok(())
+}
+
 #[derive(Serialize)]
 struct StreaksPayload {
     threshold: usize,
