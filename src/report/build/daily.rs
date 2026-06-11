@@ -5241,21 +5241,36 @@ fn load_structure_and_cycle_verdicts(
     )
     .map(|s| s.verdict);
 
+    // Cycle verdict: prefer the deterministic cycle-theory ENGINE's
+    // composite verdict (multi-degree bands/translation/FLD/VTL —
+    // `analytics::cycle_engine`); the legacy cycle-clock verdict stays as
+    // the fallback when the engine has too little history.
     let cycle = match sym {
-        "BTC" | "BTC-USD" => {
-            let deep = crate::db::price_history::get_history_backend(backend, "BTC-USD", 8000)
+        "BTC" | "BTC-USD" | "GC=F" | "SI=F" => {
+            let deep_series = if matches!(sym, "BTC" | "BTC-USD") {
+                "BTC-USD"
+            } else {
+                sym
+            };
+            let deep = crate::db::price_history::get_history_backend(backend, deep_series, 9000)
                 .unwrap_or_default();
             let source = if deep.len() > history.len() {
                 &deep
             } else {
                 &history
             };
-            crate::analytics::cycle_clock::btc_cycle_clock("BTC-USD", source).map(|c| c.verdict)
-        }
-        "GC=F" => {
-            let deep = crate::db::price_history::get_history_backend(backend, "GC=F", 8000)
-                .unwrap_or_default();
-            crate::analytics::cycle_clock::gold_cycle_clock("GC=F", &deep).map(|c| c.verdict)
+            let engine_config = crate::analytics::cycle_engine::default_config(sym, deep_series);
+            let engine = crate::analytics::cycle_engine::analyze(&engine_config, source)
+                .map(|r| r.composite_verdict);
+            engine.or_else(|| match sym {
+                "BTC" | "BTC-USD" => {
+                    crate::analytics::cycle_clock::btc_cycle_clock("BTC-USD", source)
+                        .map(|c| c.verdict)
+                }
+                "GC=F" => crate::analytics::cycle_clock::gold_cycle_clock("GC=F", source)
+                    .map(|c| c.verdict),
+                _ => None,
+            })
         }
         _ => None,
     };

@@ -2,6 +2,7 @@ pub mod calibration_scorer;
 pub mod catalysts;
 pub mod cyber;
 pub mod cycle_clock;
+pub mod cycle_engine;
 pub mod deltas;
 pub mod drawdown;
 pub mod impact;
