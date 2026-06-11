@@ -1,5 +1,12 @@
 # pftui Web Dashboard
 
+> ⛔ **DEPRECATED — scheduled for removal.** The web dashboard has been explicitly abandoned
+> (operator decision, 2026-06-11). Do not build on it, extend it, or fix its bugs. The full
+> removal inventory and capability briefs live in [docs/WEB-DASHBOARD-REMOVAL.md](docs/WEB-DASHBOARD-REMOVAL.md)
+> and TODO.md (`### Web Dashboard Removal`). This file is deleted by the docs-sweep brief.
+> Note: this is unrelated to `website/` (pftui.com, the public reports site) and to the
+> native mobile API (`pftui system mobile`), both of which remain fully supported.
+
 ## Quick Start
 
 ```bash
