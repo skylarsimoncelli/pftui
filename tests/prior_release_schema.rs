@@ -125,7 +125,7 @@ fn assert_current_tables_present(db_info: &Value) {
         "rss_feed_health",
         "technical_snapshots",
         "scenario_contract_mappings",
-        "narrative_money_history",
+        "series_registry",
         "news_silence_baselines",
         "prediction_lessons",
         "lesson_citations",
@@ -133,6 +133,20 @@ fn assert_current_tables_present(db_info: &Value) {
         assert!(
             names.contains(table),
             "migrated prior-release DB is missing current table {table}; tables={names:?}"
+        );
+    }
+
+    // R3 cull: dead tables must be dropped by the migration, not carried
+    // forward from the prior release.
+    for table in [
+        "prediction_cache",
+        "conviction_durability",
+        "thesis_citations",
+        "narrative_money_history",
+    ] {
+        assert!(
+            !names.contains(table),
+            "R3-culled table {table} survived migration of a prior-release DB"
         );
     }
 }

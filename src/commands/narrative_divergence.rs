@@ -10,7 +10,6 @@ use serde::Serialize;
 use crate::commands::news_sentiment;
 use crate::db::agent_messages;
 use crate::db::backend::BackendConnection;
-use crate::db::narrative_money::{self, NarrativeMoneyHistoryInsert};
 use crate::db::news_cache::{self, NewsEntry, NewsSourceIndependence};
 use crate::db::news_topic_markets;
 use crate::db::predictions_history::{self, PredictionHistoryRecord};
@@ -25,7 +24,6 @@ pub struct NarrativeDivergenceReport {
     pub window_hours: i64,
     pub alert_threshold_z: f64,
     pub total_scenarios: usize,
-    pub recorded_rows: usize,
     pub messages_emitted: usize,
     pub entries: Vec<NarrativeDivergenceEntry>,
 }
@@ -78,8 +76,6 @@ pub fn run(
     json_output: bool,
 ) -> Result<()> {
     let mut report = build_report_backend(backend, hours, threshold_z)?;
-    let rows = history_rows(&report.entries);
-    report.recorded_rows = narrative_money::record_history_backend(backend, &rows)?;
     report.messages_emitted = emit_synthesis_messages(backend, &report)?;
 
     if json_output {
@@ -90,26 +86,18 @@ pub fn run(
     Ok(())
 }
 
-/// Compute today's divergence and append rows to `narrative_money_history`,
-/// without printing or emitting agent messages. Used by the `data refresh`
-/// path so the table accumulates one daily snapshot per active scenario.
-pub fn record_today_silent(
-    backend: &BackendConnection,
-    hours: i64,
-    threshold_z: f64,
-) -> Result<usize> {
-    let report = build_report_backend(backend, hours, threshold_z)?;
-    let rows = history_rows(&report.entries);
-    let written = narrative_money::record_history_backend(backend, &rows)?;
-    Ok(written)
-}
+// R3 cull note: this command previously appended every computed row to
+// `narrative_money_history` (here, from `data refresh`, and via a `rebuild`
+// backfill subcommand). 107 rows accumulated and nothing ever read them —
+// the live report below computes directly from news_cache + scenario
+// contract mappings + predictions_history. The write path and the table
+// were removed; see docs/DATA-ARCHITECTURE.md.
 
 pub fn build_report_backend(
     backend: &BackendConnection,
     hours: i64,
     threshold_z: f64,
 ) -> Result<NarrativeDivergenceReport> {
-    narrative_money::ensure_table_backend(backend)?;
     let scenarios = scenarios::list_scenarios_backend(backend, Some("active"))?;
     let news = news_cache::get_latest_news_backend(
         backend,
@@ -129,7 +117,6 @@ pub fn build_report_sqlite(
     hours: i64,
     threshold_z: f64,
 ) -> Result<NarrativeDivergenceReport> {
-    narrative_money::ensure_table(conn)?;
     let scenarios = scenarios::list_scenarios(conn, Some("active"))?;
     let news = news_cache::get_latest_news(conn, MAX_NEWS_ITEMS, None, None, None, Some(hours))?;
     let mappings = scenario_contract_mappings::list_enriched(conn)?;
@@ -227,7 +214,6 @@ fn build_report_from_parts(
         window_hours: hours,
         alert_threshold_z: threshold_z,
         total_scenarios: entries.len(),
-        recorded_rows: 0,
         messages_emitted: 0,
         entries,
     })
@@ -428,20 +414,6 @@ pub fn divergence_label(score: f64) -> String {
     }
 }
 
-fn history_rows(entries: &[NarrativeDivergenceEntry]) -> Vec<NarrativeMoneyHistoryInsert> {
-    entries
-        .iter()
-        .map(|entry| NarrativeMoneyHistoryInsert {
-            scenario_id: entry.scenario_id,
-            news_volume: entry.news_volume,
-            news_sentiment: entry.news_sentiment,
-            market_price: entry.market_price,
-            market_delta_24h: entry.market_delta_24h,
-            divergence_score: entry.divergence_score,
-        })
-        .collect()
-}
-
 fn emit_synthesis_messages(
     backend: &BackendConnection,
     report: &NarrativeDivergenceReport,
@@ -552,117 +524,6 @@ fn truncate(value: &str, max_len: usize) -> String {
 
 fn round2(value: f64) -> f64 {
     (value * 100.0).round() / 100.0
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct NarrativeRebuildReport {
-    pub since_days: i64,
-    pub days_processed: usize,
-    pub rows_written: usize,
-    pub scenarios: usize,
-}
-
-/// Backfill `narrative_money_history` over the trailing `since_days`. Walks
-/// historical news_cache and `predictions_history` per (scenario, day),
-/// computes the divergence score with the same formula as the live command,
-/// and appends one row per (scenario, day). Idempotent in the sense that
-/// re-running re-appends, but downstream callers de-dupe on recorded_at + scenario.
-pub fn rebuild_history(
-    backend: &BackendConnection,
-    since_days: i64,
-    json_output: bool,
-) -> Result<()> {
-    let report = rebuild_history_inner(backend, since_days)?;
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&report)?);
-    } else {
-        println!("Narrative-money history backfill");
-        println!("════════════════════════════════════════════════════════════════");
-        println!(
-            "Window: trailing {}d • scenarios: {} • days processed: {} • rows written: {}",
-            report.since_days, report.scenarios, report.days_processed, report.rows_written
-        );
-    }
-    Ok(())
-}
-
-fn rebuild_history_inner(
-    backend: &BackendConnection,
-    since_days: i64,
-) -> Result<NarrativeRebuildReport> {
-    use chrono::Duration as ChronoDuration;
-    if since_days <= 0 {
-        anyhow::bail!("--since must be a positive duration");
-    }
-    narrative_money::ensure_table_backend(backend)?;
-    let scenarios = scenarios::list_scenarios_backend(backend, Some("active"))?;
-    let scenario_count = scenarios.len();
-    let mappings = scenario_contract_mappings::list_enriched_backend(backend)?;
-    let histories = load_prediction_histories_backend(backend, &mappings)?;
-    let today = Utc::now().date_naive();
-    let start_date = today - ChronoDuration::days(since_days);
-    let mut rows_written = 0usize;
-    let mut days_processed = 0usize;
-
-    let mut current = start_date;
-    while current <= today {
-        days_processed += 1;
-        let day_start_ts = match current.and_hms_opt(0, 0, 0) {
-            Some(dt) => dt.and_utc().timestamp(),
-            None => {
-                current += ChronoDuration::days(1);
-                continue;
-            }
-        };
-        let day_end_ts = day_start_ts + 86_400;
-        let news = news_cache::get_latest_news_backend(
-            backend,
-            MAX_NEWS_ITEMS,
-            None,
-            None,
-            None,
-            Some(((today - current).num_hours() + 24).max(24)),
-        )?;
-        // Restrict to news published on this day window
-        let day_news: Vec<_> = news
-            .into_iter()
-            .filter(|entry| entry.published_at >= day_start_ts && entry.published_at < day_end_ts)
-            .collect();
-        let day_str = current.format("%Y-%m-%d").to_string();
-        let report = build_report_from_parts(
-            scenarios.clone(),
-            day_news,
-            mappings.clone(),
-            histories.clone(),
-            24,
-            2.0,
-        )?;
-        let mut history_rows_vec: Vec<NarrativeMoneyHistoryInsert> = Vec::new();
-        for entry in &report.entries {
-            // Use price/delta from the per-day predictions_history for that contract+day if known
-            history_rows_vec.push(NarrativeMoneyHistoryInsert {
-                scenario_id: entry.scenario_id,
-                news_volume: entry.news_volume,
-                news_sentiment: entry.news_sentiment,
-                market_price: entry.market_price,
-                market_delta_24h: entry.market_delta_24h,
-                divergence_score: entry.divergence_score,
-            });
-        }
-        if !history_rows_vec.is_empty() {
-            rows_written +=
-                narrative_money::record_history_backend(backend, &history_rows_vec)?;
-        }
-        let _ = day_str; // currently unused but reserved for future per-day recorded_at override
-        current += ChronoDuration::days(1);
-    }
-
-    Ok(NarrativeRebuildReport {
-        since_days,
-        days_processed,
-        rows_written,
-        scenarios: scenario_count,
-    })
 }
 
 #[cfg(test)]

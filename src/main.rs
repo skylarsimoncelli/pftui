@@ -18,7 +18,7 @@ mod research;
 mod tui;
 mod web;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser};
 
 use crate::cli::{Cli, Command};
@@ -1162,6 +1162,28 @@ fn run_cli(cli: Cli) -> Result<()> {
         return commands::mirror::run(&config, &db_path, command);
     }
 
+    // archive-db runs BEFORE backend init: a backup tool must never mutate
+    // the database first (startup migrations would otherwise run, and the
+    // R3 cull migration drops tables — the backup must capture pre-drop
+    // state when invoked ahead of an upgrade).
+    if let Some(Command::System {
+        command:
+            cli::SystemCommand::ArchiveDb {
+                ref out,
+                ref table,
+                json,
+            },
+    }) = cli.command
+    {
+        if config.database_backend != DatabaseBackend::Sqlite {
+            bail!("`pftui system archive-db` backs up the local SQLite database; use pg_dump for the postgres backend");
+        }
+        let conn = rusqlite::Connection::open(&db_path)
+            .with_context(|| format!("opening {} for backup", db_path.display()))?;
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+        return commands::archive_db::run(&backend, out.as_deref(), table.as_deref(), json);
+    }
+
     if let Some(Command::System {
         command: cli::SystemCommand::Schema { ref command },
     }) = cli.command
@@ -1290,6 +1312,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             }
             cli::DataCommand::Status { json, .. } => commands::status::run_backend(&backend, json),
+            cli::DataCommand::Series { command } => match command {
+                cli::DataSeriesCommand::Status { json } => {
+                    commands::series_status::run(&backend, json)
+                }
+            },
             cli::DataCommand::Dashboard { command } => match command {
                 cli::DashboardCommand::Macro { json } => {
                     commands::macro_cmd::run(&backend, &config, json, cached_only)
@@ -1623,6 +1650,9 @@ fn run_cli(cli: Cli) -> Result<()> {
             } => commands::config_cmd::run(&action, field.as_deref(), value.as_deref(), json),
             cli::SystemCommand::DbInfo { json } => {
                 commands::db_info::run(&backend, &db_path, config.database_url.as_deref(), json)
+            }
+            cli::SystemCommand::ArchiveDb { .. } => {
+                unreachable!("archive-db is handled before backend initialization")
             }
             cli::SystemCommand::Schema { .. } => {
                 unreachable!("schema commands are handled before backend initialization")
@@ -2967,17 +2997,10 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             },
             cli::AnalyticsCommand::NarrativeDivergence {
-                command,
                 hours,
                 threshold,
                 json,
-            } => match command {
-                None => commands::narrative_divergence::run(&backend, hours, threshold, json),
-                Some(cli::AnalyticsNarrativeDivergenceCommand::Rebuild { since, json }) => {
-                    let days = parse_since_to_days(&since)?;
-                    commands::narrative_divergence::rebuild_history(&backend, days, json)
-                }
-            },
+            } => commands::narrative_divergence::run(&backend, hours, threshold, json),
             cli::AnalyticsCommand::NewsSilence {
                 command,
                 window_days,

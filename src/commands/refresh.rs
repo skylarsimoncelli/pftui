@@ -3051,7 +3051,7 @@ type BraveNewsData = Option<(
     Duration,
 )>;
 
-/// Forward-population for the four news-related enrichment tables. Called
+/// Forward-population for the news-related enrichment tables. Called
 /// after `store_news_result` writes any new articles. Each pass is wrapped
 /// in `Result` and a failure is logged but does not abort the refresh — the
 /// goal is steady-state population, not a hard dependency.
@@ -3069,13 +3069,10 @@ fn run_news_enrichment_passes(
     {
         warn_ln!(verbose, "news-silence baseline refresh failed: {}", err);
     }
-    // (2) narrative_money_history: append today's divergence per active scenario.
-    if let Err(err) =
-        crate::commands::narrative_divergence::record_today_silent(backend, 24, 2.0)
-    {
-        warn_ln!(verbose, "narrative-divergence refresh failed: {}", err);
-    }
-    // (3) news_source_accuracy: replay the trailing-30d window so any newly
+    // (R3 cull) narrative_money_history append removed: the table was
+    // write-only (no reader) — the live narrative-divergence report computes
+    // from news_cache + predictions directly. Saves a per-refresh write.
+    // (2) news_source_accuracy: replay the trailing-30d window so any newly
     // scored predictions get reflected in the ledger.
     if let Err(err) = crate::db::news_source_accuracy::backfill_accuracy_backend(
         backend,
