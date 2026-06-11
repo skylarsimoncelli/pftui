@@ -131,12 +131,21 @@ Apply first principles: follow the money, not the narrative.]
 
 ## Key Developments
 
-[3-5 major events from the past 24 hours. For EACH one:]
-- What happened (facts only)
-- Where the money moved (capital flows, not narrative)
-- Bound market check from the article's `bound_markets`, e.g. "Polymarket [contract]: 99.9% YES"; if unavailable, say the topic binding is missing rather than inventing pricing
-- Who benefits (which power complex: financial, military, or technical)
-- What it means structurally (connect to scenarios and macro forces)
+[**Editorial contract — wire-service discipline.** Numbered stories (1., 2., 3. …),
+MAXIMUM 5, ranked by market consequence. Every story is EXACTLY two bullets, no
+more and no fewer:
+
+- **What happened** — facts, numbers, dates, and the source (tier-weighted). No
+  interpretation in this bullet.
+- **Why it matters** — the second-order market consequence: where the money
+  moved (capital flows, not narrative), which power complex benefits (financial,
+  military, or technical), which scenarios it touches, and what repricing
+  follows. Fold the article's `bound_markets` check into this bullet, e.g.
+  "Polymarket [contract]: 99.9% YES"; if the topic binding is missing, say so
+  rather than inventing pricing.
+
+A story that cannot fill both bullets is not a story — cut it. Analysis beyond
+the two bullets belongs in the scenario/regime sections, not here.]
 
 ## Scenario Dashboard
 

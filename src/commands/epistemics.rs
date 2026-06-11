@@ -323,9 +323,17 @@ pub fn show(backend: &BackendConnection, date: Option<&str>, json_output: bool) 
         None => run_health::get_latest_run_health(conn)?,
     };
 
+    // Shadow-book benchmark line (R4): the desk-vs-do-nothing scoreboard.
+    // Best-effort — a compute failure must never break run-health display.
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let shadow_line = crate::commands::shadow_book::summary_line(conn, &today);
+
     let Some(row) = row else {
         if json_output {
-            println!("{}", json!({ "row": null, "flags": [] }));
+            println!(
+                "{}",
+                json!({ "row": null, "flags": [], "shadow_book": shadow_line })
+            );
         } else {
             match date {
                 Some(d) => println!(
@@ -335,6 +343,9 @@ pub fn show(backend: &BackendConnection, date: Option<&str>, json_output: bool) 
                 None => println!(
                     "No run health recorded yet. Record with `pftui analytics epistemics record --date YYYY-MM-DD`."
                 ),
+            }
+            if let Some(line) = &shadow_line {
+                println!("\n  {line}");
             }
         }
         return Ok(());
@@ -347,11 +358,15 @@ pub fn show(backend: &BackendConnection, date: Option<&str>, json_output: bool) 
                 "row": row,
                 "flags": flags_json(&row),
                 "active_misalignment_rows": active_misalignment_rows(conn, &row),
+                "shadow_book": shadow_line,
             }))?
         );
     } else {
         print_row_text(&row);
         print_active_misalignments(conn, &row);
+        if let Some(line) = &shadow_line {
+            println!("\n  {line}");
+        }
         let flags = run_health::threshold_flags(&row);
         if flags.is_empty() {
             println!("\n  No epistemic-health flags. Disagreement is alive and well.");

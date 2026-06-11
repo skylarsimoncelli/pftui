@@ -12,11 +12,16 @@
 //!   semantics.
 //! - [`forecast_scoring`] — turns the analyst judgment stream
 //!   (`analyst_view_history`) into a scored corpus (`forecast_scores`).
+//! - [`shadow_book`] — the counterfactual portfolio that mechanically
+//!   executes every recommendations-ledger row (policy v1): shadow vs
+//!   actual vs hold since ledger inception, computed on demand from
+//!   ledger + prices + transactions with no state tables.
 //!
 //! Persistence: `db::signal_expectancy` (L2 derived, rebuildable) and
 //! `forecast_scores` (L3 ledger, append-only). CLI surface:
-//! `pftui research signals|backtest|expectancy|events|forecasts`.
+//! `pftui research signals|backtest|expectancy|events|forecasts|shadowbook`.
 
 pub mod event_study;
 pub mod forecast_scoring;
 pub mod registry;
+pub mod shadow_book;

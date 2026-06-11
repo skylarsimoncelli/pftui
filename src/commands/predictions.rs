@@ -17,25 +17,50 @@ enum CategorySelector {
 ///
 /// Prefers the enriched prediction_market_contracts table (F55.2) when populated.
 /// Falls back to the legacy predictions_cache table if contracts table is empty.
+///
+/// `geo` enables the curated geopolitics relevance filter: keyword-matched
+/// contracts only, with stale contracts excluded (resolving > 12 months out,
+/// already past resolution, or zero 24h volume). Geo mode spans all
+/// categories — Polymarket's own category labels under-tag geopolitics.
 pub fn run(
     backend: &BackendConnection,
     category: Option<&str>,
     search: Option<&str>,
+    geo: bool,
     limit: usize,
     json: bool,
 ) -> Result<()> {
     // Try enriched contracts table first (F55.2)
     // Gracefully fall back if table doesn't exist yet (pre-migration DBs)
-    let cat_filter = category.and_then(resolve_category_for_contracts);
-    let contracts = prediction_contracts::get_contracts_backend(
+    let cat_filter = if geo {
+        None // geo relevance is keyword-driven, not category-driven
+    } else {
+        category.and_then(resolve_category_for_contracts)
+    };
+    // Geo mode filters in-process, so over-fetch then truncate post-filter.
+    let fetch_limit = if geo { limit.max(500) } else { limit };
+    let mut contracts = prediction_contracts::get_contracts_backend(
         backend,
         cat_filter.as_deref(),
         search,
-        limit,
+        fetch_limit,
     )
     .unwrap_or_default();
 
     if !contracts.is_empty() {
+        if geo {
+            let today = chrono::Local::now().date_naive();
+            contracts.retain(|c| geo_keep_contract(c, today));
+            contracts.truncate(limit);
+        }
+        if contracts.is_empty() {
+            if json {
+                println!("[]");
+            } else {
+                println!("No geopolitics-relevant contracts after relevance + staleness filtering.");
+            }
+            return Ok(());
+        }
         if json {
             print_contracts_json(&contracts)?;
         } else {
@@ -45,7 +70,7 @@ pub fn run(
     }
 
     // Fall back to legacy predictions_cache
-    let mut markets = get_cached_predictions_backend(backend, limit)?;
+    let mut markets = get_cached_predictions_backend(backend, fetch_limit)?;
 
     if markets.is_empty() {
         if json {
@@ -56,10 +81,15 @@ pub fn run(
         return Ok(());
     }
 
-    // Filter by category - default to finance-relevant (macro) if not specified
-    let cat_str = category.unwrap_or("macro");
-    let selectors = parse_category_selectors(cat_str)?;
-    markets.retain(|m| market_matches_any_selector(m, &selectors));
+    if geo {
+        // Legacy rows carry no end_date — keyword + volume filters only.
+        markets.retain(|m| is_geo_relevant(&m.question) && m.volume_24h > 0.0);
+    } else {
+        // Filter by category - default to finance-relevant (macro) if not specified
+        let cat_str = category.unwrap_or("macro");
+        let selectors = parse_category_selectors(cat_str)?;
+        markets.retain(|m| market_matches_any_selector(m, &selectors));
+    }
 
     // Filter by search query if specified
     if let Some(query) = search {
@@ -77,6 +107,159 @@ pub fn run(
     }
 
     Ok(())
+}
+
+// ── Geopolitics relevance filter (`--geo`) ───────────────────────────
+
+/// Curated geopolitics keyword list. Single-word terms match on word
+/// boundaries (so "war" never matches "software"); multi-word terms match
+/// as case-insensitive substrings.
+const GEO_KEYWORDS: &[&str] = &[
+    // conflict vocabulary
+    "war",
+    "ceasefire",
+    "truce",
+    "invasion",
+    "invade",
+    "strike",
+    "airstrike",
+    "missile",
+    "drone",
+    "blockade",
+    "escalation",
+    "mobilization",
+    "ballistic",
+    "hostage",
+    "annex",
+    "coup",
+    // instruments of state pressure
+    "sanctions",
+    "embargo",
+    "tariff",
+    "nuclear",
+    "enrichment",
+    "treaty",
+    "nato",
+    "opec",
+    "peace deal",
+    "regime change",
+    // named regions / actors
+    "taiwan",
+    "china",
+    "iran",
+    "israel",
+    "gaza",
+    "hezbollah",
+    "houthi",
+    "russia",
+    "ukraine",
+    "kremlin",
+    "putin",
+    "zelensky",
+    "north korea",
+    "venezuela",
+    "syria",
+    "lebanon",
+    "red sea",
+    "south china sea",
+    "hormuz",
+    "strait",
+];
+
+/// Maximum months ahead a contract may resolve and still count as actionable.
+const GEO_MAX_MONTHS_OUT: u32 = 12;
+
+/// True when `text` matches the curated geopolitics keyword list.
+fn is_geo_relevant(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let words: std::collections::HashSet<&str> = lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    GEO_KEYWORDS.iter().any(|kw| {
+        if kw.contains(' ') {
+            lower.contains(kw)
+        } else {
+            words.contains(kw)
+        }
+    })
+}
+
+/// Parse the leading YYYY-MM-DD of an ISO8601 end_date string.
+fn parse_end_date(end_date: &str) -> Option<chrono::NaiveDate> {
+    chrono::NaiveDate::parse_from_str(end_date.get(..10)?, "%Y-%m-%d").ok()
+}
+
+/// Best-effort deadline extraction from question text ("by April 30",
+/// "through May 22, 2026", "before December 31?"). Cached contracts often
+/// carry an empty `end_date`; without this fallback, long-resolved markets
+/// ("ceasefire by April 30?") would pass the staleness filter forever. A
+/// year-less date assumes the current year — Polymarket questions name the
+/// year whenever it is not the current one.
+fn question_deadline(text: &str, today: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
+    use chrono::Datelike;
+    let lower = text.to_lowercase();
+    let re = regex::Regex::new(
+        r"\b(?:by|through|on|before|until)\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:,?\s+(\d{4}))?",
+    )
+    .ok()?;
+    let caps = re.captures(&lower)?;
+    let month = match &caps[1] {
+        "january" => 1,
+        "february" => 2,
+        "march" => 3,
+        "april" => 4,
+        "may" => 5,
+        "june" => 6,
+        "july" => 7,
+        "august" => 8,
+        "september" => 9,
+        "october" => 10,
+        "november" => 11,
+        _ => 12,
+    };
+    let day: u32 = caps[2].parse().ok()?;
+    let year: i32 = caps
+        .get(3)
+        .and_then(|y| y.as_str().parse().ok())
+        .unwrap_or_else(|| today.year());
+    chrono::NaiveDate::from_ymd_opt(year, month, day)
+}
+
+/// Geo retention rule for enriched contracts: keyword relevance on
+/// question + event title, plus staleness exclusion — already past
+/// resolution, resolving more than 12 months out, or zero 24h volume.
+/// Staleness reads `end_date` when present, falling back to a deadline
+/// parsed from the question text; contracts with neither are kept
+/// (staleness cannot be judged).
+fn geo_keep_contract(
+    c: &prediction_contracts::PredictionContract,
+    today: chrono::NaiveDate,
+) -> bool {
+    if !is_geo_relevant(&c.question) && !is_geo_relevant(&c.event_title) {
+        return false;
+    }
+    if c.volume_24h <= 0.0 {
+        return false;
+    }
+    let resolution = c
+        .end_date
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .and_then(parse_end_date)
+        .or_else(|| question_deadline(&c.question, today));
+    if let Some(end) = resolution {
+        if end < today {
+            return false; // already resolved / past resolution date
+        }
+        let horizon = today
+            .checked_add_months(chrono::Months::new(GEO_MAX_MONTHS_OUT))
+            .unwrap_or(chrono::NaiveDate::MAX);
+        if end > horizon {
+            return false; // too far out to be actionable
+        }
+    }
+    true
 }
 
 /// Map user-facing category names to the db category stored in prediction_market_contracts.
@@ -335,7 +518,7 @@ mod tests {
         ensure_table(&conn).unwrap();
         let backend = to_backend(conn);
 
-        let result = run(&backend, None, None, 10, false);
+        let result = run(&backend, None, None, false, 10, false);
         assert!(result.is_ok());
     }
 
@@ -366,7 +549,7 @@ mod tests {
         upsert_predictions(&conn, &markets).unwrap();
         let backend = to_backend(conn);
 
-        let result = run(&backend, None, None, 10, false);
+        let result = run(&backend, None, None, false, 10, false);
         assert!(result.is_ok());
     }
 
@@ -397,7 +580,7 @@ mod tests {
         upsert_predictions(&conn, &markets).unwrap();
         let backend = to_backend(conn);
 
-        let result = run(&backend, Some("crypto"), None, 10, false);
+        let result = run(&backend, Some("crypto"), None, false, 10, false);
         assert!(result.is_ok());
     }
 
@@ -418,7 +601,7 @@ mod tests {
         upsert_predictions(&conn, &markets).unwrap();
         let backend = to_backend(conn);
 
-        let result = run(&backend, None, Some("recession"), 10, false);
+        let result = run(&backend, None, Some("recession"), false, 10, false);
         assert!(result.is_ok());
     }
 
@@ -533,7 +716,7 @@ mod tests {
         upsert_predictions(&conn, &markets).unwrap();
         let backend = to_backend(conn);
 
-        let result = run(&backend, None, None, 10, true);
+        let result = run(&backend, None, None, false, 10, true);
         assert!(result.is_ok());
     }
 
@@ -610,7 +793,7 @@ mod tests {
         let backend = to_backend(conn);
 
         // Should succeed and use contracts table (json output)
-        let result = run(&backend, None, None, 10, true);
+        let result = run(&backend, None, None, false, 10, true);
         assert!(result.is_ok());
     }
 
@@ -652,7 +835,204 @@ mod tests {
         let backend = to_backend(conn);
 
         // Should succeed using legacy table
-        let result = run(&backend, None, None, 10, false);
+        let result = run(&backend, None, None, false, 10, false);
         assert!(result.is_ok());
+    }
+
+    // ── Geo filter tests ─────────────────────────────────────────────
+
+    fn geo_contract(
+        id: &str,
+        question: &str,
+        event_title: &str,
+        volume_24h: f64,
+        end_date: Option<&str>,
+    ) -> prediction_contracts::PredictionContract {
+        prediction_contracts::PredictionContract {
+            contract_id: id.to_string(),
+            exchange: "polymarket".to_string(),
+            event_id: "e1".to_string(),
+            event_title: event_title.to_string(),
+            question: question.to_string(),
+            category: "politics".to_string(),
+            last_price: 0.5,
+            volume_24h,
+            liquidity: 100_000.0,
+            end_date: end_date.map(|s| s.to_string()),
+            updated_at: 1_000_000,
+        }
+    }
+
+    #[test]
+    fn geo_keywords_match_on_word_boundaries() {
+        assert!(is_geo_relevant("Will the Russia-Ukraine war end in 2026?"));
+        assert!(is_geo_relevant("Iran nuclear enrichment above 60%?"));
+        assert!(is_geo_relevant("US strike on Houthi positions?"));
+        assert!(is_geo_relevant("New tariff on China goods?"));
+        // multi-word terms
+        assert!(is_geo_relevant("Incident in the South China Sea this year?"));
+        assert!(is_geo_relevant("North Korea missile test?"));
+        // word-boundary discipline: no substring false positives
+        assert!(!is_geo_relevant("Best software stock of 2026?"));
+        assert!(!is_geo_relevant("Will the Warriors win the title?"));
+        assert!(!is_geo_relevant("Fed rate cut by September?"));
+        assert!(!is_geo_relevant("Dronefield Inc IPO above $10?"));
+    }
+
+    #[test]
+    fn geo_filter_excludes_far_dated_resolved_and_zero_volume() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 6, 11).unwrap();
+        // Relevant, active, in-window → kept.
+        assert!(geo_keep_contract(
+            &geo_contract("c1", "Iran ceasefire by July?", "Middle East", 5000.0, Some("2026-08-01T00:00:00Z")),
+            today
+        ));
+        // Relevance can come from the event title.
+        assert!(geo_keep_contract(
+            &geo_contract("c2", "Resolution before September?", "Russia-Ukraine ceasefire", 5000.0, Some("2026-09-01")),
+            today
+        ));
+        // Not geo-relevant → dropped.
+        assert!(!geo_keep_contract(
+            &geo_contract("c3", "Fed cuts rates in July?", "FOMC July", 5000.0, Some("2026-08-01")),
+            today
+        ));
+        // Already past resolution date → dropped.
+        assert!(!geo_keep_contract(
+            &geo_contract("c4", "Iran ceasefire by May?", "Middle East", 5000.0, Some("2026-05-01")),
+            today
+        ));
+        // Resolving more than 12 months out → dropped.
+        assert!(!geo_keep_contract(
+            &geo_contract("c5", "Taiwan invasion by 2030?", "Taiwan", 5000.0, Some("2029-12-31")),
+            today
+        ));
+        // Exactly at the 12-month horizon → kept.
+        assert!(geo_keep_contract(
+            &geo_contract("c6", "Taiwan blockade within a year?", "Taiwan", 5000.0, Some("2027-06-11")),
+            today
+        ));
+        // Zero 24h volume → dropped (stale market).
+        assert!(!geo_keep_contract(
+            &geo_contract("c7", "Iran sanctions lifted?", "Iran", 0.0, Some("2026-08-01")),
+            today
+        ));
+        // Missing end_date and no parsable question deadline → kept.
+        assert!(geo_keep_contract(
+            &geo_contract("c8", "NATO Article 5 invoked?", "NATO", 5000.0, None),
+            today
+        ));
+        // Missing end_date but the question names a past deadline → dropped
+        // (the live cache carries resolved markets with empty end_date).
+        assert!(!geo_keep_contract(
+            &geo_contract("c9", "US x Iran ceasefire by April 30?", "Iran", 5000.0, None),
+            today
+        ));
+        assert!(!geo_keep_contract(
+            &geo_contract(
+                "c10",
+                "Israel x Hezbollah Ceasefire extended by April 26, 2026?",
+                "Middle East",
+                5000.0,
+                Some(""), // empty string end_date — treated as missing
+            ),
+            today
+        ));
+        // Question deadline in the future → kept.
+        assert!(geo_keep_contract(
+            &geo_contract("c11", "Russia x Ukraine ceasefire by June 30, 2026?", "Ukraine", 5000.0, None),
+            today
+        ));
+    }
+
+    #[test]
+    fn question_deadline_parsing() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 6, 11).unwrap();
+        let d = |s: &str| question_deadline(s, today);
+        assert_eq!(
+            d("US x Iran ceasefire by April 30?"),
+            chrono::NaiveDate::from_ymd_opt(2026, 4, 30)
+        );
+        assert_eq!(
+            d("Ceasefire extended by April 26, 2026?"),
+            chrono::NaiveDate::from_ymd_opt(2026, 4, 26)
+        );
+        assert_eq!(
+            d("Will the Iran ceasefire continue through May 22?"),
+            chrono::NaiveDate::from_ymd_opt(2026, 5, 22)
+        );
+        assert_eq!(
+            d("US x Iran permanent peace deal by December 31, 2027?"),
+            chrono::NaiveDate::from_ymd_opt(2027, 12, 31)
+        );
+        assert_eq!(d("NATO Article 5 invoked?"), None);
+    }
+
+    #[test]
+    fn geo_run_path_filters_contracts_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_table(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS prediction_market_contracts (
+                contract_id TEXT PRIMARY KEY,
+                exchange TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                event_title TEXT NOT NULL,
+                question TEXT NOT NULL,
+                category TEXT NOT NULL,
+                last_price REAL NOT NULL,
+                volume_24h REAL NOT NULL,
+                liquidity REAL NOT NULL,
+                end_date TEXT,
+                updated_at INTEGER NOT NULL
+            )",
+        )
+        .unwrap();
+        let far = chrono::Local::now().date_naive() + chrono::Duration::days(60);
+        let far = far.format("%Y-%m-%d").to_string();
+        for (id, q) in [
+            ("g1", "Russia-Ukraine ceasefire by year end?"),
+            ("g2", "Fed cuts rates in September?"),
+        ] {
+            conn.execute(
+                "INSERT INTO prediction_market_contracts
+                 (contract_id, exchange, event_id, event_title, question, category,
+                  last_price, volume_24h, liquidity, end_date, updated_at)
+                 VALUES (?1, 'polymarket', 'e1', 'Event', ?2, 'politics',
+                         0.4, 9000.0, 50000.0, ?3, 1000000)",
+                rusqlite::params![id, q, far],
+            )
+            .unwrap();
+        }
+        let backend = to_backend(conn);
+        // Smoke: geo mode runs clean over a mixed contracts table.
+        assert!(run(&backend, None, None, true, 10, true).is_ok());
+    }
+
+    #[test]
+    fn geo_run_path_filters_legacy_cache() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_table(&conn).unwrap();
+        let markets = vec![
+            PredictionMarket {
+                id: "g1".into(),
+                question: "Iran ceasefire by August?".into(),
+                probability: 0.3,
+                volume_24h: 9000.0,
+                category: MarketCategory::Geopolitics,
+                updated_at: 1_000_000,
+            },
+            PredictionMarket {
+                id: "g2".into(),
+                question: "BTC above 150k?".into(),
+                probability: 0.2,
+                volume_24h: 9000.0,
+                category: MarketCategory::Crypto,
+                updated_at: 1_000_000,
+            },
+        ];
+        upsert_predictions(&conn, &markets).unwrap();
+        let backend = to_backend(conn);
+        assert!(run(&backend, None, None, true, 10, true).is_ok());
     }
 }
