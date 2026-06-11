@@ -1,4 +1,6 @@
 pub mod coingecko;
+pub mod geckoterminal;
+pub mod mempool;
 pub mod yahoo;
 
 use crate::config::Config;

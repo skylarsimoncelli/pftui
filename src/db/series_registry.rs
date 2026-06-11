@@ -97,6 +97,25 @@ pub fn seed(conn: &Connection) -> Result<()> {
             e.notes,
         ])?;
     }
+    upgrade_fallback_chain_sources(conn)?;
+    Ok(())
+}
+
+/// One-time upgrade for pre-fallback DBs: rewrite the btc/gold `source`
+/// from the old single-source default ('yahoo') to the full fallback chain.
+/// Only fires while the row still carries the old default, so operator
+/// edits survive (same contract as the INSERT OR IGNORE seed).
+fn upgrade_fallback_chain_sources(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "UPDATE series_registry SET source = ?1
+         WHERE series_id = 'btc' AND source = 'yahoo'",
+        params![BTC_SOURCE_CHAIN],
+    )?;
+    conn.execute(
+        "UPDATE series_registry SET source = ?1
+         WHERE series_id = 'gold' AND source = 'yahoo'",
+        params![GOLD_SOURCE_CHAIN],
+    )?;
     Ok(())
 }
 
@@ -104,6 +123,11 @@ pub fn ensure_and_seed(conn: &Connection) -> Result<()> {
     ensure_table(conn)?;
     seed(conn)
 }
+
+/// Spot-price source chains for series with redundant fallback sources
+/// (primary→…→last resort, as wired in `commands/refresh.rs`).
+pub const BTC_SOURCE_CHAIN: &str = "coingecko→yahoo→mempool.space";
+pub const GOLD_SOURCE_CHAIN: &str = "yahoo→geckoterminal-xaut";
 
 fn price(series_id: &str, symbol: &str, sla: i64, notes: Option<&str>) -> SeriesEntry {
     SeriesEntry {
@@ -161,8 +185,18 @@ fn cot(series_id: &str, cftc_code: &str, symbol: &str, name: &str) -> SeriesEntr
 /// gauges, every plausible-range economic indicator, ETF flows, exchange
 /// reserves, and the four COT contracts.
 pub fn seed_entries() -> Vec<SeriesEntry> {
+    let mut gold = price(
+        "gold",
+        "GC=F",
+        72,
+        Some(
+            "Spot fallback: GeckoTerminal XAUt/USDT pool (on-chain proxy, \
+             divergence-guarded at 5%)",
+        ),
+    );
+    gold.source = Some(GOLD_SOURCE_CHAIN.to_string());
     let mut entries = vec![
-        price("gold", "GC=F", 72, None),
+        gold,
         price("silver", "SI=F", 72, None),
         price("gld", "GLD", 72, None),
         price("spy", "SPY", 72, None),
@@ -176,9 +210,13 @@ pub fn seed_entries() -> Vec<SeriesEntry> {
         "btc",
         "BTC",
         72,
-        Some("Spot series; BTC-USD is the deep Yahoo series (doctor guards divergence)"),
+        Some(
+            "Spot series; BTC-USD is the deep Yahoo series (doctor guards divergence). \
+             Last-resort spot fallback: mempool.space (divergence-guarded at 5%)",
+        ),
     );
     btc.deep_alias = Some("BTC-USD".to_string());
+    btc.source = Some(BTC_SOURCE_CHAIN.to_string());
     entries.push(btc);
 
     entries.push(SeriesEntry {
@@ -404,6 +442,49 @@ mod tests {
         let cot = entries.iter().find(|e| e.series_id == "cot-gold").unwrap();
         assert_eq!(cot.freshness_sla_hours, 192);
         assert_eq!(cot.storage_table, "cot_cache");
+    }
+
+    #[test]
+    fn seed_records_fallback_chains_for_btc_and_gold() {
+        let conn = conn_with_registry();
+        let entries = list(&conn).unwrap();
+        let btc = entries.iter().find(|e| e.series_id == "btc").unwrap();
+        assert_eq!(btc.source.as_deref(), Some(BTC_SOURCE_CHAIN));
+        let gold = entries.iter().find(|e| e.series_id == "gold").unwrap();
+        assert_eq!(gold.source.as_deref(), Some(GOLD_SOURCE_CHAIN));
+        assert!(gold.notes.as_deref().unwrap_or("").contains("GeckoTerminal"));
+    }
+
+    #[test]
+    fn legacy_yahoo_source_rows_upgrade_to_fallback_chain() {
+        let conn = conn_with_registry();
+        // Simulate a pre-fallback DB: rows still carry the old default.
+        conn.execute(
+            "UPDATE series_registry SET source = 'yahoo'
+             WHERE series_id IN ('btc', 'gold')",
+            [],
+        )
+        .unwrap();
+        ensure_and_seed(&conn).unwrap();
+        let entries = list(&conn).unwrap();
+        let btc = entries.iter().find(|e| e.series_id == "btc").unwrap();
+        assert_eq!(btc.source.as_deref(), Some(BTC_SOURCE_CHAIN));
+        let gold = entries.iter().find(|e| e.series_id == "gold").unwrap();
+        assert_eq!(gold.source.as_deref(), Some(GOLD_SOURCE_CHAIN));
+    }
+
+    #[test]
+    fn operator_customized_source_survives_chain_upgrade() {
+        let conn = conn_with_registry();
+        conn.execute(
+            "UPDATE series_registry SET source = 'my-custom-feed' WHERE series_id = 'btc'",
+            [],
+        )
+        .unwrap();
+        ensure_and_seed(&conn).unwrap();
+        let entries = list(&conn).unwrap();
+        let btc = entries.iter().find(|e| e.series_id == "btc").unwrap();
+        assert_eq!(btc.source.as_deref(), Some("my-custom-feed"));
     }
 
     #[test]

@@ -149,6 +149,31 @@
 - **Update cadence:** Daily. The `data refresh` hook enforces a 12-hour throttle keyed on `MAX(capital_flows.fetched_at WHERE source LIKE 'etf.com/%')`; manual `data flows refresh` ignores the throttle.
 - **pftui integration:** F59 follow-up — `PFTUI_FLOWS_PROVIDER=etf_com_csv` enables the live provider. `pftui data flows show`, `pftui analytics flows summary`, and the per-asset daily-report renderer (`src/report/sections/capital_flows.rs`) all consume the resulting `capital_flows` rows. Synthetic test fixture lives at `tests/fixtures/flows/etf_com_flows_sample.html`.
 
+### mempool.space (BTC Spot Fallback)
+- **URL:** `https://mempool.space/api/`
+- **Auth:** None
+- **Rate limit:** Generous (public REST API, no key); pftui makes at most one prices call per refresh, and only when CoinGecko AND Yahoo both failed for BTC
+- **Data:** BTC/USD spot price (plus EUR/GBP/CAD/CHF/AUD/JPY), current block height
+- **Endpoints:**
+  - `GET /api/v1/prices` — `{"time": 1781190309, "USD": 62631, "EUR": 54346, ...}` (whole-unit JSON numbers)
+  - `GET /api/blocks/tip/height` — plain-integer body (e.g. `953254`), fetched as a bonus provenance field when the fallback fires
+- **Field mapping:** `USD` → BTC spot quote with `source='mempool.space'` in `price_cache`/`price_history`
+- **Role:** SPOT-ONLY last resort, third in the BTC chain (`coingecko→yahoo→mempool.space`). No OHLCV, no history. Every price passes the 5% divergence guard against the last stored BTC close before storage; rejects are loud and never stored.
+- **Update cadence:** Real-time
+- **pftui integration:** `src/price/mempool.rs`, wired in `commands/refresh.rs::fetch_spot_fallbacks`
+
+### GeckoTerminal XAUt Pool (Gold Spot Fallback)
+- **URL:** `https://api.geckoterminal.com/api/v2/`
+- **Auth:** None
+- **Rate limit:** 30 calls/minute (free tier); pftui makes at most one call per refresh, and only when Yahoo failed for GC=F
+- **Data:** On-chain DEX pool price for XAUt (Tether Gold, 1 token = 1 troy oz)
+- **Endpoint:** `GET /networks/eth/pools/0x6546055f46e866a4b9a4a13e81273e3152bae5da` — the Uniswap V3 XAUt/USDT 0.05% pool on Ethereum (deepest XAUT pool, ~$13M reserve)
+- **Field mapping:** `data.attributes.base_token_price_usd` (decimal string; base token is XAUt) → GC=F spot quote with `source='geckoterminal-xaut'`
+- **⚠ XAUT is an on-chain PROXY for spot gold:** it typically tracks XAU within ~0.5–1% but can dislocate under market stress or thin DEX liquidity, and GC=F (front-month futures) itself carries basis vs spot. This is why the 5% divergence guard against the last stored GC=F close is mandatory — a dislocated proxy price is rejected loudly, never stored.
+- **Role:** SPOT-ONLY last resort, second (and only fallback) in the gold chain (`yahoo→geckoterminal-xaut`). No OHLCV, no history.
+- **Update cadence:** Real-time (per-pool aggregation)
+- **pftui integration:** `src/price/geckoterminal.rs`, wired in `commands/refresh.rs::fetch_spot_fallbacks`
+
 ### TradingEconomics Calendar (Scrape)
 - **URL:** `https://tradingeconomics.com/calendar`
 - **Auth:** None (public page)
