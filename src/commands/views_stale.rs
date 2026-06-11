@@ -143,6 +143,12 @@ fn detect_stale(backend: &BackendConnection, days: i64, move_pct: f64) -> Result
     })
 }
 
+/// Count stale views at the detector's default thresholds (21d / 10% move).
+/// Used by the `data refresh` housekeeping summary line.
+pub fn count_stale_for_refresh(backend: &BackendConnection) -> Result<usize> {
+    Ok(detect_stale(backend, 21, 10.0)?.stale.len())
+}
+
 pub fn run(backend: &BackendConnection, days: i64, move_pct: f64, json_output: bool) -> Result<()> {
     let days = days.max(1);
     let move_pct = move_pct.abs();

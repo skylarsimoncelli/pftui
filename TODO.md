@@ -10,6 +10,12 @@
 
 ## P2 - Coverage And Agent Consumption
 
+### `portfolio history` lacks `--json`
+**Source:** R6 docs sweep (2026-06-11). `pftui portfolio history --date YYYY-MM-DD` is text-only, violating the "--json on every CLI command" rule; AGENTS.md previously documented a `--json` flag that does not exist (now corrected). Add a `--json` output mirroring `portfolio summary`'s shape, then restore the flag in AGENTS.md's Portfolio State table and the Historical Comparison integration pattern.
+
+### `agent message send` cannot write `category='decision-card'`
+**Source:** R6 docs sweep (2026-06-11). The report's decision-cards loader (`src/report/build/daily.rs::load_portfolio_decision_cards`) keys on `category='decision-card'` exactly, but `agent message send`'s validator accepts only signal/feedback/alert/handoff/escalation — so Phase-4 decision cards can only be written via raw SQL today (documented in `agents/report-prompts/phase4-decision-architect.md`). Either add `decision-card` to the validator or ship a dedicated writer command, then convert the prompt back to a CLI write.
+
 
 ### `pftui report build daily` — umbrella tracker (do not pick directly)
 **Source:** Skylar (May 28). Depends on both `pftui report` scaffold and the chart-helper-port items above.

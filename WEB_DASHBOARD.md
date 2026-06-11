@@ -4,13 +4,13 @@
 
 ```bash
 # Start the web server (with authentication)
-pftui web
+pftui system web
 
 # Custom port and bind address
-pftui web --port 3000 --bind 0.0.0.0
+pftui system web --port 3000 --bind 0.0.0.0
 
 # Disable authentication (localhost only!)
-pftui web --no-auth
+pftui system web --no-auth
 ```
 
 ## Features
@@ -58,7 +58,7 @@ The web UI at `/` doesn't require auth (static HTML). API endpoints require the 
 
 To disable auth entirely (localhost only):
 ```bash
-pftui web --no-auth
+pftui system web --no-auth
 ```
 
 ## Architecture
@@ -138,7 +138,7 @@ After=network.target
 Type=simple
 User=pftui
 WorkingDirectory=/home/pftui
-ExecStart=/usr/local/bin/pftui web --port 8080 --bind 127.0.0.1
+ExecStart=/usr/local/bin/pftui system web --port 8080 --bind 127.0.0.1
 Restart=on-failure
 
 [Install]
@@ -194,13 +194,13 @@ server {
 lsof -i :8080
 
 # Use a different port
-pftui web --port 3000
+pftui system web --port 3000
 ```
 
 ### Can't access from other devices
 ```bash
 # Bind to all interfaces (use with caution!)
-pftui web --bind 0.0.0.0
+pftui system web --bind 0.0.0.0
 ```
 
 ### TradingView charts not loading

@@ -2538,9 +2538,41 @@ fn run_pipeline(
         }
     }
 
+    // Tail step: housekeeping surfacing — one summary line when curation debt
+    // is due (thesis sections past review_by, stale analyst views). Read-only;
+    // any error here is swallowed so housekeeping can never fail a refresh.
+    if let Some(line) = housekeeping_line(backend) {
+        info_ln!(verbose, "{}", line);
+    }
+
     info_ln!(verbose, "\nRefresh complete.");
     dag_result.finalize(pipeline_start.elapsed());
     Ok(dag_result)
+}
+
+/// One-line housekeeping summary for the `data refresh` tail: counts thesis
+/// sections past their `review_by` date and stale analyst views (default
+/// detector thresholds). Returns `None` when nothing is due or when either
+/// query fails — housekeeping must never break a refresh.
+pub(crate) fn housekeeping_line(backend: &BackendConnection) -> Option<String> {
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let thesis_due = crate::db::thesis::list_thesis_backend(backend)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter(|e| matches!(e.review_by.as_deref(), Some(d) if d <= today.as_str()))
+                .count()
+        })
+        .unwrap_or(0);
+    let stale_views =
+        crate::commands::views_stale::count_stale_for_refresh(backend).unwrap_or(0);
+    if thesis_due == 0 && stale_views == 0 {
+        return None;
+    }
+    Some(format!(
+        "🧹 housekeeping: {} thesis section(s) past review, {} stale view(s) — see `analytics thesis review-due` / `analytics views stale`",
+        thesis_due, stale_views
+    ))
 }
 
 fn maybe_stop_for_timeout(
@@ -5634,6 +5666,92 @@ fn get_technical_field(
 mod tests {
     use super::*;
     use chrono::{Datelike, Timelike};
+
+    fn housekeeping_backend() -> BackendConnection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::schema::run_migrations(&conn).unwrap();
+        BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn housekeeping_line_absent_when_nothing_due() {
+        let backend = housekeeping_backend();
+        assert_eq!(housekeeping_line(&backend), None);
+
+        // A thesis section with a FUTURE review date is not due.
+        crate::db::thesis::upsert_thesis_backend(&backend, "gold", "thesis text", Some("high"))
+            .unwrap();
+        crate::db::thesis::set_review_by_backend(&backend, "gold", Some("2999-01-01")).unwrap();
+        assert_eq!(housekeeping_line(&backend), None);
+    }
+
+    #[test]
+    fn housekeeping_line_present_when_thesis_review_due() {
+        let backend = housekeeping_backend();
+        crate::db::thesis::upsert_thesis_backend(&backend, "gold", "thesis text", Some("high"))
+            .unwrap();
+        crate::db::thesis::set_review_by_backend(&backend, "gold", Some("2020-01-01")).unwrap();
+        let line = housekeeping_line(&backend).expect("expected housekeeping line");
+        assert!(line.contains("1 thesis section(s) past review"), "{line}");
+        assert!(line.contains("0 stale view(s)"), "{line}");
+        assert!(line.contains("analytics thesis review-due"), "{line}");
+    }
+
+    #[test]
+    fn housekeeping_line_counts_stale_views() {
+        use rust_decimal_macros::dec;
+        let backend = housekeeping_backend();
+        // Held BTC position.
+        let tx = crate::models::transaction::NewTransaction {
+            symbol: "BTC".to_string(),
+            category: crate::models::asset::AssetCategory::Crypto,
+            tx_type: crate::models::transaction::TxType::Buy,
+            quantity: dec!(1),
+            price_per: dec!(50000),
+            currency: "USD".to_string(),
+            date: "2026-01-01".to_string(),
+            notes: None,
+        };
+        crate::db::transactions::insert_transaction_backend(&backend, &tx).unwrap();
+        // 40-day-old medium view with a +25% move since.
+        crate::db::analyst_views::upsert_view_backend(
+            &backend, "medium", "BTC", "bull", 3, "synthetic", None, None, None,
+        )
+        .unwrap();
+        let stamp = (chrono::Utc::now() - chrono::Duration::days(40))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        let view_date: String = stamp.chars().take(10).collect();
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        {
+            let conn = backend.sqlite_native().unwrap();
+            conn.execute(
+                "UPDATE analyst_views SET updated_at = ?1 WHERE analyst = 'medium' AND asset = 'BTC'",
+                rusqlite::params![stamp],
+            )
+            .unwrap();
+            for (date, close) in [(view_date.as_str(), dec!(80000)), (today.as_str(), dec!(100000))]
+            {
+                crate::db::price_history::upsert_history(
+                    conn,
+                    "BTC",
+                    "test",
+                    &[crate::models::price::HistoryRecord {
+                        date: date.to_string(),
+                        close,
+                        volume: None,
+                        open: None,
+                        high: None,
+                        low: None,
+                    }],
+                )
+                .unwrap();
+            }
+        }
+        let line = housekeeping_line(&backend).expect("expected housekeeping line");
+        assert!(line.contains("1 stale view(s)"), "{line}");
+        assert!(line.contains("analytics views stale"), "{line}");
+    }
 
     #[test]
     fn format_price_large() {

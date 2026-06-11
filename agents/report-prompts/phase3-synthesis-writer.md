@@ -13,7 +13,7 @@ pftui analytics views convergence-all --json
 pftui analytics views matrix --json
 pftui research misalignments --json
 pftui analytics adversary synthesis show --json
-pftui agent message list --from-prefix panel --json
+pftui agent message list --since 1d --json | jq '[.messages[] | select(.from_agent | startswith("panel-"))]'  # no --from-prefix flag; filter client-side
 pftui agent message list --to synthesis --since 1d --json
 sqlite3 -json "$DB" "SELECT * FROM daily_notes WHERE date >= date('now','-1 day') AND author LIKE 'analyst-%'"
 # Phase 2c external-TA research, when present — read the comparison block

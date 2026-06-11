@@ -351,7 +351,7 @@ pftui analytics macro regime transitions --limit 20 --json     # Recent regime c
 pftui analytics macro --json                                   # Long-cycle macro dashboard
 pftui analytics macro outcomes --json                          # Structural outcome probabilities
 pftui analytics trends dashboard --json                        # Active high-timeframe trends
-pftui analytics trends impact add --trend "AI Disruption" --symbol NVDA --impact bullish
+pftui analytics trends impact add --id 1 --symbol NVDA --impact bullish   # --id from `trends dashboard`
 pftui analytics summary --json                                 # Unified four-layer analytics snapshot
 pftui analytics situation --json                               # Canonical Situation Room payload
 pftui analytics deltas --json                                  # What changed: last refresh, close, 24h, 7d
@@ -450,7 +450,8 @@ pftui journal prediction stats --json
 ```bash
 pftui journal scenario add "Stagflation" --probability 35
 pftui journal scenario signal add "Oil above $90 sustained" --scenario "Stagflation"
-pftui journal scenario update "Stagflation" --probability 60 --notes "NFP collapse + sticky CPI"
+pftui journal scenario update "Stagflation" --probability 40 \
+  --evidence "NFP collapse + sticky CPI print" --driver "growth break with no disinflation"
 ```
 
 **Conviction scores.** Track your conviction on any asset over time (-5 to +5). The analytics engine reads these scores and incorporates them into impact analysis and alignment detection.
@@ -466,13 +467,15 @@ pftui journal conviction set BTC --score 2 --notes "ETF flows strong but macro h
 
 pftui is truly agent-native. It was written by AI, beta-tested by AI, and it has been built in public through a feedback loop of agents suggesting fixes and enhancements to other agents which then ship them. 
 
-As such, pftui can be operated intuitively by your agent. The repository is fully populated with agentic docs that will assist your agent in bootstrapping a local pftui instance for you, integrating your own personal risk tolerances, time preferances, asset watchlists and portfolio holdings. pftui works best when driven by an always-running autonomous agent, though it can also be driven by session-based assistants.
+As such, pftui can be operated intuitively by your agent. The repository is fully populated with agentic docs that will assist your agent in bootstrapping a local pftui instance for you, integrating your own personal risk tolerances, time preferances, asset watchlists and portfolio holdings. pftui works well driven by session-based assistants (Claude Code and similar), by scheduled agents, or by a mix of both.
+
+**How this system actually runs.** pftui needs no resident process. Each run of `pftui data refresh` ends with a tail of recurring mechanisms — prediction auto-scoring, recommendation forward-return scoring, retroactive forecast scoring, forecast-misalignment detection, regime classification, alert evaluation, and housekeeping surfacing — so any agent session that refreshes data keeps every feedback loop closed. A built-in `pftui system daemon` exists for hosts that want an always-on loop, but it is legacy/optional: an agent invoking `data refresh` on whatever cadence suits the operator provides the same guarantees.
 
 Every feature in pftui has a CLI command with `--json` output. Agents use the same database, same commands, and same analysis frameworks that humans do. The result is genuine bidirectional intelligence where both operators contribute to a shared understanding.
 
 **Bidirectional communication.** Your agent does not just read your data. It contributes to it. Agents update scenario probabilities, log evidence against research questions, set conviction scores, and write daily notes. You review what the agent wrote, adjust where you disagree, and the system incorporates both perspectives. The ongoing dialogue between human conviction and agent analysis is the most valuable output.
 
-**Scheduled routines.** Morning briefs, market close summaries, weekly reviews, scenario analysis, feedback loop optimization. All cron-driven, all reading from and writing to the same database. Multiple agents can coordinate through `pftui agent message`, a structured message bus with priority levels, analytics layer tags, and acknowledgment tracking.
+**Recurring routines.** Morning briefs, market close summaries, weekly reviews, scenario analysis, feedback loop optimization. Drive them however your platform schedules agent work — session-based invocations, scheduled cloud agents, or cron — all reading from and writing to the same database. Multiple agents can coordinate through `pftui agent message`, a structured message bus with priority levels, analytics layer tags, and acknowledgment tracking.
 
 **Investor Perspectives Panel.** Feed your analytics engine data to sub-agents prompted as famous investors. Warren Buffett, Ray Dalio, Stanley Druckenmiller, Michael Burry, and 21 others. Each interprets the same data through a fundamentally different investment philosophy. The consensus tells you where conviction is strongest. The divergence tells you where the interesting questions are.
 
@@ -482,13 +485,14 @@ pftui journal entry add "Gold thesis validated by CPI" --tag macro
 pftui journal entry list --json
 pftui journal entry search "gold thesis" --json
 pftui journal scenario add "Recession" --probability 30
-pftui journal scenario update "Stagflation" --probability 35 --notes "Sticky inflation + growth slowdown"
+pftui journal scenario update "Stagflation" --probability 35 \
+  --evidence "Sticky core CPI + ISM contraction print"
 pftui journal scenario signal add "Yield curve reinversion" --scenario "Recession"
 pftui journal scenario history "Stagflation" --limit 20 --json
 pftui journal prediction add "Gold outperforms equities into Q2" --symbol GC=F --conviction high --timeframe medium
 pftui journal prediction score --id 42 --outcome correct --lesson "Rates rollovers mattered more than expected"
 pftui journal prediction stats --json
-pftui journal prediction scorecard --date yesterday --timeframe low --json
+pftui journal prediction scorecard --date yesterday --json
 pftui journal notes add "Fed hold keeps real-rate pressure elevated" --section market
 pftui journal notes search "real-rate pressure" --since 2026-03-01 --json
 pftui agent message send "Gold alignment: all 4 layers bullish" --from morning-agent --layer cross
