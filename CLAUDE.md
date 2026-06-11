@@ -21,6 +21,7 @@
 |---|---|
 | **[AGENTS.md](AGENTS.md)** | How agents USE pftui (CLI reference, data model, integration patterns) |
 | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | Code structure, file map, line ranges — READ FIRST before any code change |
+| **[docs/DATA-ARCHITECTURE.md](docs/DATA-ARCHITECTURE.md)** | The DB layer model (L0 ingest → L1 series → L2 derived → L3 ledgers → L4 knowledge) — READ BEFORE adding any table or command that stores data. Every table needs a `docs/db-catalog.toml` entry (enforced by `tests/schema_conformance.rs`) |
 | **[docs/ANALYTICS-SPEC.md](docs/ANALYTICS-SPEC.md)** | Feature specifications for analytics, scenarios, journal |
 | **[docs/EPISTEMICS.md](docs/EPISTEMICS.md)** | The self-checking architecture — independence layer, binding learning loop, scenario/probability discipline, memory consolidation, run-health instrumentation. Read before touching predictions, scenarios, analyst views, or report prompts |
 | **[docs/API-SOURCES.md](docs/API-SOURCES.md)** | Free data source reference — endpoints, rate limits, field mappings |
@@ -47,6 +48,8 @@ This repo is improved by automated hourly cron runs. Each run should:
 **Scoping**: each TODO item is sized for ~1 hour. If a task is bigger, split it into sub-items. If you finish early, pick the next item. Never leave the repo in a broken state (tests failing, partial implementations behind no feature gate).
 
 **Priorities**: P0 (bugs/regressions) → P1 (high-value features/polish) → P2 (nice-to-have) → P3 (speculative). Always work top-down within the highest active priority tier.
+
+**Storage discipline**: any TODO item that adds a table (or any new persistent storage) must be written as a *capability brief*, not a table name: it names the layer (per [docs/DATA-ARCHITECTURE.md](docs/DATA-ARCHITECTURE.md)), the contract (freshness SLA for L0/L1, rebuild function for L2, append-only for L3), and the named consumer that will read the data. Implementation must add the `docs/db-catalog.toml` entry in the same commit, and `cargo test --test schema_conformance` must pass before commit. No consumer = no table.
 
 ## Git
 

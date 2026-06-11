@@ -1,0 +1,798 @@
+# db-catalog.toml — the machine-readable table catalog (R0)
+#
+# Every table the code creates MUST have an entry here with a valid layer.
+# Enforced by tests/schema_conformance.rs. Layer model + rules:
+# docs/DATA-ARCHITECTURE.md. Generated initially by scripts/db_census.py
+# + a classification pass; hand-maintained from now on.
+#
+# layer: L0 ingest | L1 canonical series | L2 derived (rebuildable) |
+#        L3 ledgers (system outputs) | L4 knowledge (curated) | DEAD
+
+[tables.adversary_synthesis_views]
+layer = "L3"
+purpose = "Adversary pseudo-layer's synthesis-time counter-views"
+writers = ["src/db/adversary_synthesis_views.rs"]
+readers = ["src/db/adversary_synthesis_views.rs"]
+
+[tables.adversary_views]
+layer = "L3"
+purpose = "Adversary analyst per-asset counter-views"
+writers = ["src/db/adversary_views.rs"]
+readers = ["src/db/adversary_views.rs"]
+
+[tables.agent_messages]
+layer = "L3"
+purpose = "Inter-agent / agent-to-operator message ledger"
+writers = ["src/db/agent_messages.rs"]
+readers = ["src/db/agent_messages.rs", "src/db/alignment_score.rs", "src/db/thesis_chain_extract.rs"]
+append_only = true
+
+[tables.alerts]
+layer = "L4"
+purpose = "Operator-defined alert rules (price/level/scenario conditions)"
+writers = ["src/alerts/engine.rs", "src/db/alerts.rs", "src/db/scenarios.rs"]
+readers = ["src/db/alerts.rs"]
+
+[tables.alignment_score_history]
+layer = "L3"
+purpose = "Operator-vs-house alignment score over time — 0 rows, never recorded"
+writers = ["src/db/alignment_score.rs"]
+readers = ["src/db/alignment_score.rs"]
+append_only = true
+
+[tables.allocation_targets]
+layer = "L4"
+purpose = "Target allocation percentages per category"
+writers = ["src/db/allocation_targets.rs", "src/db/postgres_schema.rs", "src/db/schema.rs"]
+readers = ["src/db/allocation_targets.rs"]
+
+[tables.analyst_view_history]
+layer = "L3"
+purpose = "Append-only history of every analyst view write (lazily created)"
+writers = ["src/db/analyst_views.rs"]
+readers = ["src/cli.rs", "src/commands/epistemics.rs", "src/db/analyst_views.rs", "src/db/run_health.rs", "src/report/build/daily.rs"]
+append_only = true
+
+[tables.analyst_views]
+layer = "L3"
+purpose = "Current per-analyst per-asset structured view head (upserted; history table is the ledger)"
+writers = ["src/db/analyst_views.rs"]
+readers = ["src/cli.rs", "src/db/analyst_views.rs"]
+
+[tables.annotations]
+layer = "L4"
+purpose = "Chart annotations — dormant, 0 rows"
+writers = ["src/db/annotations.rs"]
+readers = ["src/db/annotations.rs"]
+
+[tables.bls_cache]
+layer = "L0"
+purpose = "Raw BLS series observations (CPI, payrolls) as fetched"
+writers = ["src/db/bls_cache.rs"]
+readers = ["src/commands/status.rs", "src/db/bls_cache.rs"]
+freshness_sla_hours = 720
+
+[tables.broker_connections]
+layer = "L4"
+purpose = "Broker connection configs — dormant, 0 rows"
+writers = ["src/db/broker_connections.rs"]
+readers = ["src/db/broker_connections.rs"]
+
+[tables.calendar_events]
+layer = "L0"
+purpose = "Fetched economic-calendar events cache"
+writers = ["src/db/calendar_cache.rs"]
+readers = ["src/db/calendar_cache.rs"]
+freshness_sla_hours = 72
+
+[tables.calibration_adjustments]
+layer = "L2"
+purpose = "Per-(layer,topic,conviction) discount/boost factors derived from calibration_matrix"
+writers = ["src/db/calibration_adjustments.rs"]
+readers = ["src/db/calibration_adjustments.rs"]
+rebuildable = true
+
+[tables.calibration_matrix]
+layer = "L2"
+purpose = "Trailing hit-rate matrix rebuilt from scored user_predictions; feeds confidence clamps"
+writers = ["src/analytics/calibration_scorer.rs"]
+readers = ["src/analytics/calibration_scorer.rs", "src/commands/predict.rs", "src/db/schema.rs", "src/report/build/daily.rs"]
+rebuildable = true
+
+[tables.capital_flows]
+layer = "L0"
+purpose = "F59 capital-flow ingest scaffold — dormant, 0 rows, provider not wired"
+writers = ["src/db/capital_flows.rs"]
+readers = ["src/db/capital_flows.rs"]
+freshness_sla_hours = 720
+
+[tables.chart_state]
+layer = "L4"
+purpose = "Saved chart UI state (ambiguous: UI state, closest fit curated config; 0 rows)"
+writers = ["src/db/chart_state.rs"]
+readers = ["src/db/chart_state.rs"]
+
+[tables.comex_cache]
+layer = "L0"
+purpose = "COMEX warehouse stocks/deliveries as fetched"
+writers = ["src/db/comex_cache.rs"]
+readers = ["src/db/comex_cache.rs"]
+freshness_sla_hours = 72
+
+[tables.consensus_tracker]
+layer = "L3"
+purpose = "External consensus calls tracked for later scoring"
+writers = ["src/db/consensus.rs"]
+readers = ["src/db/consensus.rs"]
+
+[tables.conviction_durability]
+layer = "DEAD"
+purpose = "No code writer or reader (rows exist via agent raw SQL; only referenced in data_coverage metadata) — R3: migrate or drop"
+writers = []
+readers = []
+
+[tables.convictions]
+layer = "L3"
+purpose = "Per-analyst conviction records over time"
+writers = ["src/db/convictions.rs"]
+readers = ["src/db/convictions.rs"]
+
+[tables.correlation_snapshots]
+layer = "L2"
+purpose = "Pairwise asset correlation grid computed from price_history"
+writers = ["src/db/correlation_snapshots.rs"]
+readers = ["src/db/correlation_snapshots.rs"]
+rebuildable = true
+
+[tables.cot_cache]
+layer = "L0"
+purpose = "CFTC Commitments of Traders weekly report cache"
+writers = ["src/db/cot_cache.rs"]
+readers = ["src/commands/status.rs", "src/db/cot_cache.rs"]
+freshness_sla_hours = 192
+
+[tables.daily_notes]
+layer = "L3"
+purpose = "Authored daily notes ledger (novelty-scored, author-tagged)"
+writers = ["src/db/daily_notes.rs"]
+readers = ["src/db/daily_notes.rs"]
+append_only = true
+
+[tables.debate_rounds]
+layer = "L3"
+purpose = "Bull/bear debate round transcripts (mechanism retired per EPISTEMICS, data retained)"
+writers = ["src/db/debates.rs"]
+readers = ["src/db/debates.rs"]
+append_only = true
+
+[tables.debate_scores]
+layer = "L3"
+purpose = "Debate outcome scores (mechanism retired, 0 rows)"
+writers = ["src/db/debate_scores.rs"]
+readers = ["src/db/debate_scores.rs"]
+
+[tables.debates]
+layer = "L3"
+purpose = "Adversarial debate headers (mechanism retired, data retained)"
+writers = ["src/db/debates.rs"]
+readers = ["src/db/debate_scores.rs", "src/db/debates.rs"]
+
+[tables.dividends]
+layer = "L3"
+purpose = "Dividend receipts ledger — dormant, 0 rows"
+writers = ["src/db/dividends.rs"]
+readers = ["src/db/dividends.rs"]
+append_only = true
+
+[tables.economic_cache]
+layer = "L0"
+purpose = "Generic economic-indicator fetch cache (FRED-style key/value)"
+writers = ["src/db/economic_cache.rs", "src/db/postgres_schema.rs", "src/db/schema.rs"]
+readers = ["src/commands/economy.rs", "src/db/economic_cache.rs", "src/db/postgres_schema.rs", "src/db/schema.rs"]
+freshness_sla_hours = 72
+
+[tables.economic_data]
+layer = "L0"
+purpose = "Brave-fetched economic indicators; quarantine flag lives here (EPISTEMICS 5)"
+writers = ["src/db/economic_data.rs"]
+readers = ["src/commands/economy.rs", "src/db/economic_data.rs"]
+freshness_sla_hours = 72
+
+[tables.event_annotations]
+layer = "L4"
+purpose = "Curated annotations on macro events"
+writers = ["src/db/event_annotations.rs"]
+readers = ["src/db/event_annotations.rs"]
+
+[tables.failure_correlations]
+layer = "L2"
+purpose = "Pairwise co-failure rates between lesson clusters, computed from prediction_lessons"
+writers = ["src/db/failure_correlations.rs"]
+readers = ["src/db/failure_correlations.rs"]
+rebuildable = true
+
+[tables.fedwatch_cache]
+layer = "L0"
+purpose = "CME FedWatch rate-probability fetches"
+writers = ["src/db/fedwatch_cache.rs"]
+readers = ["src/db/fedwatch_cache.rs"]
+freshness_sla_hours = 72
+
+[tables.futures_cache]
+layer = "L0"
+purpose = "Futures quotes fetch cache (lazily created)"
+writers = ["src/db/futures_cache.rs"]
+readers = ["src/db/futures_cache.rs"]
+freshness_sla_hours = 72
+
+[tables.fx_cache]
+layer = "L0"
+purpose = "Spot FX rate fetch cache"
+writers = ["src/db/fx_cache.rs"]
+readers = ["src/db/fx_cache.rs"]
+freshness_sla_hours = 72
+
+[tables.gex_snapshots]
+layer = "L2"
+purpose = "Gamma-exposure summaries derived from options chains — dormant, 0 rows"
+writers = ["src/db/gex_snapshots.rs"]
+readers = ["src/db/gex_snapshots.rs"]
+rebuildable = true
+
+[tables.group_members]
+layer = "L4"
+purpose = "Membership rows for custom asset groups"
+writers = ["src/db/groups.rs"]
+readers = ["src/db/groups.rs"]
+
+[tables.groups]
+layer = "L4"
+purpose = "Custom asset group definitions"
+writers = ["src/db/groups.rs"]
+readers = ["src/commands/movers.rs", "src/db/groups.rs"]
+
+[tables.historical_parallels]
+layer = "L4"
+purpose = "Curated historical-parallel definitions for the parallels engine"
+writers = ["src/db/structural.rs"]
+readers = ["src/db/structural.rs"]
+
+[tables.journal]
+layer = "L3"
+purpose = "Operator/analyst journal: entries, predictions, scenarios commentary"
+writers = ["src/db/journal.rs", "src/web/api.rs"]
+readers = ["src/commands/migrate_journal.rs", "src/db/alignment_score.rs", "src/db/journal.rs"]
+append_only = true
+
+[tables.lesson_citations]
+layer = "L4"
+purpose = "Citations of standing rules / lessons in later analyses"
+writers = ["src/db/lesson_citations.rs"]
+readers = ["src/db/lesson_citations.rs", "src/db/prediction_lessons.rs"]
+
+[tables.lesson_fragment_edges]
+layer = "L2"
+purpose = "Similarity edges between lessons and reasoning fragments (recomputable graph)"
+writers = ["src/db/reasoning_fragments.rs"]
+readers = ["src/db/reasoning_fragments.rs"]
+rebuildable = true
+
+[tables.macro_events]
+layer = "L4"
+purpose = "Curated macro-event catalog (seeded by schema, operator-extendable)"
+writers = ["src/db/macro_events.rs", "src/db/postgres_schema.rs", "src/db/schema.rs"]
+readers = ["src/db/macro_events.rs", "src/db/postgres_schema.rs", "src/db/schema.rs"]
+
+[tables.mirror_sync_state]
+layer = "L2"
+purpose = "Postgres-mirror sync watermarks (infra bookkeeping; rebuildable by full resync)"
+writers = ["src/commands/mirror.rs"]
+readers = ["src/commands/mirror.rs"]
+rebuildable = true
+
+[tables.mobile_timeframe_scores]
+layer = "L2"
+purpose = "Precomputed per-timeframe scores served to the mobile app"
+writers = ["src/db/mobile_timeframe_scores.rs"]
+readers = ["src/db/mobile_timeframe_scores.rs"]
+rebuildable = true
+
+[tables.narrative_money_history]
+layer = "L3"
+purpose = "Scenario news-pressure vs prediction-market movement ledger — WRITE-ONLY: no production reader"
+writers = ["src/db/narrative_money.rs"]
+readers = []
+append_only = true
+
+[tables.narrative_snapshots]
+layer = "L3"
+purpose = "Structured narrative recaps (analytical memory)"
+writers = ["src/db/narrative_snapshots.rs"]
+readers = ["src/db/narrative_snapshots.rs"]
+append_only = true
+
+[tables.news_cache]
+layer = "L0"
+purpose = "RSS/news headline ingest with topic tags"
+writers = ["src/db/news_cache.rs", "src/db/news_topic_markets.rs"]
+readers = ["src/commands/status.rs", "src/db/news_cache.rs", "src/db/news_silence.rs", "src/db/news_source_accuracy.rs", "src/db/news_topic_markets.rs", "src/db/user_predictions.rs"]
+freshness_sla_hours = 72
+
+[tables.news_silence_baselines]
+layer = "L2"
+purpose = "Rolling weekday topic-volume baselines computed from news_cache"
+writers = ["src/db/news_silence.rs"]
+readers = ["src/db/news_silence.rs"]
+rebuildable = true
+
+[tables.news_source_accuracy]
+layer = "L3"
+purpose = "Per-source/topic hit-rate ledger head — 0 rows, loop not yet exercised"
+writers = ["src/db/news_source_accuracy.rs"]
+readers = ["src/db/news_source_accuracy.rs"]
+
+[tables.news_source_accuracy_events]
+layer = "L3"
+purpose = "Individual accuracy-scoring events behind news_source_accuracy"
+writers = ["src/db/news_source_accuracy.rs"]
+readers = ["src/db/news_source_accuracy.rs"]
+append_only = true
+
+[tables.news_source_tiers]
+layer = "L4"
+purpose = "Curated source credibility tiers"
+writers = ["src/db/news_cache.rs"]
+readers = ["src/db/news_cache.rs"]
+
+[tables.news_topic_market_seed_state]
+layer = "L2"
+purpose = "One-row bookkeeping: whether topic->market seed bindings were applied"
+writers = ["src/db/news_topic_markets.rs"]
+readers = ["src/db/news_topic_markets.rs"]
+rebuildable = true
+
+[tables.news_topic_markets]
+layer = "L4"
+purpose = "Curated news-topic -> prediction-market bindings"
+writers = ["src/db/news_topic_markets.rs"]
+readers = ["src/db/news_topic_markets.rs"]
+
+[tables.onchain_cache]
+layer = "L0"
+purpose = "On-chain metrics (BTC) fetch cache"
+writers = ["src/db/onchain_cache.rs"]
+readers = ["src/db/onchain_cache.rs"]
+freshness_sla_hours = 72
+
+[tables.operator_replies]
+layer = "L3"
+purpose = "Operator replies to agent questions (Step-11 interview captures)"
+writers = ["src/db/operator_replies.rs"]
+readers = ["src/db/alignment_score.rs", "src/db/operator_replies.rs"]
+append_only = true
+
+[tables.opportunity_cost]
+layer = "L3"
+purpose = "Recorded opportunity-cost analyses of past decisions"
+writers = ["src/db/opportunity_cost.rs"]
+readers = ["src/db/opportunity_cost.rs"]
+
+[tables.options_chain_snapshots]
+layer = "L0"
+purpose = "Raw Yahoo options-chain snapshots — dormant, 0 rows"
+writers = ["src/db/options_chain_snapshots.rs"]
+readers = ["src/db/options_chain_snapshots.rs"]
+freshness_sla_hours = 72
+
+[tables.pftui_migrations]
+layer = "L2"
+purpose = "Postgres-side migration ledger (infra bookkeeping, postgres backend only; closest fit L2)"
+writers = ["src/db/postgres_schema.rs"]
+readers = []
+rebuildable = true
+
+[tables.portfolio_allocations]
+layer = "L4"
+purpose = "Manual allocation-percentage mode entries"
+writers = ["src/commands/setup.rs", "src/db/allocations.rs"]
+readers = ["src/commands/setup.rs", "src/db/allocations.rs"]
+
+[tables.portfolio_snapshots]
+layer = "L2"
+purpose = "Daily portfolio-value snapshots; rebuildable from transactions + price_history (LOCF)"
+writers = ["src/db/snapshots.rs"]
+readers = ["src/db/snapshots.rs"]
+rebuildable = true
+
+[tables.position_snapshots]
+layer = "L2"
+purpose = "Daily per-position snapshots; rebuildable from transactions + price_history"
+writers = ["src/db/snapshots.rs"]
+readers = ["src/db/snapshots.rs"]
+rebuildable = true
+
+[tables.power_flows]
+layer = "L3"
+purpose = "Dixon power-flow shift events ledger"
+writers = ["src/db/power_flows.rs"]
+readers = ["src/db/power_flows.rs"]
+append_only = true
+
+[tables.power_metrics]
+layer = "L4"
+purpose = "Dixon power-flow metric definitions and current scores (curated)"
+writers = ["src/db/structural.rs"]
+readers = ["src/db/structural.rs"]
+
+[tables.power_metrics_history]
+layer = "L3"
+purpose = "Append-only history of power-metric scores"
+writers = ["src/db/structural.rs"]
+readers = ["src/db/structural.rs"]
+append_only = true
+
+[tables.prediction_cache]
+layer = "DEAD"
+purpose = "0 rows, 0 external call sites; superseded by predictions_cache — R3: drop module + table"
+writers = ["src/db/prediction_cache.rs"]
+readers = ["src/db/prediction_cache.rs"]
+
+[tables.prediction_falsification_rules]
+layer = "L3"
+purpose = "Deterministic SUCCESS conditions parsed from --falsify; drives auto-scoring"
+writers = ["src/db/prediction_falsification_rules.rs"]
+readers = ["src/db/prediction_falsification_rules.rs", "src/db/preflight.rs"]
+
+[tables.prediction_lessons]
+layer = "L4"
+purpose = "Structured lessons distilled from wrong predictions"
+writers = ["src/db/prediction_lessons.rs"]
+readers = ["src/db/adversary.rs", "src/db/clusters.rs", "src/db/prediction_lessons.rs", "src/db/preflight.rs", "src/db/reasoning_fragments.rs", "src/db/thesis_chain_extract.rs"]
+
+[tables.prediction_market_contracts]
+layer = "L0"
+purpose = "Fetched prediction-market contract metadata + prices"
+writers = ["src/db/prediction_contracts.rs"]
+readers = ["src/db/news_topic_markets.rs", "src/db/prediction_contracts.rs", "src/db/scenario_contract_mappings.rs"]
+freshness_sla_hours = 72
+
+[tables.predictions_cache]
+layer = "L0"
+purpose = "Polymarket market-odds fetch cache"
+writers = ["src/db/predictions_cache.rs"]
+readers = ["src/db/predictions_cache.rs"]
+freshness_sla_hours = 72
+
+[tables.predictions_history]
+layer = "L1"
+purpose = "Prediction-market probability-by-date series — dormant, 0 rows"
+writers = ["src/db/predictions_history.rs"]
+readers = ["src/db/predictions_history.rs"]
+freshness_sla_hours = 72
+
+[tables.price_cache]
+layer = "L0"
+purpose = "Latest spot price per symbol (Yahoo/CoinGecko)"
+writers = ["src/commands/setup.rs", "src/db/price_cache.rs"]
+readers = ["src/commands/doctor.rs", "src/commands/setup.rs", "src/db/price_cache.rs"]
+freshness_sla_hours = 72
+
+[tables.price_history]
+layer = "L1"
+purpose = "Canonical daily OHLC close series per symbol — backbone of all derived layers"
+writers = ["src/commands/setup.rs", "src/db/price_history.rs"]
+readers = ["src/cli.rs", "src/commands/analytics.rs", "src/commands/doctor.rs", "src/commands/predict.rs", "src/commands/setup.rs", "src/commands/views_stale.rs", "src/db/price_history.rs", "src/db/recommendations.rs", "src/db/run_health.rs"]
+freshness_sla_hours = 72
+
+[tables.real_yields_history]
+layer = "L1"
+purpose = "Daily real-yield/TIPS/breakeven series"
+writers = ["src/db/real_yields_history.rs"]
+readers = ["src/db/real_yields_history.rs", "src/db/thesis_dependencies.rs"]
+freshness_sla_hours = 72
+
+[tables.reasoning_fragments]
+layer = "L4"
+purpose = "Reusable reasoning fragments (knowledge graph nodes)"
+writers = ["src/db/reasoning_fragments.rs"]
+readers = ["src/db/reasoning_fragments.rs"]
+
+[tables.recommendation_outcomes]
+layer = "L3"
+purpose = "Scored outcomes of past recommendations — 0 rows, loop not yet exercised"
+writers = ["src/db/recommendations.rs"]
+readers = ["src/commands/recommendations.rs", "src/db/recommendations.rs"]
+append_only = true
+
+[tables.recommendations]
+layer = "L3"
+purpose = "System recommendations ledger (buy/sell/hold with rationale)"
+writers = ["src/db/recommendations.rs"]
+readers = ["src/db/recommendations.rs"]
+
+[tables.regime_history]
+layer = "L2"
+purpose = "Daily regime-classification record derived from regime inputs"
+writers = ["src/db/regime_history.rs"]
+readers = ["src/db/regime_history.rs"]
+rebuildable = true
+
+[tables.regime_overrides]
+layer = "L4"
+purpose = "Operator overrides of regime classification (lazily created)"
+writers = ["src/db/regime_overrides.rs"]
+readers = ["src/db/regime_overrides.rs"]
+
+[tables.regime_snapshots]
+layer = "L2"
+purpose = "Point-in-time regime signal scores derived from market data"
+writers = ["src/db/regime_snapshots.rs"]
+readers = ["src/db/regime_snapshots.rs"]
+rebuildable = true
+
+[tables.research_questions]
+layer = "L4"
+purpose = "Open research question backlog — dormant, 0 rows"
+writers = ["src/db/research_questions.rs"]
+readers = ["src/db/research_questions.rs"]
+
+[tables.risk_factor_mappings]
+layer = "L4"
+purpose = "Curated asset -> risk-factor mappings — dormant, 0 rows"
+writers = ["src/db/risk_factor_mappings.rs"]
+readers = ["src/db/risk_factor_mappings.rs"]
+
+[tables.rss_feed_health]
+layer = "L0"
+purpose = "Per-feed RSS fetch health bookkeeping (no SLA — it IS the freshness record)"
+writers = ["src/db/rss_feed_health.rs"]
+readers = ["src/db/rss_feed_health.rs"]
+
+[tables.run_health]
+layer = "L3"
+purpose = "Per-report-run epistemic instrumentation — 0 rows, EPISTEMICS spine never recorded"
+writers = ["src/db/run_health.rs"]
+readers = ["src/db/run_health.rs"]
+append_only = true
+
+[tables.scan_alert_state]
+layer = "L2"
+purpose = "Scan-query alert dedup/cooldown state (alert engine bookkeeping)"
+writers = ["src/alerts/engine.rs"]
+readers = ["src/alerts/engine.rs"]
+rebuildable = true
+
+[tables.scan_queries]
+layer = "L4"
+purpose = "Saved market-scan query definitions"
+writers = ["src/db/scan_queries.rs"]
+readers = ["src/db/scan_queries.rs"]
+
+[tables.scenario_branches]
+layer = "L3"
+purpose = "Conditional branch definitions under scenarios"
+writers = ["src/db/scenarios.rs"]
+readers = ["src/db/scenarios.rs"]
+
+[tables.scenario_contract_mappings]
+layer = "L4"
+purpose = "Curated scenario -> prediction-market contract bindings"
+writers = ["src/db/scenario_contract_mappings.rs"]
+readers = ["src/db/scenario_contract_mappings.rs"]
+
+[tables.scenario_history]
+layer = "L3"
+purpose = "Scenario probability time series (ledger)"
+writers = ["src/db/scenario_contract_mappings.rs", "src/db/scenarios.rs"]
+readers = ["src/db/regime_history.rs", "src/db/scenarios.rs"]
+append_only = true
+
+[tables.scenario_impacts]
+layer = "L3"
+purpose = "Per-scenario portfolio impact estimates"
+writers = ["src/db/scenarios.rs"]
+readers = ["src/db/scenarios.rs"]
+
+[tables.scenario_indicators]
+layer = "L3"
+purpose = "Indicator readings attached to scenarios"
+writers = ["src/db/scenarios.rs"]
+readers = ["src/db/scenarios.rs"]
+
+[tables.scenario_prediction_links]
+layer = "L3"
+purpose = "Scenario <-> prediction links — populated via agent raw SQL, no code writer; readers in preflight/backtest"
+writers = []
+readers = ["src/commands/backtest_scenario.rs", "src/db/preflight.rs"]
+append_only = true
+
+[tables.scenario_signals]
+layer = "L3"
+purpose = "Signal events attached to scenarios"
+writers = ["src/db/scenarios.rs"]
+readers = ["src/db/scenarios.rs"]
+
+[tables.scenario_updates]
+layer = "L3"
+purpose = "Evidence-stamped scenario probability update ledger (delta caps, proposer)"
+writers = ["src/db/scenarios.rs"]
+readers = ["src/cli.rs", "src/db/scenarios.rs"]
+append_only = true
+
+[tables.scenarios]
+layer = "L3"
+purpose = "Scenario heads: name, probability, thesis (mutated only via guarded update path)"
+writers = ["src/db/scenarios.rs", "src/db/schema.rs"]
+readers = ["src/commands/backtest_scenario.rs", "src/db/preflight.rs", "src/db/regime_history.rs", "src/db/scenario_contract_mappings.rs", "src/db/scenarios.rs", "src/db/schema.rs"]
+
+[tables.sentiment_cache]
+layer = "L0"
+purpose = "Latest sentiment gauge values (Fear&Greed etc.) as fetched"
+writers = ["src/db/sentiment_cache.rs"]
+readers = ["src/db/sentiment_cache.rs"]
+freshness_sla_hours = 72
+
+[tables.sentiment_history]
+layer = "L1"
+purpose = "Daily sentiment-gauge series (incl. crypto F&G backfill)"
+writers = ["src/db/sentiment_cache.rs"]
+readers = ["src/db/sentiment_cache.rs"]
+freshness_sla_hours = 72
+
+[tables.situation_snapshots]
+layer = "L3"
+purpose = "Persisted situation-room baselines for delta detection"
+writers = ["src/db/situation_snapshots.rs"]
+readers = ["src/db/situation_snapshots.rs"]
+append_only = true
+
+[tables.sources_registry]
+layer = "L4"
+purpose = "Registry of data/intel sources with review dates"
+writers = ["src/db/sources_registry.rs"]
+readers = ["src/db/sources_registry.rs"]
+
+[tables.standing_rules]
+layer = "L4"
+purpose = "Operational standing rules consolidated from lessons (EPISTEMICS 2)"
+writers = ["src/db/standing_rules.rs"]
+readers = ["src/db/standing_rules.rs"]
+
+[tables.structural_cycles]
+layer = "L4"
+purpose = "Curated long-cycle framework definitions (Dalio/Fourth Turning)"
+writers = ["src/db/structural.rs"]
+readers = ["src/db/structural.rs"]
+
+[tables.structural_log]
+layer = "L3"
+purpose = "Structural-framework observation log"
+writers = ["src/db/structural.rs"]
+readers = ["src/db/structural.rs"]
+append_only = true
+
+[tables.structural_outcome_history]
+layer = "L3"
+purpose = "History of structural-outcome probability updates"
+writers = ["src/db/structural.rs"]
+readers = ["src/db/structural.rs"]
+append_only = true
+
+[tables.structural_outcomes]
+layer = "L3"
+purpose = "Structural-framework outcome heads with current probabilities"
+writers = ["src/db/structural.rs"]
+readers = ["src/db/structural.rs"]
+
+[tables.technical_levels]
+layer = "L2"
+purpose = "Market-structure levels (support/resistance/MA/swing) computed from price_history"
+writers = ["src/db/technical_levels.rs"]
+readers = ["src/db/technical_levels.rs"]
+rebuildable = true
+
+[tables.technical_signals]
+layer = "L2"
+purpose = "Precomputed per-symbol signal events (RSI, MACD cross, BB squeeze...)"
+writers = ["src/db/technical_signals.rs"]
+readers = ["src/db/technical_signals.rs"]
+rebuildable = true
+
+[tables.technical_snapshots]
+layer = "L2"
+purpose = "Per-symbol-per-day technical indicator values computed from price_history"
+writers = ["src/db/technical_snapshots.rs"]
+readers = ["src/db/technical_snapshots.rs"]
+rebuildable = true
+
+[tables.thesis]
+layer = "L4"
+purpose = "Standing thesis rows with review dates"
+writers = ["src/db/thesis.rs"]
+readers = ["src/db/thesis.rs", "src/db/thesis_chain_extract.rs"]
+
+[tables.thesis_citations]
+layer = "DEAD"
+purpose = "No code writer or reader (5136 rows written via agent raw SQL) — R3: adopt with a code path or archive"
+writers = []
+readers = []
+
+[tables.thesis_dependencies]
+layer = "L4"
+purpose = "Dependency edges between thesis rows"
+writers = ["src/db/thesis_dependencies.rs"]
+readers = ["src/db/thesis_chain_extract.rs", "src/db/thesis_dependencies.rs"]
+
+[tables.thesis_history]
+layer = "L4"
+purpose = "Edit history of thesis rows"
+writers = ["src/db/thesis.rs"]
+readers = ["src/db/thesis.rs"]
+
+[tables.timeframe_signals]
+layer = "L2"
+purpose = "Per-timeframe aggregated signal scores derived from technicals"
+writers = ["src/db/timeframe_signals.rs"]
+readers = ["src/db/timeframe_signals.rs"]
+rebuildable = true
+
+[tables.transactions]
+layer = "L3"
+purpose = "Operator buy/sell/cash transaction ledger — the portfolio's source of truth"
+writers = ["src/commands/demo.rs", "src/commands/set_cash.rs", "src/commands/setup.rs", "src/db/broker_connections.rs", "src/db/transactions.rs"]
+readers = ["src/commands/analyst_views.rs", "src/commands/epistemics.rs", "src/commands/options.rs", "src/commands/set_cash.rs", "src/commands/setup.rs", "src/db/broker_connections.rs", "src/db/transactions.rs", "src/report/build/daily.rs"]
+
+[tables.trend_asset_impact]
+layer = "L4"
+purpose = "Curated trend -> asset impact mappings"
+writers = ["src/db/trends.rs"]
+readers = ["src/db/trends.rs"]
+
+[tables.trend_evidence]
+layer = "L3"
+purpose = "Evidence entries logged against tracked trends"
+writers = ["src/db/trends.rs"]
+readers = ["src/db/trends.rs"]
+append_only = true
+
+[tables.trend_tracker]
+layer = "L4"
+purpose = "Curated long-term trend definitions"
+writers = ["src/db/trends.rs"]
+readers = ["src/db/trends.rs"]
+
+[tables.triggered_alerts]
+layer = "L3"
+purpose = "Ledger of alert firings"
+writers = ["src/db/scenarios.rs", "src/db/triggered_alerts.rs"]
+readers = ["src/db/triggered_alerts.rs"]
+append_only = true
+
+[tables.user_predictions]
+layer = "L3"
+purpose = "Falsifiable prediction ledger (auto-scored against price_history)"
+writers = ["src/db/user_predictions.rs"]
+readers = ["src/analytics/calibration_scorer.rs", "src/cli.rs", "src/commands/backtest_scenario.rs", "src/db/clusters.rs", "src/db/news_cache.rs", "src/db/news_source_accuracy.rs", "src/db/prediction_falsification_rules.rs", "src/db/prediction_lessons.rs", "src/db/preflight.rs", "src/db/run_health.rs", "src/db/user_predictions.rs"]
+
+[tables.watchlist]
+layer = "L4"
+purpose = "Curated watchlist symbols"
+writers = ["src/commands/demo.rs", "src/db/watchlist.rs", "src/web/api.rs"]
+readers = ["src/cli.rs", "src/db/watchlist.rs", "src/main.rs"]
+
+[tables.watchlist_groups]
+layer = "L4"
+purpose = "Watchlist group definitions"
+writers = ["src/db/schema.rs"]
+readers = ["src/db/watchlist_groups.rs"]
+
+[tables.worldbank_cache]
+layer = "L0"
+purpose = "World Bank indicator fetches"
+writers = ["src/db/worldbank_cache.rs"]
+readers = ["src/commands/status.rs", "src/db/worldbank_cache.rs"]
+freshness_sla_hours = 2160
+
+# Live-DB-only tables NOT created by any code path (legacy candidates for R3).
+# Census 2026-06-11: none — every live table is code-created.
+[legacy]
