@@ -14,6 +14,7 @@ mod notify;
 mod price;
 mod regime;
 mod report;
+mod research;
 mod tui;
 mod web;
 
@@ -5652,6 +5653,43 @@ fn run_cli(cli: Cli) -> Result<()> {
                     commands::flows::summary(&backend, since, json)
                 }
             },
+        },
+
+        // Research harness (R1a): signal registry + event-study engine.
+        Some(Command::Research { command }) => match command {
+            cli::ResearchCommand::Signals { command } => match command {
+                cli::ResearchSignalsCommand::List { json } => {
+                    commands::research_harness::run_signals_list(json)
+                }
+            },
+            cli::ResearchCommand::Backtest {
+                signal,
+                asset,
+                as_of,
+                json,
+            } => commands::research_harness::run_backtest(
+                &backend,
+                signal.as_deref(),
+                asset.as_deref(),
+                as_of.as_deref(),
+                json,
+            ),
+            cli::ResearchCommand::Expectancy {
+                signal,
+                asset,
+                json,
+            } => commands::research_harness::run_expectancy(
+                &backend,
+                signal.as_deref(),
+                asset.as_deref(),
+                json,
+            ),
+            cli::ResearchCommand::Events {
+                signal,
+                asset,
+                limit,
+                json,
+            } => commands::research_harness::run_events(&backend, &signal, &asset, limit, json),
         },
     };
 

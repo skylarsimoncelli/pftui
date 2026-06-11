@@ -146,3 +146,43 @@ classification, not orphaned schema.
   (`recommendation_outcomes`, `news_source_accuracy`, `alignment_score_history`,
   `dividends`, `gex_snapshots`, ...). Empty + wired ≠ DEAD, but each one is a
   promised loop that has never closed.
+
+## Research harness (R1a) — the L2 expectancy flow
+
+The research harness (`src/research/`) is the first module built ON the layer
+model rather than retrofitted into it:
+
+```
+price_history (L1)
+      |
+      v
+AssetContext::build  — one pass per asset: market-structure walks (daily +
+      |                weekly), one Cyber engine run, one cycle-engine run,
+      |                SMA200/RSI14 (src/research/registry.rs)
+      v
+signal emitters      — ~27 canonical (id, version, description, emitter)
+      |                rows; dated EVENTS = state transitions, never states
+      v
+event_study::study   — forward returns at 5/30/90/180d vs the asset's own
+      |                baseline drift; MAE/MFE; overlap exclusion; exact
+      |                binomial significance vs the baseline up-rate; era +
+      |                200dma-regime splits (src/research/event_study.rs)
+      v
+signal_expectancy (L2, rebuildable = true)
+      |                PK (signal_id, signal_version, asset, horizon, as_of)
+      v
+readers: `pftui research expectancy/events`, the report per-asset card's
+"Signal expectancy" line (fires-in-last-10-days citation)
+```
+
+Layer contract: `signal_expectancy` is a CACHE — dropping it loses nothing;
+`pftui research backtest` rebuilds it deterministically from `price_history`.
+Walk-forward discipline: emitters date events at the bar where the transition
+became observable; `study()` only admits events `<= as_of` whose forward
+window fully resolved by `as_of`; persisted rows carry that `as_of`, so a
+report citation can never lean on data that did not exist. Emitter logic
+changes MUST bump the signal's version string — stats bind to
+`(signal_id, signal_version)` and stale stats are never cited against a
+changed definition. Documented parameter-snapshot exceptions (cycle
+timing-band percentiles and FLD offset come from the engine's
+as-of-truncated full-sample stats) live in the `registry.rs` module docs.

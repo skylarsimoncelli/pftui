@@ -304,6 +304,11 @@ fn render_levels(intelligence: Option<&AssetIntelligenceBlob>) -> Option<String>
     if let Some(cyber) = blob.cyber_verdict_daily.as_deref() {
         bullets.push(format!("Cyber: {cyber}"));
     }
+    // Measured expectancy for signals that fired in the last 10 days
+    // (auto-skipped when nothing fired or no stats are persisted).
+    if let Some(exp) = blob.signal_expectancy.as_deref() {
+        bullets.push(format!("Signal expectancy: {exp}"));
+    }
     if let Some(pos) = blob.range_52w_position {
         bullets.push(format!("52w range position: {pos:.1}%"));
     }
@@ -480,6 +485,10 @@ mod tests {
                 ),
                 cyber_verdict_daily: Some(
                     "CYBER (daily): QB bearish since 2026-05-20 (14 bars) | line down, price below"
+                        .to_string(),
+                ),
+                signal_expectancy: Some(
+                    "structure_weekly_flip_down fired Jun-07: n=41 since 2014, 90d mean -2.1% vs baseline +2.0% (lift -4.1pp), MAE mean -9.8%"
                         .to_string(),
                 ),
             },
