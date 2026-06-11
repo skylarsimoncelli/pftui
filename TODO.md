@@ -6,6 +6,11 @@
 
 ## P1 - Bugs/Regressions
 
+### Yahoo fetch must never query bare crypto symbols (BTC equity-ticker collision)
+**Source:** 2026-06-11 price audit + repair. The canonical `BTC` series contained 237 rows of Yahoo's EQUITY ticker "BTC" (~$28-55) because some Yahoo fetch/backfill path queries the bare symbol instead of mapping crypto symbols to their `-USD` Yahoo tickers. Rows archived + deleted; the #907 ingest guard now rejects future collisions loudly (>20% d/d uncorroborated), but the mis-mapped fetch will retry and spam rejections every refresh. Find the path (grep yahoo fetch/backfill callers for symbol pass-through), add a crypto-symbol→Yahoo-ticker mapping (BTC→BTC-USD, ETH→ETH-USD; reuse the deep_alias machinery in series_registry), and a regression test that bare "BTC" never reaches the Yahoo URL builder. Layer: L0 ingest. Consumer: price_history integrity. Surfaces: CLI refresh output only.
+**Why:** symbol-collision corruption poisoned 52w ranges and long-window computations on the canonical series for months without detection until today's audit.
+
+
 ### CLI Perfection Program
 **Source:** Operator directive 2026-06-11 ("the CLI must be 100% how you want it — actually great, empowering future agents"). Full mechanical audit (498 help nodes, 403 leaves flag-fingerprinted, ~40 JSON shapes sampled, error paths probed) scoped in **docs/CLI-DESIGN.md** — the canonical design doctrine all items below implement against. Items are dependency-ordered: C1 (vocab) before C2/C3 (paths/flags), C5 before C6 (JSON phases), C9 (doc sweep) last in-repo, C10 orchestrator-side. No new tables anywhere in the program — the "layer" for these briefs is the CLI surface contract itself; the named consumers are the agent routines (`agents/routines/`), report-prompt phases (`agents/report-prompts/`), the `/pftui-report` skill, and `scripts/`.
 
