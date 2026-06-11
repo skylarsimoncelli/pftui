@@ -72,11 +72,9 @@ CARD_JSON=$(jq -nc '{
   what_would_change_it: "<measurable trigger>",
   sizing_math: "<e.g. drift 0.39pp x portfolio 350k = $1,400 to add at $4,386 = 0.32 oz GLD-equiv>"
 }')
-sqlite3 "$DB" "INSERT INTO agent_messages
-  (from_agent, to_agent, priority, content, category, layer, acknowledged, created_at)
-  VALUES ('analyst-decisions', 'synthesis', 'high',
-          '$(printf %s "$CARD_JSON" | sed "s/'/''/g")',
-          'decision-card', 'cross', 0, datetime('now'))"
+pftui agent message send "$CARD_JSON" \
+  --from analyst-decisions --to synthesis --priority high \
+  --category decision-card --layer cross
 ```
 
 Aim for 3-8 cards per run. Quality over quantity — if the convergence is genuinely insufficient-views or neutral, write a "WAIT" card with the missing input as the recommendation.
@@ -103,7 +101,7 @@ The entry price is auto-filled from the latest close (`GC=F`/`SI=F`/`BTC-USD` se
 
 **Size every card in NET-WORTH terms, not just asset-percentage terms.** Use the operator's own risk math (portfolio total + cash % from `pftui portfolio status --json`), not only single-asset stats. Don't stop at "BTC 7d EV -0.9%" — also state what a leg of the proposed size risks against the whole book if it draws down: e.g. "a +X pp BTC add risks ~Y% of total net worth if BTC flushes -Z%." Mirror the operator's stated framing — "46% cash means a -25% BTC flush is ~1.5% of net worth" — so downside is legible at the portfolio level. Fold this into the `sizing_math` field (and `evidence_against` where the net-worth hit is the real argument against).
 
-**Critical:** the card row's `category` must be `decision-card` (NOT `signal`) — hence the raw-SQL write above. A previous run wrote with `signal`, which caused the cards to dump raw JSON into the Cross-Layer Signals section.
+**Critical:** the card row's `category` must be `decision-card` (NOT `signal`) — the report's decision-card loader filters on it, and a previous run that wrote `signal` dumped raw JSON into the Cross-Layer Signals section. The CLI validator accepts `decision-card` as of 2026-06-11.
 
 # Return
 

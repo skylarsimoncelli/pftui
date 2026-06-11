@@ -17,9 +17,9 @@ fn validate_priority(priority: &str) -> Result<()> {
 
 fn validate_category(category: &str) -> Result<()> {
     match category {
-        "signal" | "feedback" | "alert" | "handoff" | "escalation" => Ok(()),
+        "signal" | "feedback" | "alert" | "handoff" | "escalation" | "decision-card" => Ok(()),
         _ => bail!(
-            "invalid category '{}'. Valid: signal, feedback, alert, handoff, escalation",
+            "invalid category '{}'. Valid: signal, feedback, alert, handoff, escalation, decision-card",
             category
         ),
     }
@@ -408,6 +408,21 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::db::schema::run_migrations(&conn).unwrap();
         BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn decision_card_category_is_valid() {
+        // The report's decision-card loader filters agent_messages on
+        // category='decision-card'; the validator rejecting it made the
+        // documented Phase-4 write impossible (found by the 2026-06-11 docs
+        // sweep). The category must stay valid as long as the loader exists.
+        assert!(validate_category("decision-card").is_ok());
+    }
+
+    #[test]
+    fn unknown_category_still_rejected() {
+        assert!(validate_category("panel").is_err());
+        assert!(validate_category("steelman").is_err());
     }
 
     #[test]

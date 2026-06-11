@@ -32,7 +32,7 @@ pub enum AgentMessageCommand {
         #[arg(long)]
         priority: Option<String>,
 
-        /// Category: signal, feedback, alert, handoff, escalation
+        /// Category: signal, feedback, alert, handoff, escalation, decision-card
         #[arg(long)]
         category: Option<String>,
 
