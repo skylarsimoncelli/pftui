@@ -43,7 +43,7 @@ use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 use crate::models::price::{HistoryRecord, PriceQuote};
 use crate::notify;
-use crate::price::{coingecko, yahoo};
+use crate::price::{coingecko, geckoterminal, mempool, yahoo};
 use crate::tui::views::economy;
 
 /// Maximum number of concurrent Yahoo Finance API requests.
@@ -791,15 +791,224 @@ async fn fetch_yahoo_price_with_timeout(sym: &str) -> Result<PriceQuote, String>
     }
 }
 
-/// Fetch prices for all given symbols and return the results.
+// ── Last-resort SPOT-ONLY fallbacks (redundant price sources) ───────────────
+//
+// Yahoo stays primary (OHLCV + history). These sources fire only when every
+// primary fetch for the symbol failed during `data refresh`:
+//   BTC:  coingecko → yahoo → mempool.space   (third in chain)
+//   gold: yahoo → GeckoTerminal XAUt/USDT pool (on-chain proxy, see
+//         src/price/geckoterminal.rs for the XAUT-proxy caveat)
+// Every fallback price passes a divergence guard against the last stored
+// close before it is allowed into price_cache/price_history.
+
+/// Maximum % a fallback spot price may diverge from the last stored close.
+/// Beyond this the price is REJECTED — a broken proxy must never silently
+/// poison price_history.
+const SPOT_FALLBACK_MAX_DIVERGENCE_PCT: Decimal = dec!(5);
+
+/// Which last-resort spot fallback (if any) serves a given symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpotFallbackSource {
+    /// mempool.space `/api/v1/prices` — BTC/USD spot.
+    MempoolBtc,
+    /// GeckoTerminal XAUt/USDT pool — on-chain proxy for spot gold.
+    GeckoTerminalXaut,
+}
+
+impl SpotFallbackSource {
+    /// Provenance string stored in price_cache.source / price_history.source.
+    fn provenance(self) -> &'static str {
+        match self {
+            SpotFallbackSource::MempoolBtc => "mempool.space",
+            SpotFallbackSource::GeckoTerminalXaut => "geckoterminal-xaut",
+        }
+    }
+}
+
+/// Map a symbol to its spot-only fallback source, if one exists.
+/// BTC (canonical or the BTC-USD deep alias) → mempool.space; the gold
+/// futures series GC=F → GeckoTerminal XAUT pool.
+fn spot_fallback_for_symbol(symbol: &str) -> Option<SpotFallbackSource> {
+    match symbol.to_uppercase().as_str() {
+        "BTC" | "BTC-USD" => Some(SpotFallbackSource::MempoolBtc),
+        "GC=F" => Some(SpotFallbackSource::GeckoTerminalXaut),
+        _ => None,
+    }
+}
+
+/// Select the symbols that still need a last-resort spot fallback after the
+/// primary (and secondary) stages: attempted, fallback-eligible, and absent
+/// from the fetched-quotes set. Primary succeeded → no fallback call.
+fn spot_fallback_targets(
+    symbols: &[(String, AssetCategory)],
+    fetched: &HashSet<String>,
+) -> Vec<(String, SpotFallbackSource)> {
+    symbols
+        .iter()
+        .filter(|(_, cat)| *cat != AssetCategory::Cash)
+        .filter(|(sym, _)| !fetched.contains(sym))
+        .filter_map(|(sym, _)| spot_fallback_for_symbol(sym).map(|src| (sym.clone(), src)))
+        .collect()
+}
+
+/// Divergence guard for fallback spot prices.
+///
+/// - `Ok(Some(pct))` — accepted; pct is the absolute % move vs the last close
+/// - `Ok(None)` — accepted with no stored close to validate against
+/// - `Err(pct)` — REJECTED: diverges more than
+///   [`SPOT_FALLBACK_MAX_DIVERGENCE_PCT`] from the last stored close
+fn check_spot_fallback_divergence(
+    candidate: Decimal,
+    last_close: Option<Decimal>,
+) -> std::result::Result<Option<Decimal>, Decimal> {
+    let last = match last_close {
+        Some(c) if !c.is_zero() => c,
+        _ => return Ok(None),
+    };
+    let pct = ((candidate - last) / last * dec!(100)).abs();
+    if pct > SPOT_FALLBACK_MAX_DIVERGENCE_PCT {
+        Err(pct)
+    } else {
+        Ok(Some(pct))
+    }
+}
+
+/// Last stored close per fallback-eligible symbol — the divergence-guard
+/// baseline, gathered before the async fetch stage.
+fn spot_fallback_last_closes(
+    backend: &BackendConnection,
+    symbols: &[(String, AssetCategory)],
+) -> HashMap<String, Decimal> {
+    let mut map = HashMap::new();
+    for (sym, _) in symbols {
+        if spot_fallback_for_symbol(sym).is_none() {
+            continue;
+        }
+        if let Ok(history) = get_history_backend(backend, sym, 1) {
+            if let Some(rec) = history.last() {
+                map.insert(sym.clone(), rec.close);
+            }
+        }
+    }
+    map
+}
+
+/// Build the summary-line suffix for fallback-sourced quotes, e.g.
+/// `, 2 via fallback: BTC←mempool.space (block 953254), GC=F←geckoterminal-xaut`.
+fn fallback_summary_suffix(notes: &[String]) -> String {
+    if notes.is_empty() {
+        String::new()
+    } else {
+        format!(", {} via fallback: {}", notes.len(), notes.join(", "))
+    }
+}
+
+/// Run the last-resort spot fallbacks for every eligible symbol that has no
+/// live quote yet. Accepted prices are appended to `quotes` (with fallback
+/// provenance in `source`); rejections and failures are appended to `errors`.
+/// Returns human-readable provenance notes for the summary line.
+async fn fetch_spot_fallbacks(
+    symbols: &[(String, AssetCategory)],
+    last_closes: &HashMap<String, Decimal>,
+    quotes: &mut Vec<PriceQuote>,
+    errors: &mut Vec<String>,
+) -> Vec<String> {
+    let fetched: HashSet<String> = quotes
+        .iter()
+        .filter(|q| q.source != "static")
+        .map(|q| q.symbol.clone())
+        .collect();
+
+    let mut notes = Vec::new();
+    for (sym, source) in spot_fallback_targets(symbols, &fetched) {
+        let result = match source {
+            SpotFallbackSource::MempoolBtc => {
+                tokio::time::timeout(PRICE_REQUEST_TIMEOUT, mempool::fetch_btc_spot_usd()).await
+            }
+            SpotFallbackSource::GeckoTerminalXaut => {
+                tokio::time::timeout(PRICE_REQUEST_TIMEOUT, geckoterminal::fetch_xaut_usd()).await
+            }
+        };
+        let price = match result {
+            Ok(Ok(price)) => price,
+            Ok(Err(e)) => {
+                errors.push(format!(
+                    "{}: {} fallback failed: {}",
+                    sym,
+                    source.provenance(),
+                    e
+                ));
+                continue;
+            }
+            Err(_) => {
+                errors.push(format!(
+                    "{}: {} fallback timed out",
+                    sym,
+                    source.provenance()
+                ));
+                continue;
+            }
+        };
+
+        match check_spot_fallback_divergence(price, last_closes.get(&sym).copied()) {
+            Err(pct) => {
+                // Loud quarantine-style rejection — never silently poison
+                // price_history with a dislocated proxy price.
+                errors.push(format!(
+                    "{}: DIVERGENCE GUARD REJECTED {} fallback price {} — {:.2}% from last stored close (limit {}%); not stored",
+                    sym,
+                    source.provenance(),
+                    price,
+                    pct,
+                    SPOT_FALLBACK_MAX_DIVERGENCE_PCT
+                ));
+            }
+            Ok(checked) => {
+                quotes.push(PriceQuote {
+                    symbol: sym.clone(),
+                    price,
+                    currency: "USD".to_string(),
+                    source: source.provenance().to_string(),
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
+                    pre_market_price: None,
+                    post_market_price: None,
+                    post_market_change_percent: None,
+                    previous_close: None,
+                });
+                let mut note = format!("{}←{}", sym, source.provenance());
+                if source == SpotFallbackSource::MempoolBtc {
+                    // Bonus provenance field — best-effort, failure tolerated.
+                    if let Ok(Ok(height)) =
+                        tokio::time::timeout(PRICE_REQUEST_TIMEOUT, mempool::fetch_block_height())
+                            .await
+                    {
+                        note.push_str(&format!(" (block {})", height));
+                    }
+                }
+                if checked.is_none() {
+                    note.push_str(" (no stored close to validate against)");
+                }
+                notes.push(note);
+            }
+        }
+    }
+    notes
+}
+
+/// Fetch prices for all given symbols and return
+/// `(quotes, errors, fallback_notes)`.
 ///
 /// Yahoo Finance requests are limited to [`YAHOO_MAX_CONCURRENT`] in-flight
 /// at a time via a [`tokio::sync::Semaphore`], providing ~4× speedup over
 /// the previous sequential loop while staying well within rate limits.
+///
+/// `last_closes` carries the last stored close per fallback-eligible symbol
+/// and feeds the spot-fallback divergence guard (see [`fetch_spot_fallbacks`]).
 async fn fetch_all_prices(
     symbols: &[(String, AssetCategory)],
     config: &Config,
-) -> (Vec<PriceQuote>, Vec<String>) {
+    last_closes: &HashMap<String, Decimal>,
+) -> (Vec<PriceQuote>, Vec<String>, Vec<String>) {
     use std::sync::Arc;
     use tokio::sync::Semaphore;
 
@@ -917,7 +1126,11 @@ async fn fetch_all_prices(
         }
     }
 
-    (quotes, errors)
+    // Last-resort spot fallbacks for symbols every primary stage missed
+    // (BTC ← mempool.space, GC=F ← GeckoTerminal XAUT), divergence-guarded.
+    let fallback_notes = fetch_spot_fallbacks(symbols, last_closes, &mut quotes, &mut errors).await;
+
+    (quotes, errors, fallback_notes)
 }
 
 struct RefreshLock {
@@ -1638,7 +1851,9 @@ fn run_pipeline(
     };
     if plan.prices && !symbols.is_empty() {
         let price_start = Instant::now();
-        let (quotes, errors) = rt.block_on(fetch_all_prices(&symbols, config));
+        let last_closes = spot_fallback_last_closes(backend, &symbols);
+        let (quotes, errors, fallback_notes) =
+            rt.block_on(fetch_all_prices(&symbols, config, &last_closes));
 
         for quote in &quotes {
             if let Err(e) = upsert_price_backend(backend, quote) {
@@ -1719,18 +1934,25 @@ fn run_pipeline(
             .count();
         let error_count = errors.len();
 
+        let fallback_suffix = fallback_summary_suffix(&fallback_notes);
         if fetched_count > 0 && error_count == 0 {
-            info_ln!(verbose, "✓ Prices ({} symbols)", fetched_count);
+            info_ln!(verbose, "✓ Prices ({} symbols{})", fetched_count, fallback_suffix);
         } else if fetched_count > 0 && error_count > 0 {
             info_ln!(
                 verbose,
-                "⚠ Prices ({}/{} symbols — {} failed)",
+                "⚠ Prices ({}/{} symbols — {} failed{})",
                 fetched_count,
                 total_attempted,
-                error_count
+                error_count,
+                fallback_suffix
             );
         } else {
             info_ln!(verbose, "✗ Prices (no live quotes fetched)");
+        }
+        // Divergence-guard rejections are loud: a dislocated fallback proxy
+        // must never silently poison price_history.
+        for rejection in errors.iter().filter(|e| e.contains("DIVERGENCE GUARD REJECTED")) {
+            warn_ln!(verbose, "⚠ {}", rejection);
         }
         if !errors.is_empty() {
             let sample = errors
@@ -1803,7 +2025,11 @@ fn run_pipeline(
                     error_count, total_attempted
                 ))
             },
-            detail: None,
+            detail: if fallback_notes.is_empty() {
+                None
+            } else {
+                Some(format!("via fallback: {}", fallback_notes.join(", ")))
+            },
         });
 
         // Backfill history for symbols missing sufficient history
@@ -5792,6 +6018,133 @@ mod tests {
     #[test]
     fn yahoo_crypto_symbol_no_double() {
         assert_eq!(yahoo_crypto_symbol("BTC-USD"), "BTC-USD");
+    }
+
+    // ── Spot-fallback chain selection ───────────────────────────────────
+
+    #[test]
+    fn spot_fallback_symbol_mapping() {
+        assert_eq!(
+            spot_fallback_for_symbol("BTC"),
+            Some(SpotFallbackSource::MempoolBtc)
+        );
+        assert_eq!(
+            spot_fallback_for_symbol("btc-usd"),
+            Some(SpotFallbackSource::MempoolBtc)
+        );
+        assert_eq!(
+            spot_fallback_for_symbol("GC=F"),
+            Some(SpotFallbackSource::GeckoTerminalXaut)
+        );
+        // No fallback for anything else — spot-only last resorts, not a
+        // general-purpose price source.
+        assert_eq!(spot_fallback_for_symbol("ETH"), None);
+        assert_eq!(spot_fallback_for_symbol("SPY"), None);
+        assert_eq!(spot_fallback_for_symbol("SI=F"), None);
+    }
+
+    #[test]
+    fn spot_fallback_not_selected_when_primary_succeeded() {
+        let symbols = vec![
+            ("BTC".to_string(), AssetCategory::Crypto),
+            ("GC=F".to_string(), AssetCategory::Commodity),
+        ];
+        // Both symbols have live quotes from the primary chain.
+        let fetched: HashSet<String> = ["BTC", "GC=F"].iter().map(|s| s.to_string()).collect();
+        assert!(spot_fallback_targets(&symbols, &fetched).is_empty());
+    }
+
+    #[test]
+    fn spot_fallback_selected_when_primary_failed() {
+        let symbols = vec![
+            ("BTC".to_string(), AssetCategory::Crypto),
+            ("GC=F".to_string(), AssetCategory::Commodity),
+            ("SPY".to_string(), AssetCategory::Equity),
+        ];
+        // Nothing fetched — BTC and GC=F get fallbacks, SPY has none.
+        let fetched = HashSet::new();
+        let targets = spot_fallback_targets(&symbols, &fetched);
+        assert_eq!(targets.len(), 2);
+        assert!(targets.contains(&("BTC".to_string(), SpotFallbackSource::MempoolBtc)));
+        assert!(targets.contains(&("GC=F".to_string(), SpotFallbackSource::GeckoTerminalXaut)));
+    }
+
+    #[test]
+    fn spot_fallback_only_for_the_failed_symbol() {
+        let symbols = vec![
+            ("BTC".to_string(), AssetCategory::Crypto),
+            ("GC=F".to_string(), AssetCategory::Commodity),
+        ];
+        // BTC succeeded via CoinGecko/Yahoo; only gold needs the fallback.
+        let fetched: HashSet<String> = std::iter::once("BTC".to_string()).collect();
+        let targets = spot_fallback_targets(&symbols, &fetched);
+        assert_eq!(
+            targets,
+            vec![("GC=F".to_string(), SpotFallbackSource::GeckoTerminalXaut)]
+        );
+    }
+
+    #[test]
+    fn spot_fallback_skips_cash() {
+        let symbols = vec![("BTC".to_string(), AssetCategory::Cash)];
+        assert!(spot_fallback_targets(&symbols, &HashSet::new()).is_empty());
+    }
+
+    // ── Divergence guard ────────────────────────────────────────────────
+
+    #[test]
+    fn divergence_guard_accepts_two_percent() {
+        // 62580 → 63831.6 is exactly +2%
+        let res = check_spot_fallback_divergence(dec!(63831.6), Some(dec!(62580)));
+        assert_eq!(res, Ok(Some(dec!(2))));
+    }
+
+    #[test]
+    fn divergence_guard_rejects_six_percent() {
+        // 4000 → 4240 is +6% — REJECTED, never stored
+        let res = check_spot_fallback_divergence(dec!(4240), Some(dec!(4000)));
+        assert_eq!(res, Err(dec!(6)));
+    }
+
+    #[test]
+    fn divergence_guard_rejects_six_percent_down_move() {
+        let res = check_spot_fallback_divergence(dec!(3760), Some(dec!(4000)));
+        assert_eq!(res, Err(dec!(6)));
+    }
+
+    #[test]
+    fn divergence_guard_boundary_five_percent_accepted() {
+        let res = check_spot_fallback_divergence(dec!(4200), Some(dec!(4000)));
+        assert_eq!(res, Ok(Some(dec!(5))));
+    }
+
+    #[test]
+    fn divergence_guard_accepts_without_baseline() {
+        // No stored close (or a zero close) → nothing to validate against.
+        assert_eq!(check_spot_fallback_divergence(dec!(62631), None), Ok(None));
+        assert_eq!(
+            check_spot_fallback_divergence(dec!(62631), Some(Decimal::ZERO)),
+            Ok(None)
+        );
+    }
+
+    // ── Summary-line provenance ─────────────────────────────────────────
+
+    #[test]
+    fn fallback_suffix_empty_when_no_fallbacks() {
+        assert_eq!(fallback_summary_suffix(&[]), "");
+    }
+
+    #[test]
+    fn fallback_suffix_lists_provenance() {
+        let notes = vec![
+            "BTC←mempool.space (block 953254)".to_string(),
+            "GC=F←geckoterminal-xaut".to_string(),
+        ];
+        assert_eq!(
+            fallback_summary_suffix(&notes),
+            ", 2 via fallback: BTC←mempool.space (block 953254), GC=F←geckoterminal-xaut"
+        );
     }
 
     #[test]
