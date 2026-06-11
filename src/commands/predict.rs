@@ -167,6 +167,13 @@ pub const CALIBRATION_CAP_MARGIN: f64 = 0.15;
 /// clamp stated confidence.
 pub const CALIBRATION_CAP_MIN_N: i64 = 8;
 
+/// Confidence ceiling while the predicting layer has an ACTIVE forecast
+/// misalignment on the prediction's symbol (`forecast_misalignments`): a
+/// layer currently on a ≥5 wrong-sign streak does not get to assert high
+/// confidence on the same asset. Composes with the other caps — the most
+/// restrictive wins.
+pub const MISALIGNMENT_CONFIDENCE_CAP: f64 = 0.25;
+
 /// Structured result of parsing a `--falsify` rule string.
 ///
 /// Grammar (deterministic, no LLM):
@@ -2776,6 +2783,67 @@ pub fn run_add_with_preflight(
             }
         }
     }
+
+    // Misalignment clamp (score-reactive): while the predicting layer has an
+    // ACTIVE forecast misalignment on this symbol, confidence is capped at
+    // MISALIGNMENT_CONFIDENCE_CAP. Applied after the other caps on the same
+    // running `effective_confidence`, so the most restrictive cap wins.
+    if let (Some(conf), Some(conn), Some(sym)) =
+        (effective_confidence, backend.sqlite_native(), symbol)
+    {
+        let cap_layer = layer
+            .or(resolved_timeframe.as_deref())
+            .unwrap_or("medium");
+        if let Some(mis) =
+            crate::db::forecast_misalignments::active_for_symbol(conn, cap_layer, sym)?
+        {
+            if conf > MISALIGNMENT_CONFIDENCE_CAP {
+                if override_confidence_cap {
+                    let rationale = cap_rationale.unwrap_or_default().trim().to_string();
+                    let note = format!("[misalignment-cap-override: {rationale}]");
+                    cap_override_note = Some(match cap_override_note {
+                        Some(existing) => format!("{existing} {note}"),
+                        None => note,
+                    });
+                    if !json_output {
+                        println!(
+                            "Misalignment cap overridden: {} has {} consecutive wrong-sign {} forecasts ({} → {}, {:+.1}% cumulative against); rationale recorded.",
+                            mis.layer,
+                            mis.streak_len,
+                            mis.asset,
+                            mis.span_start,
+                            mis.span_end,
+                            mis.cum_realized_against_pct
+                        );
+                    }
+                } else {
+                    effective_confidence = Some(MISALIGNMENT_CONFIDENCE_CAP);
+                    confidence_cap_notes.push(format!(
+                        "misalignment cap: {} has {} consecutive wrong-sign {} forecasts ({} → {}, {:+.1}% cumulative against) — confidence capped from {:.2} to {:.2}",
+                        mis.layer,
+                        mis.streak_len,
+                        mis.asset,
+                        mis.span_start,
+                        mis.span_end,
+                        mis.cum_realized_against_pct,
+                        conf,
+                        MISALIGNMENT_CONFIDENCE_CAP
+                    ));
+                    if !json_output {
+                        println!(
+                            "Misalignment cap: {} has {} consecutive wrong-sign {} forecasts ({:+.1}% cumulative against the calls) — confidence capped at {:.2} (stated {:.2}). Pass --override-confidence-cap --cap-rationale \"...\" to bypass.",
+                            mis.layer,
+                            mis.streak_len,
+                            mis.asset,
+                            mis.cum_realized_against_pct,
+                            MISALIGNMENT_CONFIDENCE_CAP,
+                            conf
+                        );
+                    }
+                }
+            }
+        }
+    }
     let confidence = effective_confidence;
 
     let threshold = preflight_threshold
@@ -4484,6 +4552,154 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("--cap-rationale"));
+    }
+
+    fn seed_active_misalignment(
+        backend: &BackendConnection,
+        layer: &str,
+        asset: &str,
+        streak: i64,
+    ) {
+        let conn = backend.sqlite_native().unwrap();
+        crate::db::forecast_misalignments::ensure_table(conn).unwrap();
+        conn.execute(
+            "INSERT INTO forecast_misalignments
+                (layer, asset, detected_at, streak_len, call, span_start, span_end,
+                 cum_realized_against_pct, status)
+             VALUES (?1, ?2, '2026-06-01 00:00:00', ?3, 'bull',
+                     '2026-04-01', '2026-04-22', -40.5, 'active')",
+            rusqlite::params![layer, asset, streak],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn misalignment_cap_clamps_confidence_on_the_misaligned_symbol() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        // Views are written under the held alias GC=F; the prediction's
+        // medium layer is on an active 7-miss streak there. The test helper
+        // predicts on BTC-USD, so seed BTC to also exercise the -USD twin.
+        seed_active_misalignment(&backend, "medium", "BTC", 7);
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC reclaims the range high",
+            Some(0.7),
+            Some("medium"),
+            Some("BTC close above 90000 by 2026-12-31"),
+            false,
+            None,
+        )
+        .unwrap();
+
+        let row = latest_prediction(&backend);
+        assert_eq!(
+            row.confidence,
+            Some(MISALIGNMENT_CONFIDENCE_CAP),
+            "active misalignment on (medium, BTC) must cap a BTC-USD prediction"
+        );
+    }
+
+    #[test]
+    fn misalignment_cap_composes_with_calibration_cap_most_restrictive_wins() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        // Calibration alone would clamp 0.9 → 0.55; the misalignment cap is
+        // tighter and must win.
+        seed_calibration_cell(&backend, "medium", "crypto", "medium", 10, 0.40);
+        seed_active_misalignment(&backend, "medium", "BTC-USD", 5);
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC reclaims the range high",
+            Some(0.9),
+            Some("medium"),
+            Some("BTC close above 90000 by 2026-12-31"),
+            false,
+            None,
+        )
+        .unwrap();
+
+        let row = latest_prediction(&backend);
+        assert_eq!(row.confidence, Some(MISALIGNMENT_CONFIDENCE_CAP));
+    }
+
+    #[test]
+    fn misalignment_cap_does_not_fire_for_other_layers_or_symbols() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        seed_active_misalignment(&backend, "low", "BTC", 6); // wrong layer
+        seed_active_misalignment(&backend, "medium", "GC=F", 6); // wrong symbol
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC reclaims the range high",
+            Some(0.7),
+            Some("medium"),
+            Some("BTC close above 90000 by 2026-12-31"),
+            false,
+            None,
+        )
+        .unwrap();
+
+        let row = latest_prediction(&backend);
+        assert_eq!(row.confidence, Some(0.7));
+    }
+
+    #[test]
+    fn misalignment_cap_override_keeps_confidence_and_records_rationale() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        seed_active_misalignment(&backend, "medium", "BTC", 7);
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC reclaims the range high",
+            Some(0.7),
+            Some("medium"),
+            Some("BTC close above 90000 by 2026-12-31"),
+            true,
+            Some("streak driven by a single resolved macro shock"),
+        )
+        .unwrap();
+
+        let row = latest_prediction(&backend);
+        assert_eq!(row.confidence, Some(0.7));
+        let criteria = row.resolution_criteria.unwrap_or_default();
+        assert!(
+            criteria.contains("[misalignment-cap-override: streak driven"),
+            "resolution_criteria must carry the rationale, got: {criteria}"
+        );
+    }
+
+    #[test]
+    fn recovered_misalignment_does_not_clamp() {
+        let conn = db::open_in_memory();
+        let backend = BackendConnection::Sqlite { conn };
+        seed_active_misalignment(&backend, "medium", "BTC", 7);
+        backend
+            .sqlite_native()
+            .unwrap()
+            .execute(
+                "UPDATE forecast_misalignments SET status = 'recovered',
+                 recovered_at = '2026-06-05 00:00:00'",
+                [],
+            )
+            .unwrap();
+
+        add_prediction_via_cli_path(
+            &backend,
+            "BTC reclaims the range high",
+            Some(0.7),
+            Some("medium"),
+            Some("BTC close above 90000 by 2026-12-31"),
+            false,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(latest_prediction(&backend).confidence, Some(0.7));
     }
 
     #[test]

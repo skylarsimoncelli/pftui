@@ -269,6 +269,8 @@ mod tests {
             analyst: analyst.to_string(),
             conviction,
             reasoning_summary: "synthetic view".to_string(),
+            probation: false,
+            probation_streak: None,
         }
     }
 }

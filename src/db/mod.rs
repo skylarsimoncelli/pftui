@@ -43,6 +43,7 @@ pub mod economic_cache;
 pub mod economic_data;
 pub mod error;
 pub mod fedwatch_cache;
+pub mod forecast_misalignments;
 pub mod futures_cache;
 pub mod fx_cache;
 pub mod groups;

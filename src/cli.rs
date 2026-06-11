@@ -4113,6 +4113,12 @@ pub enum AnalyticsEpistemicsCommand {
         /// Max |Pearson r| between any canonical layer's conviction trajectory and the matching held asset's closes (derived from analyst_view_history × price_history over 90d when omitted)
         #[arg(long = "conviction-price-corr")]
         conviction_price_corr: Option<f64>,
+        /// Overall scored direction-hit rate 0-1 (derived from the trailing 30d of forecast_scores when omitted)
+        #[arg(long = "forecast-hit-rate")]
+        forecast_hit_rate: Option<f64>,
+        /// Count of active forecast misalignments (derived from forecast_misalignments when omitted)
+        #[arg(long = "active-misalignments")]
+        active_misalignments: Option<i64>,
         #[arg(long)]
         json: bool,
     },
@@ -6314,6 +6320,30 @@ pub enum ResearchCommand {
         #[command(subcommand)]
         command: ResearchForecastsCommand,
     },
+    /// Active forecast misalignments: (layer, asset) pairs on a wrong-sign streak ≥ 5
+    #[command(
+        after_help = "A misalignment trips when a canonical layer's CURRENT consecutive\nwrong-sign streak on one asset reaches 5 (detected in the `data refresh`\ntail from the scored forecast corpus). While ACTIVE:\n  - the layer's views on that asset are on PROBATION — listed but excluded\n    from convergence voting (analytics views list/convergence mark them)\n  - `journal prediction add` caps that layer's confidence on the symbol\n    at 0.25 (--override-confidence-cap to bypass with rationale)\n  - `analytics epistemics record` counts it into run_health\nRecovery is mechanical: a scored direction HIT on the asset ends it.\n\nExamples:\n  pftui research misalignments            # active only\n  pftui research misalignments --all      # full episode ledger\n  pftui research misalignments --json"
+    )]
+    Misalignments {
+        /// Show the full episode ledger (recovered episodes included)
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Competence dossier per analytical domain: measured expectancy, scored record, worked precedents
+    #[command(
+        after_help = "Compiles, from EXISTING measured data only (no narrative), the evidence\nthat a domain's signals and forecasts actually carry edge:\n  (a) the domain's signal-expectancy rows (ta → structure_/cyber_,\n      cycles → cycle_; macro → scenario-ledger discipline stats instead)\n  (b) the scored-forecast record for the domain's layers\n      (ta → low+medium, cycles → medium+high, macro → macro)\n  (c) worked precedents: the 3 highest-|lift| SIGNIFICANT signals with\n      their dated event lists and forward returns\nEmpty sections render \"no measured evidence yet\" — never prose.\n\nExamples:\n  pftui research dossier ta --asset GC=F\n  pftui research dossier cycles --json\n  pftui research dossier macro"
+    )]
+    Dossier {
+        /// Analytical domain: ta | cycles | macro
+        domain: String,
+        /// Restrict to one asset/symbol
+        #[arg(long)]
+        asset: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Signal registry: canonical deterministic event emitters (id, version, description)
     Signals {
         #[command(subcommand)]
@@ -6577,6 +6607,81 @@ mod tests {
             }) => {
                 assert_eq!(threshold, 5, "default threshold");
                 assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_research_misalignments_and_dossier() {
+        let cli = Cli::try_parse_from(["pftui", "research", "misalignments"])
+            .expect("misalignments parses");
+        assert!(matches!(
+            cli.command,
+            Some(Command::Research {
+                command: ResearchCommand::Misalignments {
+                    all: false,
+                    json: false
+                }
+            })
+        ));
+
+        let cli = Cli::try_parse_from(["pftui", "research", "misalignments", "--all", "--json"])
+            .expect("misalignments flags parse");
+        assert!(matches!(
+            cli.command,
+            Some(Command::Research {
+                command: ResearchCommand::Misalignments {
+                    all: true,
+                    json: true
+                }
+            })
+        ));
+
+        let cli =
+            Cli::try_parse_from(["pftui", "research", "dossier", "ta", "--asset", "GC=F"])
+                .expect("dossier parses");
+        match cli.command {
+            Some(Command::Research {
+                command: ResearchCommand::Dossier { domain, asset, json },
+            }) => {
+                assert_eq!(domain, "ta");
+                assert_eq!(asset.as_deref(), Some("GC=F"));
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_epistemics_record_forecast_flags() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "epistemics",
+            "record",
+            "--date",
+            "2026-06-11",
+            "--forecast-hit-rate",
+            "0.41",
+            "--active-misalignments",
+            "2",
+        ])
+        .expect("epistemics record parses");
+        match cli.command {
+            Some(Command::Analytics {
+                command:
+                    AnalyticsCommand::Epistemics {
+                        command:
+                            AnalyticsEpistemicsCommand::Record {
+                                forecast_hit_rate,
+                                active_misalignments,
+                                ..
+                            },
+                    },
+            }) => {
+                assert_eq!(forecast_hit_rate, Some(0.41));
+                assert_eq!(active_misalignments, Some(2));
             }
             _ => panic!("unexpected parse result"),
         }

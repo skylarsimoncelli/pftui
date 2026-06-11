@@ -24,6 +24,7 @@ fn known_variables() -> HashSet<&'static str> {
         "MACRO_TAPE_7D",
         "INBOX_FROM_AGENTS",
         "LESSON_BOOK",
+        "MISALIGNMENT_DOSSIER",
         "MANDATORY_CONTEXT",
         "LAYER",
         "ASSET",

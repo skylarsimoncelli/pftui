@@ -846,6 +846,11 @@ pub struct PrivateAssetConvergenceView {
     pub analyst: String,
     pub conviction: i64,
     pub reasoning_summary: String,
+    /// ACTIVE forecast misalignment on (layer, asset): rendered with a
+    /// probation marker and excluded from the card's net conviction.
+    pub probation: bool,
+    /// Wrong-sign streak length backing the probation.
+    pub probation_streak: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1833,6 +1838,8 @@ impl BuildContext {
                                     analyst: v.analyst,
                                     conviction: v.conviction,
                                     reasoning_summary: v.reasoning_summary,
+                                    probation: v.probation,
+                                    probation_streak: v.probation_streak,
                                 })
                                 .collect(),
                         })
@@ -2115,11 +2122,15 @@ pub fn derive_actions(
 ) -> Vec<DerivedActionSummary> {
     let mut out: Vec<DerivedActionSummary> = Vec::new();
     for row in convergence {
-        if row.views.is_empty() {
+        // Probation views (active forecast misalignment on the layer/asset)
+        // never vote — same exclusion as the convergence stats themselves.
+        let voting: Vec<&PrivateAssetConvergenceView> =
+            row.views.iter().filter(|v| !v.probation).collect();
+        if voting.is_empty() {
             continue;
         }
-        let n_views = row.views.len();
-        let convictions: Vec<i64> = row.views.iter().map(|v| v.conviction).collect();
+        let n_views = voting.len();
+        let convictions: Vec<i64> = voting.iter().map(|v| v.conviction).collect();
         let avg = convictions.iter().copied().map(|c| c as f64).sum::<f64>() / n_views as f64;
         let (min_c, max_c) = match (convictions.iter().min(), convictions.iter().max()) {
             (Some(min), Some(max)) => (*min, *max),
@@ -6025,6 +6036,8 @@ mod assembler_tests {
                     analyst: (*analyst).to_string(),
                     conviction: *conviction,
                     reasoning_summary: format!("{analyst} reasoning"),
+                    probation: false,
+                    probation_streak: None,
                 })
                 .collect(),
         }

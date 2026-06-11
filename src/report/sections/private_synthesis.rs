@@ -232,24 +232,49 @@ fn render_current_bias(
         return None;
     }
     let mut out = String::new();
+    // Probation views (active forecast misalignment on the layer/asset) are
+    // rendered — visible, never hidden — but excluded from the net
+    // conviction, exactly like the convergence stats exclude them.
+    let voting: Vec<PrivateAssetConvergenceView> = row
+        .views
+        .iter()
+        .filter(|v| !v.probation)
+        .cloned()
+        .collect();
+    let n_probation = row.views.len() - voting.len();
     // Net conviction + label so the operator gets the takeaway in one line
     // before scanning the layer rows.
-    let avg = average_conviction(&row.views);
-    let label = bias_label(avg, &row.views);
+    let avg = average_conviction(&voting);
+    let label = bias_label(avg, &voting);
+    let probation_note = if n_probation > 0 {
+        format!(" {n_probation} layer(s) on probation — listed below, not voting.")
+    } else {
+        String::new()
+    };
     out.push_str(&format!(
-        "_Net conviction: {} ({:+.1}/5). {} layer rows attached._\n\n",
+        "_Net conviction: {} ({:+.1}/5). {} layer rows attached.{}_\n\n",
         label,
         avg,
-        row.views.len()
+        row.views.len(),
+        probation_note
     ));
     out.push_str("| Layer | Conviction | Reasoning |\n");
     out.push_str("|---|---:|---|\n");
     for v in ordered_views(&row.views) {
+        let reasoning = if v.probation {
+            format!(
+                "⚠ on probation (streak {}) — {}",
+                v.probation_streak.unwrap_or_default(),
+                clean_cell(&v.reasoning_summary, 180),
+            )
+        } else {
+            clean_cell(&v.reasoning_summary, 220)
+        };
         out.push_str(&format!(
             "| {} | {} | {} |\n",
             layer_label(&v.analyst),
             sign(v.conviction),
-            clean_cell(&v.reasoning_summary, 220),
+            reasoning,
         ));
     }
     // `symbol` parameter exists to support future per-symbol tweaks (e.g.
@@ -423,7 +448,53 @@ mod tests {
             analyst: analyst.to_string(),
             conviction,
             reasoning_summary: summary.to_string(),
+            probation: false,
+            probation_streak: None,
         }
+    }
+
+    fn probation_view(
+        analyst: &str,
+        conviction: i64,
+        summary: &str,
+        streak: i64,
+    ) -> PrivateAssetConvergenceView {
+        PrivateAssetConvergenceView {
+            probation: true,
+            probation_streak: Some(streak),
+            ..view(analyst, conviction, summary)
+        }
+    }
+
+    #[test]
+    fn probation_row_rendered_visibly_but_excluded_from_net_conviction() {
+        let ctx = BuildContext {
+            synthesis_notes: SynthesisNotes {
+                economy: None,
+                assets: vec![note("GC=F", "BULL CASE:\nMonetary bid intact.\n")],
+                ..SynthesisNotes::default()
+            },
+            private_asset_convergence: vec![PrivateAssetConvergenceRow {
+                symbol: "GC=F".to_string(),
+                target_pct: None,
+                views: vec![
+                    view("low", 3, "Momentum constructive"),
+                    probation_view("medium", 4, "Still structurally bullish", 7),
+                    view("high", 3, "Structural bull intact"),
+                    view("macro", 3, "Hard-money regime"),
+                ],
+            }],
+            ..BuildContext::default()
+        };
+        let out = render_private_synthesis(&ctx).unwrap();
+        // The probation row is VISIBLE with the marker in the reasoning cell.
+        assert!(out.contains("⚠ on probation (streak 7) — Still structurally bullish"));
+        assert!(out.contains("| MEDIUM | +4 |"));
+        assert!(out.contains("1 layer(s) on probation"));
+        // Net conviction averages the 3 voting layers only: (3+3+3)/3 = 3.0,
+        // not (3+4+3+3)/4 = 3.25.
+        assert!(out.contains("(+3.0/5)"), "probation row must not vote: {out}");
+        assert!(out.contains("4 layer rows attached"));
     }
 
     #[test]

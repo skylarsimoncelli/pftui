@@ -88,6 +88,17 @@ pub fn set(
     Ok(())
 }
 
+/// Probation lookup for view rendering: (layer, ASSET) → active misalignment
+/// streak length. Best-effort — non-SQLite backends degrade to empty.
+fn probation_map(
+    backend: &BackendConnection,
+) -> std::collections::HashMap<(String, String), i64> {
+    backend
+        .sqlite_native()
+        .and_then(|conn| crate::db::forecast_misalignments::active_probation_map(conn).ok())
+        .unwrap_or_default()
+}
+
 /// List analyst views with optional filters.
 pub fn list(
     backend: &BackendConnection,
@@ -97,11 +108,19 @@ pub fn list(
     json_output: bool,
 ) -> Result<()> {
     let items = analyst_views::list_views_backend(backend, analyst, asset, limit)?;
+    let probation = probation_map(backend);
+    let probation_for = |v: &analyst_views::AnalystView| {
+        probation
+            .get(&(v.analyst.clone(), v.asset.to_uppercase()))
+            .copied()
+    };
 
     if json_output {
         // Annotate each view with its layer class so agents can tell voting
         // (canonical) layers apart from measurement layers (blind,
-        // antithesis) without hardcoding the layer list.
+        // antithesis) without hardcoding the layer list — plus the probation
+        // flag for layers with an ACTIVE forecast misalignment on the asset
+        // (their views are listed but do not vote in convergence).
         let annotated: Vec<serde_json::Value> = items
             .iter()
             .map(|v| {
@@ -111,6 +130,9 @@ pub fn list(
                         "layer_class".to_string(),
                         json!(analyst_views::layer_class(&v.analyst)),
                     );
+                    let streak = probation_for(v);
+                    obj.insert("probation".to_string(), json!(streak.is_some()));
+                    obj.insert("probation_streak".to_string(), json!(streak));
                 }
                 Ok(value)
             })
@@ -140,8 +162,11 @@ pub fn list(
                 v.reasoning_summary.clone()
             };
             let updated_short = v.updated_at.get(..16).unwrap_or(&v.updated_at);
+            let probation_tag = probation_for(v)
+                .map(|n| format!("  ⚠ probation (streak {n})"))
+                .unwrap_or_default();
             println!(
-                "{:<8} {:<8} {} {:<7} {}{:<4} {:<20} {}",
+                "{:<8} {:<8} {} {:<7} {}{:<4} {:<20} {}{}",
                 v.analyst,
                 v.asset,
                 icon,
@@ -150,6 +175,7 @@ pub fn list(
                 v.conviction,
                 reasoning_short,
                 updated_short,
+                probation_tag,
             );
         }
         println!("\n{} view(s)", items.len());
@@ -693,9 +719,17 @@ fn render_convergence_text(r: &analyst_views::ConvergenceReport) {
         for v in &r.views {
             let sign = if v.conviction > 0 { "+" } else { "" };
             let bias = v.allocation_bias.as_deref().unwrap_or("—");
+            let probation_tag = if v.probation {
+                format!(
+                    "  ⚠ on probation (streak {}) — not voting",
+                    v.probation_streak.unwrap_or_default()
+                )
+            } else {
+                String::new()
+            };
             println!(
-                "    {:<7} {:<7} {}{:<3}  bias={:<18} {}",
-                v.analyst, v.direction, sign, v.conviction, bias, v.recorded_at
+                "    {:<7} {:<7} {}{:<3}  bias={:<18} {}{}",
+                v.analyst, v.direction, sign, v.conviction, bias, v.recorded_at, probation_tag
             );
         }
     }

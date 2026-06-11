@@ -2424,6 +2424,76 @@ fn run_pipeline(
         }
     }
 
+    // Tail step: misalignment detection over the freshly scored forecast
+    // corpus (must run AFTER the retro-score). A canonical layer whose
+    // current wrong-sign streak on one asset reaches the threshold gets an
+    // ACTIVE misalignment: probation in convergence, prediction confidence
+    // capped, counted into run_health. Recovery (a scored hit) is detected
+    // here too. Idempotent.
+    let misalign_start = Instant::now();
+    match crate::commands::research_forecasts::detect_misalignments_for_refresh(backend) {
+        Ok(summary) => {
+            if summary.active.is_empty() {
+                info_ln!(verbose, "✓ Forecast misalignment detector: none active");
+            } else {
+                info_ln!(
+                    verbose,
+                    "⚠ {} active forecast misalignment(s): {}",
+                    summary.active.len(),
+                    crate::db::forecast_misalignments::format_active_brief(&summary.active)
+                );
+            }
+            let mut detail_parts: Vec<String> = Vec::new();
+            if !summary.newly_detected.is_empty() {
+                detail_parts.push(format!("new: {}", summary.newly_detected.join(", ")));
+            }
+            if !summary.newly_recovered.is_empty() {
+                detail_parts.push(format!("recovered: {}", summary.newly_recovered.join(", ")));
+            }
+            if !summary.active.is_empty() {
+                detail_parts.push(format!(
+                    "active: {}",
+                    crate::db::forecast_misalignments::format_active_brief(&summary.active)
+                ));
+            }
+            dag_result.add(SourceResult {
+                name: "forecast_misalignment_detector".to_string(),
+                label: "Forecast Misalignment Detector".to_string(),
+                status: SourceStatus::Ok,
+                items_attempted: None,
+                items_failed: None,
+                failed_symbols: None,
+                items_updated: Some(summary.active.len()),
+                duration_ms: misalign_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: if detail_parts.is_empty() {
+                    Some("no active misalignments".to_string())
+                } else {
+                    Some(detail_parts.join("; "))
+                },
+            });
+        }
+        Err(e) => {
+            info_ln!(verbose, "  ⚠ Forecast misalignment detection failed: {}", e);
+            dag_result.add(SourceResult {
+                name: "forecast_misalignment_detector".to_string(),
+                label: "Forecast Misalignment Detector".to_string(),
+                status: SourceStatus::Failed,
+                items_attempted: None,
+                items_failed: None,
+                failed_symbols: None,
+                items_updated: None,
+                duration_ms: misalign_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: Some(e.to_string()),
+                detail: None,
+            });
+        }
+    }
+
     // Idempotent: classify today's regime from the latest scenario state and
     // upsert into `regime_history`. Safe to run multiple times per day; the
     // most recent classification wins via `ON CONFLICT(date) DO UPDATE`.

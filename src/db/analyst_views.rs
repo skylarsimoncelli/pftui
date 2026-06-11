@@ -1541,6 +1541,15 @@ pub struct ConvergenceView {
     pub blind_spots: Option<String>,
     pub allocation_bias: Option<String>,
     pub recorded_at: String,
+    /// True when the layer has an ACTIVE forecast misalignment on this asset
+    /// (`forecast_misalignments`). Probation views are listed (visible,
+    /// never hidden) but EXCLUDED from convergence stats/classification —
+    /// the same mechanics as measurement layers.
+    #[serde(default)]
+    pub probation: bool,
+    /// Current wrong-sign streak length backing the probation, when on it.
+    #[serde(default)]
+    pub probation_streak: Option<i64>,
 }
 
 /// Aggregate statistics across the views included in a convergence report.
@@ -1670,16 +1679,22 @@ type LatestEntry = (
     String,
 );
 
-/// Build a `ConvergenceReport` from a flat list of historical view rows for one asset.
+/// Build a `ConvergenceReport` from a flat list of historical view rows for
+/// one asset. `probation` maps layer → current wrong-sign streak length for
+/// layers with an ACTIVE forecast misalignment on THIS asset
+/// (`crate::db::forecast_misalignments`): their views stay listed (marked
+/// `probation: true`) but are excluded from stats/classification.
 fn build_report_for_asset(
     asset: &str,
     mut rows: Vec<ConvergenceRow>,
     as_of: &str,
+    probation: &std::collections::HashMap<String, i64>,
 ) -> ConvergenceReport {
     // Measurement layers (blind, antithesis) are excluded from convergence:
     // they are accepted writers but never voters. Exclusion happens here at
     // the aggregation layer so `classify_convergence` stays the single
-    // source of truth for the classification formula.
+    // source of truth for the classification formula. Probation exclusion
+    // (below) follows the same pattern.
     rows.retain(|row| is_canonical_analyst(&row.0));
     // De-duplicate per-analyst: keep the most recent view per analyst layer in the window.
     let mut latest: std::collections::BTreeMap<String, LatestEntry> =
@@ -1714,7 +1729,10 @@ fn build_report_for_asset(
                 // normalization: direction is authoritative, so a bear view
                 // stored with +3 contributes -3 to convergence stats.
                 let conviction = effective_conviction(&direction, conviction);
+                let probation_streak = probation.get(&analyst).copied();
                 ConvergenceView {
+                    probation: probation_streak.is_some(),
+                    probation_streak,
                     analyst,
                     direction,
                     conviction,
@@ -1729,11 +1747,13 @@ fn build_report_for_asset(
         .collect();
     views.sort_by(|a, b| a.analyst.cmp(&b.analyst));
 
-    let n_views = views.len();
+    // Voting set: probation views are rendered but never counted.
+    let voting: Vec<&ConvergenceView> = views.iter().filter(|v| !v.probation).collect();
+    let n_views = voting.len();
     let (avg_conviction, min_conv, max_conv, max_divergence) = if n_views == 0 {
         (0.0_f64, 0_i64, 0_i64, 0_i64)
     } else {
-        let convs: Vec<i64> = views.iter().map(|v| v.conviction).collect();
+        let convs: Vec<i64> = voting.iter().map(|v| v.conviction).collect();
         let sum: i64 = convs.iter().sum();
         let avg = sum as f64 / n_views as f64;
         let min = *convs.iter().min().unwrap();
@@ -1745,7 +1765,7 @@ fn build_report_for_asset(
         .iter()
         .map(|b| ((*b).to_string(), 0usize))
         .collect();
-    for v in &views {
+    for v in &voting {
         let key = match v.allocation_bias.as_deref() {
             Some(b) if ALLOC_BIAS_BUCKETS.contains(&b) => b.to_string(),
             _ => "null".to_string(),
@@ -1910,7 +1930,32 @@ pub fn convergence_report_backend(
             load_convergence_rows_postgres(pool, asset, since)
         },
     )?;
-    Ok(build_report_for_asset(&asset.to_uppercase(), rows, &as_of))
+    let probation = probation_layers_for_asset(backend, asset);
+    Ok(build_report_for_asset(
+        &asset.to_uppercase(),
+        rows,
+        &as_of,
+        &probation,
+    ))
+}
+
+/// Layers with an ACTIVE forecast misalignment on `asset` → streak length.
+/// Forecast scoring is SQLite-only; the Postgres backend degrades to "no
+/// probation" (best-effort, never aborts a convergence read).
+fn probation_layers_for_asset(
+    backend: &BackendConnection,
+    asset: &str,
+) -> std::collections::HashMap<String, i64> {
+    let Some(conn) = backend.sqlite_native() else {
+        return std::collections::HashMap::new();
+    };
+    let asset_upper = asset.to_uppercase();
+    crate::db::forecast_misalignments::active_probation_map(conn)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|((_, mis_asset), _)| *mis_asset == asset_upper)
+        .map(|((layer, _), streak)| (layer, streak))
+        .collect()
 }
 
 /// Public dispatch: build a convergence report for every asset with ≥1 view in window.
@@ -3052,7 +3097,98 @@ mod tests {
 
     fn convergence_for(conn: &Connection, asset: &str) -> ConvergenceReport {
         let rows = load_convergence_rows_sqlite(conn, asset, None).unwrap();
-        build_report_for_asset(&asset.to_uppercase(), rows, "test")
+        build_report_for_asset(
+            &asset.to_uppercase(),
+            rows,
+            "test",
+            &std::collections::HashMap::new(),
+        )
+    }
+
+    fn convergence_for_with_probation(
+        conn: &Connection,
+        asset: &str,
+        probation: &std::collections::HashMap<String, i64>,
+    ) -> ConvergenceReport {
+        let rows = load_convergence_rows_sqlite(conn, asset, None).unwrap();
+        build_report_for_asset(&asset.to_uppercase(), rows, "test", probation)
+    }
+
+    #[test]
+    fn test_convergence_probation_view_listed_but_not_voting() {
+        let conn = setup_db();
+        // 4 canonical views; the medium layer is on probation with a strongly
+        // bearish view that would flip the classification if it voted.
+        upsert_view(&conn, "low", "GC=F", "bull", 4, "r", None, None, Some("overweight")).unwrap();
+        upsert_view(&conn, "medium", "GC=F", "bear", -5, "probation row", None, None, Some("underweight")).unwrap();
+        upsert_view(&conn, "high", "GC=F", "bull", 4, "r", None, None, None).unwrap();
+        upsert_view(&conn, "macro", "GC=F", "bull", 3, "r", None, None, None).unwrap();
+
+        // Without probation: medium votes → spread 9 → divergent.
+        let r = convergence_for(&conn, "GC=F");
+        assert_eq!(r.summary, "divergent");
+        assert_eq!(r.stats.n_views, 4);
+
+        // With medium on probation: stats come from the other 3 only.
+        let probation = std::collections::HashMap::from([("medium".to_string(), 7_i64)]);
+        let r = convergence_for_with_probation(&conn, "GC=F", &probation);
+        assert_eq!(r.stats.n_views, 3, "probation row must not be counted");
+        assert_eq!(r.summary, "strong-convergent-bull");
+        assert_eq!(r.stats.max_divergence, 1);
+        // ...but the view is still LISTED, marked, with its streak.
+        let medium = r
+            .views
+            .iter()
+            .find(|v| v.analyst == "medium")
+            .expect("probation view stays visible");
+        assert!(medium.probation);
+        assert_eq!(medium.probation_streak, Some(7));
+        // The underweight bias of the probation row must not be tallied.
+        assert_eq!(r.stats.alloc_bias_counts.get("underweight").copied(), Some(0));
+        // Non-probation views are unmarked.
+        assert!(r.views.iter().filter(|v| v.analyst != "medium").all(|v| !v.probation));
+    }
+
+    #[test]
+    fn test_convergence_probation_can_force_insufficient_views() {
+        let conn = setup_db();
+        upsert_view(&conn, "low", "SI=F", "bull", 3, "r", None, None, None).unwrap();
+        upsert_view(&conn, "medium", "SI=F", "bull", 2, "r", None, None, None).unwrap();
+        let probation = std::collections::HashMap::from([("medium".to_string(), 5_i64)]);
+        let r = convergence_for_with_probation(&conn, "SI=F", &probation);
+        assert_eq!(r.stats.n_views, 1);
+        assert_eq!(r.summary, "insufficient-views");
+        assert_eq!(r.views.len(), 2, "both views still listed");
+    }
+
+    #[test]
+    fn test_convergence_backend_path_applies_active_misalignment_probation() {
+        // End-to-end: an ACTIVE forecast_misalignments row for (medium, BTC)
+        // puts the medium view on probation through the public dispatch.
+        let conn = crate::db::open_in_memory();
+        ensure_tables(&conn).unwrap();
+        crate::db::forecast_misalignments::ensure_table(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO forecast_misalignments
+                (layer, asset, detected_at, streak_len, call, span_start, span_end,
+                 cum_realized_against_pct, status)
+             VALUES ('medium', 'BTC', '2026-06-01 00:00:00', 7, 'bull',
+                     '2026-04-01', '2026-04-22', -40.5, 'active')",
+            [],
+        )
+        .unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+        for (layer, conviction) in [("low", 3_i64), ("medium", 4), ("high", 2)] {
+            upsert_view_backend(
+                &backend, layer, "BTC", "bull", conviction, "r", None, None, None,
+            )
+            .unwrap();
+        }
+        let r = convergence_report_backend(&backend, "BTC", None).unwrap();
+        assert_eq!(r.stats.n_views, 2, "medium must not vote while misaligned");
+        let medium = r.views.iter().find(|v| v.analyst == "medium").unwrap();
+        assert!(medium.probation);
+        assert_eq!(medium.probation_streak, Some(7));
     }
 
     #[test]

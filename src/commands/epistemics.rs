@@ -56,11 +56,16 @@ fn held_asset_symbols(backend: &BackendConnection) -> Vec<String> {
 /// `record` self-derives it.
 const CONVICTION_PRICE_DEFAULT_DAYS: i64 = 90;
 
+/// Trailing window (days) for the self-derived forecast hit rate.
+const FORECAST_HIT_RATE_WINDOW_DAYS: i64 = 30;
+
 /// Record (upsert) a run's health metrics. Derives what it can when flags
 /// are omitted: blind_divergence from same-day analyst views,
-/// scenario_delta_total from today's scenario probability ledger, and
+/// scenario_delta_total from today's scenario probability ledger,
 /// conviction_price_corr (max |r| across canonical layer × held asset pairs
-/// over the trailing 90d) from analyst_view_history × price_history.
+/// over the trailing 90d) from analyst_view_history × price_history,
+/// forecast_hit_rate (trailing 30d of forecast_scores), and
+/// active_misalignments (current ACTIVE forecast_misalignments count).
 #[allow(clippy::too_many_arguments)]
 pub fn record(
     backend: &BackendConnection,
@@ -75,6 +80,8 @@ pub fn record(
     agents: Option<i64>,
     notes: Option<&str>,
     conviction_price_corr: Option<f64>,
+    forecast_hit_rate: Option<f64>,
+    active_misalignments: Option<i64>,
     json_output: bool,
 ) -> Result<()> {
     let conn = sqlite(backend)?;
@@ -82,6 +89,7 @@ pub fn record(
     validate_unit_interval("--agreement", agreement)?;
     validate_unit_interval("--novelty", novelty)?;
     validate_unit_interval("--audit-pass-rate", audit_pass_rate)?;
+    validate_unit_interval("--forecast-hit-rate", forecast_hit_rate)?;
 
     let mut derived: Vec<&str> = Vec::new();
     let blind_divergence = match blind_divergence {
@@ -123,6 +131,24 @@ pub fn record(
             computed
         }
     };
+    let forecast_hit_rate = match forecast_hit_rate {
+        Some(v) => Some(v),
+        None => {
+            let computed =
+                run_health::compute_forecast_hit_rate(conn, FORECAST_HIT_RATE_WINDOW_DAYS)?;
+            if computed.is_some() {
+                derived.push("forecast_hit_rate");
+            }
+            computed
+        }
+    };
+    let active_misalignments = match active_misalignments {
+        Some(v) => Some(v),
+        None => {
+            derived.push("active_misalignments");
+            Some(crate::db::forecast_misalignments::count_active(conn)?)
+        }
+    };
 
     let input = RunHealthInput {
         agreement_rate: agreement,
@@ -135,6 +161,8 @@ pub fn record(
         agents_spawned: agents,
         notes: notes.map(str::to_string),
         conviction_price_corr,
+        forecast_hit_rate,
+        active_misalignments,
     };
     let id = run_health::upsert_run_health(conn, date, &input)?;
     let row = run_health::get_run_health(conn, date)?
@@ -149,6 +177,7 @@ pub fn record(
                 "derived": derived,
                 "row": row,
                 "flags": flags_json(&row),
+                "active_misalignment_rows": active_misalignment_rows(conn, &row),
             }))?
         );
     } else {
@@ -157,8 +186,41 @@ pub fn record(
             println!("  derived by pftui: {}", derived.join(", "));
         }
         print_row_text(&row);
+        print_active_misalignments(conn, &row);
     }
     Ok(())
+}
+
+/// The ACTIVE misalignment rows backing `row.active_misalignments`, for the
+/// "⚠ flag listing them" rendering. Empty unless the count is > 0.
+fn active_misalignment_rows(
+    conn: &Connection,
+    row: &RunHealth,
+) -> Vec<crate::db::forecast_misalignments::MisalignmentRow> {
+    if row.active_misalignments.unwrap_or(0) <= 0 {
+        return Vec::new();
+    }
+    crate::db::forecast_misalignments::active_misalignments(conn).unwrap_or_default()
+}
+
+fn print_active_misalignments(conn: &Connection, row: &RunHealth) {
+    let active = active_misalignment_rows(conn, row);
+    if active.is_empty() {
+        return;
+    }
+    println!("  active misalignments:");
+    for m in &active {
+        println!(
+            "    ⚠ {}/{} — {} consecutive wrong-sign {} calls ({} → {}, {:+.1}% against)",
+            m.layer,
+            m.asset,
+            m.streak_len,
+            m.call,
+            m.span_start,
+            m.span_end,
+            m.cum_realized_against_pct
+        );
+    }
 }
 
 fn flags_json(row: &RunHealth) -> Vec<serde_json::Value> {
@@ -231,6 +293,17 @@ fn print_row_text(row: &RunHealth) {
     );
     println!(
         "  {:<22} {:>8}",
+        "forecast_hit_rate",
+        fmt_opt_f64(row.forecast_hit_rate, 2),
+    );
+    println!(
+        "  {:<22} {:>8}  {}",
+        "active_misalignments",
+        fmt_opt_i64(row.active_misalignments),
+        flag_for("active_misalignments"),
+    );
+    println!(
+        "  {:<22} {:>8}",
         "agents_spawned",
         fmt_opt_i64(row.agents_spawned),
     );
@@ -273,10 +346,12 @@ pub fn show(backend: &BackendConnection, date: Option<&str>, json_output: bool) 
             serde_json::to_string_pretty(&json!({
                 "row": row,
                 "flags": flags_json(&row),
+                "active_misalignment_rows": active_misalignment_rows(conn, &row),
             }))?
         );
     } else {
         print_row_text(&row);
+        print_active_misalignments(conn, &row);
         let flags = run_health::threshold_flags(&row);
         if flags.is_empty() {
             println!("\n  No epistemic-health flags. Disagreement is alive and well.");
@@ -547,6 +622,8 @@ mod tests {
         record(
             &backend, &today, Some(0.7), None, None, None, None, None, None, None, None,
             None, // conviction_price_corr omitted → self-derive
+            None, // forecast_hit_rate omitted → self-derive
+            None, // active_misalignments omitted → self-derive
             true,
         )
         .unwrap();
@@ -579,11 +656,85 @@ mod tests {
             None,
             None,
             Some(0.25),
+            None,
+            None,
             true,
         )
         .unwrap();
         let row = run_health::get_run_health(conn, &today).unwrap().unwrap();
         assert_eq!(row.conviction_price_corr, Some(0.25));
+    }
+
+    #[test]
+    fn record_self_derives_forecast_hit_rate_and_active_misalignments() {
+        let backend = make_backend();
+        let conn = backend.sqlite_native().unwrap();
+        // Trailing-30d scored corpus: 1 hit / 4 scored non-neutral cells.
+        crate::research::forecast_scoring::ensure_table(conn).unwrap();
+        let recent = (chrono::Utc::now().date_naive() - chrono::Duration::days(3))
+            .format("%Y-%m-%d")
+            .to_string();
+        for (id, hit) in [(1, true), (2, false), (3, false), (4, false)] {
+            conn.execute(
+                "INSERT INTO forecast_scores
+                    (view_history_id, analyst, asset, direction, conviction, horizon_days,
+                     view_date, direction_hit, status)
+                 VALUES (?1, 'medium', 'GC=F', 'bull', 3, 45, ?2, ?3, 'scored')",
+                rusqlite::params![id, recent, hit as i64],
+            )
+            .unwrap();
+        }
+        // One ACTIVE misalignment.
+        crate::db::forecast_misalignments::ensure_table(conn).unwrap();
+        conn.execute(
+            "INSERT INTO forecast_misalignments
+                (layer, asset, detected_at, streak_len, call, span_start, span_end,
+                 cum_realized_against_pct, status)
+             VALUES ('medium', 'GC=F', '2026-06-01 00:00:00', 7, 'bull',
+                     '2026-04-01', '2026-04-22', -40.5, 'active')",
+            [],
+        )
+        .unwrap();
+
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        record(
+            &backend, &today, None, None, None, None, None, None, None, None, None, None,
+            None, // forecast_hit_rate → self-derive
+            None, // active_misalignments → self-derive
+            true,
+        )
+        .unwrap();
+        let row = run_health::get_run_health(conn, &today).unwrap().unwrap();
+        let rate = row.forecast_hit_rate.expect("self-derived hit rate");
+        assert!((rate - 0.25).abs() < 1e-9, "got {rate}");
+        assert_eq!(row.active_misalignments, Some(1));
+        // The flag fires through the shared threshold path.
+        assert!(run_health::threshold_flags(&row)
+            .iter()
+            .any(|(m, _)| *m == "active_misalignments"));
+
+        // Explicit flags win over derivation.
+        record(
+            &backend,
+            &today,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(0.9),
+            Some(0),
+            true,
+        )
+        .unwrap();
+        let row = run_health::get_run_health(conn, &today).unwrap().unwrap();
+        assert_eq!(row.forecast_hit_rate, Some(0.9));
+        assert_eq!(row.active_misalignments, Some(0));
     }
 
     #[test]

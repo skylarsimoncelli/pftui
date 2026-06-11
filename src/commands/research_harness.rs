@@ -288,6 +288,31 @@ pub fn run_events(
     Ok(())
 }
 
+/// Event study for one (signal, asset) at the series' latest date. `None`
+/// when the signal is unknown, the history is too shallow, or the research
+/// context can't build. Reused by the competence dossier's worked-precedent
+/// section (`research dossier`).
+pub fn event_study_for(
+    backend: &BackendConnection,
+    signal_id: &str,
+    asset: &str,
+) -> Result<Option<(String, EventStudy)>> {
+    let Some(def) = registry::find_signal(signal_id) else {
+        return Ok(None);
+    };
+    let (series, history) = load_deep_history_full(backend, asset)?;
+    if history.len() < MIN_BARS {
+        return Ok(None);
+    }
+    let as_of = history.last().map(|r| r.date.clone()).unwrap_or_default();
+    let Some(ctx) = AssetContext::build(asset, &series, &history) else {
+        return Ok(None);
+    };
+    let events = def.emit(&ctx);
+    let study = event_study::study(&ctx.dates, &ctx.closes, &ctx.sma200, &events, &as_of);
+    Ok(Some((ctx.series.clone(), study)))
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
