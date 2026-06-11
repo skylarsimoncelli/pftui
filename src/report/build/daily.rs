@@ -175,6 +175,61 @@ pub struct BuildContext {
     /// `private_epistemic_health` section; empty (sub-block suppressed)
     /// while the ledger is still accruing.
     pub recommendation_scoreboard: Vec<RecommendationScoreboardLine>,
+    /// META (not a data slot): per-slot load issues recorded by the loaders
+    /// in [`BuildContext::load`]. A loader that fails must NEVER abort the
+    /// build, but it must NEVER be silent either — it records a
+    /// [`SlotIssue::LoaderError`] here so [`data_availability`] and the
+    /// integrity footer can distinguish "query failed" from "query
+    /// succeeded, nothing there". Keys are slot field names.
+    pub slot_issues: SlotIssues,
+    /// META (not a data slot): build-time staleness warnings computed by
+    /// [`compute_staleness`]. Each warning names the input, carries an
+    /// operator-facing message, and lists the section names that must be
+    /// annotated inline (the assembler injects a `> ⚠ …` blockquote under
+    /// the section heading). Stale data is annotated, never suppressed.
+    pub staleness: Vec<StalenessWarning>,
+}
+
+/// Fields on `BuildContext` that are NOT data slots (metadata / bookkeeping).
+/// Everything else on the struct MUST appear in [`data_availability`] output —
+/// enforced by the `every_build_context_slot_is_tracked` conformance test.
+/// If you add a data-bearing field to `BuildContext`, add a matching
+/// `vec_slot!`/`opt_slot!` line in [`data_availability`]; if you add a
+/// metadata field, list it here. Do NOT weaken the conformance test.
+pub const BUILD_CONTEXT_META_FIELDS: &[&str] = &["report_date", "slot_issues", "staleness"];
+
+/// Why a data slot is unpopulated. Recorded by loaders into
+/// [`BuildContext::slot_issues`]; consumed by [`data_availability`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SlotIssue {
+    /// The query/computation failed. Carries the error string. Must surface
+    /// in the integrity footer — a loader error must never render
+    /// identically to genuinely-absent data.
+    LoaderError(String),
+    /// The query succeeded and found rows for EARLIER dates, but none for
+    /// the report date — i.e. the upstream phase/routine that writes this
+    /// slot did not run today.
+    UpstreamNotRun(String),
+    /// The query succeeded and there is genuinely nothing there (optional
+    /// explanatory reason).
+    NoData(String),
+}
+
+/// Map of slot field name → recorded issue.
+pub type SlotIssues = std::collections::BTreeMap<&'static str, SlotIssue>;
+
+/// A build-time staleness warning: the named input is older than its
+/// freshness expectation, so the listed sections get an inline annotation
+/// instead of silently rendering old data as current.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StalenessWarning {
+    /// Input name (e.g. "prices", "analyst_views", "economic_data").
+    pub input: &'static str,
+    /// Operator-facing message, rendered as a `> ⚠ …` blockquote.
+    pub message: String,
+    /// Section names (from the section plans) that must carry the
+    /// annotation when they render.
+    pub sections: Vec<&'static str>,
 }
 
 /// One held symbol's recommendation-ledger summary for the epistemic-health
@@ -296,6 +351,20 @@ pub struct SynthesisNotes {
     /// Per-asset bull/bear/change-mind/risk-reward blocks, in the order the
     /// notes were written.
     pub assets: Vec<SynthesisAssetNote>,
+}
+
+impl SynthesisNotes {
+    /// True when any synthesis-writer note landed for the report date.
+    /// Drives the `synthesis_notes` slot's populated bit in
+    /// [`data_availability`].
+    pub fn has_content(&self) -> bool {
+        self.economy.is_some()
+            || self.deep_dive.is_some()
+            || self.macro_outlook.is_some()
+            || self.closing.is_some()
+            || self.external_ta.is_some()
+            || !self.assets.is_empty()
+    }
 }
 
 /// One per-asset synthesis block: the symbol parsed from the
@@ -1205,7 +1274,19 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         }
         "private_macro_context" => sections::private_macro_context::render_private_macro_context(ctx),
         "private_macro_thesis_chains" => {
+            // The block renderer is shared (also embeddable inside Macro
+            // Context) so it returns a bare empty string; translate that to
+            // a reasoned suppression at the section boundary.
             sections::thesis_chains_macro::render_thesis_chains_block(&ctx.private_thesis_chains)
+                .map(|body| {
+                    if body.trim().is_empty() {
+                        sections::suppressed(
+                            "no confirmed/disconfirmed thesis chains to surface",
+                        )
+                    } else {
+                        body
+                    }
+                })
         }
         "private_per_asset_convergence" => {
             sections::private_per_asset_convergence::render_private_per_asset_convergence(ctx)
@@ -1253,6 +1334,198 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
     }
 }
 
+/// Record a loader error against a slot. Loader errors never abort the
+/// build (resilience) but never go silent (honesty): they surface in
+/// `data_availability` and the private report's integrity footer.
+fn note_error(issues: &mut SlotIssues, slot: &'static str, err: impl std::fmt::Display) {
+    issues.insert(slot, SlotIssue::LoaderError(err.to_string()));
+}
+
+/// Record the same loader error against several slots (used when one shared
+/// query feeds multiple slots — e.g. the news query feeds five).
+fn note_error_many(issues: &mut SlotIssues, slots: &[&'static str], err: &str) {
+    for slot in slots {
+        issues.insert(slot, SlotIssue::LoaderError(err.to_string()));
+    }
+}
+
+/// Unwrap a loader result, recording an error against `slot` on failure.
+fn load_slot<T, E: std::fmt::Display>(
+    issues: &mut SlotIssues,
+    slot: &'static str,
+    res: std::result::Result<T, E>,
+) -> Option<T> {
+    match res {
+        Ok(v) => Some(v),
+        Err(e) => {
+            note_error(issues, slot, e);
+            None
+        }
+    }
+}
+
+/// Run a SQLite-only loader for `slot`, recording a loader error when the
+/// backend is not native SQLite or when the closure fails.
+fn load_sqlite_slot<T, F>(
+    issues: &mut SlotIssues,
+    slot: &'static str,
+    backend: &BackendConnection,
+    f: F,
+) -> Option<T>
+where
+    F: FnOnce(&rusqlite::Connection) -> Result<T>,
+{
+    match backend.sqlite_native() {
+        Some(conn) => load_slot(issues, slot, f(conn)),
+        None => {
+            note_error(issues, slot, "backend is not native SQLite; slot loader skipped");
+            None
+        }
+    }
+}
+
+/// Parse a flexible timestamp ("RFC3339", "YYYY-MM-DD HH:MM:SS", or bare
+/// date) into a UTC datetime. Naive timestamps are assumed UTC.
+fn parse_flexible_ts(raw: &str) -> Option<chrono::DateTime<Utc>> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"] {
+        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(raw, fmt) {
+            return Some(chrono::DateTime::from_naive_utc_and_offset(dt, Utc));
+        }
+    }
+    chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|dt| chrono::DateTime::from_naive_utc_and_offset(dt, Utc))
+}
+
+/// Render an age in hours as a compact human string ("3h", "2 days").
+fn human_age(hours: f64) -> String {
+    if hours < 48.0 {
+        format!("{:.0}h", hours.max(0.0))
+    } else {
+        format!("{:.0} days", hours / 24.0)
+    }
+}
+
+/// Freshness gate for analyst views (hours) — mirrors the report skill's
+/// "views within 6h" gate for Phase 1.
+const ANALYST_VIEWS_FRESHNESS_HOURS: f64 = 6.0;
+
+/// Build-time staleness pass. For inputs with freshness expectations,
+/// compare the newest datapoint against the report date / wall clock and
+/// emit inline-annotation warnings. Series with a registered SLA in
+/// `series_registry` (sentiment, economic) reuse that SLA; analyst views
+/// use the 6h skill gate; prices compare last fetch vs the report date.
+/// Purely advisory — stale inputs are annotated, never suppressed.
+pub fn compute_staleness(
+    backend: &BackendConnection,
+    report_date: &str,
+    all_views: &[crate::db::analyst_views::AnalystView],
+    prices: &[crate::models::price::PriceQuote],
+) -> Vec<StalenessWarning> {
+    let now = Utc::now();
+    let today = now.date_naive().format("%Y-%m-%d").to_string();
+    // For historical rebuilds, measure age against the report date's end of
+    // day rather than the wall clock so old reports aren't all "stale".
+    let reference = if report_date == today.as_str() {
+        now
+    } else {
+        parse_flexible_ts(&format!("{report_date} 23:59:59")).unwrap_or(now)
+    };
+    let mut out = Vec::new();
+
+    // 1. Analyst views — the skill's 6h gate.
+    if let Some(newest) = all_views
+        .iter()
+        .filter_map(|v| parse_flexible_ts(&v.updated_at))
+        .max()
+    {
+        let age_hours = (reference - newest).num_seconds() as f64 / 3600.0;
+        if age_hours > ANALYST_VIEWS_FRESHNESS_HOURS {
+            out.push(StalenessWarning {
+                input: "analyst_views",
+                message: format!(
+                    "⚠ analyst views are {} old (freshness gate {}h) — run Phase 1 before trusting convergence",
+                    human_age(age_hours),
+                    ANALYST_VIEWS_FRESHNESS_HOURS as i64
+                ),
+                sections: vec![
+                    "private_synthesis",
+                    "private_outlook_by_horizon",
+                    "private_conviction_trajectory",
+                ],
+            });
+        }
+    }
+
+    // 2. Prices — the cache must have been refreshed on (or after) the
+    //    report date for "current price" framing to be honest.
+    if let Some(newest_fetch) = prices
+        .iter()
+        .filter_map(|q| parse_flexible_ts(&q.fetched_at))
+        .max()
+    {
+        let fetch_date = newest_fetch.date_naive().format("%Y-%m-%d").to_string();
+        if fetch_date.as_str() < report_date {
+            out.push(StalenessWarning {
+                input: "prices",
+                message: format!(
+                    "⚠ price cache last refreshed {fetch_date} — older than report date {report_date}; run `pftui data refresh` before trusting quoted prices"
+                ),
+                sections: vec!["public_market_snapshot", "private_portfolio_snapshot"],
+            });
+        }
+    }
+
+    // 3. Registered series SLAs — sentiment + economic kinds from
+    //    `series_registry` (prices are covered by the report-date check
+    //    above; other kinds have no report section to annotate yet).
+    if let Some(conn) = backend.sqlite_native() {
+        if let Ok(statuses) = crate::db::series_registry::status_all(conn, reference) {
+            for (kind, sections) in [
+                (
+                    "economic",
+                    vec!["public_macro", "private_macro_news_outlook"],
+                ),
+                ("sentiment", vec!["public_bitcoin"]),
+            ] {
+                let stale: Vec<&crate::db::series_registry::SeriesStatus> = statuses
+                    .iter()
+                    .filter(|s| s.entry.kind == kind && s.stale && s.age_hours.is_some())
+                    .collect();
+                let Some(worst) = stale.iter().max_by(|a, b| {
+                    a.age_hours
+                        .partial_cmp(&b.age_hours)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }) else {
+                    continue;
+                };
+                let age = worst.age_hours.unwrap_or_default();
+                out.push(StalenessWarning {
+                    input: if kind == "economic" {
+                        "economic_data"
+                    } else {
+                        "sentiment"
+                    },
+                    message: format!(
+                        "⚠ {} {kind} series past freshness SLA (worst: {} is {} old, SLA {}h) — figures below may lag",
+                        stale.len(),
+                        worst.entry.series_id,
+                        human_age(age),
+                        worst.entry.freshness_sla_hours
+                    ),
+                    sections,
+                });
+            }
+        }
+    }
+
+    out
+}
+
 impl BuildContext {
     /// Load a fresh `BuildContext` for a given report date.
     ///
@@ -1262,47 +1535,57 @@ impl BuildContext {
     /// richer per-source loaders are tracked as separate TODO items so each
     /// landing stays focused.
     pub fn load(backend: &BackendConnection, report_date: &str) -> Result<Self> {
-        let recommendation_accuracy_7d = backend
-            .sqlite_native()
-            .and_then(|conn| {
-                crate::db::recommendations::rolling_hit_rate(conn, report_date, 7, 0.0).ok()
-            })
-            .flatten()
-            .map(|r| RecommendationAccuracySummary {
-                window_days: r.window_days,
-                scored: r.scored,
-                hits: r.hits,
-                hit_rate_pct: r.hit_rate_pct,
-                avg_score: r.avg_score,
-            });
-        let synthesis_adversary_views = backend
-            .sqlite_native()
-            .map(load_latest_synthesis_adversary_views)
-            .transpose()?
-            .unwrap_or_default();
-        // Load all chains for the private Macro thesis-chains renderer. The
-        // renderer itself filters down to confirmed / disconfirmed rows, so
-        // we pass the full list here. Public mode never reads this slot.
-        let private_thesis_chains = backend
-            .sqlite_native()
-            .and_then(|conn| crate::db::thesis_dependencies::list(conn, None, None).ok())
-            .unwrap_or_default();
-
         // Every per-source loader below degrades to empty on error: a missing
-        // or malformed source must never abort the whole report build. We
+        // or malformed source must never abort the whole report build. BUT a
+        // failure is never silent — each loader records a `SlotIssue` into
+        // `ctx.slot_issues` so `data_availability` and the integrity footer
+        // can distinguish loader_error / upstream_not_run / no_data. We
         // thread `report_date` through so weekly-change / freshness / calendar
         // math is anchored to the report's day, not wall-clock now.
         let mut ctx = BuildContext {
             report_date: Some(report_date.to_string()),
-            recommendation_accuracy_7d,
-            synthesis_adversary_views,
-            private_thesis_chains,
             ..BuildContext::default()
         };
 
+        ctx.recommendation_accuracy_7d = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "recommendation_accuracy_7d",
+            backend,
+            |conn| crate::db::recommendations::rolling_hit_rate(conn, report_date, 7, 0.0),
+        )
+        .flatten()
+        .map(|r| RecommendationAccuracySummary {
+            window_days: r.window_days,
+            scored: r.scored,
+            hits: r.hits,
+            hit_rate_pct: r.hit_rate_pct,
+            avg_score: r.avg_score,
+        });
+        ctx.synthesis_adversary_views = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "synthesis_adversary_views",
+            backend,
+            load_latest_synthesis_adversary_views,
+        )
+        .unwrap_or_default();
+        // Load all chains for the private Macro thesis-chains renderer. The
+        // renderer itself filters down to confirmed / disconfirmed rows, so
+        // we pass the full list here. Public mode never reads this slot.
+        ctx.private_thesis_chains = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "private_thesis_chains",
+            backend,
+            |conn| crate::db::thesis_dependencies::list(conn, None, None),
+        )
+        .unwrap_or_default();
+
         // Data freshness — reuse the `data status` backend so the report's
         // freshness table matches the operator-facing status command exactly.
-        ctx.data_freshness = crate::commands::status::source_statuses_backend(backend)
+        ctx.data_freshness = load_slot(
+            &mut ctx.slot_issues,
+            "data_freshness",
+            crate::commands::status::source_statuses_backend(backend),
+        )
             .map(|rows| {
                 rows.into_iter()
                     .map(|s| DataFreshnessSummary {
@@ -1316,15 +1599,18 @@ impl BuildContext {
             .unwrap_or_default();
 
         // Latest narrative snapshot drives synthesis + scenario 7d deltas.
-        let narrative = backend
-            .sqlite_native()
-            .and_then(|conn| crate::db::narrative_snapshots::latest_snapshot(conn).ok())
-            .flatten()
-            .and_then(|rec| serde_json::from_str::<serde_json::Value>(&rec.report_json).ok());
+        let narrative = load_sqlite_slot(&mut ctx.slot_issues, "synthesis", backend, |conn| {
+            crate::db::narrative_snapshots::latest_snapshot(conn)
+        })
+        .flatten()
+        .and_then(|rec| serde_json::from_str::<serde_json::Value>(&rec.report_json).ok());
 
         // Regime — latest classified snapshot.
-        ctx.regime = crate::db::regime_snapshots::get_current_backend(backend)
-            .ok()
+        ctx.regime = load_slot(
+            &mut ctx.slot_issues,
+            "regime",
+            crate::db::regime_snapshots::get_current_backend(backend),
+        )
             .flatten()
             .map(|snap| {
                 let detail = snap.drivers.as_deref().and_then(|raw| {
@@ -1366,8 +1652,11 @@ impl BuildContext {
             });
 
         // Convergence across all assets with views in the lookback window.
-        ctx.analyst_convergence =
-            crate::db::analyst_views::convergence_all_backend(backend, Some("7d"))
+        ctx.analyst_convergence = load_slot(
+            &mut ctx.slot_issues,
+            "analyst_convergence",
+            crate::db::analyst_views::convergence_all_backend(backend, Some("7d")),
+        )
                 .map(|reports| {
                     reports
                         .into_iter()
@@ -1381,8 +1670,23 @@ impl BuildContext {
 
         // Per-layer analyst views, grouped per asset-class for each section.
         let all_views =
-            crate::db::analyst_views::list_views_backend(backend, None, None, None)
-                .unwrap_or_default();
+            match crate::db::analyst_views::list_views_backend(backend, None, None, None) {
+                Ok(views) => views,
+                Err(e) => {
+                    note_error_many(
+                        &mut ctx.slot_issues,
+                        &[
+                            "macro_analyst_views",
+                            "bitcoin_analyst_views",
+                            "precious_metals_analyst_views",
+                            "equity_analyst_views",
+                            "private_outlooks",
+                        ],
+                        &e.to_string(),
+                    );
+                    Vec::new()
+                }
+            };
         ctx.macro_analyst_views = analyst_views_for(&all_views, MACRO_ASSETS);
         ctx.bitcoin_analyst_views = analyst_views_for(&all_views, BITCOIN_ASSETS);
         ctx.precious_metals_analyst_views = analyst_views_for(&all_views, METALS_ASSETS);
@@ -1391,8 +1695,18 @@ impl BuildContext {
         // Scenarios — current probabilities from `scenarios`, 7d deltas mapped
         // from the latest narrative snapshot's `scenario_shifts`.
         let shift_map = scenario_shift_map(narrative.as_ref());
-        let scenarios = crate::db::scenarios::list_scenarios_backend(backend, Some("active"))
-            .unwrap_or_default();
+        let scenarios =
+            match crate::db::scenarios::list_scenarios_backend(backend, Some("active")) {
+                Ok(rows) => rows,
+                Err(e) => {
+                    note_error_many(
+                        &mut ctx.slot_issues,
+                        &["public_scenarios", "scenario_deltas"],
+                        &e.to_string(),
+                    );
+                    Vec::new()
+                }
+            };
         ctx.public_scenarios = scenarios
             .iter()
             .map(|s| PublicScenarioRow {
@@ -1420,9 +1734,25 @@ impl BuildContext {
 
         // Economic calendar — upcoming high/medium-impact events from the
         // report date forward.
-        let upcoming_events =
-            crate::db::calendar_cache::get_upcoming_events_backend(backend, report_date, 60)
-                .unwrap_or_default();
+        let upcoming_events = match crate::db::calendar_cache::get_upcoming_events_backend(
+            backend,
+            report_date,
+            60,
+        ) {
+            Ok(rows) => rows,
+            Err(e) => {
+                note_error_many(
+                    &mut ctx.slot_issues,
+                    &[
+                        "economic_calendar",
+                        "private_macro_catalysts",
+                        "private_binary_catalysts",
+                    ],
+                    &e.to_string(),
+                );
+                Vec::new()
+            }
+        };
         // Surface the corrected impact bucket (effective_impact takes the
         // higher of the stored value vs. the name-based heuristic) so cache
         // rows mis-tagged "low" by the scraper render with their real weight.
@@ -1455,9 +1785,12 @@ impl BuildContext {
         ctx.bitcoin_onchain = load_bitcoin_onchain_summaries(backend);
 
         // Macro indicators — latest economic-data cache rows (BLS/FRED).
-        ctx.macro_indicators = backend
-            .sqlite_native()
-            .and_then(|conn| crate::db::economic_data::get_all(conn).ok())
+        ctx.macro_indicators = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "macro_indicators",
+            backend,
+            crate::db::economic_data::get_all,
+        )
             .map(|rows| {
                 rows.into_iter()
                     .map(|e| MacroIndicatorSummary {
@@ -1479,12 +1812,33 @@ impl BuildContext {
             .unwrap_or_default();
 
         // News — latest 48h, ranked into public events + per-asset signals.
-        let news = backend
-            .sqlite_native()
-            .and_then(|conn| {
-                crate::db::news_cache::get_latest_news(conn, 60, None, None, None, Some(48)).ok()
-            })
-            .unwrap_or_default();
+        const NEWS_SLOTS: &[&str] = &[
+            "public_news_events",
+            "news_catalysts",
+            "bitcoin_news",
+            "precious_metals_news",
+            "equity_news",
+        ];
+        let news = match backend.sqlite_native() {
+            Some(conn) => {
+                match crate::db::news_cache::get_latest_news(conn, 60, None, None, None, Some(48))
+                {
+                    Ok(rows) => rows,
+                    Err(e) => {
+                        note_error_many(&mut ctx.slot_issues, NEWS_SLOTS, &e.to_string());
+                        Vec::new()
+                    }
+                }
+            }
+            None => {
+                note_error_many(
+                    &mut ctx.slot_issues,
+                    NEWS_SLOTS,
+                    "backend is not native SQLite; slot loader skipped",
+                );
+                Vec::new()
+            }
+        };
         ctx.public_news_events = news
             .iter()
             .take(12)
@@ -1529,8 +1883,25 @@ impl BuildContext {
 
         // Price-driven market tables. Cache holds spot + previous_close; weekly
         // change is computed against price_history at report_date - 7d.
-        let prices =
-            crate::db::price_cache::get_all_cached_prices_backend(backend).unwrap_or_default();
+        let prices = match crate::db::price_cache::get_all_cached_prices_backend(backend) {
+            Ok(rows) => rows,
+            Err(e) => {
+                note_error_many(
+                    &mut ctx.slot_issues,
+                    &[
+                        "market_snapshot",
+                        "bitcoin_market",
+                        "precious_metals_market",
+                        "equity_indices",
+                        "equity_sectors",
+                        "private_portfolio_snapshot",
+                        "private_positions",
+                    ],
+                    &e.to_string(),
+                );
+                Vec::new()
+            }
+        };
         let price_map: std::collections::HashMap<String, &crate::models::price::PriceQuote> =
             prices.iter().map(|q| (q.symbol.clone(), q)).collect();
         let week_ago = week_ago_date(report_date);
@@ -1594,8 +1965,17 @@ impl BuildContext {
 
         // ---- Private slots -------------------------------------------------
         // Portfolio snapshot + per-position rows from transactions × prices.
-        let transactions =
-            crate::db::transactions::list_transactions_backend(backend).unwrap_or_default();
+        let transactions = match crate::db::transactions::list_transactions_backend(backend) {
+            Ok(rows) => rows,
+            Err(e) => {
+                note_error_many(
+                    &mut ctx.slot_issues,
+                    &["private_portfolio_snapshot", "private_positions"],
+                    &e.to_string(),
+                );
+                Vec::new()
+            }
+        };
         if !transactions.is_empty() {
             let spot: std::collections::HashMap<String, rust_decimal::Decimal> =
                 prices.iter().map(|q| (q.symbol.clone(), q.price)).collect();
@@ -1686,9 +2066,11 @@ impl BuildContext {
         }
 
         // Open (pending) predictions resolving — `journal prediction list`.
-        ctx.private_open_predictions = backend
-            .sqlite_native()
-            .and_then(|conn| {
+        ctx.private_open_predictions = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "private_open_predictions",
+            backend,
+            |conn| {
                 crate::db::user_predictions::list_predictions(
                     conn,
                     Some("pending"),
@@ -1696,8 +2078,8 @@ impl BuildContext {
                     None,
                     None,
                 )
-                .ok()
-            })
+            },
+        )
             .map(|preds| {
                 preds
                     .into_iter()
@@ -1720,36 +2102,110 @@ impl BuildContext {
             .unwrap_or_default();
 
         // Lessons applied — count lesson references over the trailing window.
-        ctx.private_lessons_applied = backend
-            .sqlite_native()
-            .and_then(|conn| load_lessons_applied(conn).ok())
-            .flatten();
+        ctx.private_lessons_applied = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "private_lessons_applied",
+            backend,
+            load_lessons_applied,
+        )
+        .flatten();
 
         // Parallels — read the catalog runner's per-date JSON from /tmp.
-        ctx.parallels_results = load_parallels_results(report_date);
+        // Missing file = the Step 4.5 parallels runner did not run for this
+        // date (upstream_not_run); malformed JSON = loader_error.
+        let (parallels, parallels_issue) = load_parallels_results_classified(report_date);
+        ctx.parallels_results = parallels;
+        if let Some(issue) = parallels_issue {
+            ctx.slot_issues.insert("parallels_results", issue);
+        }
 
         // Cross-layer signals — agent_messages addressed to synthesis on the
         // report date with high/normal priority. Decision-card and panel-*
         // messages are filtered out inside the loader so they appear in their
         // own sections instead of dumping JSON into this table.
-        ctx.cross_layer_signals = load_cross_layer_signals(backend, report_date);
+        ctx.cross_layer_signals = match load_cross_layer_signals(backend, report_date) {
+            Ok(rows) => rows,
+            Err(e) => {
+                note_error(&mut ctx.slot_issues, "cross_layer_signals", e);
+                Vec::new()
+            }
+        };
+        if ctx.cross_layer_signals.is_empty()
+            && !ctx.slot_issues.contains_key("cross_layer_signals")
+        {
+            if let Some(latest) = latest_agent_message_date_before(
+                backend,
+                report_date,
+                |from| !from.starts_with("panel-") && from != "analyst-decisions",
+            ) {
+                ctx.slot_issues.insert(
+                    "cross_layer_signals",
+                    SlotIssue::UpstreamNotRun(format!(
+                        "no synthesis-bound agent messages for {report_date}; latest are from {latest} — analyst layers did not message synthesis today"
+                    )),
+                );
+            }
+        }
 
         // Investor panel — parsed persona responses + per-asset consensus
         // tally. Both empty when the Phase 2b panel spawn produced nothing.
-        ctx.investor_panel = load_investor_panel_responses(backend, report_date);
+        ctx.investor_panel = match load_investor_panel_responses(backend, report_date) {
+            Ok(rows) => rows,
+            Err(e) => {
+                note_error_many(
+                    &mut ctx.slot_issues,
+                    &["investor_panel", "investor_panel_consensus"],
+                    &e.to_string(),
+                );
+                Vec::new()
+            }
+        };
+        if ctx.investor_panel.is_empty() && !ctx.slot_issues.contains_key("investor_panel") {
+            if let Some(latest) = latest_agent_message_date_before(backend, report_date, |from| {
+                from.starts_with("panel-")
+            }) {
+                let issue = SlotIssue::UpstreamNotRun(format!(
+                    "no panel-* messages for {report_date}; latest are from {latest} — Phase 2b investor panel did not run today"
+                ));
+                ctx.slot_issues.insert("investor_panel", issue.clone());
+                ctx.slot_issues.insert("investor_panel_consensus", issue);
+            }
+        }
         ctx.investor_panel_consensus = aggregate_panel_consensus(&ctx.investor_panel);
 
         // Portfolio decision cards — JSON envelopes written by the
         // decision-architect (Phase 4) and parsed into a typed struct so the
         // Decisions Pending section can render them alongside calendar
         // catalyst cards.
-        ctx.portfolio_decision_cards = load_portfolio_decision_cards(backend, report_date);
+        ctx.portfolio_decision_cards = match load_portfolio_decision_cards(backend, report_date) {
+            Ok(rows) => rows,
+            Err(e) => {
+                note_error(&mut ctx.slot_issues, "portfolio_decision_cards", e);
+                Vec::new()
+            }
+        };
+        if ctx.portfolio_decision_cards.is_empty()
+            && !ctx.slot_issues.contains_key("portfolio_decision_cards")
+        {
+            if let Some(latest) = latest_agent_message_date_before(backend, report_date, |from| {
+                from == "analyst-decisions"
+            }) {
+                ctx.slot_issues.insert(
+                    "portfolio_decision_cards",
+                    SlotIssue::UpstreamNotRun(format!(
+                        "no decision cards for {report_date}; latest are from {latest} — Phase 4 decision architect did not run today"
+                    )),
+                );
+            }
+        }
 
         // Risk-factor mappings per held asset. Empty when the macro / high
         // analyst routines have not populated the `risk_factor_mappings`
         // table via `pftui analytics risk-factors add`.
-        ctx.private_risk_factor_mappings = crate::db::risk_factor_mappings::list_backend(
-            backend, None,
+        ctx.private_risk_factor_mappings = load_slot(
+            &mut ctx.slot_issues,
+            "private_risk_factor_mappings",
+            crate::db::risk_factor_mappings::list_backend(backend, None),
         )
         .map(|rows| {
             rows.into_iter()
@@ -1775,6 +2231,15 @@ impl BuildContext {
                     ctx.private_asset_intelligence.insert(sym, blob);
                 }
             }
+            if ctx.private_asset_intelligence.is_empty() {
+                ctx.slot_issues.insert(
+                    "private_asset_intelligence",
+                    SlotIssue::NoData(
+                        "no per-asset intelligence could be assembled for any held position"
+                            .to_string(),
+                    ),
+                );
+            }
         }
 
         // Morning-brief lead — pulled from the latest narrative snapshot if
@@ -1787,25 +2252,51 @@ impl BuildContext {
         // timeframe analyst, the largest |%| move mentioned in those notes
         // against a held asset, and the highest-priority `to='synthesis'`
         // agent message of the day.
-        ctx.todays_analyst_synthesis = backend
-            .sqlite_native()
-            .and_then(|conn| {
-                let held: Vec<String> = ctx
-                    .private_positions
-                    .iter()
-                    .map(|p| p.symbol.clone())
-                    .collect();
-                load_todays_analyst_synthesis(conn, report_date, &held).ok()
-            })
-            .flatten();
+        let held_for_synthesis: Vec<String> = ctx
+            .private_positions
+            .iter()
+            .map(|p| p.symbol.clone())
+            .collect();
+        ctx.todays_analyst_synthesis = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "todays_analyst_synthesis",
+            backend,
+            |conn| load_todays_analyst_synthesis(conn, report_date, &held_for_synthesis),
+        )
+        .flatten();
 
         // Synthesis digest — per-asset bull/bear/change-mind/risk-reward plus
         // the economy paragraph, parsed from `analyst-synthesis` daily_notes
-        // for the report date.
-        ctx.synthesis_notes = backend
-            .sqlite_native()
-            .and_then(|conn| load_synthesis_notes(conn, report_date).ok())
-            .unwrap_or_default();
+        // for the report date. When no notes exist for the report date but
+        // earlier synthesis notes do, the synthesis-writer pass didn't run
+        // today — classify as upstream_not_run, not no_data.
+        ctx.synthesis_notes = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "synthesis_notes",
+            backend,
+            |conn| load_synthesis_notes(conn, report_date),
+        )
+        .unwrap_or_default();
+        if !ctx.synthesis_notes.has_content() && !ctx.slot_issues.contains_key("synthesis_notes")
+        {
+            if let Some(latest) = backend.sqlite_native().and_then(|conn| {
+                latest_synthesis_note_date_before(conn, report_date)
+            }) {
+                ctx.slot_issues.insert(
+                    "synthesis_notes",
+                    SlotIssue::UpstreamNotRun(format!(
+                        "no synthesis notes for {report_date}; latest are from {latest} — synthesis-writer pass did not run today"
+                    )),
+                );
+                ctx.staleness.push(StalenessWarning {
+                    input: "synthesis_notes",
+                    message: format!(
+                        "⚠ no same-day synthesis notes for {report_date} — newest are from {latest}; prose sections reflect an earlier run"
+                    ),
+                    sections: vec!["private_overview", "private_synthesis"],
+                });
+            }
+        }
 
         // ---- Per-asset convergence + drift + derived actions -------------
         // These three slots together drive the per-asset cards. A bug where
@@ -1822,8 +2313,11 @@ impl BuildContext {
             .into_iter()
             .map(|t| (t.symbol.to_uppercase(), dec_to_f64(t.target_pct)))
             .collect();
-        ctx.private_asset_convergence =
-            crate::db::analyst_views::convergence_all_backend(backend, since_ts.as_deref())
+        ctx.private_asset_convergence = load_slot(
+            &mut ctx.slot_issues,
+            "private_asset_convergence",
+            crate::db::analyst_views::convergence_all_backend(backend, since_ts.as_deref()),
+        )
                 .map(|reports| {
                     reports
                         .into_iter()
@@ -1871,18 +2365,23 @@ impl BuildContext {
         // 1. private_news_events — last 24h news mentioning a held asset
         //    via symbol_tag. Reuses the same news_cache loader as the public
         //    news pipeline, narrowed to a 24h window.
-        let news_24h = backend
-            .sqlite_native()
-            .and_then(|conn| {
-                crate::db::news_cache::get_latest_news(conn, 200, None, None, None, Some(24)).ok()
-            })
-            .unwrap_or_default();
+        let news_24h = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "private_news_events",
+            backend,
+            |conn| crate::db::news_cache::get_latest_news(conn, 200, None, None, None, Some(24)),
+        )
+        .unwrap_or_default();
         ctx.private_news_events =
             private_news_events_for_held(&news_24h, &held_symbols);
 
         // 2. private_news_silence — run the silence analyzer the same way
         //    the CLI does; map its entries onto NewsVolumeSignal.
-        ctx.private_news_silence = crate::commands::news_silence::build_report_backend(backend, 28)
+        ctx.private_news_silence = load_slot(
+            &mut ctx.slot_issues,
+            "private_news_silence",
+            crate::commands::news_silence::build_report_backend(backend, 28),
+        )
             .map(|rep| {
                 rep.entries
                     .into_iter()
@@ -1904,8 +2403,11 @@ impl BuildContext {
         //    CLI default (24h). The z-scores are population-relative across
         //    scenarios, so a wider window here shifts every score and makes the
         //    report's callout disagree with what an operator sees from the CLI.
-        ctx.private_macro_divergences =
-            crate::commands::narrative_divergence::build_report_backend(backend, 24, 1.0)
+        ctx.private_macro_divergences = load_slot(
+            &mut ctx.slot_issues,
+            "private_macro_divergences",
+            crate::commands::narrative_divergence::build_report_backend(backend, 24, 1.0),
+        )
                 .map(|rep| {
                     rep.entries
                         .into_iter()
@@ -1949,10 +2451,14 @@ impl BuildContext {
         // surface the same change-radar items. We pass `persist_current=false`
         // so report generation never mutates the situation-snapshot history
         // table (only `data refresh` writes there).
-        ctx.private_what_changed_deltas = crate::analytics::deltas::build_report_backend(
-            backend,
-            crate::analytics::deltas::DeltaWindow::Days7,
-            false,
+        ctx.private_what_changed_deltas = load_slot(
+            &mut ctx.slot_issues,
+            "private_what_changed_deltas",
+            crate::analytics::deltas::build_report_backend(
+                backend,
+                crate::analytics::deltas::DeltaWindow::Days7,
+                false,
+            ),
         )
         .map(|report| {
             report
@@ -1970,8 +2476,11 @@ impl BuildContext {
         // 7d-prior column from the same `scenario_history` source the CLI
         // timeline backend reads, so both report modes line up against the
         // same underlying history.
-        ctx.private_macro_scenarios =
-            crate::db::scenarios::get_all_timelines_backend(backend, Some(7))
+        ctx.private_macro_scenarios = load_slot(
+            &mut ctx.slot_issues,
+            "private_macro_scenarios",
+            crate::db::scenarios::get_all_timelines_backend(backend, Some(7)),
+        )
                 .map(|timelines| {
                     let mut rows: Vec<PrivateMacroScenarioRow> = timelines
                         .into_iter()
@@ -2010,9 +2519,11 @@ impl BuildContext {
         // TODO: replace the placeholder inflation axis with a real CPI-derived
         //       value once a macro-axis snapshot table lands. Track at:
         //       <https://github.com/skylarsimoncelli/pftui/issues> (new issue).
-        ctx.private_macro_regime =
-            crate::db::regime_snapshots::get_history_backend(backend, Some(7))
-                .ok()
+        ctx.private_macro_regime = load_slot(
+            &mut ctx.slot_issues,
+            "private_macro_regime",
+            crate::db::regime_snapshots::get_history_backend(backend, Some(7)),
+        )
                 .filter(|rows| !rows.is_empty())
                 .and_then(|rows| {
                     let head = rows.first()?;
@@ -2038,37 +2549,53 @@ impl BuildContext {
 
         // 5 + 6. Calibration matrix rows. Public surface keeps every row;
         //        private surface filters to held-asset topics.
-        ctx.public_calibration = backend
-            .sqlite_native()
-            .and_then(|conn| load_calibration_rows(conn).ok())
-            .unwrap_or_default();
-        ctx.private_calibration = backend
-            .sqlite_native()
-            .and_then(|conn| load_calibration_rows_for_held(conn, &held_symbols).ok())
-            .unwrap_or_default();
+        ctx.public_calibration = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "public_calibration",
+            backend,
+            load_calibration_rows,
+        )
+        .unwrap_or_default();
+        ctx.private_calibration = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "private_calibration",
+            backend,
+            |conn| load_calibration_rows_for_held(conn, &held_symbols),
+        )
+        .unwrap_or_default();
 
         // 4. private_open_predictions_calibration — pick the most populous
         //    (layer, topic, conviction_band) tuple from calibration_matrix
         //    that matches the dominant layer of the pending predictions, so
         //    the report can show "you've been X% calibrated at this layer".
-        ctx.private_open_predictions_calibration = backend
-            .sqlite_native()
-            .and_then(|conn| load_open_predictions_calibration(conn, &ctx.private_open_predictions).ok())
-            .flatten();
+        let open_preds_for_calibration = ctx.private_open_predictions.clone();
+        ctx.private_open_predictions_calibration = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "private_open_predictions_calibration",
+            backend,
+            |conn| load_open_predictions_calibration(conn, &open_preds_for_calibration),
+        )
+        .flatten();
 
         // 7. public_lessons_applied — reuse the lessons-applied report
         //    over the trailing 24h window, mapped to the public summary.
-        ctx.public_lessons_applied = backend
-            .sqlite_native()
-            .and_then(|conn| load_public_lessons_applied(conn).ok())
-            .unwrap_or_default();
+        ctx.public_lessons_applied = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "public_lessons_applied",
+            backend,
+            load_public_lessons_applied,
+        )
+        .unwrap_or_default();
 
         // 8. private_conviction_trajectories — last 30 days of conviction
         //    points per (held asset, analyst layer). Uses analyst_view_history.
-        ctx.private_conviction_trajectories = backend
-            .sqlite_native()
-            .and_then(|conn| load_conviction_trajectories(conn, &held_symbols, 30).ok())
-            .unwrap_or_default();
+        ctx.private_conviction_trajectories = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "private_conviction_trajectories",
+            backend,
+            |conn| load_conviction_trajectories(conn, &held_symbols, 30),
+        )
+        .unwrap_or_default();
 
         // 9. private_outlooks — collapse the four analyst-views layers onto
         //    days/weeks/months horizons per held asset.
@@ -2077,19 +2604,34 @@ impl BuildContext {
         // 10. epistemic_health — the run_health row for the report date,
         //     surfaced as the final (meta) private section. Best-effort:
         //     missing row or non-SQLite backend degrades to None.
-        ctx.epistemic_health = backend
-            .sqlite_native()
-            .and_then(|conn| crate::db::run_health::get_run_health(conn, report_date).ok())
-            .flatten();
+        ctx.epistemic_health = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "epistemic_health",
+            backend,
+            |conn| crate::db::run_health::get_run_health(conn, report_date),
+        )
+        .flatten();
 
         // 11. recommendation_scoreboard — the ledger's per-held-symbol
         //     forward-return summary (action mix, 90d hit rate, ADD−WAIT
         //     window quality). Best-effort; empty while the ledger accrues.
-        ctx.recommendation_scoreboard = backend
-            .sqlite_native()
-            .and_then(|conn| crate::db::recommendations::scoreboard(conn, None).ok())
-            .map(|board| scoreboard_lines_for_held(&board, &held_symbols))
-            .unwrap_or_default();
+        ctx.recommendation_scoreboard = load_sqlite_slot(
+            &mut ctx.slot_issues,
+            "recommendation_scoreboard",
+            backend,
+            |conn| crate::db::recommendations::scoreboard(conn, None),
+        )
+        .map(|board| scoreboard_lines_for_held(&board, &held_symbols))
+        .unwrap_or_default();
+
+        // ---- Build-time staleness pass ------------------------------------
+        // For inputs with freshness expectations (prices, sentiment,
+        // economic data via series-registry SLAs; analyst views via the
+        // 6h skill gate), record warnings so the assembler can annotate the
+        // affected sections inline instead of silently rendering old data
+        // as current. Annotate, never suppress.
+        let mut staleness = compute_staleness(backend, report_date, &all_views, &prices);
+        ctx.staleness.append(&mut staleness);
 
         Ok(ctx)
     }
@@ -3944,64 +4486,242 @@ fn normalize_pred_layer(value: &str) -> Option<String> {
     }
 }
 
-/// Snapshot of which data slots in a `BuildContext` are populated. Used by the
-/// dry-run output so operators can see what would feed the assembly without
-/// triggering a write.
+/// Why/whether a data slot is available for the build. The four states the
+/// integrity contract requires: a loader ERROR must never render identically
+/// to genuinely-absent data, and "the upstream phase didn't run today" must
+/// be distinguishable from "there has never been anything there".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotStatus {
+    Populated,
+    NoData,
+    UpstreamNotRun,
+    LoaderError,
+}
+
+impl SlotStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SlotStatus::Populated => "populated",
+            SlotStatus::NoData => "no_data",
+            SlotStatus::UpstreamNotRun => "upstream_not_run",
+            SlotStatus::LoaderError => "loader_error",
+        }
+    }
+}
+
+/// Snapshot of one `BuildContext` data slot's availability. Used by the
+/// dry-run output (the operator's audit surface) and the private report's
+/// integrity footer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataAvailabilityRow {
     pub field: &'static str,
     pub populated: bool,
+    pub status: SlotStatus,
+    /// Reason when unpopulated: the loader error text, the upstream-not-run
+    /// explanation, or a no-data note. `None` when populated (or when no
+    /// more specific reason is known than "no rows").
+    pub reason: Option<String>,
 }
 
-pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
-    macro_rules! vec_row {
-        ($field:expr, $value:expr) => {
-            DataAvailabilityRow {
-                field: $field,
-                populated: !$value.is_empty(),
-            }
+/// Classify one slot from its populated bit + any recorded issue.
+fn availability_row(ctx: &BuildContext, field: &'static str, populated: bool) -> DataAvailabilityRow {
+    if populated {
+        return DataAvailabilityRow {
+            field,
+            populated: true,
+            status: SlotStatus::Populated,
+            reason: None,
         };
     }
-    macro_rules! opt_row {
-        ($field:expr, $value:expr) => {
-            DataAvailabilityRow {
-                field: $field,
-                populated: $value.is_some(),
-            }
+    let (status, reason) = match ctx.slot_issues.get(field) {
+        Some(SlotIssue::LoaderError(e)) => (SlotStatus::LoaderError, Some(e.clone())),
+        Some(SlotIssue::UpstreamNotRun(r)) => (SlotStatus::UpstreamNotRun, Some(r.clone())),
+        Some(SlotIssue::NoData(r)) => (SlotStatus::NoData, Some(r.clone())),
+        None => (SlotStatus::NoData, None),
+    };
+    DataAvailabilityRow {
+        field,
+        populated: false,
+        status,
+        reason,
+    }
+}
+
+/// One availability row per data slot on `BuildContext`. EVERY data-bearing
+/// field must appear here — enforced by the
+/// `every_build_context_slot_is_tracked` conformance test, which parses the
+/// struct definition and fails when a new slot ships untracked. The
+/// `vec_slot!`/`opt_slot!`/`map_slot!` macros take the field IDENT (not a
+/// string) so the reported name can never drift from the struct.
+pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
+    let mut rows: Vec<DataAvailabilityRow> = Vec::new();
+    macro_rules! vec_slot {
+        ($field:ident) => {
+            rows.push(availability_row(
+                ctx,
+                stringify!($field),
+                !ctx.$field.is_empty(),
+            ));
+        };
+    }
+    macro_rules! opt_slot {
+        ($field:ident) => {
+            rows.push(availability_row(
+                ctx,
+                stringify!($field),
+                ctx.$field.is_some(),
+            ));
+        };
+    }
+    macro_rules! map_slot {
+        ($field:ident) => {
+            rows.push(availability_row(
+                ctx,
+                stringify!($field),
+                !ctx.$field.is_empty(),
+            ));
         };
     }
 
-    vec![
-        vec_row!("data_freshness", ctx.data_freshness),
-        opt_row!("synthesis", ctx.synthesis),
-        opt_row!("regime", ctx.regime),
-        vec_row!("market_snapshot", ctx.market_snapshot),
-        vec_row!("news_catalysts", ctx.news_catalysts),
-        vec_row!("macro_indicators", ctx.macro_indicators),
-        vec_row!("economic_calendar", ctx.economic_calendar),
-        opt_row!("bitcoin_market", ctx.bitcoin_market),
-        vec_row!("precious_metals_market", ctx.precious_metals_market),
-        vec_row!("equity_indices", ctx.equity_indices),
-        vec_row!("public_scenarios", ctx.public_scenarios),
-        opt_row!("private_portfolio_snapshot", ctx.private_portfolio_snapshot),
-        vec_row!("private_positions", ctx.private_positions),
-        vec_row!("private_open_predictions", ctx.private_open_predictions),
-        opt_row!("private_lessons_applied", ctx.private_lessons_applied),
-        vec_row!("parallels_results", ctx.parallels_results),
-        vec_row!("cross_layer_signals", ctx.cross_layer_signals),
-        DataAvailabilityRow {
-            field: "synthesis_notes",
-            populated: ctx.synthesis_notes.economy.is_some()
-                || !ctx.synthesis_notes.assets.is_empty(),
-        },
-        DataAvailabilityRow {
-            field: "private_asset_intelligence",
-            populated: !ctx.private_asset_intelligence.is_empty(),
-        },
-        opt_row!("morning_brief", ctx.morning_brief),
-        opt_row!("epistemic_health", ctx.epistemic_health),
-        vec_row!("recommendation_scoreboard", ctx.recommendation_scoreboard),
-    ]
+    vec_slot!(data_freshness);
+    opt_slot!(synthesis);
+    opt_slot!(regime);
+    vec_slot!(analyst_convergence);
+    vec_slot!(scenario_deltas);
+    vec_slot!(news_catalysts);
+    vec_slot!(market_snapshot);
+    vec_slot!(macro_indicators);
+    vec_slot!(economic_calendar);
+    vec_slot!(macro_analyst_views);
+    vec_slot!(macro_news_volume);
+    opt_slot!(bitcoin_market);
+    vec_slot!(bitcoin_etf_flows);
+    vec_slot!(bitcoin_onchain);
+    vec_slot!(bitcoin_analyst_views);
+    vec_slot!(bitcoin_news);
+    vec_slot!(bitcoin_prediction_signals);
+    vec_slot!(precious_metals_market);
+    vec_slot!(precious_metals_supply);
+    vec_slot!(precious_metals_analyst_views);
+    vec_slot!(precious_metals_news);
+    opt_slot!(real_yield_context);
+    opt_slot!(real_rates_snapshot);
+    vec_slot!(sovereign_gold_holdings);
+    vec_slot!(equity_indices);
+    vec_slot!(equity_sectors);
+    opt_slot!(equity_breadth);
+    opt_slot!(equity_earnings);
+    vec_slot!(equity_analyst_views);
+    vec_slot!(equity_news);
+    vec_slot!(public_news_events);
+    vec_slot!(public_news_silence);
+    vec_slot!(public_scenarios);
+    vec_slot!(public_calibration);
+    vec_slot!(private_calibration);
+    vec_slot!(public_lessons_applied);
+    vec_slot!(public_prediction_intelligence);
+    vec_slot!(public_source_tier_overrides);
+    opt_slot!(private_portfolio_snapshot);
+    vec_slot!(private_derived_actions);
+    vec_slot!(private_binary_catalysts);
+    vec_slot!(private_what_changed_deltas);
+    vec_slot!(private_positions);
+    vec_slot!(private_drift_rows);
+    opt_slot!(private_macro_regime);
+    vec_slot!(private_macro_scenarios);
+    vec_slot!(private_macro_divergences);
+    vec_slot!(private_macro_catalysts);
+    vec_slot!(private_thesis_chains);
+    vec_slot!(private_asset_convergence);
+    vec_slot!(private_conviction_trajectories);
+    vec_slot!(private_outlooks);
+    vec_slot!(private_risk_factor_mappings);
+    vec_slot!(private_journal_views);
+    vec_slot!(private_news_events);
+    vec_slot!(private_news_silence);
+    vec_slot!(private_open_predictions);
+    opt_slot!(private_open_predictions_calibration);
+    opt_slot!(private_lessons_applied);
+    opt_slot!(private_regime_conditional);
+    opt_slot!(recommendation_accuracy_7d);
+    vec_slot!(synthesis_adversary_views);
+    opt_slot!(todays_analyst_synthesis);
+    vec_slot!(parallels_results);
+    vec_slot!(cross_layer_signals);
+    vec_slot!(investor_panel);
+    vec_slot!(investor_panel_consensus);
+    vec_slot!(portfolio_decision_cards);
+    map_slot!(private_asset_intelligence);
+    opt_slot!(morning_brief);
+    rows.push(availability_row(
+        ctx,
+        "synthesis_notes",
+        ctx.synthesis_notes.has_content(),
+    ));
+    opt_slot!(epistemic_health);
+    vec_slot!(recommendation_scoreboard);
+
+    rows
+}
+
+/// Conformance core: every struct field must be either a tracked slot or a
+/// declared META field, every tracked slot must still exist on the struct,
+/// and nothing may be tracked twice. Returns a human-actionable error
+/// message on the first violation. Unit-tested with a fictional untracked
+/// slot so the conformance test itself stays honest.
+pub fn check_slot_conformance(
+    struct_fields: &[String],
+    tracked: &[&str],
+    meta: &[&str],
+) -> std::result::Result<(), String> {
+    use std::collections::BTreeSet;
+    let tracked_set: BTreeSet<&str> = tracked.iter().copied().collect();
+    if tracked_set.len() != tracked.len() {
+        let mut seen = BTreeSet::new();
+        for t in tracked {
+            if !seen.insert(t) {
+                return Err(format!("slot `{t}` is tracked twice in data_availability()"));
+            }
+        }
+    }
+    let field_set: BTreeSet<&str> = struct_fields.iter().map(|s| s.as_str()).collect();
+    for field in struct_fields {
+        if meta.contains(&field.as_str()) {
+            continue;
+        }
+        if !tracked_set.contains(field.as_str()) {
+            return Err(format!(
+                "data slot `{field}` was added to the report build context without \
+                 availability tracking. Every data-bearing field must have a \
+                 vec_slot!/opt_slot! row in data_availability() (so the dry-run \
+                 audit and the integrity footer can report it), and its loader \
+                 must record SlotIssue on failure. If it is metadata, add it to \
+                 BUILD_CONTEXT_META_FIELDS instead. Do NOT weaken this test."
+            ));
+        }
+    }
+    for t in tracked {
+        if !field_set.contains(t) {
+            return Err(format!(
+                "data_availability() tracks `{t}` but no such field exists on the \
+                 report build context — remove the row or fix the rename."
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Per-section render accounting: did the section produce content, and if
+/// not, which empty-state condition fired. The composition step may still
+/// drop sections after assembly — this records what the ASSEMBLER produced
+/// vs auto-suppressed, so a silently-missing section is always explainable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SectionOutcome {
+    pub name: &'static str,
+    pub visibility: SectionVisibility,
+    pub rendered: bool,
+    /// The renderer-stated suppression reason when not rendered.
+    pub suppression_reason: Option<String>,
 }
 
 /// What the assembler will do without doing it.
@@ -4011,6 +4731,8 @@ pub struct DryRunSummary {
     pub report_date: String,
     pub plan: Vec<SectionSpec>,
     pub data_availability: Vec<DataAvailabilityRow>,
+    pub section_outcomes: Vec<SectionOutcome>,
+    pub staleness: Vec<StalenessWarning>,
     pub output_paths: Vec<PathBuf>,
     pub privacy_audit_status: String,
 }
@@ -4025,23 +4747,47 @@ impl DryRunSummary {
         ));
         out.push_str("Section plan:\n");
         for (idx, spec) in self.plan.iter().enumerate() {
+            let outcome = self
+                .section_outcomes
+                .iter()
+                .find(|o| o.name == spec.name);
+            let note = match outcome {
+                Some(o) if !o.rendered => format!(
+                    "  [suppressed: {}]",
+                    o.suppression_reason.as_deref().unwrap_or("no reason given")
+                ),
+                _ => String::new(),
+            };
             out.push_str(&format!(
-                "  {:>2}. [{}] {}\n",
+                "  {:>2}. [{}] {}{}\n",
                 idx + 1,
                 match spec.visibility {
                     SectionVisibility::Public => "pub",
                     SectionVisibility::Private => "prv",
                 },
-                spec.name
+                spec.name,
+                note
             ));
         }
         out.push_str("\nData availability:\n");
         for row in &self.data_availability {
-            out.push_str(&format!(
-                "  - {:<32} {}\n",
-                row.field,
-                if row.populated { "present" } else { "missing" }
-            ));
+            let detail = match (&row.status, row.reason.as_deref()) {
+                (SlotStatus::Populated, _) => "populated".to_string(),
+                (status, Some(reason)) => format!("{} — {}", status.as_str(), reason),
+                (status, None) => status.as_str().to_string(),
+            };
+            out.push_str(&format!("  - {:<40} {}\n", row.field, detail));
+        }
+        if !self.staleness.is_empty() {
+            out.push_str("\nStaleness warnings:\n");
+            for w in &self.staleness {
+                out.push_str(&format!(
+                    "  - {} → {} (annotates: {})\n",
+                    w.input,
+                    w.message,
+                    w.sections.join(", ")
+                ));
+            }
         }
         out.push_str("\nOutput paths (not written):\n");
         for path in &self.output_paths {
@@ -4128,23 +4874,202 @@ pub fn audit_public_markdown(body: &str) -> Vec<PrivacyViolation> {
     violations
 }
 
-/// Concatenate sections in `plan` order, separating with a blank line.
-/// Empty section bodies (a suppressed/auto-omitted section returns an empty
-/// string) are skipped so they leave no dangling blank lines. The assembled
-/// markdown is scanned for leaked internal/debug text; findings are logged but
+/// Extract the suppression reason from a section body that consists solely
+/// of a `<!-- suppressed: … -->` marker (the suppression-reason channel each
+/// renderer's empty-state return uses — see `sections::suppressed`).
+pub fn extract_suppression_reason(body: &str) -> Option<String> {
+    let trimmed = body.trim();
+    let inner = trimmed
+        .strip_prefix(crate::report::sections::SUPPRESSED_PREFIX)?
+        .strip_suffix("-->")?;
+    Some(inner.trim().to_string())
+}
+
+/// Insert staleness annotations (as `> ⚠ …` blockquotes) after the first
+/// line of a rendered section body. The first line is the `## Heading`, so
+/// the warning lands directly under the section title.
+fn inject_staleness_annotations(body: &str, warnings: &[&StalenessWarning]) -> String {
+    if warnings.is_empty() {
+        return body.to_string();
+    }
+    let mut lines = body.lines();
+    let first = lines.next().unwrap_or_default();
+    let rest: Vec<&str> = lines.collect();
+    let mut out = String::from(first);
+    for w in warnings {
+        out.push_str("\n\n> ");
+        out.push_str(&w.message);
+    }
+    if !rest.is_empty() {
+        out.push('\n');
+        out.push_str(&rest.join("\n"));
+    }
+    out
+}
+
+/// Concatenate sections in `plan` order, separating with a blank line, and
+/// account for every section: rendered vs auto-suppressed (with the
+/// renderer-stated empty-state reason). Suppressed sections leave no
+/// dangling blank lines. Staleness warnings targeting a rendered section
+/// are injected directly under its heading. The assembled markdown is
+/// scanned for leaked internal/debug text; findings are logged but
 /// non-fatal so report generation is never blocked.
-pub fn assemble_markdown(ctx: &BuildContext, plan: &[SectionSpec]) -> Result<String> {
+pub fn assemble_markdown_accounted(
+    ctx: &BuildContext,
+    plan: &[SectionSpec],
+) -> Result<(String, Vec<SectionOutcome>)> {
+    assemble_markdown_with_override(ctx, plan, |_| None)
+}
+
+/// Core assembly: like [`assemble_markdown_accounted`] but allows one
+/// caller-supplied override body per section (used by the persist path to
+/// swap in the rec-id-annotated Decisions Pending render).
+fn assemble_markdown_with_override(
+    ctx: &BuildContext,
+    plan: &[SectionSpec],
+    override_body: impl Fn(&str) -> Option<String>,
+) -> Result<(String, Vec<SectionOutcome>)> {
     let mut parts = Vec::with_capacity(plan.len());
+    let mut outcomes = Vec::with_capacity(plan.len());
     for spec in plan {
-        let body = render_section(spec.name, ctx)
-            .with_context(|| format!("failed to render section {}", spec.name))?;
-        if !body.trim().is_empty() {
-            parts.push(body);
+        let body = match override_body(spec.name) {
+            Some(b) => b,
+            None => render_section(spec.name, ctx)
+                .with_context(|| format!("failed to render section {}", spec.name))?,
+        };
+        if let Some(reason) = extract_suppression_reason(&body) {
+            outcomes.push(SectionOutcome {
+                name: spec.name,
+                visibility: spec.visibility,
+                rendered: false,
+                suppression_reason: Some(reason),
+            });
+            continue;
         }
+        if body.trim().is_empty() {
+            outcomes.push(SectionOutcome {
+                name: spec.name,
+                visibility: spec.visibility,
+                rendered: false,
+                suppression_reason: Some(
+                    "renderer returned an empty body without a stated reason".to_string(),
+                ),
+            });
+            continue;
+        }
+        let warnings: Vec<&StalenessWarning> = ctx
+            .staleness
+            .iter()
+            .filter(|w| w.sections.contains(&spec.name))
+            .collect();
+        parts.push(inject_staleness_annotations(&body, &warnings));
+        outcomes.push(SectionOutcome {
+            name: spec.name,
+            visibility: spec.visibility,
+            rendered: true,
+            suppression_reason: None,
+        });
     }
     let markdown = parts.join("\n\n");
     warn_on_leaks(&markdown);
-    Ok(markdown)
+    Ok((markdown, outcomes))
+}
+
+/// Backwards-compatible body-only assembly (no accounting).
+pub fn assemble_markdown(ctx: &BuildContext, plan: &[SectionSpec]) -> Result<String> {
+    assemble_markdown_accounted(ctx, plan).map(|(body, _)| body)
+}
+
+/// Marker comment that opens the integrity footer. The composition step
+/// edits the report ABOVE this marker and must never remove the block.
+pub const INTEGRITY_FOOTER_MARKER: &str = "<!-- integrity-footer: do not remove -->";
+
+/// Render the unconditional integrity footer appended to the PRIVATE
+/// report: slot accounting (populated / no-data / upstream-not-run /
+/// LOADER ERRORS in bold with error text), section render-vs-suppression
+/// accounting, and stale-input notes. When everything is populated the
+/// slot line collapses to one quiet sentence.
+pub fn render_integrity_footer(
+    availability: &[DataAvailabilityRow],
+    outcomes: &[SectionOutcome],
+    staleness: &[StalenessWarning],
+) -> String {
+    let total = availability.len();
+    let populated = availability.iter().filter(|r| r.populated).count();
+    let no_data: Vec<&str> = availability
+        .iter()
+        .filter(|r| !r.populated && r.status == SlotStatus::NoData)
+        .map(|r| r.field)
+        .collect();
+    let upstream: Vec<&str> = availability
+        .iter()
+        .filter(|r| r.status == SlotStatus::UpstreamNotRun)
+        .map(|r| r.field)
+        .collect();
+    let errors: Vec<(&str, String)> = availability
+        .iter()
+        .filter(|r| r.status == SlotStatus::LoaderError)
+        .map(|r| {
+            (
+                r.field,
+                r.reason.clone().unwrap_or_else(|| "unknown error".to_string()),
+            )
+        })
+        .collect();
+
+    let mut out = String::from("---\n\n");
+    out.push_str(INTEGRITY_FOOTER_MARKER);
+    out.push('\n');
+
+    if populated == total {
+        out.push_str(&format!("*Report integrity: all {total} slots populated.*"));
+    } else {
+        let mut line = format!("*Report integrity: {populated}/{total} slots populated.");
+        if !no_data.is_empty() {
+            line.push_str(&format!(" No data: {}.", no_data.join(", ")));
+        }
+        if !upstream.is_empty() {
+            line.push_str(&format!(" Upstream not run: {}.", upstream.join(", ")));
+        }
+        line.push('*');
+        out.push_str(&line);
+        if !errors.is_empty() {
+            let rendered: Vec<String> = errors
+                .iter()
+                .map(|(field, err)| format!("**{field}: {err}**"))
+                .collect();
+            out.push_str(&format!(" **LOADER ERRORS:** {}.", rendered.join("; ")));
+        }
+    }
+
+    let suppressed: Vec<&SectionOutcome> = outcomes.iter().filter(|o| !o.rendered).collect();
+    let rendered_count = outcomes.len() - suppressed.len();
+    if !suppressed.is_empty() {
+        let details: Vec<String> = suppressed
+            .iter()
+            .map(|o| {
+                format!(
+                    "{} ({})",
+                    o.name,
+                    o.suppression_reason.as_deref().unwrap_or("no reason given")
+                )
+            })
+            .collect();
+        out.push_str(&format!(
+            "\n*Sections: {} rendered, {} auto-suppressed — {}.*",
+            rendered_count,
+            suppressed.len(),
+            details.join("; ")
+        ));
+    }
+    if !staleness.is_empty() {
+        let inputs: Vec<String> = staleness
+            .iter()
+            .map(|w| format!("{} ({})", w.input, w.message.trim_start_matches("⚠ ").trim_start_matches('⚠').trim()))
+            .collect();
+        out.push_str(&format!("\n*Stale inputs: {}.*", inputs.join("; ")));
+    }
+    out
 }
 
 /// Log a warning for any leaked internal/debug text found in assembled
@@ -4183,12 +5108,25 @@ pub fn assemble_public(ctx: &BuildContext) -> Result<String> {
     Ok(body)
 }
 
+/// Append the unconditional integrity footer to an assembled private body.
+fn with_integrity_footer(ctx: &BuildContext, body: String, outcomes: &[SectionOutcome]) -> String {
+    let footer = render_integrity_footer(&data_availability(ctx), outcomes, &ctx.staleness);
+    if body.trim().is_empty() {
+        footer
+    } else {
+        format!("{body}\n\n{footer}")
+    }
+}
+
 /// Assemble the private markdown (uses private section plan only — the public
 /// analytical core is intentionally not duplicated into the private file;
 /// `--mode both` produces TWO separate documents, one per destination).
+/// Unconditionally appends the integrity footer AFTER the last section so
+/// the composition step edits above it.
 pub fn assemble_private(ctx: &BuildContext) -> Result<String> {
     let plan = private_section_plan();
-    assemble_markdown(ctx, &plan)
+    let (body, outcomes) = assemble_markdown_accounted(ctx, &plan)?;
+    Ok(with_integrity_footer(ctx, body, &outcomes))
 }
 
 /// Same as [`assemble_private`] but, before rendering, persists any decision
@@ -4218,21 +5156,12 @@ pub fn assemble_private_with_persist(
         }
     }
     let plan = private_section_plan();
-    let mut parts = Vec::with_capacity(plan.len());
-    for spec in plan.iter() {
-        let body = if spec.name == "private_decisions_pending" {
+    let (body, outcomes) = assemble_markdown_with_override(ctx, &plan, |name| {
+        (name == "private_decisions_pending").then(|| {
             crate::report::sections::private_decisions_pending::render_private_decisions_pending_with_cards(&annotated)
-        } else {
-            render_section(spec.name, ctx)
-                .with_context(|| format!("failed to render section {}", spec.name))?
-        };
-        if !body.trim().is_empty() {
-            parts.push(body);
-        }
-    }
-    let markdown = parts.join("\n\n");
-    warn_on_leaks(&markdown);
-    Ok(markdown)
+        })
+    })?;
+    Ok(with_integrity_footer(ctx, body, &outcomes))
 }
 
 /// Persist every decision card derived from the context as a `recommendations`
@@ -4384,11 +5313,19 @@ pub fn render_dry_run(
         BuildMode::Private => "skipped (private-only mode)".to_string(),
     };
 
+    // Section accounting for the dry run: render every planned section and
+    // record rendered vs auto-suppressed (with the empty-state reason).
+    let section_outcomes = assemble_markdown_accounted(ctx, &plan.sections)
+        .map(|(_, outcomes)| outcomes)
+        .unwrap_or_default();
+
     DryRunSummary {
         mode,
         report_date: date.to_string(),
         plan: plan.sections,
         data_availability: data_availability(ctx),
+        section_outcomes,
+        staleness: ctx.staleness.clone(),
         output_paths,
         privacy_audit_status: audit_status,
     }
@@ -4492,12 +5429,49 @@ pub fn assemble(
 /// runner did not execute (it's a best-effort enrichment pass run from
 /// the report skill, not a hard dependency).
 pub fn load_parallels_results(report_date: &str) -> Vec<ParallelsResult> {
+    load_parallels_results_classified(report_date).0
+}
+
+/// Like [`load_parallels_results`] but classifies WHY the result is empty:
+/// a missing file means the Step 4.5 parallels runner did not run for this
+/// date (`UpstreamNotRun`); an unreadable/malformed file is a `LoaderError`;
+/// a well-formed file with zero matching sets is genuine `NoData`.
+pub fn load_parallels_results_classified(
+    report_date: &str,
+) -> (Vec<ParallelsResult>, Option<SlotIssue>) {
     let path = format!("/tmp/pftui-parallels-{report_date}.json");
     let raw = match std::fs::read_to_string(&path) {
         Ok(s) => s,
-        Err(_) => return Vec::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return (
+                Vec::new(),
+                Some(SlotIssue::UpstreamNotRun(format!(
+                    "{path} not found — parallels catalog runner (Step 4.5) did not run for this date"
+                ))),
+            );
+        }
+        Err(e) => {
+            return (
+                Vec::new(),
+                Some(SlotIssue::LoaderError(format!("failed to read {path}: {e}"))),
+            );
+        }
     };
-    parse_parallels_json(&raw)
+    if serde_json::from_str::<serde_json::Value>(&raw).is_err() {
+        return (
+            Vec::new(),
+            Some(SlotIssue::LoaderError(format!(
+                "{path} exists but is not valid JSON"
+            ))),
+        );
+    }
+    let results = parse_parallels_json(&raw);
+    let issue = results.is_empty().then(|| {
+        SlotIssue::NoData(format!(
+            "{path} parsed but contained no matching parallel sets"
+        ))
+    });
+    (results, issue)
 }
 
 /// Parse the parallels bundle JSON into the compact `ParallelsResult` shape.
@@ -4592,7 +5566,7 @@ fn parse_parallels_json(raw: &str) -> Vec<ParallelsResult> {
 fn load_cross_layer_signals(
     backend: &BackendConnection,
     report_date: &str,
-) -> Vec<CrossLayerSignal> {
+) -> Result<Vec<CrossLayerSignal>> {
     // agent_messages.created_at is stored with a space separator
     // ("YYYY-MM-DD HH:MM:SS"), so the since-bound must use a space too —
     // a 'T' separator sorts lexically AFTER the space and silently drops
@@ -4609,9 +5583,8 @@ fn load_cross_layer_signals(
         Some(&since),
         None,
         Some(100),
-    )
-    .unwrap_or_default();
-    messages
+    )?;
+    Ok(messages
         .into_iter()
         .filter(|m| {
             let p = m.priority.to_ascii_lowercase();
@@ -4643,7 +5616,59 @@ fn load_cross_layer_signals(
             category: m.category.unwrap_or_default(),
             summary: first_sentence(&m.content).replace('|', "/"),
         })
-        .collect()
+        .collect())
+}
+
+/// Find the most recent `created_at` DATE strictly before `report_date` among
+/// synthesis-bound agent messages whose `from_agent` matches `from_filter`.
+/// Used to distinguish `upstream_not_run` (the writing phase ran on earlier
+/// days but not today) from genuine `no_data` (never ran at all).
+/// Best-effort: returns None on any query error.
+fn latest_agent_message_date_before(
+    backend: &BackendConnection,
+    report_date: &str,
+    from_filter: impl Fn(&str) -> bool,
+) -> Option<String> {
+    let messages = crate::db::agent_messages::list_messages_backend(
+        backend,
+        None,
+        Some("synthesis"),
+        None,
+        false,
+        None,
+        None,
+        Some(500),
+    )
+    .ok()?;
+    messages
+        .iter()
+        .filter(|m| from_filter(&m.from_agent))
+        .filter_map(|m| m.created_at.get(..10).map(|d| d.to_string()))
+        .filter(|d| d.as_str() < report_date)
+        .max()
+}
+
+/// Find the most recent `daily_notes` date strictly before `report_date`
+/// carrying an `analyst-synthesis` note with a recognised `[synthesis-…]`
+/// header. Best-effort: returns None on any query error.
+fn latest_synthesis_note_date_before(
+    conn: &rusqlite::Connection,
+    report_date: &str,
+) -> Option<String> {
+    let notes = crate::db::daily_notes::list_notes(
+        conn,
+        None,
+        None,
+        Some(500),
+        Some("analyst-synthesis"),
+    )
+    .ok()?;
+    notes
+        .iter()
+        .filter(|n| parse_synthesis_header(&n.content).is_some())
+        .map(|n| n.date.clone())
+        .filter(|d| d.as_str() < report_date)
+        .max()
 }
 
 /// Load the investor-panel persona responses for the report date by
@@ -4655,7 +5680,7 @@ fn load_cross_layer_signals(
 fn load_investor_panel_responses(
     backend: &BackendConnection,
     report_date: &str,
-) -> Vec<InvestorPanelResponse> {
+) -> Result<Vec<InvestorPanelResponse>> {
     let since = format!("{report_date} 00:00:00");
     let messages = crate::db::agent_messages::list_messages_backend(
         backend,
@@ -4666,14 +5691,13 @@ fn load_investor_panel_responses(
         Some(&since),
         None,
         Some(64),
-    )
-    .unwrap_or_default();
-    messages
+    )?;
+    Ok(messages
         .into_iter()
         .filter(|m| m.from_agent.starts_with("panel-"))
         .filter(|m| m.created_at.starts_with(report_date))
         .filter_map(|m| parse_panel_response(&m.content))
-        .collect()
+        .collect())
 }
 
 fn parse_panel_response(raw: &str) -> Option<InvestorPanelResponse> {
@@ -4930,7 +5954,7 @@ fn aggregate_panel_consensus(
 fn load_portfolio_decision_cards(
     backend: &BackendConnection,
     report_date: &str,
-) -> Vec<PortfolioDecisionCard> {
+) -> Result<Vec<PortfolioDecisionCard>> {
     let since = format!("{report_date} 00:00:00");
     let messages = crate::db::agent_messages::list_messages_backend(
         backend,
@@ -4941,14 +5965,13 @@ fn load_portfolio_decision_cards(
         Some(&since),
         None,
         Some(64),
-    )
-    .unwrap_or_default();
-    messages
+    )?;
+    Ok(messages
         .into_iter()
         .filter(|m| m.created_at.starts_with(report_date))
         .filter(|m| m.category.as_deref() == Some("decision-card"))
         .filter_map(|m| parse_decision_card(&m.content))
-        .collect()
+        .collect())
 }
 
 fn parse_decision_card(raw: &str) -> Option<PortfolioDecisionCard> {
@@ -5959,6 +6982,509 @@ mod assembler_tests {
         assert!(names.contains(&"private_asset_intelligence"));
         assert!(names.contains(&"morning_brief"));
         assert!(names.contains(&"epistemic_health"));
+        // Slots the pre-integrity availability table missed entirely:
+        assert!(names.contains(&"investor_panel"));
+        assert!(names.contains(&"portfolio_decision_cards"));
+        assert!(names.contains(&"todays_analyst_synthesis"));
+        assert!(names.contains(&"private_thesis_chains"));
+        assert!(names.contains(&"synthesis_adversary_views"));
+    }
+
+    /// Parse the field names of a struct out of this source file. Test-only
+    /// reflection substitute: lines `pub <ident>: …` between the struct's
+    /// opening brace and the first column-0 closing brace.
+    fn parse_struct_fields(src: &str, struct_name: &str) -> Vec<String> {
+        let needle = format!("pub struct {struct_name} {{");
+        let start = src
+            .find(&needle)
+            .unwrap_or_else(|| panic!("struct {struct_name} not found in source"));
+        let mut fields = Vec::new();
+        for line in src[start + needle.len()..].lines() {
+            if line.starts_with('}') {
+                break;
+            }
+            let trimmed = line.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("pub ") {
+                if let Some(colon) = rest.find(':') {
+                    let name = rest[..colon].trim();
+                    if name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                        && !name.is_empty()
+                    {
+                        fields.push(name.to_string());
+                    }
+                }
+            }
+        }
+        fields
+    }
+
+    /// THE conformance test (schema-conformance pattern applied to the
+    /// report): every data-bearing field on the build context must appear in
+    /// `data_availability` output. A new loader/slot that ships without
+    /// availability tracking turns this red. Do NOT weaken; add the
+    /// vec_slot!/opt_slot! row (or a BUILD_CONTEXT_META_FIELDS entry for
+    /// genuine metadata) instead.
+    #[test]
+    fn every_build_context_slot_is_tracked() {
+        let src = include_str!("daily.rs");
+        let fields = parse_struct_fields(src, "BuildContext");
+        assert!(
+            fields.len() > 60,
+            "struct parse looks broken: only {} fields found",
+            fields.len()
+        );
+        let rows = data_availability(&BuildContext::default());
+        let tracked: Vec<&str> = rows.iter().map(|r| r.field).collect();
+        if let Err(msg) = check_slot_conformance(&fields, &tracked, BUILD_CONTEXT_META_FIELDS) {
+            panic!("{msg}");
+        }
+    }
+
+    /// Test the test: a fictional slot added to the struct without a
+    /// matching availability row must produce a red, actionable failure.
+    #[test]
+    fn slot_conformance_flags_untracked_fictional_slot() {
+        let mut fields = parse_struct_fields(include_str!("daily.rs"), "BuildContext");
+        fields.push("fictional_new_slot".to_string());
+        let rows = data_availability(&BuildContext::default());
+        let tracked: Vec<&str> = rows.iter().map(|r| r.field).collect();
+        let err = check_slot_conformance(&fields, &tracked, BUILD_CONTEXT_META_FIELDS)
+            .expect_err("an untracked slot must fail conformance");
+        assert!(err.contains("fictional_new_slot"), "error names the slot: {err}");
+        assert!(
+            err.contains("availability tracking"),
+            "error explains the rule: {err}"
+        );
+    }
+
+    /// Renames/deletions must also be caught: tracking a slot that no longer
+    /// exists on the struct is a failure too.
+    #[test]
+    fn slot_conformance_flags_tracked_but_missing_field() {
+        let fields = vec!["regime".to_string()];
+        let err = check_slot_conformance(&fields, &["regime", "ghost_slot"], &[])
+            .expect_err("tracking a non-existent field must fail");
+        assert!(err.contains("ghost_slot"), "{err}");
+    }
+
+    #[test]
+    fn availability_classifies_loader_error_vs_no_data_vs_upstream() {
+        let mut ctx = BuildContext::default();
+        ctx.slot_issues.insert(
+            "cross_layer_signals",
+            SlotIssue::LoaderError("synthetic: table locked".to_string()),
+        );
+        ctx.slot_issues.insert(
+            "investor_panel",
+            SlotIssue::UpstreamNotRun("no panel-* messages today; latest 2026-06-01".to_string()),
+        );
+        ctx.slot_issues.insert(
+            "parallels_results",
+            SlotIssue::NoData("file parsed but no matching sets".to_string()),
+        );
+        let rows = data_availability(&ctx);
+        let by_name = |name: &str| rows.iter().find(|r| r.field == name).unwrap();
+
+        let err_row = by_name("cross_layer_signals");
+        assert_eq!(err_row.status, SlotStatus::LoaderError);
+        assert_eq!(err_row.reason.as_deref(), Some("synthetic: table locked"));
+        assert!(!err_row.populated);
+
+        let upstream_row = by_name("investor_panel");
+        assert_eq!(upstream_row.status, SlotStatus::UpstreamNotRun);
+
+        let nodata_row = by_name("parallels_results");
+        assert_eq!(nodata_row.status, SlotStatus::NoData);
+        assert!(nodata_row.reason.is_some());
+
+        // A slot with no issue recorded and no data is plain no_data.
+        let silent = by_name("equity_indices");
+        assert_eq!(silent.status, SlotStatus::NoData);
+        assert!(silent.reason.is_none());
+
+        // A populated slot is Populated even if an issue was recorded.
+        ctx.regime = Some(RegimeSummary {
+            classification: "risk_on".to_string(),
+            detail: None,
+        });
+        let rows = data_availability(&ctx);
+        let regime_row = rows.iter().find(|r| r.field == "regime").unwrap();
+        assert_eq!(regime_row.status, SlotStatus::Populated);
+    }
+
+    #[test]
+    fn parallels_classified_missing_file_is_upstream_not_run() {
+        let (results, issue) = load_parallels_results_classified("1999-01-01");
+        assert!(results.is_empty());
+        match issue {
+            Some(SlotIssue::UpstreamNotRun(reason)) => {
+                assert!(reason.contains("did not run"), "{reason}");
+            }
+            other => panic!("expected UpstreamNotRun, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parallels_classified_malformed_file_is_loader_error() {
+        let date = format!("test-malformed-{}", std::process::id());
+        let path = format!("/tmp/pftui-parallels-{date}.json");
+        std::fs::write(&path, "this is not json").unwrap();
+        let (results, issue) = load_parallels_results_classified(&date);
+        std::fs::remove_file(&path).ok();
+        assert!(results.is_empty());
+        match issue {
+            Some(SlotIssue::LoaderError(reason)) => {
+                assert!(reason.contains("not valid JSON"), "{reason}");
+            }
+            other => panic!("expected LoaderError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parallels_classified_empty_results_is_no_data() {
+        let date = format!("test-empty-{}", std::process::id());
+        let path = format!("/tmp/pftui-parallels-{date}.json");
+        std::fs::write(&path, r#"{"results": []}"#).unwrap();
+        let (results, issue) = load_parallels_results_classified(&date);
+        std::fs::remove_file(&path).ok();
+        assert!(results.is_empty());
+        assert!(matches!(issue, Some(SlotIssue::NoData(_))), "{issue:?}");
+    }
+
+    #[test]
+    fn integrity_footer_quiet_line_when_all_populated() {
+        let rows: Vec<DataAvailabilityRow> = (0..5)
+            .map(|i| DataAvailabilityRow {
+                field: ["a", "b", "c", "d", "e"][i],
+                populated: true,
+                status: SlotStatus::Populated,
+                reason: None,
+            })
+            .collect();
+        let footer = render_integrity_footer(&rows, &[], &[]);
+        assert!(footer.contains(INTEGRITY_FOOTER_MARKER));
+        assert!(footer.contains("Report integrity: all 5 slots populated."));
+        assert!(!footer.contains("LOADER ERRORS"));
+        assert!(!footer.contains("No data"));
+    }
+
+    #[test]
+    fn integrity_footer_renders_loader_errors_in_bold_with_text() {
+        let rows = vec![
+            DataAvailabilityRow {
+                field: "regime",
+                populated: true,
+                status: SlotStatus::Populated,
+                reason: None,
+            },
+            DataAvailabilityRow {
+                field: "cross_layer_signals",
+                populated: false,
+                status: SlotStatus::LoaderError,
+                reason: Some("synthetic: db locked".to_string()),
+            },
+            DataAvailabilityRow {
+                field: "parallels_results",
+                populated: false,
+                status: SlotStatus::UpstreamNotRun,
+                reason: Some("runner did not run".to_string()),
+            },
+            DataAvailabilityRow {
+                field: "equity_news",
+                populated: false,
+                status: SlotStatus::NoData,
+                reason: None,
+            },
+        ];
+        let outcomes = vec![SectionOutcome {
+            name: "private_parallels",
+            visibility: SectionVisibility::Private,
+            rendered: false,
+            suppression_reason: Some("no parallel sets matched".to_string()),
+        }];
+        let footer = render_integrity_footer(&rows, &outcomes, &[]);
+        assert!(footer.contains("1/4 slots populated"));
+        assert!(footer.contains("No data: equity_news."));
+        assert!(footer.contains("Upstream not run: parallels_results."));
+        assert!(
+            footer.contains("**LOADER ERRORS:** **cross_layer_signals: synthetic: db locked**"),
+            "loader errors must be bold with error text: {footer}"
+        );
+        assert!(footer.contains("auto-suppressed"));
+        assert!(footer.contains("private_parallels (no parallel sets matched)"));
+    }
+
+    #[test]
+    fn assemble_private_appends_integrity_footer_after_last_section() {
+        let ctx = BuildContext::for_date("2026-06-02");
+        let body = assemble_private(&ctx).unwrap();
+        let marker_pos = body
+            .find(INTEGRITY_FOOTER_MARKER)
+            .expect("private report must carry the integrity footer");
+        // The footer must be the LAST block: no section heading after it.
+        assert!(
+            !body[marker_pos..].contains("\n## "),
+            "no section may render after the integrity footer"
+        );
+        assert!(body[marker_pos..].contains("Report integrity:"));
+    }
+
+    #[test]
+    fn assemble_private_footer_carries_loader_error_from_context() {
+        let mut ctx = BuildContext::for_date("2026-06-02");
+        ctx.slot_issues.insert(
+            "cross_layer_signals",
+            SlotIssue::LoaderError("synthetic failure for test".to_string()),
+        );
+        let body = assemble_private(&ctx).unwrap();
+        assert!(
+            body.contains("**cross_layer_signals: synthetic failure for test**"),
+            "loader error must surface in the footer"
+        );
+    }
+
+    #[test]
+    fn staleness_warning_injected_under_section_heading() {
+        let mut ctx = BuildContext::for_date("2026-06-02");
+        ctx.staleness.push(StalenessWarning {
+            input: "analyst_views",
+            message: "⚠ analyst views are 3 days old (freshness gate 6h) — run Phase 1 before trusting convergence".to_string(),
+            sections: vec!["private_investor_panel"],
+        });
+        let (body, _) = assemble_markdown_accounted(
+            &ctx,
+            &[SectionSpec {
+                name: "private_investor_panel",
+                visibility: SectionVisibility::Private,
+            }],
+        )
+        .unwrap();
+        let heading_pos = body.find("## Investor Panel").unwrap();
+        let warn_pos = body
+            .find("> ⚠ analyst views are 3 days old")
+            .expect("staleness annotation must be injected");
+        assert!(warn_pos > heading_pos, "annotation goes under the heading");
+        // Annotation, not suppression: the section body still renders.
+        assert!(body.len() > heading_pos + 100);
+    }
+
+    #[test]
+    fn staleness_does_not_touch_unrelated_sections() {
+        let mut ctx = BuildContext::for_date("2026-06-02");
+        ctx.staleness.push(StalenessWarning {
+            input: "prices",
+            message: "⚠ stale prices".to_string(),
+            sections: vec!["public_market_snapshot"],
+        });
+        let (body, _) = assemble_markdown_accounted(
+            &ctx,
+            &[SectionSpec {
+                name: "private_investor_panel",
+                visibility: SectionVisibility::Private,
+            }],
+        )
+        .unwrap();
+        assert!(!body.contains("stale prices"));
+    }
+
+    #[test]
+    fn compute_staleness_flags_old_analyst_views() {
+        let backend = in_memory_backend();
+        let views = vec![crate::db::analyst_views::AnalystView {
+            id: 1,
+            analyst: "low".to_string(),
+            asset: "BTC".to_string(),
+            direction: "bullish".to_string(),
+            conviction: 2,
+            reasoning_summary: "fixture".to_string(),
+            key_evidence: None,
+            blind_spots: None,
+            allocation_bias: None,
+            updated_at: "2026-06-01 08:00:00".to_string(),
+        }];
+        // Report date 3 days after the only view → stale (gate is 6h).
+        let warnings = compute_staleness(&backend, "2026-06-04", &views, &[]);
+        let views_warning = warnings
+            .iter()
+            .find(|w| w.input == "analyst_views")
+            .expect("old views must produce a staleness warning");
+        assert!(views_warning.message.contains("run Phase 1"));
+        assert!(views_warning
+            .sections
+            .contains(&"private_synthesis"));
+    }
+
+    #[test]
+    fn compute_staleness_quiet_when_views_fresh() {
+        let backend = in_memory_backend();
+        let today = chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        let views = vec![crate::db::analyst_views::AnalystView {
+            id: 1,
+            analyst: "low".to_string(),
+            asset: "BTC".to_string(),
+            direction: "bullish".to_string(),
+            conviction: 2,
+            reasoning_summary: "fixture".to_string(),
+            key_evidence: None,
+            blind_spots: None,
+            allocation_bias: None,
+            updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        }];
+        let warnings = compute_staleness(&backend, &today, &views, &[]);
+        assert!(!warnings.iter().any(|w| w.input == "analyst_views"));
+    }
+
+    #[test]
+    fn compute_staleness_flags_price_cache_older_than_report_date() {
+        let backend = in_memory_backend();
+        let quote = crate::models::price::PriceQuote {
+            symbol: "BTC".to_string(),
+            price: rust_decimal_macros::dec!(100000),
+            currency: "USD".to_string(),
+            source: "fixture".to_string(),
+            fetched_at: "2026-06-01T12:00:00Z".to_string(),
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+            previous_close: None,
+        };
+        let warnings = compute_staleness(&backend, "2026-06-04", &[], &[quote]);
+        let w = warnings
+            .iter()
+            .find(|w| w.input == "prices")
+            .expect("price cache older than report date must warn");
+        assert!(w.sections.contains(&"public_market_snapshot"));
+        assert!(w.sections.contains(&"private_portfolio_snapshot"));
+    }
+
+    #[test]
+    fn load_classifies_synthesis_notes_upstream_not_run() {
+        let backend = in_memory_backend();
+        {
+            let conn = backend.sqlite_native().unwrap();
+            crate::db::daily_notes::add_note(
+                conn,
+                "2026-06-01",
+                "synthesis",
+                "[synthesis-economy]\nFixture economy paragraph from an earlier run.",
+                "analyst-synthesis",
+            )
+            .unwrap();
+        }
+        let ctx = BuildContext::load(&backend, "2026-06-04").unwrap();
+        match ctx.slot_issues.get("synthesis_notes") {
+            Some(SlotIssue::UpstreamNotRun(reason)) => {
+                assert!(reason.contains("2026-06-01"), "{reason}");
+            }
+            other => panic!("expected UpstreamNotRun for synthesis_notes, got {other:?}"),
+        }
+        // And the staleness pass annotates the prose sections.
+        assert!(ctx
+            .staleness
+            .iter()
+            .any(|w| w.input == "synthesis_notes"));
+    }
+
+    #[test]
+    fn load_leaves_no_issue_when_synthesis_notes_present_today() {
+        let backend = in_memory_backend();
+        {
+            let conn = backend.sqlite_native().unwrap();
+            crate::db::daily_notes::add_note(
+                conn,
+                "2026-06-04",
+                "synthesis",
+                "[synthesis-economy]\nFixture economy paragraph for today.",
+                "analyst-synthesis",
+            )
+            .unwrap();
+        }
+        let ctx = BuildContext::load(&backend, "2026-06-04").unwrap();
+        assert!(ctx.synthesis_notes.has_content());
+        assert!(!ctx.slot_issues.contains_key("synthesis_notes"));
+    }
+
+    #[test]
+    fn suppressed_marker_roundtrip() {
+        let marker = crate::report::sections::suppressed("no fixture data");
+        assert_eq!(
+            extract_suppression_reason(&marker).as_deref(),
+            Some("no fixture data")
+        );
+        // Real content with an embedded comment is NOT a suppression.
+        let body = format!("## Heading\n\n{marker}\n\nProse.");
+        assert!(extract_suppression_reason(&body).is_none());
+        assert!(extract_suppression_reason("").is_none());
+    }
+
+    /// Every section renderer's empty state must go through the
+    /// suppression-reason channel: against an empty context, a section either
+    /// renders content or returns `sections::suppressed(reason)`. A bare
+    /// empty string is a conformance failure — the operator could never
+    /// learn WHY the section vanished.
+    #[test]
+    fn every_section_empty_state_carries_a_suppression_reason() {
+        let ctx = BuildContext::for_date("2026-06-02");
+        let mut names: Vec<&'static str> = Vec::new();
+        names.extend(public_section_plan().iter().map(|s| s.name));
+        names.extend(private_section_plan().iter().map(|s| s.name));
+        // Sections dropped from the default plan but still renderable by the
+        // composition step:
+        names.extend_from_slice(&[
+            "private_macro_context",
+            "private_macro_thesis_chains",
+            "private_mismatch_surface",
+            "private_news_catalysts",
+            "private_upcoming_calendar",
+            "private_open_predictions",
+            "private_lessons_applied",
+            "private_self_retrospective_calibration",
+            "private_cross_layer_signals",
+            "private_decisions_pending",
+            "private_per_asset_convergence",
+        ]);
+        for name in names {
+            let body = render_section(name, &ctx)
+                .unwrap_or_else(|e| panic!("section {name} failed to render: {e}"));
+            if body.trim().is_empty() {
+                panic!(
+                    "section {name} returned a bare empty body — use \
+                     sections::suppressed(reason) so the suppression is accounted"
+                );
+            }
+            if let Some(reason) = extract_suppression_reason(&body) {
+                assert!(
+                    !reason.trim().is_empty(),
+                    "section {name} suppressed without a reason"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dry_run_accounts_suppressed_sections_with_reasons() {
+        let ctx = BuildContext::for_date("2026-06-02");
+        let summary = render_dry_run(&ctx, BuildMode::Private, "2026-06-02", None, None);
+        let overview = summary
+            .section_outcomes
+            .iter()
+            .find(|o| o.name == "private_overview")
+            .expect("overview outcome present");
+        assert!(!overview.rendered);
+        assert!(overview
+            .suppression_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("synthesis-economy"));
+        // Investor panel renders its own empty-state prose → rendered.
+        let panel = summary
+            .section_outcomes
+            .iter()
+            .find(|o| o.name == "private_investor_panel")
+            .expect("panel outcome present");
+        assert!(panel.rendered);
     }
 
     #[test]

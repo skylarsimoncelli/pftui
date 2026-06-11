@@ -20,7 +20,7 @@ struct NormalizedOutlook {
 pub fn render_private_outlook_by_horizon(ctx: &BuildContext) -> Result<String> {
     let held = qualifying_positions(&ctx.private_positions);
     if held.is_empty() {
-        return Ok(String::new());
+        return Ok(super::suppressed("no qualifying held positions"));
     }
 
     // Collect rows first so we can suppress the whole section when every
@@ -48,7 +48,9 @@ pub fn render_private_outlook_by_horizon(ctx: &BuildContext) -> Result<String> {
         ));
     }
     if !any_known {
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no analyst views with a known horizon direction for any held asset",
+        ));
     }
 
     let mut output = String::from("## Outlook by Horizon\n\n");

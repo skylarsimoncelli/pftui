@@ -24,7 +24,9 @@ pub fn render_private_news_catalysts(ctx: &BuildContext) -> Result<String> {
     // silence signals landed. Empty-state disclosures bloat the PDF
     // without telling the operator anything actionable.
     if connected.is_empty() && silence_rows.is_empty() {
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no held-asset news in the last 24h and no silence signals",
+        ));
     }
 
     let mut body = String::new();
@@ -43,7 +45,9 @@ pub fn render_private_news_catalysts(ctx: &BuildContext) -> Result<String> {
     // content (e.g. all silence rows hit insufficient-baseline), drop the
     // section entirely instead of emitting a bare heading.
     if body.trim().is_empty() {
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no actionable news sub-block produced content",
+        ));
     }
 
     let mut output = String::from("## News & Catalysts\n\n");
@@ -394,7 +398,9 @@ mod tests {
         };
 
         let rendered = render_private_news_catalysts(&ctx).unwrap();
-        assert!(rendered.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&rendered)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("no held-asset news"), "unexpected reason: {reason}");
     }
 
     #[test]

@@ -17,7 +17,9 @@ pub fn render_private_cross_layer_signals(ctx: &BuildContext) -> Result<String> 
     if ctx.cross_layer_signals.is_empty() {
         // Suppress on quiet sessions rather than emitting the "no inbound
         // messages landed" disclaimer that wasted a page in prior runs.
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no synthesis-bound agent messages landed for the report date",
+        ));
     }
 
     let mut output = String::from("## Cross-Layer Signals\n\n");
@@ -127,7 +129,9 @@ mod tests {
     fn suppressed_when_no_signals() {
         let ctx = BuildContext::default();
         let out = render_private_cross_layer_signals(&ctx).unwrap();
-        assert!(out.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&out)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("no synthesis-bound agent messages"), "unexpected reason: {reason}");
     }
 
     #[test]

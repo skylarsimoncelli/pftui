@@ -24,7 +24,9 @@ pub fn render_private_overview(ctx: &BuildContext) -> Result<String> {
     // operator's tolerance for empty-state filler is low; a missing overview
     // is better than a placeholder that adds no signal.
     let Some(economy) = economy else {
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no [synthesis-economy] note for the report date",
+        ));
     };
 
     let mut output = String::from("## Overview — Week in Review\n\n");
@@ -45,7 +47,9 @@ mod tests {
     fn suppressed_when_no_economy_note() {
         let ctx = BuildContext::default();
         let out = render_private_overview(&ctx).unwrap();
-        assert!(out.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&out)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("synthesis-economy"), "unexpected reason: {reason}");
     }
 
     #[test]
@@ -74,6 +78,8 @@ mod tests {
             ..BuildContext::default()
         };
         let out = render_private_overview(&ctx).unwrap();
-        assert!(out.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&out)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("synthesis-economy"), "unexpected reason: {reason}");
     }
 }

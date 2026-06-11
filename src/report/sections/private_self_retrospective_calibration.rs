@@ -18,7 +18,9 @@ pub fn render_private_self_retrospective_calibration(ctx: &BuildContext) -> Resu
         // Suppress the entire section when no calibration substrate is
         // attached. The previous "No 90-day calibration rows…" disclosure
         // wasted a page on every report and produced operator complaint.
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no calibration-matrix rows for held topics and no regime-conditional summary",
+        ));
     }
     let mut output = String::from("## Self-Retrospective Calibration\n\n");
     if rows.is_empty() {
@@ -28,7 +30,9 @@ pub fn render_private_self_retrospective_calibration(ctx: &BuildContext) -> Resu
             output.push_str(&render_regime_conditional(regime));
             return Ok(output.trim_end().to_string());
         }
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "calibration substrate attached but produced no renderable rows",
+        ));
     }
 
     output.push_str("{calibration_dot_plot(private_calibration)}\n\n");
@@ -194,7 +198,9 @@ mod tests {
         // Empty calibration substrate => suppress section entirely.
         let rendered =
             render_private_self_retrospective_calibration(&BuildContext::default()).unwrap();
-        assert!(rendered.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&rendered)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("no calibration-matrix rows"), "unexpected reason: {reason}");
     }
 
     #[test]

@@ -30,7 +30,7 @@ pub fn render_private_risk_concentration(ctx: &BuildContext) -> Result<String> {
     let held = qualifying_positions(&ctx.private_positions);
     if held.is_empty() {
         // Suppress entirely when there are no held positions to map.
-        return Ok(String::new());
+        return Ok(super::suppressed("no held positions to map"));
     }
 
     let factors = factor_aggregates(
@@ -42,7 +42,9 @@ pub fn render_private_risk_concentration(ctx: &BuildContext) -> Result<String> {
         // Suppress entirely when there's no factor data to surface.
         // The previous "No factor mapping rows are attached…" disclosure
         // wasted a page on every report and produced operator complaint.
-        return Ok(String::new());
+        return Ok(super::suppressed(
+            "no risk-factor mappings attached for held assets",
+        ));
     }
 
     let mut output = String::from("## Risk Concentration\n\n");
@@ -302,7 +304,9 @@ mod tests {
         })
         .unwrap();
 
-        assert!(rendered.is_empty());
+        let reason = crate::report::build::daily::extract_suppression_reason(&rendered)
+            .expect("empty state must go through the suppression-reason channel");
+        assert!(reason.contains("no risk-factor mappings"), "unexpected reason: {reason}");
     }
 
     fn fixture_context() -> BuildContext {
