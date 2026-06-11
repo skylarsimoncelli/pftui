@@ -296,7 +296,7 @@ Each run you MUST:
 
 1. List the active scenarios that should be on the table this run. Typical names: `Soft Landing`, `Stagflation Grind`, `Recession`, `Inflation Spike`, `Hard Money Acceleration`. Pick from this list or define new ones consistent with the framework — never let the report build with zero scenarios.
 2. For each, either update probability (if it already exists) or create it. Probabilities must sum to ~100% across the active set.
-3. Run `pftui journal scenario list --active --json` and confirm the count is ≥3. If it's less, ADD scenarios before returning.
+3. Run `pftui journal scenario list --status active --json` and confirm the count is ≥3. If it's less, ADD scenarios before returning.
 
 Update / create commands:
 

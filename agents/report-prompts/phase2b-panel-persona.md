@@ -24,8 +24,8 @@ Run these CLIs first (they're cheap, sub-second each):
 ```bash
 pftui analytics situation --json
 pftui analytics views convergence-all --json
-pftui analytics scenario list --json
-pftui analytics regime current --json
+pftui journal scenario list --json
+pftui analytics macro regime current --json
 pftui --cached-only data prices --json
 ```
 

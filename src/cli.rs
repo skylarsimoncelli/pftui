@@ -2013,7 +2013,7 @@ pub enum DataSeriesCommand {
 
 #[derive(Subcommand)]
 pub enum SystemCommand {
-    /// Run as a background daemon: refresh data + evaluate alerts on a loop
+    /// Run as a background daemon (legacy — not required; the system runs via Claude Code + `data refresh`, whose tail fires all recurring scoring/snapshot/alert mechanisms)
     Daemon {
         #[command(subcommand)]
         command: DaemonCommand,

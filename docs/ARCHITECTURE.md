@@ -67,16 +67,32 @@ Use `read --offset N --limit M` to read specific line ranges instead of full fil
 | Asset detail popup | `asset_detail_popup.rs:117-708` (build_lines sections) |
 | FX / currency work | `price/yahoo.rs` (YMetaData.currency, FX rate fetch) |
 
+## How The System Runs (no daemon)
+
+pftui has no resident process. The system is driven by agent sessions (on this machine: Claude Code invoking the `/pftui-report` skill and ad-hoc commands). Every recurring mechanism — prediction auto-scoring, recommendation forward-return scoring, retroactive forecast scoring, forecast-misalignment detection, regime classification, alert evaluation, housekeeping surfacing — fires in the tail of `pftui data refresh` (`src/commands/refresh.rs`, tail steps after the source fetches). `commands/daemon.rs` still ships an always-on loop but it is LEGACY/optional — it adds cadence, not capability.
+
 ## Module Index
 
 ### Analytics Layer
 `analytics/situation.rs` (canonical Situation Room payload) · `analytics/deltas.rs` (server-owned change radar) · `analytics/catalysts.rs` (ranked event pressure and countdowns) · `analytics/impact.rs` (portfolio impact + opportunities) · `analytics/synthesis.rs` (cross-timeframe alignment/divergence/constraints) · `analytics/narrative.rs` (structured recap + analytical memory)
+
+### TA & Cycle Engines (deterministic, pure over price_history)
+`analytics/market_structure.rs` (swing pivots HH/HL/LH/LL, trend class, BOS, MA posture, extension gate — `analytics technicals structure`) · `analytics/cyber/` (composite Cyber Dots engine: Gaussian CyberBands + QB state machine, zone bands, CyberLine, strength dots, Bollinger reversals, Pi Cycle, MTF RSI, hybrid breakouts — `analytics technicals cyber`; PineScript reference in `docs/reference/cyber-dots.pine`) · `analytics/cycle_engine.rs` (multi-degree cycle-theory engine: dated lows, timing bands, translation ledger, FLD/VTL, doctrine in `docs/CYCLE-THEORY.md` — `analytics cycles analyze/ledger`) · `analytics/cycle_clock.rs` (BTC halving/Loukas + gold ~7yr cycle position — `analytics cycles clock`)
+
+### Research Harness (measured signal expectancy — `src/research/`)
+`research/registry.rs` (AssetContext + ~27 canonical signal emitters: dated EVENTS, versioned ids) · `research/event_study.rs` (forward returns vs baseline drift, overlap exclusion, binomial significance, walk-forward `as_of`) · `research/forecast_scoring.rs` (retroactive analyst_view_history scoring at canonical horizons; runs in the `data refresh` tail) · `research/shadow_book.rs` (counterfactual SHADOW/ACTUAL/HOLD books from the recommendations ledger — `research shadowbook`) · CLI in `commands/research_harness.rs`, `commands/research_forecasts.rs`, `commands/research_dossier.rs`, `commands/shadow_book.rs` · flow doc: `docs/DATA-ARCHITECTURE.md` § Research harness
 
 ### Analyst Views (F57)
 `db/analyst_views.rs` (structured per-analyst per-asset views: direction, conviction, reasoning, evidence, blind_spots) · `commands/analyst_views.rs` (set, list, matrix, delete CLI commands)
 
 ### Data Layer
 `db/schema.rs` (migrations) · `db/transactions.rs` (CRUD) · `db/price_cache.rs` (spot cache) · `db/price_history.rs` (daily history, merge) · `db/technical_snapshots.rs` (persisted technical state) · `db/technical_levels.rs` (market structure levels: support, resistance, MA, swing, range) · `db/technical_signals.rs` (precomputed per-symbol signals: RSI, MACD cross, SMA reclaim, BB squeeze, volume, 52W) · `db/allocations.rs` (% mode) · `db/watchlist.rs` · `db/situation_snapshots.rs` (persisted situation baselines for delta analysis) · `db/narrative_snapshots.rs` (structured recap and analytical memory) · `db/power_flows.rs` (Dixon Power Flow Tracker: FIC/MIC/TIC power shift events, balance aggregation) · `db/prediction_lessons.rs` (structured lessons from wrong predictions: miss type, root cause, signal misread) · `db/news_topic_markets.rs` (news-topic classifier and topic→prediction-market bindings) · `db/news_source_accuracy.rs` (per-source/topic hit-rate ledger for news-derived predictions) · `db/news_silence.rs` (rolling weekday topic-volume baselines and silent/saturated regimes) · `db/debates.rs` (adversarial debate mechanism: debates + debate_rounds tables, bull/bear structured argumentation) · `db/analyst_views.rs` (F57: per-analyst per-asset structured views with direction, conviction, reasoning, evidence, blind_spots)
+
+### Epistemics & Ledger Layer
+`db/run_health.rs` (per-run epistemic instrumentation: agreement, blind divergence, panel dispersion, misalignment counts — `analytics epistemics record/show/history`) · `db/standing_rules.rs` (consolidated imperative rules from repeated lessons — `analytics lessons rules`) · `db/forecast_misalignments.rs` (wrong-sign-streak episodes; ACTIVE = probation in convergence + confidence caps — `research misalignments`, detected in the `data refresh` tail) · `db/series_registry.rs` (L1 canonical-series catalog: storage home + freshness SLA — `data series status`, doctor 2×-SLA check) · `db/signal_expectancy.rs` (L2 rebuildable expectancy cache keyed `(signal_id, signal_version, asset, horizon, as_of)` — `research backtest/expectancy/events`) · layer model + table catalog: `docs/DATA-ARCHITECTURE.md` + `docs/db-catalog.toml` (machine-enforced by `tests/schema_conformance.rs`) · epistemic doctrine: `docs/EPISTEMICS.md`
+
+### Report Pipeline (`src/report/`)
+`report/build/daily.rs` (BuildContext + section plan; `report build daily`) · `report/sections/` (one renderer per section; notable: `private_epistemic_health.rs` renders the run-health/epistemics block from `run_health` + misalignments, `private_decisions_pending.rs` renders decision cards from `agent_messages` rows with `category='decision-card'`, `adversary_view.rs` quotes adversary counter-cases verbatim) · public output is privacy-audited via `audit_public_markdown` before write
 
 ### Prior-release Schema Contract
 `tests/fixtures/db/v0.27.0.sqlite` is a synthetic prior-release SQLite fixture.
@@ -124,7 +140,7 @@ Color conventions: RSI >70 = red (overbought), <30 = green (oversold), 30-70 = n
 `regime/mod.rs` (9-signal scorer) · `regime/suggestions.rs` (portfolio suggestions)
 
 ### CLI Commands
-`commands/setup.rs` (wizard) · `commands/summary.rs` (--group-by, --period, --what-if) · `commands/export.rs` (JSON/CSV) · `commands/import.rs` (replace/merge) · `commands/history.rs` (--date) · `commands/brief.rs` · `commands/demo.rs` · `commands/snapshot.rs` · `commands/watchlist_cli.rs` · `commands/set_cash.rs` · `commands/refresh.rs` · `commands/daemon.rs` (always-on scheduler + heartbeat) · `commands/status.rs` (source freshness + daemon health) · `commands/value.rs` · `commands/portfolio_status.rs` (consolidated snapshot: allocation + value + daily P&L + unrealized) · `commands/power_flow_conflicts.rs` (FIC/MIC conflict monitor: defense vs energy vs VIX cross-reference) · `commands/narrative_divergence.rs` (scenario narrative-vs-money scoring) · `commands/news_silence.rs` (topic news-volume baseline scoring)
+`commands/setup.rs` (wizard) · `commands/summary.rs` (--group-by, --period, --what-if) · `commands/export.rs` (JSON/CSV) · `commands/import.rs` (replace/merge) · `commands/history.rs` (--date) · `commands/brief.rs` · `commands/demo.rs` · `commands/snapshot.rs` · `commands/watchlist_cli.rs` · `commands/set_cash.rs` · `commands/refresh.rs` (source DAG + the recurring tail: auto-score, forecast retro-score, misalignment detection, regime classification, housekeeping line) · `commands/daemon.rs` (LEGACY always-on scheduler + heartbeat — optional, not required; see "How The System Runs") · `commands/status.rs` (source freshness + daemon health) · `commands/value.rs` · `commands/portfolio_status.rs` (consolidated snapshot: allocation + value + daily P&L + unrealized) · `commands/power_flow_conflicts.rs` (FIC/MIC conflict monitor: defense vs energy vs VIX cross-reference) · `commands/narrative_divergence.rs` (scenario narrative-vs-money scoring) · `commands/news_silence.rs` (topic news-volume baseline scoring)
 
 ### Shared Intelligence Contract
 

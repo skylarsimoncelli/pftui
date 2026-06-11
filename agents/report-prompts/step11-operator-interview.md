@@ -54,7 +54,7 @@ Capture immediately:
 pftui agent message send \
   "Decision <SYM> {DATE_ISO}: <operator response verbatim>" \
   --from skylar --to synthesis --priority high \
-  --category decision-response
+  --category feedback
 ```
 
 Move to the next card. Once all are walked through, transition to the question sequence.
@@ -101,5 +101,5 @@ If the operator says `done`, `enough`, `skip rest`, or similar, end gracefully. 
 Render a one-line confirmation:
 
 ```
-✓ Captured N operator notes (author='skylar') · M conviction updates · K scenario updates · L decision-response messages. Next /pftui-report run will incorporate these via Phase-1 enrichment.
+✓ Captured N operator notes (author='skylar') · M conviction updates · K scenario updates · L decision-feedback messages (category='feedback'). Next /pftui-report run will incorporate these via Phase-1 enrichment.
 ```

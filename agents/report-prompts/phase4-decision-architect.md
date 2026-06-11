@@ -57,21 +57,26 @@ Include its verdict IN the card's evidence, e.g. *"this desk's last N \<SYM\> AD
 - a convergence label of strong-convergent-{bull,bear},
 - an open binary catalyst in the next 14d that affects this asset,
 
-write ONE decision card via:
+write ONE decision card via raw SQL (the report's decision-cards loader keys on
+`category='decision-card'` exactly; `pftui agent message send` cannot write that
+value — its validator accepts only signal/feedback/alert/handoff/escalation, see
+the TODO for a dedicated writer):
 
 ```bash
-pftui agent message send \
-  --from analyst-decisions --to synthesis --priority high \
-  --category decision-card --layer decision \
-  "$(jq -nc '{
-    symbol: "<SYM>",
-    question: "<one specific yes/no action>",
-    evidence_for: ["<3-5 specific data points + lesson IDs>"],
-    evidence_against: ["<3-5 specific counter-points from adversary or panel bears>"],
-    recommendation: "<ADD|TRIM|HOLD|WAIT> with size in pp",
-    what_would_change_it: "<measurable trigger>",
-    sizing_math: "<e.g. drift 0.39pp x portfolio 350k = $1,400 to add at $4,386 = 0.32 oz GLD-equiv>"
-  }')"
+CARD_JSON=$(jq -nc '{
+  symbol: "<SYM>",
+  question: "<one specific yes/no action>",
+  evidence_for: ["<3-5 specific data points + lesson IDs>"],
+  evidence_against: ["<3-5 specific counter-points from adversary or panel bears>"],
+  recommendation: "<ADD|TRIM|HOLD|WAIT> with size in pp",
+  what_would_change_it: "<measurable trigger>",
+  sizing_math: "<e.g. drift 0.39pp x portfolio 350k = $1,400 to add at $4,386 = 0.32 oz GLD-equiv>"
+}')
+sqlite3 "$DB" "INSERT INTO agent_messages
+  (from_agent, to_agent, priority, content, category, layer, acknowledged, created_at)
+  VALUES ('analyst-decisions', 'synthesis', 'high',
+          '$(printf %s "$CARD_JSON" | sed "s/'/''/g")',
+          'decision-card', 'cross', 0, datetime('now'))"
 ```
 
 Aim for 3-8 cards per run. Quality over quantity — if the convergence is genuinely insufficient-views or neutral, write a "WAIT" card with the missing input as the recommendation.
@@ -98,7 +103,7 @@ The entry price is auto-filled from the latest close (`GC=F`/`SI=F`/`BTC-USD` se
 
 **Size every card in NET-WORTH terms, not just asset-percentage terms.** Use the operator's own risk math (portfolio total + cash % from `pftui portfolio status --json`), not only single-asset stats. Don't stop at "BTC 7d EV -0.9%" — also state what a leg of the proposed size risks against the whole book if it draws down: e.g. "a +X pp BTC add risks ~Y% of total net worth if BTC flushes -Z%." Mirror the operator's stated framing — "46% cash means a -25% BTC flush is ~1.5% of net worth" — so downside is legible at the portfolio level. Fold this into the `sizing_math` field (and `evidence_against` where the net-worth hit is the real argument against).
 
-**Critical:** use `--category decision-card` (NOT `signal`). The previous run wrote with `signal` which caused the cards to dump raw JSON into the Cross-Layer Signals section.
+**Critical:** the card row's `category` must be `decision-card` (NOT `signal`) — hence the raw-SQL write above. A previous run wrote with `signal`, which caused the cards to dump raw JSON into the Cross-Layer Signals section.
 
 # Return
 

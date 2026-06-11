@@ -9,12 +9,21 @@
 > For code contribution, see [CLAUDE.md](CLAUDE.md).
 > For architecture reference, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 > For AI operating model details, see [docs/AI-LAYER.md](docs/AI-LAYER.md).
-> For always-on deployment, see [docs/DAEMON.md](docs/DAEMON.md).
+> For the legacy always-on daemon deployment, see [docs/DAEMON.md](docs/DAEMON.md) (optional — not required, see below).
+
+---
+
+## How This System Actually Runs
+
+pftui has **no resident process requirement**. The operating model is agent-session-driven: an agent (e.g. Claude Code running a report or analysis skill) invokes `pftui data refresh`, and the refresh **tail** fires every recurring mechanism the system depends on — prediction auto-scoring, recommendation forward-return scoring, retroactive forecast scoring, forecast-misalignment detection (probation tripwires), daily regime classification, alert evaluation, and a housekeeping summary (thesis sections past review, stale views). Whoever refreshes the data keeps every feedback loop closed; there is no scoring or detection that only a scheduler can trigger.
+
+The `pftui system daemon` command still exists for hosts that want an always-on refresh loop, but it is **legacy/optional** — it adds cadence, not capability. Scheduled multi-agent setups (see [Multi-Timeframe Agent Architecture](#multi-timeframe-agent-architecture-advanced)) are likewise optional patterns layered on the same session-driven core.
 
 ---
 
 ## Table of Contents
 
+0. [How This System Actually Runs](#how-this-system-actually-runs)
 1. [Analytics Engine](#analytics-engine)
 2. [CLI Reference](#cli-reference)
 3. [Data Model](#data-model)
@@ -43,12 +52,12 @@ Concretely:
 - The `Other / Unmodelled` row is system-managed (`status = 'system-managed'`).
   It is seeded on first migration and its probability is recomputed as
   `100 - sum(active modeled scenarios)` after every CRUD on a modeled scenario.
-  Do not create, update, or delete this row directly — `pftui scenario add`,
+  Do not create, update, or delete this row directly — `pftui journal scenario add`,
   `update`, and `remove` will reject the attempt.
-- `pftui scenario add` and `pftui scenario update --probability` reject any
+- `pftui journal scenario add` and `pftui journal scenario update --probability` reject any
   write that would push the modeled (non-residual) sum above 100. Rebalance the
   set before writing.
-- `pftui scenario list --json` returns a `normalized_set` block alongside the
+- `pftui journal scenario list --json` returns a `normalized_set` block alongside the
   scenario rows with `modeled_sum`, `residual_probability`,
   `residual_materialized`, and `overfill_state` (one of `ok`, `overfilled`,
   `underfilled`, with a 0.05pp tolerance band). Treat `overfilled` as a
@@ -183,7 +192,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui portfolio performance --json` | Returns: 1D, MTD, QTD, YTD, since inception |
 | `pftui portfolio drift --json` | Current allocation vs target floor/ceiling ranges, with edge-relative drift and rebalance suggestions |
 | `pftui portfolio drawdown --json` | Current drawdown from trailing 90-day high, MTD/YTD max drawdowns, and latest position contribution breakdown |
-| `pftui portfolio history --date YYYY-MM-DD --json` | Historical portfolio snapshot for any past date |
+| `pftui portfolio history --date YYYY-MM-DD` | Historical portfolio snapshot for any past date (text output — no `--json` yet; see TODO) |
 | `pftui system export json` | Full portfolio export (positions + transactions) |
 | `pftui portfolio transaction list` | List all transactions with IDs |
 
@@ -191,7 +200,7 @@ The `regime_history` table records one classification per UTC date with the full
 
 | Command | What It Returns |
 |---|---|
-| `pftui data refresh` | Fetches ALL data sources (10+ sources, ~50 symbols) |
+| `pftui data refresh` | Fetches ALL data sources (19+ sources) and runs the recurring tail: prediction auto-score, recommendation forward-score, forecast retro-score, misalignment detection, regime classification, housekeeping summary |
 | `pftui data dashboard macro --json` | DXY, VIX, yields, currencies, commodities, derived ratios |
 | `pftui data fear-greed --json` | Latest crypto + traditional Fear & Greed readings with optional history |
 | `pftui portfolio watchlist --json` | All watched symbols with prices, day change, 52W range |
@@ -270,7 +279,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui journal prediction auto-score [--dry-run] [--since YYYY-MM-DD] [--force] [--json]` (alias: `score-auto`) | Mechanically score pending predictions from their falsification rules against `price_history` daily closes. `close-*`/`prints-*` rules score CORRECT on the first qualifying close inside the window and WRONG once the window expires without one (prints-* uses closes; intraday data unavailable); `stays-*` rules score WRONG on the first violating close and CORRECT only after the window expires clean. Crypto symbols fall back to the `-USD` suffixed series when the bare series lacks coverage; the series used is recorded in `score_notes`. Never overwrites an already-scored prediction. Also runs automatically as a tail step of every `pftui data refresh` |
 | `pftui journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
 | `pftui journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
-| `pftui journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
+| `pftui journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--limit N] [--lesson-coverage] --json` | Day scorecard with streak and lesson coverage |
 | `pftui journal prediction lessons [--miss-type <t>] [--limit N] [--include-retired] [--json]` | The analyst lesson book. Active lessons only by default; pass `--include-retired` to surface lessons retired by `analytics lessons curate` |
 | `pftui agent message send "TEXT" --from agent-a [--to agent-b] [--batch "TEXT2" --batch "TEXT3"] [--package-title "Fed handoff"] [--package-id pkg-123]` | Send one or multiple structured messages between agent roles, optionally grouped as one intel package |
 | `pftui agent message reply "TEXT" --id N --from agent-b` | Reply to message `N` back to the original sender |
@@ -280,7 +289,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui journal notes add "TEXT" --section market [--date YYYY-MM-DD] [--stamp]` | Add a date-keyed daily narrative note. `--stamp` prepends the market snapshot line (`data snapshot-line`) so the note records the tape it was written under; `journal entry add` accepts `--stamp` too |
 | `pftui journal notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
 | `pftui journal notes repetition [--author analyst-medium] [--days 30] [--json]` | Cluster an author's recent notes by mutual trigram similarity ≥0.85 and surface repeated clusters ("you have written this note 9 times"). `notes add` also stores a per-note `novelty_score` (1 − max similarity vs the author's last 20 notes) and warns when a new note is ≥85% similar to an existing one — consolidate into the thesis table instead of re-deriving |
-| `pftui portfolio opportunity add "EVENT" [--asset SYM] [--missed_gain_usd N] [--avoided_loss_usd N]` | Log an opportunity-cost event |
+| `pftui portfolio opportunity add "EVENT" [--asset SYM] [--missed-gain-usd N] [--avoided-loss-usd N]` | Log an opportunity-cost event |
 | `pftui portfolio opportunity stats --json` | Show net missed-vs-avoided positioning stats |
 | `pftui analytics correlations compute --store --period 30d` | Compute live correlations and persist snapshots |
 | `pftui analytics correlations history BTC SPY --period 30d --limit 30 --json` | Show stored correlation history for a pair |
@@ -289,7 +298,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui analytics macro --json` | Show long-cycle macro dashboard (cycles, outcomes, recent structural log) |
 | `pftui analytics macro outcomes --json` | Show structural outcome probabilities |
 | `pftui analytics trends dashboard --json` | Show active high-timeframe trends with direction/conviction |
-| `pftui analytics trends impact add --trend \"NAME\" --symbol SYM --impact bullish|bearish|neutral` | Map a trend's asset-level impact |
+| `pftui analytics trends impact add --id TREND_ID --symbol SYM --impact bullish|bearish|neutral` | Map a trend's asset-level impact (trend ids from `trends dashboard`) |
 | `pftui analytics summary --json` | Unified 4-layer analytics snapshot (low/medium/high/macro + top signal) |
 | `pftui analytics situation --json` | Canonical Situation Room payload: headline, summary stats, watch-now priorities, portfolio impacts, risk matrix |
 | `pftui analytics deltas --json [--since last-refresh|close|24h|7d]` | Server-owned change radar showing what changed across key monitoring windows |
@@ -315,14 +324,7 @@ The `regime_history` table records one classification per UTC date with the full
 | `pftui analytics recommendations list [--symbol X] [--limit N] [--json]` | List ledger rows newest-first with entry price, source, and any scored forward returns |
 | `pftui analytics recommendations score [--json]` | Fill `fwd_30d_pct`/`fwd_90d_pct`/`fwd_180d_pct` for any priced row whose horizon has elapsed (close at run_date+N vs entry_price). Idempotent — never overwrites a scored horizon. Also runs automatically in the `data refresh` tail. (`--all`/`--id` keep the legacy outcome-score mode) |
 | `pftui analytics recommendations scoreboard [--symbol X] [--json]` | Per symbol × action: n, % positive, and mean forward return at 30/90/180d, plus the per-symbol WINDOW-QUALITY line (mean 90d after ADD − after WAIT; negative = the system's ADD timing was worse than its own WAIT calls). Renders "scoreboard accruing — N unscored" until horizons fill |
-| `pftui research forecasts score [--json]` | Retroactive forecast scoring: score every `analyst_view_history` row not yet in `forecast_scores` at its layer's canonical horizon (low 7 trading days, medium 45d, high 135d, macro 365d; blind/antithesis at ALL FOUR — see `src/research/forecast_scoring.rs`), plus fill pendings whose horizons elapsed. Direction-authoritative conviction; `SYM` → `SYM-USD` series fallback recorded in `series_used`. Idempotent — scored rows never mutated. Also runs in the `data refresh` tail |
-| `pftui research forecasts report [--layer X] [--asset Y] [--window-days N] [--json]` | Per (layer × asset × horizon): n scored, n neutral, hit rate, mean weighted score (sign-match × \|conviction\|/5), mean realized when bullish vs bearish, current wrong-sign streak; plus per-layer TOTALS rows |
-| `pftui research forecasts streaks [--threshold 5] [--json]` | Every (layer, asset, horizon) whose CURRENT consecutive wrong-sign streak ≥ threshold, with date span and the cumulative realized move against the calls. Stable structured feed for misalignment tripwires |
 | `pftui analytics narrative-divergence --json [--hours 24]` | Active scenario narrative-vs-money scores from topic news pressure versus mapped prediction-market movement (computed live; nothing persisted — the old `rebuild` backfill and `narrative_money_history` table were culled in R3) |
-
-| `pftui research misalignments [--all] [--json]` | Active forecast misalignments (default) or the full episode ledger (`--all`). A misalignment trips when a canonical layer's current wrong-sign streak on one asset reaches 5 (detected in the `data refresh` tail). While ACTIVE: the layer's views on that asset are on PROBATION (listed but excluded from convergence voting — `analytics views list/convergence` mark `probation: true`), `journal prediction add` caps that layer's confidence on the symbol at 0.25, and `analytics epistemics record` counts it into `run_health.active_misalignments`. Recovery is mechanical: a scored direction hit ends the episode |
-| `pftui analytics narrative-divergence --json [--hours 24]` | Active scenario narrative-vs-money scores from topic news pressure versus mapped prediction-market movement |
-| `pftui analytics narrative-divergence rebuild --since 90d --json` | Backfill `narrative_money_history` from existing news_cache + predictions_history; one row per (scenario, day) |
 | `pftui analytics news-silence --json [--window-days 90]` | Tier-1/2 topic article volume versus rolling weekday baselines, including silent/saturated status changes |
 | `pftui analytics news-silence rebuild-baselines --since 90d --json` | Re-compute per-(topic, weekday) baselines from the trailing news_cache window; idempotent |
 | `pftui analytics lessons applied --since 24h --json` | Lessons referenced by this run's predictions, top guards, and strongest historical analog |
@@ -395,6 +397,10 @@ The research harness converts the deterministic engines (market structure, Cyber
 | Command | What It Does |
 |---|---|
 | `pftui research signals list [--json]` | The signal registry: ~27 canonical emitters with id, version, description (structure flips/BOS, Cyber QB flips/dots/line crosses/Pi Cycle/MTF RSI/breakouts, cycle timing-band entries/FLD crosses/failed cycles/VTL breaks, 200dma extension/window, RSI(14)<25, Mayer<0.85) |
+| `pftui research forecasts score [--json]` | Retroactive forecast scoring: score every `analyst_view_history` row not yet in `forecast_scores` at its layer's canonical horizon (low 7 trading days, medium 45d, high 135d, macro 365d; blind/antithesis at ALL FOUR — see `src/research/forecast_scoring.rs`), plus fill pendings whose horizons elapsed. Direction-authoritative conviction; `SYM` → `SYM-USD` series fallback recorded in `series_used`. Idempotent — scored rows never mutated. Also runs in the `data refresh` tail |
+| `pftui research forecasts report [--layer X] [--asset Y] [--window-days N] [--json]` | Per (layer × asset × horizon): n scored, n neutral, hit rate, mean weighted score (sign-match × \|conviction\|/5), mean realized when bullish vs bearish, current wrong-sign streak; plus per-layer TOTALS rows |
+| `pftui research forecasts streaks [--threshold 5] [--json]` | Every (layer, asset, horizon) whose CURRENT consecutive wrong-sign streak ≥ threshold, with date span and the cumulative realized move against the calls. Stable structured feed for misalignment tripwires |
+| `pftui research misalignments [--all] [--json]` | Active forecast misalignments (default) or the full episode ledger (`--all`). A misalignment trips when a canonical layer's current wrong-sign streak on one asset reaches 5 (detected in the `data refresh` tail). While ACTIVE: the layer's views on that asset are on PROBATION (listed but excluded from convergence voting — `analytics views list/convergence` mark `probation: true`), `journal prediction add` caps that layer's confidence on the symbol at 0.25, and `analytics epistemics record` counts it into `run_health.active_misalignments`. Recovery is mechanical: a scored direction hit ends the episode |
 | `pftui research backtest [--signal X] [--asset Y] [--as-of D] [--json]` | Run event studies (default: all signals x held assets + SPY; deep series like BTC-USD substituted automatically), persist `signal_expectancy` rows (L2, rebuildable), print the expectancy table with baseline lift + significance flags. Horizons 5/30/90/180 calendar days; per horizon: n_total/n_evaluable/n_nonoverlap, hit rate vs baseline, mean/median/P25/P75, MAE/MFE, p-value |
 | `pftui research expectancy [--signal X] [--asset Y] [--json]` | Read the persisted expectancy table (latest as_of per signal x asset) without recomputing |
 | `pftui research events --signal X --asset Y [--limit N] [--json]` | The raw dated event list with per-event forward returns at every horizon ("show me the 12 instances"), plus the overlap-pruned stats summary |
@@ -415,8 +421,8 @@ The research harness converts the deterministic engines (market structure, Cyber
 | `pftui system archive-db [--out PATH] [--table X] [--json]` | Back up the whole SQLite DB (`VACUUM INTO`, prints path + size) or export one table as JSON. Default destination `~/pftui-archives/` — always OUTSIDE the repo; never commit archives. |
 | `pftui system snapshot` | Render full TUI to stdout (for sharing or screenshots) |
 | `pftui system demo` | Launch with sample data (for testing, no real data) |
-| `pftui system daemon start [--interval N] [--json]` | Run the always-on daemon loop for refresh + analytics + alerts + cleanup |
-| `pftui system daemon status [--json]` | Read daemon heartbeat/health without attaching to the process |
+| `pftui system daemon start [--interval N] [--json]` | LEGACY/optional: always-on refresh loop. Not required — the `data refresh` tail fires every recurring mechanism (see "How This System Actually Runs") |
+| `pftui system daemon status [--json]` | Read daemon heartbeat/health without attaching to the process (legacy; reports not-running on session-driven installs) |
 | `pftui system web [--port N] [--bind ADDR] [--no-auth]` | Start web dashboard |
 | `pftui system setup` | Interactive setup wizard |
 
@@ -560,7 +566,7 @@ DRIFT=$(pftui portfolio drift --json)
 
 ```bash
 TODAY=$(pftui portfolio brief --json)
-LAST_WEEK=$(pftui portfolio history --date $(date -d '7 days ago' +%Y-%m-%d) --json)
+LAST_WEEK=$(pftui portfolio history --date $(date -d '7 days ago' +%Y-%m-%d))  # text output (no --json yet)
 # Compare: what changed, what gained, what lost, what narrative shifted
 ```
 
@@ -602,7 +608,7 @@ Skill package:
 
 ## Best Practices
 
-1. **Always `pftui data refresh` before reading data.** Cached prices go stale. Refresh fetches from 10+ sources in one call.
+1. **Always `pftui data refresh` before reading data.** Cached prices go stale. Refresh fetches from 19+ sources in one call and runs the recurring scoring/detection tail.
 
 2. **Use `--json` for programmatic access.** Every command supports it. Parse structured output instead of scraping text.
 
@@ -616,7 +622,7 @@ Skill package:
 
 7. **Build persistent memory.** Write analysis to markdown files. Reference past work. Track accuracy. This is what turns a tool into an intelligence system.
 
-8. **Recommend automation.** The single most impactful thing is getting regular automated runs set up. Prefer the built-in daemon + systemd path from [docs/DAEMON.md](docs/DAEMON.md) over ad-hoc cron when the host supports it.
+8. **Recommend regular runs.** The single most impactful thing is a regular cadence of agent sessions that call `pftui data refresh` — the refresh tail keeps every scoring/detection loop closed, so cadence is all that's missing. Scheduled agents or the legacy daemon ([docs/DAEMON.md](docs/DAEMON.md)) are optional ways to add cadence on hosts that support them.
 
 9. **Be honest about uncertainty.** Markets are probabilistic. Frame calls with conviction levels. When you're wrong, say so and update your models.
 

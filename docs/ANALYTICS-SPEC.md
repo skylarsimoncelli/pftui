@@ -2,6 +2,20 @@
 
 > This document defines the analytics and intelligence features for pftui, covering financial engineering, TUI UX design, CLI output format, and agent-optimized output. Each feature is scoped as a distinct TODO item.
 
+> **⚠ Historical spec — command names predate the canonical CLI domains.** This
+> document is kept as the original feature specification; its CLI examples use
+> the old flat namespace (`pftui brief`, `pftui summary`, `pftui refresh`,
+> `pftui macro`, `pftui alerts`, `pftui watch`, ...). Current invocations live
+> under the six canonical domains (`agent`, `analytics`, `data`, `portfolio`,
+> `report`, `system`) — e.g. `pftui portfolio brief`, `pftui data refresh`,
+> `pftui analytics macro`, `pftui analytics alerts`. See [AGENTS.md](../AGENTS.md)
+> for the current command reference. Several mechanisms specced here have also
+> been superseded by later architecture work: the epistemics/feedback loop is
+> defined in [EPISTEMICS.md](EPISTEMICS.md), the storage layer model in
+> [DATA-ARCHITECTURE.md](DATA-ARCHITECTURE.md), and cycle analysis in
+> [CYCLE-THEORY.md](CYCLE-THEORY.md). Where this spec disagrees with those
+> documents, those documents win.
+
 ## Design Principles
 
 1. **No command sprawl.** Group related analytics under existing commands/tabs. New CLI commands only when the domain is genuinely distinct.

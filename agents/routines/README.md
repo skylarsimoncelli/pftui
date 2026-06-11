@@ -4,7 +4,7 @@ Pre-built agent routines for the pftui multi-timeframe intelligence system.
 
 ## Architecture
 
-Four specialist timeframe analysts feed into two delivery agents. Each analyst writes structured data to the pftui database and communicates with other agents via `pftui agent-msg`. No agent reads from or writes to shared files for analytical data.
+Four specialist timeframe analysts feed into two delivery agents. Each analyst writes structured data to the pftui database and communicates with other agents via `pftui agent message`. No agent reads from or writes to shared files for analytical data.
 
 ```
 LOW (3x daily)  ──┐
@@ -82,7 +82,7 @@ These routines use the full pftui analytics engine:
 ## Integration Guardrails
 
 - Use `pftui journal notes add ... --section market` for market-close logs. Do not use `--section eod` (invalid section).
-- Run all `pftui` write-back commands (predictions, notes, agent-msg, scenario/conviction updates) before sending Telegram/chat briefs.
+- Run all `pftui` write-back commands (predictions, notes, agent messages, scenario/conviction updates) before sending Telegram/chat briefs.
 - For notable market-close moves, send explicit handoff messaging to the evening planner flow (`pftui agent message send ... --from market-close --to evening-planner`).
 
 ## Canonical Analytics Inputs

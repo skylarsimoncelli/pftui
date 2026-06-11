@@ -105,6 +105,21 @@ the original DEAD list.
 
 A new table without an entry fails CI with a message pointing here.
 
+### Doc-drift enforcement (companion tests)
+
+Schema conformance has two documentation siblings, both run by `cargo test`:
+
+- `tests/analyst_routine_commands.rs` — every literal `pftui` line in a
+  fenced ```bash block in `agents/routines/*.md` must parse against the
+  current binary (`--help` walk, side-effect-free).
+- `tests/doc_commands.rs` — the same contract for `README.md` and
+  `AGENTS.md` fenced ```bash blocks.
+
+Both skip heredoc bodies. To document an intentionally-aspirational example
+(a command that does not exist yet), append the comment `# (illustrative)`
+to the line — the tests skip it. Use sparingly and pair it with a TODO.md
+entry for the missing command.
+
 ## The series registry (R3) — registration, not physical migration
 
 `series_registry` is the L1 meta-table: one row per canonical time series,

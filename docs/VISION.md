@@ -1,5 +1,14 @@
 # Vision
 
+> **Scope note.** This document is the TUI design vision (density, themes,
+> vim UX, quality bar). The intelligence-platform vision that grew on top of
+> it is specified elsewhere: epistemic doctrine in [EPISTEMICS.md](EPISTEMICS.md),
+> the data/storage layer model in [DATA-ARCHITECTURE.md](DATA-ARCHITECTURE.md),
+> cycle analysis doctrine in [CYCLE-THEORY.md](CYCLE-THEORY.md), and product
+> direction in [../PRODUCT-VISION.md](../PRODUCT-VISION.md). Counts here date
+> from the original vision (e.g. "6 themes" — there are now 11; see
+> `src/tui/theme.rs`).
+
 ## Mission
 
 The best terminal experience for viewing your investment portfolio and market data. Period.

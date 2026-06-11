@@ -26,7 +26,7 @@ Persist via:
 ```bash
 pftui agent message send \
   --from steelman-bull-{ASSET} --to synthesis --priority normal \
-  --category steelman --layer steelman \
+  --category signal --layer cross \
   "<your 200-word steelman>"
 ```
 
