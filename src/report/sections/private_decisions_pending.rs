@@ -418,6 +418,7 @@ fn decision_card_from_architect(card: &PortfolioDecisionCard) -> DecisionCard {
     } else {
         clean_text(&card.question)
     };
+    let recommendation_type = ledger_type_from_recommendation(&recommendation).to_string();
     DecisionCard {
         symbol: card.symbol.to_uppercase(),
         question,
@@ -429,8 +430,39 @@ fn decision_card_from_architect(card: &PortfolioDecisionCard) -> DecisionCard {
         ),
         urgency: URGENCY_HIGH.to_string(),
         gap: f64::INFINITY,
-        recommendation_type: "architect".to_string(),
+        recommendation_type,
         rec_id: None,
+    }
+}
+
+/// Map a Phase-4 architect card's free-text recommendation onto the
+/// `recommendations` ledger vocabulary (`VALID_RECOMMENDATION_TYPES`).
+/// The architect writes action-led prose such as "WINDOW-OPEN-SCALE-IN,
+/// +1pp now", "WAIT-FOR-NAMED-GATE → scale-in", "HOLD dry powder" — the
+/// leading action wins, so WAIT/TRIM/AVOID are matched before ADD even when
+/// a gated scale-in is named later in the sentence. Persisting a literal
+/// "architect" type made `upsert_recommendation` reject the row and abort
+/// the whole private assembly.
+fn ledger_type_from_recommendation(recommendation: &str) -> &'static str {
+    let rec = recommendation.to_uppercase();
+    if rec.contains("TRIM") || rec.contains("TAKE-PROFIT") || rec.contains("TAKE PROFIT") {
+        "trim"
+    } else if rec.contains("AVOID") || rec.contains("DO-NOT-INITIATE") || rec.contains("DO NOT INITIATE") {
+        "avoid"
+    } else if rec.contains("EXIT") {
+        "exit"
+    } else if rec.contains("WAIT") || rec.contains("DEFER") {
+        "wait"
+    } else if rec.contains("ADD")
+        || rec.contains("SCALE-IN")
+        || rec.contains("SCALE IN")
+        || rec.contains("ACCUMULATE")
+    {
+        "add"
+    } else if rec.contains("HOLD") {
+        "hold"
+    } else {
+        "meta"
     }
 }
 
@@ -816,6 +848,46 @@ mod tests {
         assert!(cards3.iter().any(|c| c.recommendation_type == "catalyst"));
         let cards4 = build_cards(&stale_fixture());
         assert!(cards4.iter().any(|c| c.recommendation_type == "outlook-refine"));
+    }
+
+    #[test]
+    fn architect_cards_map_to_ledger_valid_recommendation_types() {
+        // Persisting a literal "architect" type aborted the whole private
+        // assembly (upsert_recommendation validates against
+        // VALID_RECOMMENDATION_TYPES). The architect's free-text
+        // recommendation must map onto the ledger vocabulary instead.
+        let mk = |rec: &str| PortfolioDecisionCard {
+            symbol: "BTC".to_string(),
+            question: "q?".to_string(),
+            evidence_for: vec![],
+            evidence_against: vec![],
+            recommendation: rec.to_string(),
+            what_would_change_it: String::new(),
+            sizing_math: String::new(),
+        };
+        for (rec, expected) in [
+            ("WINDOW-OPEN-SCALE-IN, +1pp now", "add"),
+            ("WAIT-FOR-NAMED-GATE → scale-in (no add at 4,098)", "wait"),
+            ("HOLD dry powder (43% cash = staged ammunition)", "hold"),
+            ("TRIM 2pp into the extension", "trim"),
+            ("do-not-initiate", "avoid"),
+            ("something unparseable", "meta"),
+        ] {
+            let card = decision_card_from_architect(&mk(rec));
+            assert_eq!(
+                card.recommendation_type, expected,
+                "recommendation {rec:?} should map to {expected:?}"
+            );
+            assert!(
+                crate::db::recommendations::VALID_RECOMMENDATION_TYPES
+                    .contains(&card.recommendation_type.as_str()),
+                "mapped type {:?} must be ledger-valid",
+                card.recommendation_type
+            );
+        }
+        // Empty recommendation falls back to the WAIT placeholder.
+        let card = decision_card_from_architect(&mk(""));
+        assert_eq!(card.recommendation_type, "wait");
     }
 
     // ---- Fixtures -------------------------------------------------------
