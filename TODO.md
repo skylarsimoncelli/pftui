@@ -162,6 +162,58 @@ Columns from G1's `IntelSnapshot`: structure glyph (▲/▼/─ from `StructureC
 **Docs:** SURFACES.md (new), DATA-ARCHITECTURE.md, CLAUDE.md, ARCHITECTURE.md doc index if needed.
 **Effort:** ~1.5h. Independent; do last so the matrix can cite G2-G6 outcomes.
 
+> **G8/G9 extension (operator directive 2026-06-11):** (1) "surface more of
+> the underlying synthesis that goes into making the reports — all of the
+> work in the background done by the agents is lost and never surfaced";
+> (2) "the technical analysis overhaul needs to make its way to the TUI —
+> selecting an asset should show all of the computed technicals, in a
+> polished UI/UX." Design + substrate inventory: docs/TUI-GLANCE-PROGRAM.md
+> §5 (G8) and §6 (G9). Same program rules apply (pure surfacing, no new
+> tables, theme/privacy/loud-empty-state discipline, nothing on the event
+> loop). G8.1 blocks G8.2 blocks G8.3; G9.1 blocks G9.2 blocks G9.3.
+
+#### G8.1. SynthesisIndex substrate — load the report-pipeline corpus off the event loop
+**What:** A `SynthesisIndex` struct (suggest `src/tui/synthesis.rs`) holding the most recent **14 distinct run-dates** of: `db::daily_notes::list_notes_backend` rows, `db::agent_messages::list_messages_backend` rows (grouped client-side by `created_at` date), `db::analyst_views::get_portfolio_view_matrix_backend` + `get_view_history_backend` pinned per run-date, `db::adversary_synthesis_views::list` and `db::forecast_misalignments::list_all` (both take `&rusqlite::Connection` — use `backend.sqlite()`, same note as the G1 shadow book). Plus the pure presentation classifier `parse_note_tag(&str) -> Option<NoteTag>` for the grep-verified bracket-tag vocabulary (`[synthesis-<SYM>]`, `[synthesis-economy|macro-outlook|closing|operator-wrong|deep-dive|external-ta]`, `[antithesis]`, `[debate-roundup]`, `[operator-wrong {LAYER}]`, `[operator-interview-*]`) — unknown tags classify to `Other`, never dropped (tree counts must sum to window row counts). Loaded in the G1 background-refresh thread + on demand: an older-window request channel (sibling of `background_refresh_complete_rx`) fetches the next 14-date window and appends; `/` search runs `search_notes_backend` on the same worker channel.
+**Tests:** tag-parser table test over the full vocabulary incl. unknown tags; window assembly against a synthetic in-memory DB; loud empty state ("no synthesis runs recorded"); count-sum invariant.
+**Surfaces:** TUI: this brief (substrate for G8.2/G8.3) · CLI: already (`journal notes list/search`, `agent message list`, `analytics views matrix`, `analytics adversary-synthesis list`, `research misalignments`) · report: already (assembler reads the same tables) · web: none (dashboard removed).
+**Docs:** docs/ARCHITECTURE.md Module Index (`tui/synthesis.rs`).
+**Effort:** ~2h. Depends G1 (channel/worker pattern).
+
+#### G8.2. Synthesis Browser view — three-pane drill-in from the Intel tab
+**What:** `ViewMode::Synthesis` (app.rs:34-43) — a full-screen drill-in, NOT a tenth numbered tab (digit budget spent; `0` is Analytics-scoped); header renders `Intel ▸ Synthesis`. Three panes per docs/TUI-GLANCE-PROGRAM.md §5.3 mockup: left run-date list (note+message counts, `...` sentinel triggers older-window load with skeleton row), middle phase tree in fixed pipeline order (Layers → Views → Adversary → Panel → External TA → Synthesis cards → Deep dive → Debate → Decisions → Dossiers → other), right full-text preview (metadata line: author, timestamp, section, novelty; messages show category/layer/priority/ack; adversary previews bullet the JSON evidence/trigger arrays, fragility ≥ 3 in warning color). Keys (view-scoped, collision-checked 2026-06-11): `s` from Intel opens (lowercase `s` globally unbound; `S` stays Positions-scoped); `h`/`l`/`Tab` panes; `j`/`k`/`gg`/`G`/`Ctrl+d,u` move/scroll; `Enter` expand/focus; `a` author-filter cycle; `@` asset-filter cycle (held assets); `[`/`]` prev/next run-date; `/` intercepted for note search (document the shadowing of global search in help); `Esc` back to Intel; digits pass through to tab switch. **Privacy:** structural panes render normally (counts/authors/tags are value-free); the preview pane renders `content hidden in privacy view — p to toggle` — free text is never partially masked (Transactions-tab precedent).
+**Tests:** render smoke (TestBackend) for all three panes; tree-order fixture; privacy preview suppression; empty-window state; selection clamp.
+**Surfaces:** TUI: this brief · CLI: already · report: already · web: none (dashboard removed).
+**Docs:** docs/KEYBINDINGS.md (Synthesis table + `/` shadowing note), help.rs section, docs/ARCHITECTURE.md TUI Views list.
+**Effort:** ~2.5h. Depends G8.1, G2 (Intel tab hosts the entry key).
+
+#### G8.3. Report-claim → reasoning navigation — verdict-board deep link
+**What:** The ≤5-keystroke contract (docs/TUI-GLANCE-PROGRAM.md §5.4): `s` on a selected verdict-board row opens the browser PRE-FILTERED — asset = selected symbol, run = latest run-date, middle-pane focus landed on that asset's `[synthesis-<SYM>]` card node (fallback: the asset's Views node when no synthesis card exists for the date, with a one-line notice — never silent). `j` from there walks tree order to the layer views, adversary counter-case, and dossier rows behind the same claim. Also: Enter on a G3 attention-strip PROBATION item jumps to the matching Dossiers node (layer/asset match). Path documented as a worked example in docs/KEYBINDINGS.md.
+**Tests:** pre-filter landing (synthetic index: `s` with selection focuses the right node; without selection opens unfiltered); fallback-to-Views notice; probation jump.
+**Surfaces:** TUI: this brief · CLI: n/a (navigation) · report: n/a · web: none (dashboard removed).
+**Docs:** docs/KEYBINDINGS.md worked example; docs/TUI-GLANCE-PROGRAM.md §5.4 status note.
+**Effort:** ~1h. Depends G8.2, G2, G3 (strip jump).
+
+#### G9.1. Asset detail popup restructure — pinned verdict header + five sub-tabs
+**What:** Per docs/TUI-GLANCE-PROGRAM.md §6.3 (Layout B, recommended over the single-scroll Layout A — both mocked there): `AssetDetailState` gains `tech_tab: TechTab` (Overview / Structure / Cycles / Cyber / Expectancy) + per-tab scroll. Pinned 3-line header that never scrolls: symbol/name/price/day Δ; the asset's verdict-board row rendered by the SAME function as `verdict_board.rs` (one glyph dialect — never re-implement); sub-tab bar. **Overview = the entire existing popup content unchanged** (Asset, Price, Key Levels, Chart, classic SMA/BB/RSI/MACD, Portfolio, Thesis, BTC intelligence, COT, COMEX, News) plus G6's Verdicts + Expectancy sections until G9.2 gives Expectancy its own tab — nothing the operator has today is demoted. Keys inside `handle_asset_detail_key` (app.rs:5318 — consumes all keys while open, so collision-free by construction): `h`/`l`/`Tab`/`Shift-Tab` cycle tabs, `1`-`5` direct, `j`/`k`/`gg`/`G` scroll, Esc closes.
+**Tests:** tab-cycling + per-tab scroll persistence; pinned-header render at minimal heights; Overview content parity (existing build_lines tests keep passing); empty non-Overview tabs render loud placeholders pre-G9.2.
+**Surfaces:** TUI: this brief · CLI: already (`analytics technicals structure/cyber`, `analytics cycles analyze`) · report: already (per-asset cards) · web: none (dashboard removed).
+**Docs:** docs/ARCHITECTURE.md asset_detail_popup line map; docs/KEYBINDINGS.md popup keys.
+**Effort:** ~2h. Depends G6 (absorbs its sections), G2 (shared glyph-row renderer).
+
+#### G9.2. Engine tabs wired — full StructureRead/CycleReport/CyberSnapshot + expectancy, computed off-loop
+**What:** Widen G1's `IntelSnapshot` to RETAIN per held asset the full `StructureRead` (daily + weekly), full `CycleReport` (all `DegreeStatus` degrees + btc/gold clocks), and `CyberSnapshot` (daily; weekly QB line if budget allows) — identical compute G1 already does, minus the discard. Render the four tabs per §6.3: Structure (per-timeframe verdict, swing table, BOS events in warning color, MA posture + slopes, extension % + rule-13 gate line), Cycles (composite verdict; per-degree age/expected, band p15-p85 + position + bars-to-edge, translation ledger summary + rt-string/translation-warning, FLD value/side/last-cross target + achieved %, VTL intact/BROKEN + break_confirms, failed-cycle/half-cycle/inversion/small-n flag row, clarity chip), Cyber (QB + since/bars, CyberLine, dot strength + SuperTrend stop, Pi proximity mini-gauges via the rsi_gauge pattern, MTF RSI zone + gating, dated SignalEvent list), Expectancy (fired signals joined to `db::signal_expectancy::latest_rows` at matching `(signal_id, signal_version)`: n_nonoverlap, mean/hit lift vs baseline, MAE mean/worst, significance; unmeasured → "unmeasured — run `pftui research backtest`"). **Non-held symbols:** popup-open for a symbol absent from the snapshot pushes a compute request on the worker channel; tabs render skeleton loaders until mpsc delivery; LRU cache (~16) on `App` keyed `(symbol, history_len)`. Short series → loud per-tab empty state naming the bar requirement (Cyber MIN_BARS=60). Render NEVER calls `analyze`.
+**Tests:** section assembly from synthetic engine outputs (incl. broken-VTL/failed-cycle warning rendering, rule-13 gate line both states); version-mismatch expectancy row excluded; on-demand request → skeleton → delivery flow; LRU invalidation on history change; short-series states.
+**Surfaces:** TUI: this brief · CLI: already · report: already · web: none (dashboard removed).
+**Docs:** docs/ARCHITECTURE.md (intel snapshot note + popup map), docs/TUI-GLANCE-PROGRAM.md §6 status note.
+**Effort:** ~2.5h. Depends G9.1, G1.
+
+#### G9.3. STRETCH — price-chart overlay of swings + broken levels
+**What:** Explicitly separated, not bundled (rationale in docs/TUI-GLANCE-PROGRAM.md §6.6): overlay `StructureRead.swings` markers (HH/HL/LH/LL glyphs at swing dates) and broken-level horizontal lines (`BreakEvent.level`, dashed, warning color) on the popup chart, behind a popup-scoped toggle key (`o` for overlay — popup-scoped, collision-free). Reuses the SMA/BB overlay path in `price_chart.rs:540-870`; the open problem is glyph placement on the braille grid (markers render in a gutter row above/below the braille area, never inside it — keep the braille renderer untouched). Daily timeframe only in v1. Do NOT start until G9.1+G9.2 are merged and the data plumbing is proven.
+**Tests:** marker gutter placement math; level-line clipping at chart bounds; toggle state; render smoke with empty swings.
+**Surfaces:** TUI: this brief · CLI: n/a (visual) · report: charts have their own renderers — out of scope · web: none (dashboard removed).
+**Docs:** docs/KEYBINDINGS.md popup `o` toggle; docs/ARCHITECTURE.md price_chart note.
+**Effort:** ~2h. Depends G9.2. P3-grade priority — pick only when the rest of the program is done.
+
 ### MVRV Z-Score data source + cache
 **Source:** Operator directive 2026-06-09 (cycle frameworks). Camel Finance's primary bottoming indicator. Needs an on-chain source (free tier: bitcoin-data.com / coinmetrics community / blockchain.com charts API) cached into a new `onchain_mvrv` table via `data refresh`; surface in the BTC per-asset card and `analytics cycles clock`. Respect the no-new-deps rule — plain reqwest JSON fetch.
 
