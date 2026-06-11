@@ -6,11 +6,72 @@
 
 ## P1 - Bugs/Regressions
 
+### CLI Perfection Program
+**Source:** Operator directive 2026-06-11 ("the CLI must be 100% how you want it — actually great, empowering future agents"). Full mechanical audit (498 help nodes, 403 leaves flag-fingerprinted, ~40 JSON shapes sampled, error paths probed) scoped in **docs/CLI-DESIGN.md** — the canonical design doctrine all items below implement against. Items are dependency-ordered: C1 (vocab) before C2/C3 (paths/flags), C5 before C6 (JSON phases), C9 (doc sweep) last in-repo, C10 orchestrator-side. No new tables anywhere in the program — the "layer" for these briefs is the CLI surface contract itself; the named consumers are the agent routines (`agents/routines/`), report-prompt phases (`agents/report-prompts/`), the `/pftui-report` skill, and `scripts/`.
+
+#### C1. `src/vocab.rs` — central enum vocabulary module
+**Scope:** One module owning every cross-command vocabulary (CLI-DESIGN.md §8): Direction, Layer (+`macro-checkpoint`, `cross`), Author registry, Message category, Recommendation action, Conviction band, Tx category, Outcome, Decision response tokens, Urgency, `error.kind`. Each is a Rust enum with `Display`/`FromStr`/serde + clap `ValueEnum`. Port the two divergent `CANONICAL_LAYERS` consts (`src/commands/views_stale.rs` lowercase vs `src/report/charts/conviction_trajectory.rs` `LOW/MED/HIGH/MACRO`) and the `agent_msg.rs` category validator onto it; remaining call sites migrate opportunistically in C2/C3 but all NEW code must consume `vocab`.
+**Contract/test (forever):** new `tests/vocab_conformance.rs` — greps `src/**/*.rs` (test modules excluded) for vocabulary literals in `matches!`/array-literal validation position outside `vocab.rs`; failure message points at CLI-DESIGN.md §8. This is what prevents the next decision-card-style writer/reader split.
+**Files:** `src/vocab.rs` (new), `src/lib.rs`/`src/main.rs` wiring, `src/commands/agent_msg.rs`, `src/commands/views_stale.rs`, `src/report/charts/conviction_trajectory.rs`, `tests/vocab_conformance.rs` (new).
+**Docs:** CLAUDE.md (author-table section gains "enums live in src/vocab.rs"), docs/CLI-DESIGN.md §8 status note.
+
+#### C2. One canonical path per noun — kill the parallel clap surfaces
+**Scope:** Per CLI-DESIGN.md §1.1: (a) delete `AnalyticsScenarioCommand` + `AnalyticsConvictionCommand` enums; `analytics scenario`/`analytics conviction` become forwards holding the SAME `JournalScenarioCommand`/`JournalConvictionCommand` type (fixes the live drift: `analytics scenario update` lacks `journal scenario update`'s `--id`); (b) replace the hand-mapped `DataAlertsRedirect` with a forward sharing `AnalyticsAlertsCommand`; (c) remove the top-level `prediction` shortcut (tree-bypass; routes exist under `journal prediction`); (d) remove the analyst-prediction subcommands grafted onto `data predictions`/`analytics predictions` (`add`, `scorecard`, `stats`, `unanswered`) — prediction-market subcommands (`markets/map/unmap/suggest-mappings/--geo`) stay, canonical under `data predictions`. Forwards print a one-line stderr deprecation note naming the canonical path.
+**Contract/test (forever):** new `tests/cli_canonical_paths.rs` — for every forward listed in CLI-DESIGN.md §1.1, assert the forward's recursive `--help` flag surface is byte-identical to the canonical path's (the mechanical version of "alias must share the canonical code path"); compile-level sharing enforced by the single-enum design itself.
+**Files:** `src/cli.rs` (~enum deletions + forward variants), `src/main.rs` (dispatch arms), `tests/cli_canonical_paths.rs` (new).
+**Docs:** docs/CLI-TREE.md, docs/CLI-MIGRATION.md (rows for removed `prediction` + grafted subcommands), AGENTS.md (Enrichment-substrate table rows citing `analytics predictions add` / `data predictions add`; prediction-contract bullets), agents/routines/*.md + agents/report-prompts/*.md (grep for the removed paths; `analyst_routine_commands` + `doc_commands` tests gate this).
+
+#### C3. Flag vocabulary normalization — canonical names + back-compat aliases
+**Scope:** Implement the CLI-DESIGN.md §2 matrix mechanically across `src/cli.rs`: `--symbol` gains alias `--asset` on the 25 `--asset` commands (canonical name flips to `--symbol`); one shared `parse_since` behind canonical `--since` absorbing `--days` (15 cmds), `--window-days` (4), lookback-meaning `--window`/`--period`, and bare-int `--since 365`; `--author` absorbs `--analyst` (5), `--source-agent` (5), filter-`--agent` (7); fix the `--from` collision (`analytics macro regime history/summary/transitions/confidence-trend --from <date>` → `--since`, hidden alias kept); `delete`→`remove` verb fix on `analytics views`/`analytics risk-factors` (alias kept). All old spellings remain accepted clap aliases — zero breakage, one vocabulary.
+**Contract/test (forever):** new `tests/flag_vocabulary.rs` — walks the help tree like `cli_help_smoke`, asserts every leaf's flags are canonical-or-known-alias against the §2 matrix (embedded as a table in the test), and that no new synonym for symbol/window/author concepts can ship.
+**Files:** `src/cli.rs`, touched `src/commands/*` arg structs, `tests/flag_vocabulary.rs` (new).
+**Docs:** AGENTS.md CLI tables (canonical spellings), agents/routines/low|medium|high|macro-timeframe-analyst.md + adversary-analyst.md (`--asset`→`--symbol` etc.), agents/report-prompts/phase1*/phase2d/phase4 (flag spellings), README.md examples.
+
+#### C4. Non-TTY prompt discipline — agents never hang, stdout never polluted
+**Scope:** Per CLI-DESIGN.md §5. All 4 prompt sites: `src/commands/add_tx.rs` (missing required fields prompt on stdout today; non-TTY → exit 2 usage error naming the flag + valid values from `vocab::TxCategory`), `src/commands/remove_tx.rs` (y/N confirm fires even with `--json`; gains `--confirm`, non-TTY without it → error, plan printed to stderr), `src/config.rs` first-launch wizard (fires on ANY command in a fresh env incl. `system db-info --json`; restrict to TTY + `system setup`, else defaults + one stderr note), `src/commands/setup.rs` (intentional — TTY-gate with a clear non-TTY error). Use `std::io::IsTerminal`.
+**Contract/test (forever):** new `tests/non_tty_discipline.rs` — drives the binary with stdin closed in an isolated HOME: `transaction add` minus `--category` exits 2 with the flag named; `transaction remove <id>` without `--confirm` exits non-zero without deleting; fresh-env `system db-info --json` emits pure JSON on stdout. Plus a source-level guard: any new `io::stdin().read_line` outside the four blessed sites fails the test.
+**Files:** `src/commands/add_tx.rs`, `src/commands/remove_tx.rs`, `src/config.rs`, `src/commands/setup.rs`, `tests/non_tty_discipline.rs` (new).
+**Docs:** AGENTS.md (transaction add/remove rows: `--confirm` + non-TTY behavior), docs/CLI-DESIGN.md §5 status.
+
+#### C5. JSON honesty phase 1 — always-JSON, error objects, no new bare arrays
+**Scope:** Per CLI-DESIGN.md §4.3 phase 1. (a) `--json` ALWAYS emits valid JSON — fix `portfolio performance --json` emitting prose ("No portfolio snapshots found… Run `pftui refresh`" — also a removed path) and audit every leaf for empty-state text leaks; (b) failures under `--json` emit the `{error: {kind, message}, meta}` object on stdout (kinds from `vocab::ErrorKind`) while keeping the stderr text + exit codes; central helper in the CLI error path (`main.rs` `anyhow` boundary) so commands get it for free; (c) freeze bare arrays: existing ones keep shape, conformance test forbids NEW top-level arrays.
+**Contract/test (forever):** new `tests/json_contract.rs` — for a curated read-only command list against the fixture DB (the `prior_release_schema` isolated-HOME pattern): stdout parses as JSON under `--json` in both success and provoked-failure cases; failure output carries `error.kind`; the bare-array allowlist is explicit and shrinking-only.
+**Files:** `src/main.rs` (error boundary), `src/commands/performance.rs` (the prose leak at line ~128; note `src/commands/drawdown.rs` already does the right thing with an ad-hoc error object — converge it on the C5 shape), plus `src/commands/*` for other empty-state leaks found, `tests/json_contract.rs` (new).
+**Docs:** AGENTS.md Best Practice 2 (error-object contract for agents), docs/CLI-DESIGN.md §4 status.
+
+#### C6. JSON envelope phase 2 — `{data, warnings, meta}` opt-in + TTY-aware compactness
+**Scope:** Per CLI-DESIGN.md §4.2/4.4. Global `--envelope` flag (+ `PFTUI_JSON_ENVELOPE=1`) wrapping any `--json` payload in `{data, warnings, meta:{command, schema_version:1, generated_at}}`; warnings currently stderr-only in JSON mode (e.g. cached-only notes) are mirrored into `warnings`. Pretty-print only when stdout is a TTY; piped output is compact single-line (~30-40% token saving, no flag). Default flip to envelope is explicitly OUT of scope (phase 3, after consumer migration — known consumers catalogued in CLI-DESIGN.md §4.3: the `/pftui-report` skill jq paths, routine jq examples, `collect-data.sh` (already broken on pre-F42 paths — fix its command list while touching it), `scripts/parity_check.sh`).
+**Contract/test (forever):** extend `tests/json_contract.rs` — every sampled leaf under `--envelope` parses with exactly the three reserved keys and `meta.command` equal to the canonical path; TTY-vs-pipe compactness unit-tested at the print helper.
+**Files:** `src/cli.rs` (global flag), the shared JSON print helper (new, `src/commands/output.rs` or similar), `agents/investor-panel/collect-data.sh`, `tests/json_contract.rs`.
+**Docs:** AGENTS.md (envelope section + migration notice), docs/CLI-DESIGN.md §4.3 status, agents/routines/README.md.
+
+#### C7. Zero-effect writes are errors — rows-affected discipline on ledger mutations
+**Scope:** Audit finding: `journal prediction score --id 999999 --outcome correct` prints success and exits 0 (`src/db/user_predictions.rs::score_prediction` + `score_prediction_backend` ignore `rows_affected == 0`) — a silent-success lie on an L3 append-only ledger whose whole contract is scoreability. Sweep every UPDATE/DELETE-by-id CLI path (`prediction score/score-batch`, `lessons revive`, `rules cite/retire`, `alerts ack/rearm`, `agent message ack`, `thesis set-review`, `trends update`, `situation resolve`, …) for the same class: zero rows affected → exit 1 + `error.kind = "not-found"`.
+**Contract/test (forever):** unit tests per fixed path (nonexistent id → Err) + one integration case in `tests/json_contract.rs`'s provoked-failure list so the class stays covered.
+**Files:** `src/db/user_predictions.rs`, `src/db/*` mutation fns surfaced by the sweep, corresponding `src/commands/*`.
+**Docs:** docs/CLI-DESIGN.md §3 status; CHANGELOG bug entry.
+
+#### C8. `--json` coverage completion + exemption registry
+**Scope:** Per CLI-DESIGN.md §7. Add `--json` to the 16 non-exempt leaves missing it: `portfolio history` (subsumes the standing P2 item — restore the AGENTS.md flag + Historical Comparison pattern), `portfolio target set/remove`, `portfolio watchlist add/remove`, `analytics alerts add/remove/rearm/seed-defaults`, `system mirror sync`, `system mobile enable/disable`, `system mobile token generate`. Codify the exemption registry (`console`, `system setup/demo/snapshot/web`, `system mobile serve`, `system export/import`).
+**Contract/test (forever):** new assertion inside `tests/cli_help_smoke.rs` (it already walks every leaf): each leaf's help must contain `--json` OR the leaf must be in the explicit exemption list — new commands cannot ship without choosing.
+**Files:** `src/cli.rs`, `src/commands/{history,watchlist_cli,alerts,…}.rs`, `tests/cli_help_smoke.rs`.
+**Docs:** AGENTS.md Portfolio State table (+ Historical Comparison pattern), remove the P2 `portfolio history` item.
+
+#### C9. Doc conformance sweep + generated CLI-TREE.md
+**Scope:** After C2/C3 land: regenerate `docs/CLI-TREE.md` from the binary's help walk (commit the generator as a test-mode like the existing help walker — the doc becomes diff-checked output, not prose); rewrite `docs/CLI-MIGRATION.md` with the C2 forward/removal table; sweep AGENTS.md, README.md, agents/routines/*.md, agents/report-prompts/*.md to canonical paths/flags (the `doc_commands` + `analyst_routine_commands` tests gate literal examples; this item also fixes the two contradictory `agent message list` jq shapes — `.messages[]` is correct, `.[]` in `agents/routines/macro-timeframe-analyst.md` is broken today).
+**Contract/test (forever):** new `tests/cli_tree_doc.rs` — regenerates the tree section of docs/CLI-TREE.md and fails on diff (schema-conformance pattern applied to the CLI surface doc).
+**Files:** `docs/CLI-TREE.md`, `docs/CLI-MIGRATION.md`, `AGENTS.md`, `README.md`, `agents/routines/*.md`, `agents/report-prompts/*.md`, `tests/cli_tree_doc.rs` (new).
+**Docs:** this IS the doc item; also update CLAUDE.md's stale "six canonical domains" list to CLI-DESIGN.md §1's nine.
+
+#### C10. Orchestrator skill update (OUT-OF-REPO — orchestrator-executed, do not pick from cron)
+**Scope:** After C2/C3 merge: re-verify the command inventory in `~/.claude/commands/pftui-report.md` against the new binary — every `pftui` invocation and jq path (`.positions[]?.symbol`, `.scored_count`, `.scored/.pending`, `.rows_inserted`) still parses/resolves; adopt canonical flag spellings; note the `--envelope` availability for future skill phases. Executed by the orchestrator on this machine, not by repo cron agents (the file lives outside the repo).
+
 ---
 
 ## P2 - Coverage And Agent Consumption
 
 ### `portfolio history` lacks `--json`
+**SUBSUMED by P1 → CLI Perfection Program item C8 (2026-06-11) — do not pick separately; remove this entry when C8 lands.**
 **Source:** R6 docs sweep (2026-06-11). `pftui portfolio history --date YYYY-MM-DD` is text-only, violating the "--json on every CLI command" rule; AGENTS.md previously documented a `--json` flag that does not exist (now corrected). Add a `--json` output mirroring `portfolio summary`'s shape, then restore the flag in AGENTS.md's Portfolio State table and the Historical Comparison integration pattern.
 
 
