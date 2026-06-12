@@ -2714,6 +2714,33 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Audit legacy LLM-scored prediction outcomes against the mechanical
+    /// falsification scorer. Re-derives every scored outcome (correct/partial/
+    /// wrong) that lacks `auto-scored:` provenance by evaluating its
+    /// falsification rule (stored row, or the claim/resolution_criteria
+    /// re-parsed through the falsify grammar) against price_history daily
+    /// closes, then reports agreement, the by-layer breakdown, the
+    /// recorded-vs-mechanical confusion matrix, and every disagreement with
+    /// the deciding bar's date+close. `recorded=correct but mechanically
+    /// wrong` is the generosity measure; the reverse is harshness.
+    ///
+    /// Dry by default. --apply-high-confidence flips disagreeing outcomes
+    /// ONLY where the rule parsed at high confidence, the deciding close is
+    /// more than 1% from the threshold, and the price series was unaffected by the
+    /// corruption-repair windows (BTC equity-ticker 2025-03-20→2026-02-27 +
+    /// 2026-06-11 stale stamp, FX placeholder series, frozen agri feeds).
+    /// Every flip APPENDS provenance to score_notes — the original outcome
+    /// is preserved in the note. After applying, rebuild the calibration
+    /// matrix: `pftui analytics calibration-matrix rebuild --since 365`.
+    #[command(name = "rescore-audit")]
+    RescoreAudit {
+        /// Apply gated outcome corrections (see command help for the gates)
+        #[arg(long = "apply-high-confidence")]
+        apply_high_confidence: bool,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// Structured lesson extraction from wrong predictions.
     ///
     /// Lists wrong predictions with their structured lessons (miss type, root cause, signal misread).
@@ -8177,6 +8204,59 @@ mod tests {
 
         assert_eq!(entries, vec!["3:correct", "7:wrong", "12:partial"]);
         assert!(json);
+    }
+
+    #[test]
+    fn parse_prediction_rescore_audit_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "rescore-audit",
+            "--apply-high-confidence",
+            "--json",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command:
+                        JournalPredictionCommand::RescoreAudit {
+                            apply_high_confidence,
+                            json,
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction rescore-audit command");
+        };
+
+        assert!(apply_high_confidence);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_prediction_rescore_audit_dry_default() {
+        let cli = Cli::try_parse_from(["pftui", "journal", "prediction", "rescore-audit"])
+            .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command:
+                        JournalPredictionCommand::RescoreAudit {
+                            apply_high_confidence,
+                            json,
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction rescore-audit command");
+        };
+
+        assert!(!apply_high_confidence);
+        assert!(!json);
     }
 
     #[test]

@@ -1309,12 +1309,12 @@ struct AutoScoreFailure {
 }
 
 #[derive(Debug, Clone)]
-struct RuleDecision {
-    outcome: &'static str,
-    observed: Decimal,
-    threshold: String,
-    series: String,
-    evidence: String,
+pub(crate) struct RuleDecision {
+    pub(crate) outcome: &'static str,
+    pub(crate) observed: Decimal,
+    pub(crate) threshold: String,
+    pub(crate) series: String,
+    pub(crate) evidence: String,
 }
 
 /// Counts returned to non-CLI callers (e.g. the `data refresh` tail step).
@@ -1581,7 +1581,7 @@ enum RuleCondition {
     InRange,
 }
 
-fn evaluate_falsification_rule(
+pub(crate) fn evaluate_falsification_rule(
     backend: &BackendConnection,
     rule: &PredictionFalsificationRule,
     today: NaiveDate,
@@ -1849,7 +1849,7 @@ type SeriesWindowRows = (String, Vec<(String, Decimal)>);
 
 /// Load (date, close) rows for the first candidate series with coverage in
 /// the window. Returns None when no candidate has any rows.
-fn load_series_window(
+pub(crate) fn load_series_window(
     backend: &BackendConnection,
     symbol: &str,
     start: &str,

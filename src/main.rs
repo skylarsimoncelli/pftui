@@ -413,6 +413,10 @@ fn run_agent_journal(
                 };
                 commands::predict::run_auto_score(backend, since.as_deref(), dry_run, floor, force, json)
             }
+            cli::JournalPredictionCommand::RescoreAudit {
+                apply_high_confidence,
+                json,
+            } => commands::rescore_audit::run_rescore_audit(backend, apply_high_confidence, json),
             cli::JournalPredictionCommand::Lessons {
                 command,
                 miss_type,

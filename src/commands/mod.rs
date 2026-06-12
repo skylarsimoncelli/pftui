@@ -101,6 +101,7 @@ pub mod regime_transitions;
 pub mod remove_tx;
 pub mod repair_pairs;
 pub mod report;
+pub mod rescore_audit;
 pub mod research;
 pub mod research_harness;
 pub mod research_forecasts;

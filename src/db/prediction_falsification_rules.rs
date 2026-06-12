@@ -429,6 +429,76 @@ fn list_active_auto_score_rules(
     Ok(out)
 }
 
+/// List EVERY falsification rule joined to its prediction, regardless of
+/// auto-score eligibility, rule type, or current outcome. Used by the
+/// legacy-outcome rescore audit (`journal prediction rescore-audit`), which
+/// must see event-*/unstructured rows too (they classify as unparseable)
+/// and re-evaluate rules on predictions that are already scored.
+/// Tolerates both on-disk column shapes via `detect_columns`.
+pub fn list_all_rules(conn: &Connection) -> Result<Vec<PredictionFalsificationRule>> {
+    ensure_table(conn)?;
+    let columns = detect_columns(conn)?;
+
+    let opt_expr = |col: &Option<String>, fallback: &str| -> String {
+        col.as_ref()
+            .map(|c| format!("r.{c}"))
+            .unwrap_or_else(|| fallback.to_string())
+    };
+    let sql = format!(
+        "SELECT
+            r.{id},
+            r.{prediction_id},
+            p.claim,
+            p.symbol,
+            p.outcome,
+            r.{rule_type},
+            {symbol_expr},
+            {threshold_value_expr},
+            {threshold_low_expr},
+            {threshold_high_expr},
+            {eval_start_expr},
+            r.{eval_date_end},
+            {parse_confidence_expr}
+         FROM prediction_falsification_rules r
+         JOIN user_predictions p ON p.id = r.{prediction_id}
+         ORDER BY r.{prediction_id} ASC",
+        id = columns.id,
+        prediction_id = columns.prediction_id,
+        rule_type = columns.rule_type,
+        symbol_expr = opt_expr(&columns.symbol, "NULL"),
+        threshold_value_expr = opt_expr(&columns.threshold_value, "NULL"),
+        threshold_low_expr = opt_expr(&columns.threshold_low, "NULL"),
+        threshold_high_expr = opt_expr(&columns.threshold_high, "NULL"),
+        eval_start_expr = opt_expr(&columns.eval_date_start, "NULL"),
+        eval_date_end = columns.eval_date_end,
+        parse_confidence_expr = opt_expr(&columns.parse_confidence, "'medium'"),
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query([])?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        out.push(PredictionFalsificationRule {
+            id: row.get(0)?,
+            prediction_id: row.get(1)?,
+            claim: row.get(2)?,
+            prediction_symbol: row.get(3)?,
+            current_outcome: row.get(4)?,
+            rule_type: row.get(5)?,
+            symbol: row.get(6)?,
+            threshold_value: row.get(7)?,
+            threshold_low: row.get(8)?,
+            threshold_high: row.get(9)?,
+            eval_date_start: row.get(10)?,
+            eval_date_end: row.get::<_, Option<String>>(11)?.unwrap_or_default(),
+            parse_confidence: row
+                .get::<_, Option<String>>(12)?
+                .unwrap_or_else(|| "medium".into()),
+        });
+    }
+    Ok(out)
+}
+
 fn detect_columns(conn: &Connection) -> Result<RuleColumns> {
     let mut stmt = conn.prepare("PRAGMA table_info('prediction_falsification_rules')")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
