@@ -264,8 +264,8 @@ fn build_discard_preview(txs: &[Transaction], symbol: &str) -> Vec<DiscardPrevie
 fn signed_value(tx: &Transaction) -> Decimal {
     let value = tx.quantity * tx.price_per;
     match tx.tx_type {
-        TxType::Buy => value,
-        TxType::Sell => -value,
+        TxType::Buy | TxType::TransferIn => value,
+        TxType::Sell | TxType::TransferOut => -value,
     }
 }
 

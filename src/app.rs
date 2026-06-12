@@ -5421,7 +5421,9 @@ impl App {
                         // Any key toggles between Buy/Sell
                         form.tx_type = match form.tx_type {
                             TxType::Buy => TxType::Sell,
-                            TxType::Sell => TxType::Buy,
+                            // Transfers are not enterable from the TUI form;
+                            // normalize anything else back to Buy.
+                            _ => TxType::Buy,
                         };
                     }
                     TxFormField::Quantity => {

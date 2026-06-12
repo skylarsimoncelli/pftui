@@ -267,12 +267,14 @@ pub fn build_detail_lines<'a>(pos: &Position, app: &'a App, privacy: bool) -> Ve
             let showing = recent.len().min(10);
             for tx in recent.iter().take(showing) {
                 let type_color = match tx.tx_type {
-                    TxType::Buy => t.gain_green,
-                    TxType::Sell => t.loss_red,
+                    TxType::Buy | TxType::TransferIn => t.gain_green,
+                    TxType::Sell | TxType::TransferOut => t.loss_red,
                 };
                 let type_str = match tx.tx_type {
                     TxType::Buy => "BUY ",
                     TxType::Sell => "SELL",
+                    TxType::TransferIn => "XIN ",
+                    TxType::TransferOut => "XOUT",
                 };
                 lines.push(Line::from(vec![
                     Span::styled(

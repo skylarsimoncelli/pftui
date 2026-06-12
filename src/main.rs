@@ -2297,6 +2297,28 @@ fn run_cli(cli: Cli) -> Result<()> {
                         },
                     )
                 }
+                cli::PortfolioTransactionCommand::ImportDelta {
+                    csv,
+                    dry_run,
+                    apply,
+                    json,
+                } => {
+                    if config.is_percentage_mode() {
+                        bail!("import-delta is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
+                    }
+                    if dry_run && apply {
+                        bail!("--dry-run and --apply are mutually exclusive");
+                    }
+                    commands::import_delta::run(
+                        &backend,
+                        commands::import_delta::Options {
+                            csv_path: csv,
+                            apply,
+                            json,
+                            backup: true,
+                        },
+                    )
+                }
             },
             Some(cli::PortfolioCommand::Broker { command }) => match command {
                 cli::PortfolioBrokerCommand::Add {

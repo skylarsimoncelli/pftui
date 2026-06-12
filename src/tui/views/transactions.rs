@@ -44,6 +44,8 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
             let (type_color, type_label) = match tx.tx_type {
                 TxType::Buy => (t.gain_green, "▲ Buy"),
                 TxType::Sell => (t.loss_red, "▼ Sell"),
+                TxType::TransferIn => (t.gain_green, "⇥ In"),
+                TxType::TransferOut => (t.loss_red, "↦ Out"),
             };
 
             let row_bg = if i == app.tx_selected_index {
@@ -171,8 +173,8 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(
                 tx.tx_type.to_string(),
                 Style::default().fg(match tx.tx_type {
-                    TxType::Buy => t.gain_green,
-                    TxType::Sell => t.loss_red,
+                    TxType::Buy | TxType::TransferIn => t.gain_green,
+                    TxType::Sell | TxType::TransferOut => t.loss_red,
                 }),
             ),
         ]),

@@ -740,9 +740,9 @@ rebuildable = true
 
 [tables.transactions]
 layer = "L3"
-purpose = "Operator buy/sell/cash transaction ledger — the portfolio's source of truth"
-writers = ["src/commands/demo.rs", "src/commands/set_cash.rs", "src/commands/setup.rs", "src/db/broker_connections.rs", "src/db/transactions.rs"]
-readers = ["src/commands/analyst_views.rs", "src/commands/epistemics.rs", "src/commands/options.rs", "src/commands/set_cash.rs", "src/commands/setup.rs", "src/db/broker_connections.rs", "src/db/transactions.rs", "src/report/build/daily.rs", "src/commands/data_audit.rs"]
+purpose = "Operator transaction ledger (buy/sell trades + transfer_in/transfer_out external flows) — the portfolio's source of truth"
+writers = ["src/commands/demo.rs", "src/commands/import_delta.rs", "src/commands/set_cash.rs", "src/commands/setup.rs", "src/db/broker_connections.rs", "src/db/transactions.rs"]
+readers = ["src/commands/analyst_views.rs", "src/commands/epistemics.rs", "src/commands/import_delta.rs", "src/commands/options.rs", "src/commands/set_cash.rs", "src/commands/setup.rs", "src/db/broker_connections.rs", "src/db/transactions.rs", "src/report/build/daily.rs", "src/commands/data_audit.rs"]
 
 [tables.trend_asset_impact]
 layer = "L4"

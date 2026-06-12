@@ -211,8 +211,8 @@ fn book_at(transactions: &[Transaction], cutoff: &str) -> Book {
             continue;
         }
         let signed = match tx.tx_type {
-            TxType::Buy => tx.quantity,
-            TxType::Sell => -tx.quantity,
+            TxType::Buy | TxType::TransferIn => tx.quantity,
+            TxType::Sell | TxType::TransferOut => -tx.quantity,
         };
         if is_cash(tx) {
             book.cash += signed;

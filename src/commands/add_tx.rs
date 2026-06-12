@@ -102,7 +102,9 @@ pub fn run(
     if cash_currency.is_empty() {
         bail!("Cash currency is required");
     }
-    let auto_cash = !no_auto_cash && category != AssetCategory::Cash;
+    // Auto-cash applies to trades only: external transfers ARE the cash
+    // movement; pairing them with a second cash leg would double-count.
+    let auto_cash = !no_auto_cash && category != AssetCategory::Cash && tx_type.is_trade();
     let cash_leg = if auto_cash {
         let trade_value = quantity * price_per;
         let rates = get_all_fx_rates_backend(backend)?;
@@ -161,19 +163,23 @@ pub fn run(
     // Auto-link: if there is an open recommendation for the same asset and
     // matching direction within the 7-day window, attach this transaction.
     let direction = match tx.tx_type {
-        TxType::Buy => "buy",
-        TxType::Sell => "sell",
+        TxType::Buy => Some("buy"),
+        TxType::Sell => Some("sell"),
+        // External transfers are not trades — never link to recommendations.
+        TxType::TransferIn | TxType::TransferOut => None,
     };
-    let _linked_rec_id = crate::commands::recommendations::try_link_transaction_to_recommendation(
-        backend,
-        id,
-        &tx.symbol,
-        direction,
-        &tx.date,
-        7,
-    )
-    .ok()
-    .flatten();
+    let _linked_rec_id = direction.and_then(|direction| {
+        crate::commands::recommendations::try_link_transaction_to_recommendation(
+            backend,
+            id,
+            &tx.symbol,
+            direction,
+            &tx.date,
+            7,
+        )
+        .ok()
+        .flatten()
+    });
     let cash_summary = if let Some((cash_amount, fx_rate, trade_value, cash_tx_type)) = cash_leg {
         let cash_tx = NewTransaction {
             symbol: cash_currency.clone(),
@@ -279,8 +285,8 @@ fn normalize_currency(currency: &str) -> String {
 
 fn cash_leg_type(tx_type: TxType) -> TxType {
     match tx_type {
-        TxType::Buy => TxType::Sell,
-        TxType::Sell => TxType::Buy,
+        TxType::Buy | TxType::TransferIn => TxType::Sell,
+        TxType::Sell | TxType::TransferOut => TxType::Buy,
     }
 }
 
