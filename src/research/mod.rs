@@ -16,12 +16,17 @@
 //!   executes every recommendations-ledger row (policy v1): shadow vs
 //!   actual vs hold since ledger inception, computed on demand from
 //!   ledger + prices + transactions with no state tables.
+//! - [`thesis_verify`] — re-runs the evidence SQL embedded in curated
+//!   thesis sections (`[pftui]` / `[derived]` / `[ext]` contract) and
+//!   classifies each claim verified / drift / broken / untagged, with
+//!   snapshot-vs-structural drift severity.
 //!
 //! Persistence: `db::signal_expectancy` (L2 derived, rebuildable) and
 //! `forecast_scores` (L3 ledger, append-only). CLI surface:
-//! `pftui research signals|backtest|expectancy|events|forecasts|shadowbook`.
+//! `pftui research signals|backtest|expectancy|events|forecasts|shadowbook|verify-thesis`.
 
 pub mod event_study;
 pub mod forecast_scoring;
 pub mod registry;
 pub mod shadow_book;
+pub mod thesis_verify;
