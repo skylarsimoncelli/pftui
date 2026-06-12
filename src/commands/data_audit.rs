@@ -620,9 +620,12 @@ fn audit_forecast_scores(conn: &rusqlite::Connection) -> Result<Vec<AuditFinding
     if !table_exists(conn, "forecast_scores") {
         return Ok(Vec::new());
     }
+    // Superseded rows are retired ledger history (verification reissue) —
+    // only the active corpus is audited.
     let mut stmt = conn.prepare(
         "SELECT analyst, asset, view_date, horizon_days, realized_pct
-         FROM forecast_scores WHERE realized_pct IS NOT NULL",
+         FROM forecast_scores
+         WHERE realized_pct IS NOT NULL AND status != 'superseded'",
     )?;
     let rows: Vec<(String, String, String, i64, f64)> = stmt
         .query_map([], |row| {
@@ -811,6 +814,340 @@ fn audit_portfolio_snapshots(conn: &rusqlite::Connection) -> Result<Vec<AuditFin
     )])
 }
 
+// ── scenario_history ────────────────────────────────────────────────────────
+
+/// The scenario probability LEDGER DISCIPLINE landed on this date
+/// (docs/EPISTEMICS.md §3: evidence requirement, 5pp/day delta caps,
+/// conflict guard). Wild book sums and uncapped jumps BEFORE it are
+/// expected historical findings (info); violations AFTER it mean a writer
+/// is bypassing the ledger (suspect).
+const SCENARIO_LEDGER_DATE: &str = "2026-06-10";
+
+/// Active-scenario probability book sums outside [60, 110] per recorded
+/// date, and single-scenario moves >15pp between consecutive records.
+/// Probabilities are on the 0-100 scale. The book sum is "as-of": each
+/// active scenario contributes its latest recorded probability on/before
+/// the date. Historical active-status isn't tracked, so currently-resolved
+/// scenarios are excluded from the sum (noted in the detail).
+pub fn audit_scenario_history(conn: &rusqlite::Connection) -> Result<Vec<AuditFinding>> {
+    let mut stmt = conn.prepare(
+        "SELECT h.scenario_id, substr(h.recorded_at, 1, 10), h.probability
+         FROM scenario_history h
+         JOIN scenarios s ON s.id = h.scenario_id
+         WHERE s.status != 'resolved'
+         ORDER BY h.recorded_at ASC, h.id ASC",
+    )?;
+    let rows: Vec<(i64, String, f64)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut findings = Vec::new();
+
+    // Book-sum check: apply each date's updates, then sum the latest known
+    // probability per active scenario at end of that date.
+    let mut latest: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
+    let mut sum_pre: Vec<String> = Vec::new();
+    let mut sum_post: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    while i < rows.len() {
+        let date = rows[i].1.clone();
+        while i < rows.len() && rows[i].1 == date {
+            latest.insert(rows[i].0, rows[i].2);
+            i += 1;
+        }
+        let sum: f64 = latest.values().sum();
+        if !(60.0..=110.0).contains(&sum) {
+            let key = format!("{date} sum={sum:.1}");
+            if date.as_str() < SCENARIO_LEDGER_DATE {
+                sum_pre.push(key);
+            } else {
+                sum_post.push(key);
+            }
+        }
+    }
+    if !sum_pre.is_empty() {
+        let count = sum_pre.len();
+        findings.push(finding(
+            "scenario_history",
+            "book-sum-out-of-band",
+            Severity::Info,
+            sum_pre,
+            count,
+            &format!(
+                "active-scenario probability book summed outside [60, 110] BEFORE the {SCENARIO_LEDGER_DATE} ledger discipline — expected historical finding (uncoordinated writers; currently-resolved scenarios excluded from the sum)"
+            ),
+        ));
+    }
+    if !sum_post.is_empty() {
+        let count = sum_post.len();
+        findings.push(finding(
+            "scenario_history",
+            "book-sum-out-of-band",
+            Severity::Suspect,
+            sum_post,
+            count,
+            &format!(
+                "active-scenario probability book summed outside [60, 110] ON/AFTER the {SCENARIO_LEDGER_DATE} ledger discipline — a writer is bypassing the scenario ledger"
+            ),
+        ));
+    }
+
+    // Jump check: >15pp between consecutive records of the same scenario
+    // (all scenarios — the delta caps apply to every ledgered update).
+    let mut stmt = conn.prepare(
+        "SELECT scenario_id, substr(recorded_at, 1, 10), probability
+         FROM scenario_history
+         ORDER BY scenario_id ASC, recorded_at ASC, id ASC",
+    )?;
+    let all_rows: Vec<(i64, String, f64)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    let mut jump_pre: Vec<String> = Vec::new();
+    let mut jump_post: Vec<String> = Vec::new();
+    for pair in all_rows.windows(2) {
+        let (prev_id, prev_date, prev_p) = &pair[0];
+        let (id, date, p) = &pair[1];
+        if prev_id != id {
+            continue;
+        }
+        let delta = p - prev_p;
+        if delta.abs() > 15.0 {
+            let key = format!("scenario#{id} {prev_date} -> {date} ({delta:+.1}pp)");
+            if date.as_str() < SCENARIO_LEDGER_DATE {
+                jump_pre.push(key);
+            } else {
+                jump_post.push(key);
+            }
+        }
+    }
+    if !jump_pre.is_empty() {
+        let count = jump_pre.len();
+        findings.push(finding(
+            "scenario_history",
+            "single-move-gt-15pp",
+            Severity::Info,
+            jump_pre,
+            count,
+            ">15pp single-scenario move between consecutive records, pre-ledger — expected historical finding",
+        ));
+    }
+    if !jump_post.is_empty() {
+        let count = jump_post.len();
+        findings.push(finding(
+            "scenario_history",
+            "single-move-gt-15pp",
+            Severity::Suspect,
+            jump_post,
+            count,
+            ">15pp single-scenario move between consecutive records ON/AFTER the ledger discipline — should have been capped at 5pp/day (--hard-print escape hatch is ledgered, not a bypass)",
+        ));
+    }
+    Ok(findings)
+}
+
+// ── transactions ────────────────────────────────────────────────────────────
+
+/// Symbols exempt from the price-vs-history comparison: cash legs SHOULD
+/// price at 1.0 and have no market session to compare against.
+fn is_cash_symbol(symbol: &str) -> bool {
+    symbol.eq_ignore_ascii_case("USD")
+        || symbol.eq_ignore_ascii_case("USD=X")
+        || symbol.eq_ignore_ascii_case("CASH")
+}
+
+/// Operator-entered transaction sanity. Severity is always SUSPECT —
+/// transactions are hand-entered; the audit reports, it never auto-fixes.
+///
+/// PRIVACY: output carries row ids + symbol + date + percent-deviation
+/// ONLY. Quantities, prices, and values from the operator's real positions
+/// are NEVER printed.
+///
+/// Checks:
+/// - `price-vs-session-range`: buy/sell `price_per` outside ±15% of the
+///   symbol's close on the transaction date (or the nearest session within
+///   5 days — `price_history` stores closes only, so the close±15% band IS
+///   the day_low*0.85..day_high*1.15 fallback). Cash/USD rows and rows in
+///   a non-USD currency are exempt; symbols with no nearby session are
+///   skipped (unverifiable ≠ wrong).
+/// - `nonpositive-quantity`: buy/sell rows store POSITIVE quantities by
+///   convention (the writer rejects ≤0); a nonpositive quantity is a
+///   hand-edit or import error.
+/// - `orphaned-paired-tx`: `paired_tx_id` referencing a missing row.
+pub fn audit_transactions(conn: &rusqlite::Connection) -> Result<Vec<AuditFinding>> {
+    let mut findings = Vec::new();
+
+    struct TxRow {
+        id: i64,
+        symbol: String,
+        category: String,
+        tx_type: String,
+        quantity: String,
+        price_per: String,
+        currency: String,
+        date: String,
+        paired: Option<i64>,
+    }
+    let rows: Vec<TxRow> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, symbol, category, tx_type, quantity, price_per, currency,
+                    substr(date, 1, 10), paired_tx_id
+             FROM transactions ORDER BY date ASC, id ASC",
+        )?;
+        let mapped = stmt.query_map([], |row| {
+            Ok(TxRow {
+                id: row.get(0)?,
+                symbol: row.get(1)?,
+                category: row.get(2)?,
+                tx_type: row.get(3)?,
+                quantity: row.get(4)?,
+                price_per: row.get(5)?,
+                currency: row.get(6)?,
+                date: row.get(7)?,
+                paired: row.get(8)?,
+            })
+        })?;
+        mapped.filter_map(|r| r.ok()).collect()
+    };
+    let ids: std::collections::HashSet<i64> = rows.iter().map(|r| r.id).collect();
+
+    let mut out_of_band: Vec<String> = Vec::new();
+    let mut bad_quantity: Vec<String> = Vec::new();
+    let mut orphaned: Vec<String> = Vec::new();
+
+    for TxRow {
+        id,
+        symbol,
+        category,
+        tx_type,
+        quantity,
+        price_per,
+        currency,
+        date,
+        paired,
+    } in &rows
+    {
+        let is_trade = tx_type == "buy" || tx_type == "sell";
+
+        // Orphaned pair reference (any tx_type).
+        if let Some(p) = paired {
+            if !ids.contains(p) {
+                orphaned.push(format!("#{id} {symbol} {date} -> missing #{p}"));
+            }
+        }
+        if !is_trade {
+            continue;
+        }
+
+        // Quantity sign consistency vs tx_type (positive-by-convention).
+        if quantity
+            .parse::<Decimal>()
+            .map(|q| q <= Decimal::ZERO)
+            .unwrap_or(true)
+        {
+            bad_quantity.push(format!("#{id} {symbol} {date} ({tx_type})"));
+        }
+
+        // Price vs the symbol's session range that day (or nearest session).
+        if is_cash_symbol(symbol) || category.eq_ignore_ascii_case("cash") {
+            continue; // cash legs are exempt
+        }
+        if !currency.eq_ignore_ascii_case("USD") {
+            continue; // closes are USD — a cross-currency band would lie
+        }
+        let Ok(price) = price_per.parse::<Decimal>() else {
+            continue; // unparseable price is caught nowhere else, but keys
+                      // without a deviation would be noise; skip
+        };
+        let Some(close) = nearest_close(conn, symbol, date, 5)? else {
+            continue; // no nearby session — unverifiable, not wrong
+        };
+        if close <= Decimal::ZERO {
+            continue;
+        }
+        let low = close * Decimal::new(85, 2);
+        let high = close * Decimal::new(115, 2);
+        if price < low || price > high {
+            let dev = ((price - close) / close * Decimal::from(100))
+                .to_f64()
+                .unwrap_or(0.0);
+            out_of_band.push(format!("#{id} {symbol} {date} dev{dev:+.1}%"));
+        }
+    }
+
+    if !out_of_band.is_empty() {
+        let count = out_of_band.len();
+        findings.push(finding(
+            "transactions",
+            "price-vs-session-range",
+            Severity::Suspect,
+            out_of_band,
+            count,
+            "possible entry error: fill price >15% from the nearest session close (deviation only — quantities/values never printed); operator-entered, review by hand",
+        ));
+    }
+    if !bad_quantity.is_empty() {
+        let count = bad_quantity.len();
+        findings.push(finding(
+            "transactions",
+            "nonpositive-quantity",
+            Severity::Suspect,
+            bad_quantity,
+            count,
+            "buy/sell rows store positive quantities by convention (direction lives in tx_type) — nonpositive quantity is a hand-edit or import error",
+        ));
+    }
+    if !orphaned.is_empty() {
+        let count = orphaned.len();
+        findings.push(finding(
+            "transactions",
+            "orphaned-paired-tx",
+            Severity::Suspect,
+            orphaned,
+            count,
+            "paired_tx_id references a transaction row that no longer exists — the cash leg and asset leg have come apart",
+        ));
+    }
+    Ok(findings)
+}
+
+/// The symbol's close ON `date`, else the nearest session within
+/// `window_days` either side (ties go to the earlier/prior session).
+fn nearest_close(
+    conn: &rusqlite::Connection,
+    symbol: &str,
+    date: &str,
+    window_days: i64,
+) -> Result<Option<Decimal>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT close FROM price_history
+         WHERE symbol = ?1
+           AND date BETWEEN date(?2, ?3) AND date(?2, ?4)
+         ORDER BY abs(julianday(date) - julianday(?2)) ASC, date ASC
+         LIMIT 1",
+    )?;
+    let close: Option<String> = stmt
+        .query_row(
+            rusqlite::params![
+                symbol,
+                date,
+                format!("-{window_days} days"),
+                format!("+{window_days} days")
+            ],
+            |row| row.get(0),
+        )
+        .map(Some)
+        .or_else(|e| {
+            if e == rusqlite::Error::QueryReturnedNoRows {
+                Ok(None)
+            } else {
+                Err(e)
+            }
+        })?;
+    Ok(close.and_then(|c| std::str::FromStr::from_str(&c).ok()))
+}
+
 // ── runner ──────────────────────────────────────────────────────────────────
 
 type CheckFn = fn(&rusqlite::Connection) -> Result<Vec<AuditFinding>>;
@@ -825,6 +1162,8 @@ const CHECKS: &[(&str, CheckFn)] = &[
     ("signal_expectancy", audit_signal_expectancy),
     ("recommendations", audit_recommendations),
     ("portfolio_snapshots", audit_portfolio_snapshots),
+    ("scenario_history", audit_scenario_history),
+    ("transactions", audit_transactions),
 ];
 
 /// Run all (or one table's) checks. Read-only.
@@ -1207,6 +1546,205 @@ mod tests {
         let report = run_checks(&conn, Some("economic_data")).expect("run");
         assert_eq!(report.corrupt, 1);
         assert!(report.findings[0].sample_keys.contains(&"nfp".to_string()));
+    }
+
+    // ── scenario_history book sums + jumps ─────────────────────────────
+
+    #[test]
+    fn scenario_book_sum_severity_splits_at_ledger_date() {
+        let conn = open_in_memory();
+        conn.execute_batch(
+            "INSERT INTO scenarios (id, name, probability, status) VALUES
+                (9101, 'audit-A', 25.0, 'active'),
+                (9102, 'audit-B', 90.0, 'active'),
+                (9103, 'audit-D', 99.0, 'resolved');
+             INSERT INTO scenario_history (scenario_id, probability, recorded_at) VALUES
+                (9101, 30.0, '2026-05-01 09:00:00'),   -- sum 30  (<60, pre  → info)
+                (9102, 90.0, '2026-05-02 09:00:00'),   -- sum 120 (>110, pre → info)
+                (9103, 99.0, '2026-05-02 10:00:00'),   -- resolved: excluded from sums
+                (9101, 20.0, '2026-05-03 09:00:00'),   -- sum 110 (boundary → clean)
+                (9101, 25.0, '2026-06-15 09:00:00');   -- sum 115 (>110, post → suspect)",
+        )
+        .expect("seed");
+        let report = run_checks(&conn, Some("scenario_history")).expect("run");
+        let sums: Vec<&AuditFinding> = report
+            .findings
+            .iter()
+            .filter(|f| f.check == "book-sum-out-of-band")
+            .collect();
+        assert_eq!(sums.len(), 2, "one pre-ledger info + one post-ledger suspect");
+        let pre = sums.iter().find(|f| f.severity == Severity::Info).expect("pre");
+        assert_eq!(pre.count, 2);
+        assert!(pre.sample_keys.iter().any(|k| k.starts_with("2026-05-01")));
+        assert!(
+            pre.sample_keys.iter().any(|k| k.contains("sum=120.0")),
+            "{:?} — resolved scenario must not inflate the sum",
+            pre.sample_keys
+        );
+        let post = sums
+            .iter()
+            .find(|f| f.severity == Severity::Suspect)
+            .expect("post");
+        assert_eq!(post.count, 1);
+        assert!(post.sample_keys[0].starts_with("2026-06-15"));
+        // The exactly-110 boundary date is clean.
+        assert!(!sums
+            .iter()
+            .flat_map(|f| &f.sample_keys)
+            .any(|k| k.starts_with("2026-05-03")));
+    }
+
+    #[test]
+    fn scenario_jump_gt_15pp_pre_info_post_suspect() {
+        let conn = open_in_memory();
+        conn.execute_batch(
+            "INSERT INTO scenarios (id, name, probability, status) VALUES
+                (9201, 'audit-C', 80.0, 'active');
+             INSERT INTO scenario_history (scenario_id, probability, recorded_at) VALUES
+                (9201, 10.0, '2026-05-01 09:00:00'),
+                (9201, 30.0, '2026-05-02 09:00:00'),   -- +20pp pre  → info
+                (9201, 45.0, '2026-05-03 09:00:00'),   -- +15pp exactly → clean
+                (9201, 80.0, '2026-06-11 09:00:00');   -- +35pp post → suspect (cap was 5pp/day)",
+        )
+        .expect("seed");
+        let report = run_checks(&conn, Some("scenario_history")).expect("run");
+        let jumps: Vec<&AuditFinding> = report
+            .findings
+            .iter()
+            .filter(|f| f.check == "single-move-gt-15pp")
+            .collect();
+        assert_eq!(jumps.len(), 2);
+        let pre = jumps.iter().find(|f| f.severity == Severity::Info).expect("pre");
+        assert_eq!(pre.count, 1);
+        assert!(pre.sample_keys[0].contains("scenario#9201"), "{:?}", pre.sample_keys);
+        assert!(pre.sample_keys[0].contains("+20.0pp"), "{:?}", pre.sample_keys);
+        let post = jumps
+            .iter()
+            .find(|f| f.severity == Severity::Suspect)
+            .expect("post");
+        assert_eq!(post.count, 1);
+        assert!(post.sample_keys[0].contains("2026-06-11"), "{:?}", post.sample_keys);
+    }
+
+    // ── transactions sanity ────────────────────────────────────────────
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_tx(
+        conn: &rusqlite::Connection,
+        symbol: &str,
+        category: &str,
+        tx_type: &str,
+        quantity: &str,
+        price_per: &str,
+        currency: &str,
+        date: &str,
+    ) -> i64 {
+        conn.execute(
+            "INSERT INTO transactions (symbol, category, tx_type, quantity, price_per, currency, date)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![symbol, category, tx_type, quantity, price_per, currency, date],
+        )
+        .expect("insert tx");
+        conn.last_insert_rowid()
+    }
+
+    #[test]
+    fn transaction_price_outside_band_is_suspect_with_privacy_shaped_keys() {
+        let conn = open_in_memory();
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('AAPL', '2026-06-02', '100', 'yahoo')",
+            [],
+        )
+        .expect("close");
+        // Inside the ±15% band → clean.
+        insert_tx(&conn, "AAPL", "equity", "buy", "2", "114.99", "USD", "2026-06-02");
+        // Outside → suspect. Distinctive quantity/price to assert privacy.
+        let id = insert_tx(&conn, "AAPL", "equity", "buy", "7777", "133.33", "USD", "2026-06-02");
+        let report = run_checks(&conn, Some("transactions")).expect("run");
+        assert_eq!(report.findings.len(), 1);
+        let f = &report.findings[0];
+        assert_eq!(f.check, "price-vs-session-range");
+        assert_eq!(f.severity, Severity::Suspect);
+        assert_eq!(f.count, 1);
+        assert_eq!(f.sample_keys[0], format!("#{id} AAPL 2026-06-02 dev+33.3%"));
+        // PRIVACY: no quantity, no fill price, no close anywhere in output.
+        let serialized = serde_json::to_string(&f).expect("json");
+        assert!(!serialized.contains("7777"), "quantity leaked: {serialized}");
+        assert!(!serialized.contains("133.33"), "fill price leaked: {serialized}");
+    }
+
+    #[test]
+    fn transaction_price_uses_nearest_session_when_day_missing() {
+        let conn = open_in_memory();
+        // Friday close only; the trade is dated Sunday.
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('AAPL', '2026-06-05', '100', 'yahoo')",
+            [],
+        )
+        .expect("close");
+        insert_tx(&conn, "AAPL", "equity", "sell", "1", "150", "USD", "2026-06-07");
+        // And a trade with NO session within 5 days → unverifiable, skipped.
+        insert_tx(&conn, "AAPL", "equity", "buy", "1", "999", "USD", "2026-07-15");
+        let report = run_checks(&conn, Some("transactions")).expect("run");
+        assert_eq!(report.findings.len(), 1);
+        let f = &report.findings[0];
+        assert_eq!(f.count, 1, "only the nearest-session row flags");
+        assert!(f.sample_keys[0].contains("2026-06-07"), "{:?}", f.sample_keys);
+        assert!(f.sample_keys[0].contains("dev+50.0%"), "{:?}", f.sample_keys);
+    }
+
+    #[test]
+    fn transaction_cash_and_non_usd_rows_are_exempt() {
+        let conn = open_in_memory();
+        // No USD price history at all — would flag if not exempt.
+        insert_tx(&conn, "USD", "cash", "sell", "100", "1", "USD", "2026-06-02");
+        insert_tx(&conn, "CASH", "cash", "buy", "100", "1", "USD", "2026-06-02");
+        // Non-USD currency: close comparison would lie → skipped.
+        conn.execute(
+            "INSERT INTO price_history (symbol, date, close, source)
+             VALUES ('VWRL.L', '2026-06-02', '100', 'yahoo')",
+            [],
+        )
+        .expect("close");
+        insert_tx(&conn, "VWRL.L", "fund", "buy", "10", "8500", "EUR", "2026-06-02");
+        let report = run_checks(&conn, Some("transactions")).expect("run");
+        assert!(report.findings.is_empty(), "{:?}", report.findings);
+    }
+
+    #[test]
+    fn transaction_nonpositive_quantity_and_orphaned_pair_are_suspect() {
+        let conn = open_in_memory();
+        insert_tx(&conn, "AAPL", "equity", "sell", "-3", "100", "USD", "2026-06-02");
+        let id = insert_tx(&conn, "BTC", "crypto", "buy", "1", "50000", "USD", "2026-06-02");
+        // Orphans form when rows are deleted by external tools (FK pragma
+        // off) — reproduce that shape directly.
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").expect("pragma");
+        conn.execute(
+            "UPDATE transactions SET paired_tx_id = 99999 WHERE id = ?1",
+            rusqlite::params![id],
+        )
+        .expect("orphan");
+        let report = run_checks(&conn, Some("transactions")).expect("run");
+        let qty = report
+            .findings
+            .iter()
+            .find(|f| f.check == "nonpositive-quantity")
+            .expect("quantity finding");
+        assert_eq!(qty.severity, Severity::Suspect);
+        assert!(qty.sample_keys[0].contains("AAPL"), "{:?}", qty.sample_keys);
+        let orphan = report
+            .findings
+            .iter()
+            .find(|f| f.check == "orphaned-paired-tx")
+            .expect("orphan finding");
+        assert_eq!(orphan.severity, Severity::Suspect);
+        assert!(
+            orphan.sample_keys[0].contains("missing #99999"),
+            "{:?}",
+            orphan.sample_keys
+        );
     }
 
     #[test]

@@ -136,8 +136,12 @@ pub fn horizon_kind_for_days(days: i64) -> HorizonKind {
 
 /// Create the `forecast_scores` table (L3 ledger; see docs/db-catalog.toml).
 ///
-/// One row per (view_history_id, horizon_days). Canonical layers produce one
-/// row per view; measurement layers (blind/antithesis) produce four.
+/// One ACTIVE row per (view_history_id, horizon_days). Canonical layers
+/// produce one row per view; measurement layers (blind/antithesis) produce
+/// four. Uniqueness is enforced by a PARTIAL unique index excluding
+/// `status='superseded'` rows, so a verification reissue can retire a
+/// drifted row in place (append-only doctrine: the bad row stays, marked)
+/// while its corrected replacement occupies the active cell.
 pub fn ensure_table(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS forecast_scores (
@@ -154,13 +158,66 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
             direction_hit INTEGER,
             weighted_score REAL,
             status TEXT NOT NULL DEFAULT 'pending',
-            scored_at TEXT,
-            UNIQUE (view_history_id, horizon_days)
-        );
+            scored_at TEXT
+        );",
+    )?;
+    migrate_inline_unique_to_partial(conn)?;
+    conn.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_forecast_scores_active_cell
+            ON forecast_scores(view_history_id, horizon_days)
+            WHERE status != 'superseded';
         CREATE INDEX IF NOT EXISTS idx_forecast_scores_layer_asset
             ON forecast_scores(analyst, asset);
         CREATE INDEX IF NOT EXISTS idx_forecast_scores_status
             ON forecast_scores(status);",
+    )?;
+    Ok(())
+}
+
+/// Additive migration: tables created before the `superseded` status carried
+/// an inline `UNIQUE (view_history_id, horizon_days)` constraint, which
+/// would forbid a corrected replacement row. SQLite cannot drop an inline
+/// table constraint, so rebuild once (ids preserved). There is no CHECK
+/// constraint on `status` in any prior shape (verified against the original
+/// DDL), so no CHECK migration is needed — only this uniqueness relaxation.
+fn migrate_inline_unique_to_partial(conn: &Connection) -> Result<()> {
+    let ddl: String = conn.query_row(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='forecast_scores'",
+        [],
+        |row| row.get(0),
+    )?;
+    if !ddl.to_uppercase().contains("UNIQUE") {
+        return Ok(()); // already the new shape
+    }
+    conn.execute_batch(
+        "BEGIN;
+        CREATE TABLE forecast_scores_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            view_history_id INTEGER NOT NULL,
+            analyst TEXT NOT NULL,
+            asset TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            conviction INTEGER NOT NULL,
+            horizon_days INTEGER NOT NULL,
+            view_date TEXT NOT NULL,
+            realized_pct REAL,
+            series_used TEXT,
+            direction_hit INTEGER,
+            weighted_score REAL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            scored_at TEXT
+        );
+        INSERT INTO forecast_scores_new
+            (id, view_history_id, analyst, asset, direction, conviction,
+             horizon_days, view_date, realized_pct, series_used,
+             direction_hit, weighted_score, status, scored_at)
+        SELECT id, view_history_id, analyst, asset, direction, conviction,
+               horizon_days, view_date, realized_pct, series_used,
+               direction_hit, weighted_score, status, scored_at
+        FROM forecast_scores;
+        DROP TABLE forecast_scores;
+        ALTER TABLE forecast_scores_new RENAME TO forecast_scores;
+        COMMIT;",
     )?;
     Ok(())
 }
@@ -351,11 +408,14 @@ pub fn score_all(conn: &Connection) -> Result<ScorePassSummary> {
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    // Existing cells: (view_history_id, horizon_days) → status.
+    // Existing ACTIVE cells: (view_history_id, horizon_days) → status.
+    // Superseded rows are retired ledger history — their cell is owned by
+    // the corrected replacement row.
     let mut existing: HashMap<(i64, i64), String> = HashMap::new();
     {
         let mut stmt = conn.prepare(
-            "SELECT view_history_id, horizon_days, status FROM forecast_scores",
+            "SELECT view_history_id, horizon_days, status FROM forecast_scores
+             WHERE status != 'superseded'",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((
@@ -377,7 +437,8 @@ pub fn score_all(conn: &Connection) -> Result<ScorePassSummary> {
              view_date, realized_pct, series_used, direction_hit, weighted_score,
              status, scored_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-         ON CONFLICT(view_history_id, horizon_days) DO UPDATE SET
+         ON CONFLICT(view_history_id, horizon_days) WHERE status != 'superseded'
+         DO UPDATE SET
             realized_pct = excluded.realized_pct,
             series_used = excluded.series_used,
             direction_hit = excluded.direction_hit,
@@ -474,8 +535,321 @@ pub fn score_all(conn: &Connection) -> Result<ScorePassSummary> {
         [],
         |row| row.get(0),
     )?;
-    summary.corpus_total =
-        conn.query_row("SELECT COUNT(*) FROM forecast_scores", [], |row| row.get(0))?;
+    summary.corpus_total = conn.query_row(
+        "SELECT COUNT(*) FROM forecast_scores WHERE status != 'superseded'",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(summary)
+}
+
+// ---------------------------------------------------------------------------
+// Verification pass (recompute vs today's price series) + reissue
+// ---------------------------------------------------------------------------
+
+/// One scored row whose recomputed realized return drifted past the
+/// threshold (or that can no longer be resolved against today's series).
+#[derive(Debug, Clone, Serialize)]
+pub struct VerifyDriftRow {
+    pub score_id: i64,
+    pub view_history_id: i64,
+    pub analyst: String,
+    pub asset: String,
+    pub horizon_days: i64,
+    pub view_date: String,
+    pub stored_realized_pct: f64,
+    /// `None` — the row no longer resolves to an entry+exit close pair
+    /// against today's series (history shrank or series vanished).
+    pub recomputed_realized_pct: Option<f64>,
+    pub stored_series: Option<String>,
+    pub recomputed_series: Option<String>,
+    /// |recomputed − stored| in percentage points (`None` when unresolvable).
+    pub drift_pp: Option<f64>,
+    /// The recompute flips the scored direction_hit verdict.
+    pub hit_flipped: bool,
+}
+
+/// Per (asset, stored series_used) drift summary.
+#[derive(Debug, Clone, Serialize)]
+pub struct SeriesDriftSummary {
+    pub asset: String,
+    pub series_used: String,
+    pub rows_checked: usize,
+    pub rows_drifted: usize,
+    pub rows_unresolvable: usize,
+    pub max_drift_pp: f64,
+    pub mean_drift_pp: f64,
+}
+
+/// Full verification report. Read-only: the pass NEVER mutates the ledger;
+/// remediation is the explicit, journaled `--reissue` path.
+#[derive(Debug, Clone, Serialize)]
+pub struct VerifyReport {
+    pub threshold_pp: f64,
+    pub scored_rows: usize,
+    pub clean: usize,
+    pub drifted: usize,
+    /// Scored rows that no longer resolve against today's series.
+    pub unresolvable: usize,
+    /// Rows whose resolving series CHANGED (e.g. BTC → BTC-USD) regardless
+    /// of whether the return drifted.
+    pub series_changed: usize,
+    /// Drifted rows whose direction_hit verdict flips on recompute.
+    pub hit_flips: usize,
+    pub drift_rows: Vec<VerifyDriftRow>,
+    pub per_series: Vec<SeriesDriftSummary>,
+}
+
+struct StoredScore {
+    id: i64,
+    view_history_id: i64,
+    analyst: String,
+    asset: String,
+    direction: String,
+    conviction: i64,
+    horizon_days: i64,
+    view_date: String,
+    realized_pct: f64,
+    series_used: Option<String>,
+    direction_hit: Option<i64>,
+}
+
+fn load_scored(conn: &Connection) -> Result<Vec<StoredScore>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, view_history_id, analyst, asset, direction, conviction,
+                horizon_days, view_date, realized_pct, series_used, direction_hit
+         FROM forecast_scores
+         WHERE status = 'scored' AND realized_pct IS NOT NULL
+         ORDER BY view_date ASC, id ASC",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(StoredScore {
+                id: row.get(0)?,
+                view_history_id: row.get(1)?,
+                analyst: row.get(2)?,
+                asset: row.get(3)?,
+                direction: row.get(4)?,
+                conviction: row.get(5)?,
+                horizon_days: row.get(6)?,
+                view_date: row.get(7)?,
+                realized_pct: row.get(8)?,
+                series_used: row.get(9)?,
+                direction_hit: row.get(10)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+fn recomputed_hit(direction: &str, conviction: i64, realized_pct: f64) -> Option<bool> {
+    if direction == "neutral" || conviction == 0 {
+        return None;
+    }
+    let r_sign = if realized_pct > 0.0 {
+        1
+    } else if realized_pct < 0.0 {
+        -1
+    } else {
+        0
+    };
+    let c_sign = if conviction > 0 { 1 } else { -1 };
+    Some(r_sign == c_sign)
+}
+
+/// Recompute every SCORED row's realized return against TODAY'S price
+/// series, without mutating anything. A row drifts when
+/// |recomputed − stored| > `threshold_pp`.
+pub fn verify_scores(conn: &Connection, threshold_pp: f64) -> Result<VerifyReport> {
+    ensure_table(conn)?;
+    let scored = load_scored(conn)?;
+    let mut cache: SeriesCache = HashMap::new();
+
+    let mut report = VerifyReport {
+        threshold_pp,
+        scored_rows: scored.len(),
+        clean: 0,
+        drifted: 0,
+        unresolvable: 0,
+        series_changed: 0,
+        hit_flips: 0,
+        drift_rows: Vec::new(),
+        per_series: Vec::new(),
+    };
+    // (asset, stored series) → (checked, drifted, unresolvable, drifts)
+    type GroupStats = (usize, usize, usize, Vec<f64>);
+    let mut groups: HashMap<(String, String), GroupStats> = HashMap::new();
+
+    for row in &scored {
+        let horizon = Horizon {
+            days: row.horizon_days,
+            kind: horizon_kind_for_days(row.horizon_days),
+        };
+        let eval = evaluate(&mut cache, conn, &row.asset, &row.view_date, horizon)?;
+        let series_key = row.series_used.clone().unwrap_or_else(|| "?".to_string());
+        let group = groups
+            .entry((row.asset.clone(), series_key))
+            .or_default();
+        group.0 += 1;
+        match eval {
+            Eval::Scored {
+                realized_pct,
+                series_used,
+            } => {
+                let drift = (realized_pct - row.realized_pct).abs();
+                group.3.push(drift);
+                if row.series_used.as_deref() != Some(series_used.as_str()) {
+                    report.series_changed += 1;
+                }
+                if drift > threshold_pp {
+                    group.1 += 1;
+                    report.drifted += 1;
+                    let new_hit =
+                        recomputed_hit(&row.direction, row.conviction, realized_pct)
+                            .map(|h| h as i64);
+                    let hit_flipped = new_hit != row.direction_hit;
+                    if hit_flipped {
+                        report.hit_flips += 1;
+                    }
+                    report.drift_rows.push(VerifyDriftRow {
+                        score_id: row.id,
+                        view_history_id: row.view_history_id,
+                        analyst: row.analyst.clone(),
+                        asset: row.asset.clone(),
+                        horizon_days: row.horizon_days,
+                        view_date: row.view_date.clone(),
+                        stored_realized_pct: row.realized_pct,
+                        recomputed_realized_pct: Some(realized_pct),
+                        stored_series: row.series_used.clone(),
+                        recomputed_series: Some(series_used),
+                        drift_pp: Some(drift),
+                        hit_flipped,
+                    });
+                } else {
+                    report.clean += 1;
+                }
+            }
+            Eval::Pending | Eval::Unscorable => {
+                group.2 += 1;
+                report.unresolvable += 1;
+                report.drift_rows.push(VerifyDriftRow {
+                    score_id: row.id,
+                    view_history_id: row.view_history_id,
+                    analyst: row.analyst.clone(),
+                    asset: row.asset.clone(),
+                    horizon_days: row.horizon_days,
+                    view_date: row.view_date.clone(),
+                    stored_realized_pct: row.realized_pct,
+                    recomputed_realized_pct: None,
+                    stored_series: row.series_used.clone(),
+                    recomputed_series: None,
+                    drift_pp: None,
+                    hit_flipped: false,
+                });
+            }
+        }
+    }
+
+    report.per_series = groups
+        .into_iter()
+        .map(|((asset, series_used), (checked, drifted, unresolvable, drifts))| {
+            let max = drifts.iter().copied().fold(0.0f64, f64::max);
+            let mean = if drifts.is_empty() {
+                0.0
+            } else {
+                drifts.iter().sum::<f64>() / drifts.len() as f64
+            };
+            SeriesDriftSummary {
+                asset,
+                series_used,
+                rows_checked: checked,
+                rows_drifted: drifted,
+                rows_unresolvable: unresolvable,
+                max_drift_pp: max,
+                mean_drift_pp: mean,
+            }
+        })
+        .collect();
+    report.per_series.sort_by(|a, b| {
+        b.rows_drifted
+            .cmp(&a.rows_drifted)
+            .then(b.rows_unresolvable.cmp(&a.rows_unresolvable))
+            .then(a.asset.cmp(&b.asset))
+            .then(a.series_used.cmp(&b.series_used))
+    });
+    Ok(report)
+}
+
+/// Outcome of one reissue pass.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ReissueSummary {
+    pub superseded: usize,
+    pub inserted: usize,
+    /// Distinct assets touched, sorted.
+    pub assets: Vec<String>,
+}
+
+/// Remediate verified drift: mark each drifted row `status='superseded'`
+/// (the append-only ledger keeps it) and insert a corrected `scored` row
+/// for the same (view, horizon) cell. Unresolvable rows are NOT touched —
+/// there is nothing correct to replace them with. Re-verifies internally so
+/// the action always reflects the current series.
+pub fn reissue_drifted(conn: &Connection, threshold_pp: f64) -> Result<ReissueSummary> {
+    let report = verify_scores(conn, threshold_pp)?;
+    let mut summary = ReissueSummary::default();
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let tx = conn.unchecked_transaction()?;
+    for row in &report.drift_rows {
+        let Some(recomputed) = row.recomputed_realized_pct else {
+            continue; // unresolvable — report-only
+        };
+        let changed = tx.execute(
+            "UPDATE forecast_scores SET status = 'superseded'
+             WHERE id = ?1 AND status = 'scored'",
+            params![row.score_id],
+        )?;
+        if changed == 0 {
+            continue;
+        }
+        summary.superseded += 1;
+        // Conviction stored on the row is already effective (signed).
+        let (direction, conviction): (String, i64) = tx.query_row(
+            "SELECT direction, conviction FROM forecast_scores WHERE id = ?1",
+            params![row.score_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let hit = recomputed_hit(&direction, conviction, recomputed);
+        let weighted = hit.map(|h| {
+            (if h { 1.0 } else { -1.0 }) * (conviction.abs() as f64 / 5.0)
+        });
+        tx.execute(
+            "INSERT INTO forecast_scores
+                (view_history_id, analyst, asset, direction, conviction,
+                 horizon_days, view_date, realized_pct, series_used,
+                 direction_hit, weighted_score, status, scored_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'scored', ?12)",
+            params![
+                row.view_history_id,
+                row.analyst,
+                row.asset,
+                direction,
+                conviction,
+                row.horizon_days,
+                row.view_date,
+                recomputed,
+                row.recomputed_series,
+                hit.map(|h| h as i64),
+                weighted,
+                now,
+            ],
+        )?;
+        summary.inserted += 1;
+        if !summary.assets.contains(&row.asset) {
+            summary.assets.push(row.asset.clone());
+        }
+    }
+    tx.commit()?;
+    summary.assets.sort();
     Ok(summary)
 }
 
@@ -503,6 +877,8 @@ pub struct ScoredRow {
 
 /// Load forecast-score rows, oldest first, with optional filters.
 /// `window_days` keeps rows with `view_date >= today - N days`.
+/// Superseded rows (retired by a verification reissue) are excluded — every
+/// aggregation consumer sees only the active corpus.
 pub fn load_rows(
     conn: &Connection,
     layer: Option<&str>,
@@ -513,7 +889,7 @@ pub fn load_rows(
     let mut sql = String::from(
         "SELECT view_history_id, analyst, asset, direction, conviction, horizon_days,
                 view_date, realized_pct, series_used, direction_hit, weighted_score, status
-         FROM forecast_scores WHERE 1=1",
+         FROM forecast_scores WHERE status != 'superseded'",
     );
     let mut args: Vec<String> = Vec::new();
     if let Some(layer) = layer {
@@ -1206,6 +1582,219 @@ mod tests {
         assert_eq!(total.asset, "TOTAL");
         assert_eq!(total.n_scored, 3);
         assert_eq!(total.current_miss_streak, 0);
+    }
+
+    // ── verification + reissue ─────────────────────────────────────────
+
+    #[test]
+    fn verify_clean_when_prices_unchanged() {
+        let conn = test_conn();
+        insert_daily_closes(&conn, "AAA", "2026-01-01", 20, |i| 100.0 + i as f64);
+        insert_view(&conn, "low", "AAA", "bull", 3, "2026-01-01 00:00:00");
+        score_all(&conn).expect("score");
+        let report = verify_scores(&conn, 0.5).expect("verify");
+        assert_eq!(report.scored_rows, 1);
+        assert_eq!(report.clean, 1);
+        assert_eq!(report.drifted, 0);
+        assert_eq!(report.unresolvable, 0);
+        assert!(report.drift_rows.is_empty());
+        assert_eq!(report.per_series.len(), 1);
+        assert_eq!(report.per_series[0].rows_checked, 1);
+        assert_eq!(report.per_series[0].rows_drifted, 0);
+    }
+
+    #[test]
+    fn verify_detects_drift_after_price_repair_without_mutating() {
+        let conn = test_conn();
+        insert_daily_closes(&conn, "AAA", "2026-01-01", 20, |i| 100.0 + i as f64);
+        let id = insert_view(&conn, "low", "AAA", "bull", 3, "2026-01-01 00:00:00");
+        score_all(&conn).expect("score");
+        let before = load_one(&conn, id, 7).realized_pct.expect("realized");
+
+        // "Price repair": the exit close (index 7 = 2026-01-08) was wrong.
+        conn.execute(
+            "UPDATE price_history SET close = '120' WHERE symbol='AAA' AND date='2026-01-08'",
+            [],
+        )
+        .expect("repair");
+        let report = verify_scores(&conn, 0.5).expect("verify");
+        assert_eq!(report.drifted, 1);
+        assert_eq!(report.clean, 0);
+        let d = &report.drift_rows[0];
+        assert_eq!(d.view_history_id, id);
+        assert!((d.stored_realized_pct - 7.0).abs() < 1e-9);
+        assert!((d.recomputed_realized_pct.expect("recomputed") - 20.0).abs() < 1e-9);
+        assert!((d.drift_pp.expect("drift") - 13.0).abs() < 1e-9);
+        assert!(!d.hit_flipped, "bull call hits either way");
+        // Read-only: the ledger row is untouched.
+        let row = load_one(&conn, id, 7);
+        assert_eq!(row.status, "scored");
+        assert_eq!(row.realized_pct, Some(before));
+    }
+
+    #[test]
+    fn verify_threshold_boundary_is_strictly_greater() {
+        let conn = test_conn();
+        insert_daily_closes(&conn, "AAA", "2026-01-01", 20, |i| 100.0 + i as f64);
+        insert_view(&conn, "low", "AAA", "bull", 3, "2026-01-01 00:00:00");
+        score_all(&conn).expect("score");
+        // Stored realized is 7.0%. Repair exit to 107.5 → recomputed 7.5%,
+        // drift exactly 0.5pp — NOT > 0.5 → clean.
+        conn.execute(
+            "UPDATE price_history SET close = '107.5' WHERE symbol='AAA' AND date='2026-01-08'",
+            [],
+        )
+        .expect("repair");
+        let report = verify_scores(&conn, 0.5).expect("verify");
+        assert_eq!(report.drifted, 0, "exactly-threshold drift is clean");
+        assert_eq!(report.clean, 1);
+    }
+
+    #[test]
+    fn verify_flags_unresolvable_when_series_vanishes() {
+        let conn = test_conn();
+        insert_daily_closes(&conn, "AAA", "2026-01-01", 20, |i| 100.0 + i as f64);
+        insert_view(&conn, "low", "AAA", "bull", 3, "2026-01-01 00:00:00");
+        score_all(&conn).expect("score");
+        conn.execute("DELETE FROM price_history WHERE symbol='AAA'", [])
+            .expect("vanish");
+        let report = verify_scores(&conn, 0.5).expect("verify");
+        assert_eq!(report.unresolvable, 1);
+        assert_eq!(report.drifted, 0);
+        assert!(report.drift_rows[0].recomputed_realized_pct.is_none());
+    }
+
+    #[test]
+    fn reissue_supersedes_drifted_rows_and_inserts_corrected() {
+        let conn = test_conn();
+        insert_daily_closes(&conn, "AAA", "2026-01-01", 20, |i| 100.0 + i as f64);
+        // Bear call that originally MISSES (+7%); after repair the exit is
+        // below entry, so the corrected row flips to a HIT.
+        let id = insert_view(&conn, "low", "AAA", "bear", 3, "2026-01-01 00:00:00");
+        score_all(&conn).expect("score");
+        conn.execute(
+            "UPDATE price_history SET close = '90' WHERE symbol='AAA' AND date='2026-01-08'",
+            [],
+        )
+        .expect("repair");
+        let pre = verify_scores(&conn, 0.5).expect("verify");
+        assert_eq!(pre.drifted, 1);
+        assert_eq!(pre.hit_flips, 1);
+
+        let summary = reissue_drifted(&conn, 0.5).expect("reissue");
+        assert_eq!(summary.superseded, 1);
+        assert_eq!(summary.inserted, 1);
+        assert_eq!(summary.assets, vec!["AAA".to_string()]);
+
+        // Superseded original survives in the table (append-only doctrine)…
+        let (n_sup, n_scored): (i64, i64) = conn
+            .query_row(
+                "SELECT
+                    SUM(status='superseded'), SUM(status='scored')
+                 FROM forecast_scores WHERE view_history_id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("counts");
+        assert_eq!((n_sup, n_scored), (1, 1));
+        // …but load_rows sees only the corrected row.
+        let rows = load_rows(&conn, None, None, None).expect("rows");
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.status, "scored");
+        assert!((row.realized_pct.expect("realized") + 10.0).abs() < 1e-9);
+        assert_eq!(row.direction_hit, Some(true), "bear call now hits");
+        assert!((row.weighted_score.expect("weighted") - 0.6).abs() < 1e-9);
+        assert_eq!(row.conviction, -3, "effective conviction preserved");
+
+        // Post-reissue verification is clean, and another reissue is a no-op.
+        let post = verify_scores(&conn, 0.5).expect("verify");
+        assert_eq!(post.drifted, 0);
+        assert_eq!(post.clean, 1);
+        let again = reissue_drifted(&conn, 0.5).expect("reissue 2");
+        assert_eq!(again.superseded, 0);
+
+        // A rescoring pass must not resurrect or re-examine the cell.
+        let s = score_all(&conn).expect("rescore");
+        assert_eq!(s.examined, 0);
+        assert_eq!(s.corpus_total, 1, "superseded rows excluded from corpus");
+    }
+
+    #[test]
+    fn reissue_skips_unresolvable_rows() {
+        let conn = test_conn();
+        insert_daily_closes(&conn, "AAA", "2026-01-01", 20, |i| 100.0 + i as f64);
+        let id = insert_view(&conn, "low", "AAA", "bull", 3, "2026-01-01 00:00:00");
+        score_all(&conn).expect("score");
+        conn.execute("DELETE FROM price_history WHERE symbol='AAA'", [])
+            .expect("vanish");
+        let summary = reissue_drifted(&conn, 0.5).expect("reissue");
+        assert_eq!(summary.superseded, 0);
+        assert_eq!(summary.inserted, 0);
+        assert_eq!(load_one(&conn, id, 7).status, "scored", "row untouched");
+    }
+
+    #[test]
+    fn legacy_inline_unique_table_is_migrated_for_reissue() {
+        let conn = test_conn();
+        // Old-shape table: inline UNIQUE, no partial index, no CHECK.
+        conn.execute_batch(
+            "CREATE TABLE forecast_scores (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                view_history_id INTEGER NOT NULL,
+                analyst TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                conviction INTEGER NOT NULL,
+                horizon_days INTEGER NOT NULL,
+                view_date TEXT NOT NULL,
+                realized_pct REAL,
+                series_used TEXT,
+                direction_hit INTEGER,
+                weighted_score REAL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                scored_at TEXT,
+                UNIQUE (view_history_id, horizon_days)
+            );
+            INSERT INTO forecast_scores
+                (id, view_history_id, analyst, asset, direction, conviction,
+                 horizon_days, view_date, realized_pct, series_used,
+                 direction_hit, weighted_score, status, scored_at)
+            VALUES (42, 1, 'low', 'AAA', 'bull', 3, 7, '2026-01-01',
+                    7.0, 'AAA', 1, 0.6, 'scored', '2026-01-10 00:00:00');",
+        )
+        .expect("legacy shape");
+        insert_daily_closes(&conn, "AAA", "2026-01-01", 20, |i| 100.0 + i as f64);
+        insert_view(&conn, "low", "AAA", "bull", 3, "2026-01-01 00:00:00");
+
+        ensure_table(&conn).expect("migrate");
+        let ddl: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='forecast_scores'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("ddl");
+        assert!(!ddl.to_uppercase().contains("UNIQUE"), "inline UNIQUE removed");
+        // Row id preserved across the rebuild.
+        let id: i64 = conn
+            .query_row("SELECT id FROM forecast_scores", [], |r| r.get(0))
+            .expect("id");
+        assert_eq!(id, 42);
+
+        // Drift the exit close, then the full reissue path works on the
+        // migrated table (supersede + corrected insert in the same cell).
+        conn.execute(
+            "UPDATE price_history SET close = '120' WHERE symbol='AAA' AND date='2026-01-08'",
+            [],
+        )
+        .expect("repair");
+        let summary = reissue_drifted(&conn, 0.5).expect("reissue");
+        assert_eq!(summary.superseded, 1);
+        assert_eq!(summary.inserted, 1);
+        // And the active-cell uniqueness still holds for scoring upserts.
+        let s = score_all(&conn).expect("rescore");
+        assert_eq!(s.examined, 0);
     }
 
     #[test]
