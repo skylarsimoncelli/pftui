@@ -133,9 +133,9 @@ readers = ["src/db/convictions.rs"]
 
 [tables.correlation_snapshots]
 layer = "L2"
-purpose = "Pairwise asset correlation grid computed from price_history"
+purpose = "Pairwise asset correlation grid computed from price_history. Rebuild caveat: rows are stamped per refresh run (recorded_at = now) — the CURRENT grid regrows on the next refresh, but deleted HISTORICAL rows do not regrow; `pftui data decontaminate` trades poisoned history for an honest gap"
 writers = ["src/db/correlation_snapshots.rs"]
-readers = ["src/db/correlation_snapshots.rs"]
+readers = ["src/db/correlation_snapshots.rs", "src/commands/decontaminate.rs"]
 rebuildable = true
 
 [tables.cot_cache]
@@ -708,9 +708,9 @@ rebuildable = true
 
 [tables.technical_snapshots]
 layer = "L2"
-purpose = "Per-symbol-per-day technical indicator values computed from price_history"
+purpose = "Per-symbol-per-day technical indicator values computed from price_history. Rebuild caveat: rows are stamped per refresh run (computed_at = now) — the CURRENT snapshot regrows on the next refresh, but deleted HISTORICAL rows do not regrow; `pftui data decontaminate` trades poisoned history for an honest gap"
 writers = ["src/db/technical_snapshots.rs"]
-readers = ["src/db/technical_snapshots.rs"]
+readers = ["src/db/technical_snapshots.rs", "src/commands/decontaminate.rs"]
 rebuildable = true
 
 [tables.thesis]

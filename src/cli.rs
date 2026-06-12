@@ -680,6 +680,35 @@ pub enum DataCommand {
         #[command(subcommand)]
         command: DataRealYieldsCommand,
     },
+    /// DB-wide false-value audit: per-table signature checks over stored series and ledgers (read-only)
+    #[command(after_help = "Read-only umbrella over per-table signature checks, each carrying\nper-table judgment (April-2020 negative oil is REAL; near-zero ^IRX yields\nare REAL — neither is condemned):\n\n  price_history        spike-and-revert scan + cross-population bimodality\n                       (two close bands >10x apart — the equity-collision\n                       signature) + exact-placeholder runs (>=5 identical\n                       closes to 4dp on FX/commodity symbols)\n  economic_data        plausible-range violations (quarantined=0 anomalies)\n  sentiment_history    0-100 range + duplicate (date, index_type)\n  cot_cache            negative position counts, net != long - short\n  onchain_cache        all-zero runs >=5 per metric (incl. etf_flow_*)\n  forecast_scores /    realized/forward returns outside +/-95% (non-crypto)\n  signal_expectancy /  or +/-99.9% (crypto) — fat-finger detection in our\n  recommendations      own ledgers\n  portfolio_snapshots  day-over-day total_value jumps >30% (severity info —\n                       flow events are real; deliberate operator backfill\n                       rows with cash_value=0 are excluded)\n\nSeverity: info (real but notable) | suspect (likely false value) |\ncorrupt (provably wrong). Output lists row KEYS only, never values from\nthe operator's portfolio tables.\n\nRead-only by design — repair stays manual:\n  pftui data decontaminate --symbol SYM   # purge poisoned L2 derived rows\n  pftui data prices audit                 # price-only spike-revert detail\n\nExamples:\n  pftui data audit\n  pftui data audit --table price_history --json")]
+    Audit {
+        /// Limit to one table's checks (e.g. price_history, economic_data)
+        #[arg(long)]
+        table: Option<String>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Purge L2 derived rows computed from a corrupt L1 price series (dry-run by default)
+    #[command(after_help = "When price_history is repaired after a corruption incident, the L2 rows\ncomputed FROM the corrupt closes do not self-heal: technical_snapshots /\ncorrelation_snapshots are stamped per refresh run, so poisoned historical\nrows persist forever. This deletes them for one symbol.\n\nScope (per-symbol L2 only): technical_snapshots, correlation_snapshots\n(either side of the pair), technical_levels, technical_signals,\nsignal_expectancy. Excluded by design: timeframe_signals, regime_*,\nportfolio/position_snapshots (cross-asset aggregates / operator history —\npartial deletion would skew them).\n\nHonesty note: deleted HISTORICAL rows do not regrow on refresh (snapshots\nonly accumulate going forward); signal_expectancy alone fully rebuilds via\n`pftui research backtest`. Downstream readers tolerate the gap.\n\nDry-run is the default — counts only. `--confirm` executes inside a\ntransaction and writes a journal-note audit trail (author system,\nsection system).\n\nExamples:\n  pftui data decontaminate --symbol BTC --before 2026-06-12\n  pftui data decontaminate --symbol JPY=X --before 2026-06-12 --confirm")]
+    Decontaminate {
+        /// Symbol whose derived rows to purge (exact match; run once per symbol/alias)
+        #[arg(long)]
+        symbol: String,
+        /// Only purge rows computed before this YYYY-MM-DD date (default: all)
+        #[arg(long)]
+        before: Option<String>,
+        /// Explicit dry run (the default behavior; kept for scripting clarity)
+        #[arg(long, conflicts_with = "confirm")]
+        dry_run: bool,
+        /// Execute the deletes (otherwise this is a dry run printing counts)
+        #[arg(long)]
+        confirm: bool,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// Capital flow tracking: ETF creation/redemption, 13F flows, crypto exchange flows (F59 scaffold)
     #[command(after_help = "Capital-flows provider scaffold. Real ETF/13F data requires a paid\nprovider; the default `noop` provider returns zero flows so the\nschema, CLI, and DB plumbing stay in place. Select a provider via\nthe `PFTUI_FLOWS_PROVIDER` env var (`noop`, `etf_com_csv`, `sec_edgar_13f`).\n\nExamples:\n  pftui data flows refresh --json\n  pftui data flows refresh --asset SPY --json\n  pftui data flows show --since 30d --json\n  pftui data flows show --asset BTC --json")]
     Flows {
@@ -13485,6 +13514,73 @@ mod tests {
         };
         assert!(symbol.is_none());
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_data_audit_subcommand() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "audit",
+            "--table",
+            "price_history",
+            "--json",
+        ])
+        .unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Audit { table, json } = command else {
+            panic!("expected Audit");
+        };
+        assert_eq!(table.as_deref(), Some("price_history"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_decontaminate_defaults_to_dry_run() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "decontaminate",
+            "--symbol",
+            "BTC",
+            "--before",
+            "2026-06-12",
+        ])
+        .unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Decontaminate {
+            symbol,
+            before,
+            dry_run,
+            confirm,
+            json,
+        } = command
+        else {
+            panic!("expected Decontaminate");
+        };
+        assert_eq!(symbol, "BTC");
+        assert_eq!(before.as_deref(), Some("2026-06-12"));
+        assert!(!dry_run);
+        assert!(!confirm, "no --confirm means dry run");
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_data_decontaminate_dry_run_conflicts_with_confirm() {
+        assert!(Cli::try_parse_from([
+            "pftui",
+            "data",
+            "decontaminate",
+            "--symbol",
+            "BTC",
+            "--dry-run",
+            "--confirm",
+        ])
+        .is_err());
     }
 
     #[test]

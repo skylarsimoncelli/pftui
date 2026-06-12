@@ -1663,6 +1663,16 @@ fn run_cli(cli: Cli) -> Result<()> {
                     json,
                 ),
             },
+            cli::DataCommand::Audit { table, json } => {
+                commands::data_audit::run(&backend, table.as_deref(), json)
+            }
+            cli::DataCommand::Decontaminate {
+                symbol,
+                before,
+                dry_run: _,
+                confirm,
+                json,
+            } => commands::decontaminate::run(&backend, &symbol, before.as_deref(), confirm, json),
             cli::DataCommand::Flows { command } => match command {
                 cli::DataFlowsCommand::Refresh { asset, json } => {
                     commands::flows::refresh(&backend, asset, json)

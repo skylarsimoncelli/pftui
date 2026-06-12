@@ -54,13 +54,68 @@ pub fn plausible_range(indicator: &str) -> Option<(Decimal, Decimal)> {
     Some(range)
 }
 
+/// True when `value` looks like a scraped calendar year (an exact integer in
+/// 1900..=2100). Lossy web extraction sometimes stores the article's YEAR as
+/// the indicator value (live-observed: `nfp = 2026`). Only consulted for
+/// indicators whose plausible band would otherwise admit a bare year.
+pub fn is_scraped_year(value: Decimal) -> bool {
+    value.fract().is_zero() && value >= Decimal::from(1900) && value <= Decimal::from(2100)
+}
+
 /// True when `value` is within the plausible band for `indicator` (or the
 /// indicator has no configured band).
+///
+/// Per-indicator judgment beyond the raw band: an NFP print that is exactly
+/// a year-like integer (1900..=2100) fails even though the band (-1M..1.5M)
+/// admits it — real NFP prints are reported in raw jobs (typically tens of
+/// thousands and up; a flat month prints ~±10K, not a four-digit year). The
+/// other banded indicators already exclude 1900..2100 by range.
 pub fn passes_sanity_check(indicator: &str, value: Decimal) -> bool {
+    if indicator == "nfp" && is_scraped_year(value) {
+        return false;
+    }
     match plausible_range(indicator) {
         Some((min, max)) => value >= min && value <= max,
         None => true,
     }
+}
+
+/// Retro-quarantine sweep over ALL existing rows (migration helper).
+///
+/// The write-time quarantine inside `upsert_entry` only inspects values as
+/// they arrive — rows written before the quarantine shipped (or before a
+/// band/judgment tightening) can sit with `quarantined = 0` while holding
+/// garbage, and render into briefs. This applies the same
+/// `passes_sanity_check` to every unquarantined row and flips the flag where
+/// the stored value is out-of-band or unparseable.
+///
+/// Idempotent: a second run matches nothing. Returns the
+/// `(indicator, value)` pairs newly quarantined so the caller can log them.
+pub fn retro_quarantine_existing(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt =
+        conn.prepare("SELECT indicator, value FROM economic_data WHERE quarantined = 0")?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    drop(stmt);
+
+    let mut newly_quarantined = Vec::new();
+    for (indicator, value_str) in rows {
+        let out_of_band = match value_str.parse::<Decimal>() {
+            Ok(value) => !passes_sanity_check(&indicator, value),
+            // Unparseable stored value is garbage by definition.
+            Err(_) => true,
+        };
+        if out_of_band {
+            conn.execute(
+                "UPDATE economic_data SET quarantined = 1 WHERE indicator = ?1",
+                params![indicator],
+            )?;
+            newly_quarantined.push((indicator, value_str));
+        }
+    }
+    Ok(newly_quarantined)
 }
 
 pub fn upsert_entry(conn: &Connection, entry: &EconomicDataEntry) -> Result<()> {
@@ -345,6 +400,77 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].value, dec!(3.8));
         assert!(get_quarantined(&conn).expect("quarantined").is_empty());
+    }
+
+    #[test]
+    fn nfp_scraped_year_fails_sanity_check() {
+        // The live garbage shape: a year stored as the payrolls print. The
+        // raw band (-1M..1.5M) admits 2026 — the year-trap must catch it.
+        assert!(!passes_sanity_check("nfp", dec!(2026)));
+        assert!(!passes_sanity_check("nfp", dec!(1999)));
+        // Non-year-like NFP prints stay in-band.
+        assert!(passes_sanity_check("nfp", dec!(228000)));
+        assert!(passes_sanity_check("nfp", dec!(-140000)));
+        assert!(passes_sanity_check("nfp", dec!(2026.5))); // not an integer
+        assert!(passes_sanity_check("nfp", dec!(12000))); // flat month, not a year
+        // The trap is nfp-specific: other indicators rely on their bands.
+        assert!(passes_sanity_check("treasury_10y", dec!(2026)));
+    }
+
+    #[test]
+    fn retro_quarantine_sweeps_legacy_rows() {
+        let conn = test_conn();
+        // Legacy rows written BEFORE the quarantine existed: insert with raw
+        // SQL so the write-time check is bypassed (quarantined = 0).
+        for (indicator, value) in [
+            ("nfp", "2026"),       // the live case: a year stored as payrolls
+            ("cpi", "3.8"),        // healthy
+            ("ppi", "25"),         // out of band
+            ("unemployment_rate", "4.2"), // healthy
+            ("garbage_text", "n/a"),      // unparseable
+        ] {
+            conn.execute(
+                "INSERT INTO economic_data (indicator, value, source_url, source, confidence, fetched_at, quarantined)
+                 VALUES (?1, ?2, 'https://example.invalid/legacy', 'test', 'medium', '2026-01-01T00:00:00Z', 0)",
+                params![indicator, value],
+            )
+            .expect("legacy insert");
+        }
+
+        let swept = retro_quarantine_existing(&conn).expect("sweep");
+        let mut swept_indicators: Vec<&str> =
+            swept.iter().map(|(i, _)| i.as_str()).collect();
+        swept_indicators.sort();
+        assert_eq!(swept_indicators, vec!["garbage_text", "nfp", "ppi"]);
+        assert!(swept.iter().any(|(i, v)| i == "nfp" && v == "2026"));
+
+        // Readers no longer see the garbage; healthy rows survive.
+        let visible = get_all(&conn).expect("get_all");
+        let visible_indicators: Vec<&str> =
+            visible.iter().map(|e| e.indicator.as_str()).collect();
+        assert_eq!(visible_indicators, vec!["cpi", "unemployment_rate"]);
+
+        // Idempotent: second sweep matches nothing.
+        assert!(retro_quarantine_existing(&conn).expect("resweep").is_empty());
+    }
+
+    #[test]
+    fn migrations_run_retro_quarantine() {
+        // A DB whose economic_data carries legacy garbage gets swept by
+        // run_migrations itself (the startup path).
+        let conn = Connection::open_in_memory().expect("open");
+        crate::db::schema::run_migrations(&conn).expect("first migration");
+        conn.execute(
+            "INSERT INTO economic_data (indicator, value, source_url, source, confidence, fetched_at, quarantined)
+             VALUES ('nfp', '2026', 'https://example.invalid/legacy', 'test', 'medium', '2026-01-01T00:00:00Z', 0)",
+            [],
+        )
+        .expect("legacy insert");
+        crate::db::schema::run_migrations(&conn).expect("re-migration");
+        assert!(get_all(&conn).expect("get_all").is_empty());
+        let q = get_quarantined(&conn).expect("quarantined");
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0].indicator, "nfp");
     }
 
     #[test]

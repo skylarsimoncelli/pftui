@@ -53,6 +53,9 @@ pub async fn run(json_output: bool) -> Result<()> {
             // 5. Registered-series freshness vs 2x SLA (driven by
             // series_registry — see `pftui data series status`).
             checks.push(series_registry_staleness_check(&conn));
+            // 6. DB-wide false-value audit summary (read-only per-table
+            // signature checks — full detail: `pftui data audit`).
+            checks.push(data_audit_summary_check(&conn));
         }
     }
 
@@ -807,6 +810,24 @@ fn series_registry_staleness_check(conn: &Connection) -> DiagnosticCheck {
                 past_2x.join(", ")
             ),
         )
+    }
+}
+
+/// One-line DB-wide false-value audit summary (read-only; detail lives in
+/// `pftui data audit`). Suspect+corrupt findings fail the check (non-critical
+/// — the audit is advisory; repair stays manual).
+fn data_audit_summary_check(conn: &Connection) -> DiagnosticCheck {
+    let (passed, message) = match crate::commands::data_audit::doctor_summary(conn) {
+        Ok((passed, message)) => (passed, message),
+        Err(e) => (false, format!("data audit failed to run: {e}")),
+    };
+    DiagnosticCheck {
+        name: "Data Audit".to_string(),
+        category: "Data Health".to_string(),
+        passed,
+        critical: false,
+        message,
+        duration_ms: None,
     }
 }
 
