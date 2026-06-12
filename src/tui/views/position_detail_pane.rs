@@ -81,6 +81,8 @@ fn render_transactions_section(frame: &mut Frame, area: Rect, app: &App, symbol:
         let tx_type = match tx.tx_type {
             crate::models::transaction::TxType::Buy => "BUY ",
             crate::models::transaction::TxType::Sell => "SELL",
+            crate::models::transaction::TxType::TransferIn => "XIN ",
+            crate::models::transaction::TxType::TransferOut => "XOUT",
         };
         let qty = format!("{:.4}", tx.quantity);
         let price = format!("${:.2}", tx.price_per);

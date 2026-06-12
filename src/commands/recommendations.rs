@@ -582,6 +582,8 @@ pub fn relink_historical(
         let direction = match tx.tx_type {
             crate::models::transaction::TxType::Buy => "buy",
             crate::models::transaction::TxType::Sell => "sell",
+            // External transfers are not trades — never link.
+            _ => continue,
         };
         let found = find_open_for_transaction(conn, &tx.symbol, direction, &tx.date, window_days)?;
         if let Some(rec) = found {

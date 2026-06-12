@@ -155,10 +155,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let type_label = match form.tx_type {
             TxType::Buy => "Buy",
             TxType::Sell => "Sell",
+            TxType::TransferIn => "Xfer In",
+            TxType::TransferOut => "Xfer Out",
         };
         let type_color = match form.tx_type {
-            TxType::Buy => t.gain_green,
-            TxType::Sell => t.loss_red,
+            TxType::Buy | TxType::TransferIn => t.gain_green,
+            TxType::Sell | TxType::TransferOut => t.loss_red,
         };
         if type_active {
             form_spans.push(Span::styled("[", Style::default().fg(t.text_accent)));

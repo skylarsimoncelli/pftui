@@ -211,8 +211,8 @@ fn current_shares_by_symbol(
     for tx in txs {
         let entry = out.entry(tx.symbol.to_uppercase()).or_insert(Decimal::ZERO);
         match tx.tx_type {
-            TxType::Buy => *entry += tx.quantity,
-            TxType::Sell => *entry -= tx.quantity,
+            TxType::Buy | TxType::TransferIn => *entry += tx.quantity,
+            TxType::Sell | TxType::TransferOut => *entry -= tx.quantity,
         }
     }
     Ok(out)

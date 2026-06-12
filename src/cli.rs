@@ -1430,6 +1430,40 @@ pub enum PortfolioTransactionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Import a Delta tracker CSV export (full trade + fiat-flow history).
+    ///
+    /// The export is treated as the ground-truth ledger for the window it
+    /// covers. SYNC-BASE-HOLDINGS fiat rows become native paired cash legs
+    /// of their same-timestamp trade; trades without a sync partner import
+    /// with no cash leg (the export's own DEPOSIT/WITHDRAW rows carry the
+    /// funding); plain DEPOSIT/WITHDRAW rows become external transfer_in /
+    /// transfer_out flows on the fiat symbol (USD/GBP), with same-window
+    /// opposite-direction USD/GBP pairs annotated as fx conversions.
+    /// Pre-existing hand-entered rows are reconciled against the CSV and
+    /// classified SUPERSEDED (deleted on apply), KEPT, or CONFLICT.
+    ///
+    /// Idempotent: imported rows carry a [delta:<key>] notes marker;
+    /// re-runs skip rows already present. DRY-RUN BY DEFAULT; --apply
+    /// backs up the DB (full + transactions JSON) before any mutation and
+    /// writes a journal-note audit trail (author system, section system).
+    ///
+    /// EXAMPLES:
+    ///   pftui portfolio transaction import-delta export.csv --dry-run
+    ///   pftui portfolio transaction import-delta export.csv --apply --json
+    #[command(name = "import-delta")]
+    ImportDelta {
+        /// Path to the Delta export CSV
+        csv: String,
+        /// Preview the import without writing (default)
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        /// Apply the import (backs up the database first)
+        #[arg(long)]
+        apply: bool,
+        /// Output JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -7694,6 +7728,40 @@ mod tests {
                 assert!(!json);
             }
             _ => panic!("expected portfolio transaction repair-pairs command"),
+        }
+    }
+
+    #[test]
+    fn parses_portfolio_transaction_import_delta() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "transaction",
+            "import-delta",
+            "export.csv",
+            "--apply",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command:
+                    Some(PortfolioCommand::Transaction {
+                        command:
+                            PortfolioTransactionCommand::ImportDelta {
+                                csv,
+                                dry_run,
+                                apply,
+                                json,
+                            },
+                    }),
+            }) => {
+                assert_eq!(csv, "export.csv");
+                assert!(!dry_run);
+                assert!(apply);
+                assert!(json);
+            }
+            _ => panic!("expected portfolio transaction import-delta command"),
         }
     }
 

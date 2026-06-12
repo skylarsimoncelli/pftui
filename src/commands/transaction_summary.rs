@@ -98,8 +98,8 @@ pub fn remove_summary(
 
 pub fn signed_effect(tx_type: TxType, quantity: Decimal) -> Decimal {
     match tx_type {
-        TxType::Buy => quantity,
-        TxType::Sell => -quantity,
+        TxType::Buy | TxType::TransferIn => quantity,
+        TxType::Sell | TxType::TransferOut => -quantity,
     }
 }
 

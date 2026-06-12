@@ -50,11 +50,14 @@ pub fn compute_positions(
             category = tx.category;
             currency = tx.currency.clone();
             match tx.tx_type {
-                TxType::Buy => {
+                // Transfers change quantity exactly like trades; the
+                // distinction only matters to flow analytics (external
+                // capital vs trading activity).
+                TxType::Buy | TxType::TransferIn => {
                     total_cost += tx.quantity * tx.price_per;
                     qty += tx.quantity;
                 }
-                TxType::Sell => {
+                TxType::Sell | TxType::TransferOut => {
                     if qty > dec!(0) {
                         // Reduce cost basis proportionally
                         let avg = total_cost / qty;

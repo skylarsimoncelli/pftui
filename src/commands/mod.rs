@@ -57,6 +57,7 @@ pub mod history;
 pub mod impact_estimate;
 pub mod impact_matrix;
 pub mod import;
+pub mod import_delta;
 pub mod journal;
 pub mod lessons_applied;
 pub mod lessons_curate;

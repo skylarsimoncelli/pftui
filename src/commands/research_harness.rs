@@ -340,8 +340,8 @@ fn resolve_assets(backend: &BackendConnection, asset: Option<&str>) -> Result<Ve
     for tx in &txs {
         let e = qty.entry(tx.symbol.to_uppercase()).or_default();
         match tx.tx_type {
-            TxType::Buy => *e += tx.quantity,
-            TxType::Sell => *e -= tx.quantity,
+            TxType::Buy | TxType::TransferIn => *e += tx.quantity,
+            TxType::Sell | TxType::TransferOut => *e -= tx.quantity,
         }
         cash.insert(
             tx.symbol.to_uppercase(),
