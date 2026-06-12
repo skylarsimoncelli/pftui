@@ -75,6 +75,11 @@
 
 ## P2 - Coverage And Agent Consumption
 
+### Dead agri-futures feeds: fix or retire KC=F / ZC=F / ZS=F / ZW=F
+**Source:** 2026-06-12 `data audit` (PR #909). All four symbols' Yahoo fetches have returned nothing since 2026-03-13; the F52 stale-stamping bug (fixed in #907) masked it by freezing each at one close for 83 bars (rows repaired + archived 2026-06-12, journal note #735). Decide per symbol: fix the fetch (Yahoo ticker change? continuous-contract suffix?) or retire it (remove from fetch lists + watchlists; series_registry has no entries for them). Either way add them to the registry with SLAs if kept, so the freshness machinery — not an annual audit — catches the next death. Layer: L0 ingest. Consumer: commodity breadth in markets/economy views. Surfaces: TUI markets tab, data prices.
+**Why:** dead feeds that keep their last print look alive to every consumer; these four were undetected for 3 months.
+
+
 ### `portfolio history` lacks `--json`
 **SUBSUMED by P1 → CLI Perfection Program item C8 (2026-06-11) — do not pick separately; remove this entry when C8 lands.**
 **Source:** R6 docs sweep (2026-06-11). `pftui portfolio history --date YYYY-MM-DD` is text-only, violating the "--json on every CLI command" rule; AGENTS.md previously documented a `--json` flag that does not exist (now corrected). Add a `--json` output mirroring `portfolio summary`'s shape, then restore the flag in AGENTS.md's Portfolio State table and the Historical Comparison integration pattern.
