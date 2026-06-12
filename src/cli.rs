@@ -681,7 +681,7 @@ pub enum DataCommand {
         command: DataRealYieldsCommand,
     },
     /// DB-wide false-value audit: per-table signature checks over stored series and ledgers (read-only)
-    #[command(after_help = "Read-only umbrella over per-table signature checks, each carrying\nper-table judgment (April-2020 negative oil is REAL; near-zero ^IRX yields\nare REAL — neither is condemned):\n\n  price_history        spike-and-revert scan + cross-population bimodality\n                       (two close bands >10x apart — the equity-collision\n                       signature) + exact-placeholder runs (>=5 identical\n                       closes to 4dp on FX/commodity symbols)\n  economic_data        plausible-range violations (quarantined=0 anomalies)\n  sentiment_history    0-100 range + duplicate (date, index_type)\n  cot_cache            negative position counts, net != long - short\n  onchain_cache        all-zero runs >=5 per metric (incl. etf_flow_*)\n  forecast_scores /    realized/forward returns outside +/-95% (non-crypto)\n  signal_expectancy /  or +/-99.9% (crypto) — fat-finger detection in our\n  recommendations      own ledgers\n  portfolio_snapshots  day-over-day total_value jumps >30% (severity info —\n                       flow events are real; deliberate operator backfill\n                       rows with cash_value=0 are excluded)\n\nSeverity: info (real but notable) | suspect (likely false value) |\ncorrupt (provably wrong). Output lists row KEYS only, never values from\nthe operator's portfolio tables.\n\nRead-only by design — repair stays manual:\n  pftui data decontaminate --symbol SYM   # purge poisoned L2 derived rows\n  pftui data prices audit                 # price-only spike-revert detail\n\nExamples:\n  pftui data audit\n  pftui data audit --table price_history --json")]
+    #[command(after_help = "Read-only umbrella over per-table signature checks, each carrying\nper-table judgment (April-2020 negative oil is REAL; near-zero ^IRX yields\nare REAL — neither is condemned):\n\n  price_history        spike-and-revert scan + cross-population bimodality\n                       (two close bands >10x apart — the equity-collision\n                       signature) + exact-placeholder runs (>=5 identical\n                       closes to 4dp on FX/commodity symbols)\n  economic_data        plausible-range violations (quarantined=0 anomalies)\n  sentiment_history    0-100 range + duplicate (date, index_type)\n  cot_cache            negative position counts, net != long - short\n  onchain_cache        all-zero runs >=5 per metric (incl. etf_flow_*)\n  forecast_scores /    realized/forward returns outside +/-95% (non-crypto)\n  signal_expectancy /  or +/-99.9% (crypto) — fat-finger detection in our\n  recommendations      own ledgers\n  portfolio_snapshots  day-over-day total_value jumps >30% (severity info —\n                       flow events are real; deliberate operator backfill\n                       rows with cash_value=0 are excluded)\n  scenario_history     active-scenario probability book sums outside\n                       [60, 110] per recorded date + single-scenario moves\n                       >15pp between consecutive records (pre-2026-06-10\n                       ledger discipline: info — expected; on/after: suspect)\n  transactions         buy/sell fill price >15% from the nearest session\n                       close, nonpositive quantities, orphaned paired_tx_id\n                       (always suspect — operator-entered, never auto-fixed;\n                       output is row id + symbol + date + deviation ONLY)\n\nSeverity: info (real but notable) | suspect (likely false value) |\ncorrupt (provably wrong). Output lists row KEYS only, never values from\nthe operator's portfolio tables.\n\nRead-only by design — repair stays manual:\n  pftui data decontaminate --symbol SYM   # purge poisoned L2 derived rows\n  pftui data prices audit                 # price-only spike-revert detail\n\nExamples:\n  pftui data audit\n  pftui data audit --table price_history --json")]
     Audit {
         /// Limit to one table's checks (e.g. price_history, economic_data)
         #[arg(long)]
@@ -6457,7 +6457,7 @@ pub enum Command {
 pub enum ResearchCommand {
     /// Retroactive forecast scoring: the analyst judgment stream as a scored corpus
     #[command(
-        after_help = "Horizon conventions (canonical, fixed — src/research/forecast_scoring.rs):\n  low    7 trading days      medium 45 calendar days\n  high   135 calendar days   macro  365 calendar days\n  blind / antithesis score at ALL FOUR horizons (measurement layers)\n\nWorkflows:\n  pftui research forecasts score                 Backfill + fill elapsed pendings (idempotent)\n  pftui research forecasts report --asset GC=F   Per layer × asset hit rates and streaks\n  pftui research forecasts streaks --threshold 5 Current wrong-sign streak feed"
+        after_help = "Horizon conventions (canonical, fixed — src/research/forecast_scoring.rs):\n  low    7 trading days      medium 45 calendar days\n  high   135 calendar days   macro  365 calendar days\n  blind / antithesis score at ALL FOUR horizons (measurement layers)\n\nWorkflows:\n  pftui research forecasts score                 Backfill + fill elapsed pendings (idempotent)\n  pftui research forecasts report --asset GC=F   Per layer × asset hit rates and streaks\n  pftui research forecasts streaks --threshold 5 Current wrong-sign streak feed\n  pftui research forecasts verify                Recompute scored rows vs today's (repaired)\n                                                 price series; report drift > 0.5pp (read-only)\n  pftui research forecasts verify --reissue      Supersede drifted rows + insert corrected rows\n                                                 (append-only remediation; journaled)"
     )]
     Forecasts {
         #[command(subcommand)]
@@ -6591,6 +6591,17 @@ pub enum ResearchForecastsCommand {
         /// Minimum current streak length to report
         #[arg(long, default_value_t = 5)]
         threshold: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Recompute every SCORED row against today's price series and report drift (read-only)
+    Verify {
+        /// Drift tolerance in percentage points (|recomputed − stored|)
+        #[arg(long, default_value_t = 0.5)]
+        threshold_pp: f64,
+        /// Remediate drift: mark drifted rows status='superseded' and insert corrected rows (journaled)
+        #[arg(long)]
+        reissue: bool,
         #[arg(long)]
         json: bool,
     },
@@ -6773,6 +6784,51 @@ mod tests {
             }
             _ => panic!("unexpected parse result"),
         }
+
+        let cli = Cli::try_parse_from(["pftui", "research", "forecasts", "verify"])
+            .expect("verify parses");
+        match cli.command {
+            Some(Command::Research {
+                command:
+                    ResearchCommand::Forecasts {
+                        command:
+                            ResearchForecastsCommand::Verify {
+                                threshold_pp,
+                                reissue,
+                                json,
+                            },
+                    },
+            }) => {
+                assert!((threshold_pp - 0.5).abs() < 1e-12, "default 0.5pp");
+                assert!(!reissue, "verify is read-only by default");
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "research",
+            "forecasts",
+            "verify",
+            "--threshold-pp",
+            "1.0",
+            "--reissue",
+            "--json",
+        ])
+        .expect("verify --reissue parses");
+        assert!(matches!(
+            cli.command,
+            Some(Command::Research {
+                command: ResearchCommand::Forecasts {
+                    command: ResearchForecastsCommand::Verify {
+                        reissue: true,
+                        json: true,
+                        ..
+                    }
+                }
+            })
+        ));
     }
 
     #[test]

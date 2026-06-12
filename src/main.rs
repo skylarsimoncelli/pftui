@@ -5757,6 +5757,16 @@ fn run_cli(cli: Cli) -> Result<()> {
                 cli::ResearchForecastsCommand::Streaks { threshold, json } => {
                     commands::research_forecasts::streaks_cmd(&backend, threshold, json)
                 }
+                cli::ResearchForecastsCommand::Verify {
+                    threshold_pp,
+                    reissue,
+                    json,
+                } => commands::research_forecasts::verify_cmd(
+                    &backend,
+                    threshold_pp,
+                    reissue,
+                    json,
+                ),
             },
             cli::ResearchCommand::Misalignments { all, json } => {
                 commands::research_forecasts::misalignments_cmd(&backend, all, json)

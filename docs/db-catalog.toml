@@ -221,9 +221,9 @@ append_only = true
 
 [tables.forecast_scores]
 layer = "L3"
-purpose = "Retroactive per-(view, horizon) forecast scores over analyst_view_history — the judgment stream as a scored corpus (lazily created; scoring fills pending cells, scored rows never mutated)"
+purpose = "Retroactive per-(view, horizon) forecast scores over analyst_view_history — the judgment stream as a scored corpus (lazily created; scoring fills pending cells, scored rows never mutated; the only exception is the journaled `research forecasts verify --reissue` path, which marks price-repair-drifted rows status='superseded' — kept, never deleted — and inserts corrected rows)"
 writers = ["src/research/forecast_scoring.rs"]
-readers = ["src/research/forecast_scoring.rs", "src/commands/research_forecasts.rs", "src/db/forecast_misalignments.rs", "src/db/run_health.rs", "src/commands/research_dossier.rs"]
+readers = ["src/research/forecast_scoring.rs", "src/commands/research_forecasts.rs", "src/db/forecast_misalignments.rs", "src/db/run_health.rs", "src/commands/research_dossier.rs", "src/commands/data_audit.rs"]
 append_only = true
 
 [tables.futures_cache]
@@ -579,7 +579,7 @@ readers = ["src/db/scenario_contract_mappings.rs"]
 layer = "L3"
 purpose = "Scenario probability time series (ledger)"
 writers = ["src/db/scenario_contract_mappings.rs", "src/db/scenarios.rs"]
-readers = ["src/db/regime_history.rs", "src/db/scenarios.rs"]
+readers = ["src/db/regime_history.rs", "src/db/scenarios.rs", "src/commands/data_audit.rs"]
 append_only = true
 
 [tables.scenario_impacts]
@@ -742,7 +742,7 @@ rebuildable = true
 layer = "L3"
 purpose = "Operator buy/sell/cash transaction ledger — the portfolio's source of truth"
 writers = ["src/commands/demo.rs", "src/commands/set_cash.rs", "src/commands/setup.rs", "src/db/broker_connections.rs", "src/db/transactions.rs"]
-readers = ["src/commands/analyst_views.rs", "src/commands/epistemics.rs", "src/commands/options.rs", "src/commands/set_cash.rs", "src/commands/setup.rs", "src/db/broker_connections.rs", "src/db/transactions.rs", "src/report/build/daily.rs"]
+readers = ["src/commands/analyst_views.rs", "src/commands/epistemics.rs", "src/commands/options.rs", "src/commands/set_cash.rs", "src/commands/setup.rs", "src/db/broker_connections.rs", "src/db/transactions.rs", "src/report/build/daily.rs", "src/commands/data_audit.rs"]
 
 [tables.trend_asset_impact]
 layer = "L4"

@@ -30,7 +30,12 @@ const VALID_LAYERS: &[&str] = &["L0", "L1", "L2", "L3", "L4", "DEAD"];
 
 /// Tables that exist only transiently inside a single migration batch
 /// (created, filled, renamed away). They never persist in any DB.
-const TRANSIENT_TABLES: &[&str] = &["calibration_matrix_canonical_rebuild"];
+const TRANSIENT_TABLES: &[&str] = &[
+    "calibration_matrix_canonical_rebuild",
+    // forecast_scores uniqueness-relaxation rebuild (inline UNIQUE ->
+    // partial index excluding superseded rows) — renamed in the same batch.
+    "forecast_scores_new",
+];
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
