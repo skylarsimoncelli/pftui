@@ -1940,6 +1940,26 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             ON signal_expectancy(asset, as_of);",
     )?;
 
+    // Retro-quarantine (false-value audit, follow-up to the write-time
+    // quarantine): the write-time check inside economic_data::upsert_entry
+    // never scanned rows that were already in the table when it shipped —
+    // legacy garbage (live-observed: nfp = 2026, a scraped year stored as
+    // the payrolls print) sat with quarantined = 0 and rendered into briefs.
+    // Sweep every unquarantined row through the same plausible-range +
+    // per-indicator judgment. Idempotent: a second run matches nothing.
+    let retro_quarantined = crate::db::economic_data::retro_quarantine_existing(conn)?;
+    if !retro_quarantined.is_empty() {
+        let listed: Vec<String> = retro_quarantined
+            .iter()
+            .map(|(indicator, value)| format!("{indicator}={value}"))
+            .collect();
+        eprintln!(
+            "economic_data retro-quarantine: {} legacy row(s) quarantined: {}",
+            retro_quarantined.len(),
+            listed.join(", ")
+        );
+    }
+
     // ── R3: canonical-series registry + dead-table cull ─────────────────
     //
     // series_registry (L1 meta): one row per canonical time series with its
