@@ -6514,6 +6514,18 @@ pub enum ResearchCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Re-verify the thesis evidence contract: re-run embedded [pftui] SQL, recompute [derived], check [ext] references
+    #[command(
+        name = "verify-thesis",
+        after_help = "Curated thesis sections carry numeric claims in a re-checkable evidence\nformat: [pftui] tags with verification SQL (fenced ```sql blocks or inline\nbackticked SELECTs), [derived] computed values, [ext: URL] citations. This\ncommand re-extracts every tagged claim, re-runs the SQL READ-ONLY against\nthe live DB, and classifies:\n\n  verified      re-run matches the claim (±2% numeric, exact dates)\n  drift         output near the claim but outside tolerance — claimed vs\n                current shown. SNAPSHOT claims (current/live/as-of framing)\n                drift by aging (severity info, staleness reported);\n                STRUCTURAL claims (cycle peaks, anchors) drifting is\n                suspect — an error or a data change\n  broken        the SQL errored (schema drift, repaired series) or an\n                [ext] reference is missing\n  unverifiable  tagged claim with no runnable SQL / no mechanical derivation\n  untagged      numeric claim with NO tag in a contract section — the\n                contract-violation class\n\nRepair stays curated: fix wrong STRUCTURAL values on the L4 thesis row\n(reviewed UPDATE / analytics thesis set) and journal the old→new change\n(author system, section system). Never rewrite SNAPSHOT values — refresh\nthe section's as-of line instead.\n\nExamples:\n  pftui research verify-thesis\n  pftui research verify-thesis --section btc-cycle-framework --json"
+    )]
+    VerifyThesis {
+        /// Restrict to one thesis section (default: every section)
+        #[arg(long)]
+        section: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -6771,6 +6783,40 @@ mod tests {
             }) => {
                 assert_eq!(domain, "ta");
                 assert_eq!(asset.as_deref(), Some("GC=F"));
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_research_verify_thesis() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "research",
+            "verify-thesis",
+            "--section",
+            "btc-cycle-framework",
+            "--json",
+        ])
+        .expect("verify-thesis parses");
+        match cli.command {
+            Some(Command::Research {
+                command: ResearchCommand::VerifyThesis { section, json },
+            }) => {
+                assert_eq!(section.as_deref(), Some("btc-cycle-framework"));
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+
+        let cli = Cli::try_parse_from(["pftui", "research", "verify-thesis"])
+            .expect("bare verify-thesis parses");
+        match cli.command {
+            Some(Command::Research {
+                command: ResearchCommand::VerifyThesis { section, json },
+            }) => {
+                assert!(section.is_none());
                 assert!(!json);
             }
             _ => panic!("unexpected parse result"),

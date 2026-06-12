@@ -56,6 +56,10 @@ pub async fn run(json_output: bool) -> Result<()> {
             // 6. DB-wide false-value audit summary (read-only per-table
             // signature checks — full detail: `pftui data audit`).
             checks.push(data_audit_summary_check(&conn));
+            // 7. Thesis evidence contract: re-run the verification SQL
+            // embedded in curated thesis sections (read-only — full
+            // detail: `pftui research verify-thesis`).
+            checks.push(thesis_evidence_check(&conn));
         }
     }
 
@@ -823,6 +827,25 @@ fn data_audit_summary_check(conn: &Connection) -> DiagnosticCheck {
     };
     DiagnosticCheck {
         name: "Data Audit".to_string(),
+        category: "Data Health".to_string(),
+        passed,
+        critical: false,
+        message,
+        duration_ms: None,
+    }
+}
+
+/// One-line thesis evidence-contract summary (read-only; detail lives in
+/// `pftui research verify-thesis`). Broken SQL, structural drift, or
+/// untagged contract violations fail the check (non-critical — repair is
+/// a curated L4 edit, never automatic).
+fn thesis_evidence_check(conn: &Connection) -> DiagnosticCheck {
+    let (passed, message) = match crate::research::thesis_verify::doctor_summary(conn) {
+        Ok((passed, message)) => (passed, message),
+        Err(e) => (false, format!("thesis verification failed to run: {e}")),
+    };
+    DiagnosticCheck {
+        name: "Thesis Evidence".to_string(),
         category: "Data Health".to_string(),
         passed,
         critical: false,

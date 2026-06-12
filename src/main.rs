@@ -5796,6 +5796,9 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::ResearchCommand::Shadowbook { json } => {
                 commands::shadow_book::run(&backend, json)
             }
+            cli::ResearchCommand::VerifyThesis { section, json } => {
+                commands::research_thesis_verify::run(&backend, section.as_deref(), json)
+            }
         },
     };
 

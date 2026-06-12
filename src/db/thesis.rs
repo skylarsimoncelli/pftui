@@ -30,12 +30,27 @@ pub struct ThesisHistoryEntry {
     pub recorded_at: String,
 }
 
+/// Read a text column tolerantly: rows inserted via `sqlite3 ... readfile()`
+/// carry BLOB affinity, which a plain `row.get::<String>` rejects
+/// (`Invalid column type Blob`) even though the bytes are UTF-8 markdown.
+fn text_lossy(row: &Row, idx: usize) -> Result<String, rusqlite::Error> {
+    use rusqlite::types::ValueRef;
+    Ok(match row.get_ref(idx)? {
+        ValueRef::Text(bytes) | ValueRef::Blob(bytes) => {
+            String::from_utf8_lossy(bytes).into_owned()
+        }
+        ValueRef::Null => String::new(),
+        ValueRef::Integer(n) => n.to_string(),
+        ValueRef::Real(f) => f.to_string(),
+    })
+}
+
 impl ThesisEntry {
     fn from_row(row: &Row) -> Result<Self, rusqlite::Error> {
         Ok(Self {
             id: row.get(0)?,
             section: row.get(1)?,
-            content: row.get(2)?,
+            content: text_lossy(row, 2)?,
             conviction: row.get(3)?,
             updated_at: row.get(4)?,
             review_by: row.get(5)?,
@@ -48,7 +63,7 @@ impl ThesisHistoryEntry {
         Ok(Self {
             id: row.get(0)?,
             section: row.get(1)?,
-            content: row.get(2)?,
+            content: text_lossy(row, 2)?,
             conviction: row.get(3)?,
             recorded_at: row.get(4)?,
         })

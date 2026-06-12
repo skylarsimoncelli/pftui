@@ -54,6 +54,8 @@ If the block says no active misalignments, proceed normally — but the detector
 
 # Phase-1 enrichment context (per-run continuity)
 
+> **Data-contamination notice:** notes/messages dated 2025-03-20 → 2026-06-11 may cite BTC 52-week ranges, BTC correlations, or JPY/CNY FX levels derived from since-repaired corrupt data (see journal notes #729/#730/#735). Recompute via `analytics technicals structure` / current snapshots before citing any such figure.
+
 ## Operator journal — last 7 days (BELIEF INPUT — NOT MARKET EVIDENCE)
 These are the operator's beliefs, intents, and reads. They tell you what the operator is wrestling with — they are NOT data points about markets, and citing them as supporting evidence for a market view is an error. Your job includes pricing the probability the operator is wrong.
 For each operator belief relevant to your layer, state explicitly in your output whether your layer's data AGREES or DISAGREES, with one reason each way (symmetric — agreement requires justification exactly as much as disagreement).
