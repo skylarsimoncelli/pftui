@@ -1,0 +1,351 @@
+//! CLI handlers for `pftui analytics strategy {backtest|segment|compare|explain}`.
+//!
+//! Wires the database (`price_history`) to the pure strategy engine in
+//! `analytics::strategy` via a [`PriceHistoryLoader`], then renders human and
+//! `--json` output.
+
+use anyhow::{bail, Result};
+use rusqlite::Connection;
+use serde_json::json;
+
+use crate::analytics::strategy::{
+    self,
+    eval::{self, Val},
+    parser::{self, PriceField, Timeframe},
+    resolver::{resolve_alias, Resolver, SeriesLoader},
+};
+use crate::db::backend::BackendConnection;
+
+/// Loads full oldest-first series from `price_history` for any symbol/field.
+struct PriceHistoryLoader<'a> {
+    conn: &'a Connection,
+}
+
+impl SeriesLoader for PriceHistoryLoader<'_> {
+    fn load(&self, symbol: &str, field: PriceField) -> Result<Vec<(String, f64)>> {
+        let col = match field {
+            PriceField::Close => "close",
+            PriceField::Open => "open",
+            PriceField::High => "high",
+            PriceField::Low => "low",
+            PriceField::Volume => "volume",
+        };
+        let sql = format!(
+            "SELECT date, {col} FROM price_history WHERE symbol = ?1 AND {col} IS NOT NULL ORDER BY date ASC"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([symbol], |row| {
+            let date: String = row.get(0)?;
+            let raw: String = row.get(1)?;
+            Ok((date, raw))
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            let (date, raw) = r?;
+            if let Ok(v) = raw.parse::<f64>() {
+                out.push((date, v));
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// Build a resolver over the primary asset, applying the optional [from, to]
+/// window to the master axis (indicators still warm up on full history).
+fn build_resolver<'a>(
+    loader: &'a PriceHistoryLoader<'a>,
+    asset: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<(Resolver<'a>, String)> {
+    let primary = resolve_alias(asset);
+    let full = loader.load(&primary, PriceField::Close)?;
+    if full.is_empty() {
+        bail!(
+            "no price history for '{asset}' (resolved to '{primary}'). Fetch it first with `pftui data refresh` or check the symbol/alias."
+        );
+    }
+    let master: Vec<String> = full
+        .into_iter()
+        .map(|(d, _)| d)
+        .filter(|d| from.is_none_or(|f| d.as_str() >= f))
+        .filter(|d| to.is_none_or(|t| d.as_str() <= t))
+        .collect();
+    if master.is_empty() {
+        bail!("no bars in the requested date window");
+    }
+    Ok((Resolver::new(master, &primary, loader), primary))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_backtest(
+    backend: &BackendConnection,
+    asset: &str,
+    entry: &str,
+    exit: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let loader = PriceHistoryLoader {
+        conn: backend.sqlite(),
+    };
+    let entry_expr = parser::parse(entry)?;
+    let exit_spec = strategy::parse_exit(exit)?;
+    let (mut resolver, primary) = build_resolver(&loader, asset, from, to)?;
+    let report = strategy::run_backtest(&mut resolver, &entry_expr, &exit_spec)?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "command": "strategy backtest",
+                "asset": asset,
+                "resolved_symbol": primary,
+                "entry": entry,
+                "exit": exit.unwrap_or("hold 90d (default)"),
+                "report": report,
+            }))?
+        );
+        return Ok(());
+    }
+
+    println!("═══ Strategy Backtest: {} ({}) ═══", asset, primary);
+    println!("Entry: {entry}");
+    println!("Exit:  {}", exit.unwrap_or("hold 90d (default)"));
+    let b = &report.benchmark_hold;
+    println!(
+        "Window: {} → {} ({:.1}y)",
+        b.first_date, b.last_date, b.years
+    );
+    println!();
+    if report.n_trades == 0 {
+        println!("No trades triggered. Try `strategy explain` to check the expression resolves over this window.");
+        if report.n_open_skipped > 0 {
+            println!("({} position opened but never closed within data)", report.n_open_skipped);
+        }
+        return Ok(());
+    }
+    println!(
+        "Trades: {}  |  Win rate: {}  |  Avg hold: {}d",
+        report.n_trades,
+        fmt_pct(report.win_rate_pct),
+        report
+            .avg_days_held
+            .map(|v| format!("{v:.0}"))
+            .unwrap_or_else(|| "—".into()),
+    );
+    println!(
+        "Per-trade: mean {} | median {} | best {} | worst {}",
+        fmt_pct(report.mean_return_pct),
+        fmt_pct(report.median_return_pct),
+        fmt_pct(report.best_return_pct),
+        fmt_pct(report.worst_return_pct),
+    );
+    println!(
+        "Strategy:  total {:+.1}%  | CAGR {} | maxDD {:.1}% | time-in-mkt {:.0}%",
+        report.total_return_pct,
+        fmt_pct(report.cagr_pct),
+        report.max_drawdown_pct,
+        report.time_in_market_pct,
+    );
+    println!(
+        "Buy & hold: total {:+.1}% | CAGR {} | maxDD {:.1}%",
+        b.total_return_pct,
+        fmt_pct(b.cagr_pct),
+        b.max_drawdown_pct,
+    );
+    if report.n_open_skipped > 0 {
+        println!("(+{} open position not yet closed, excluded)", report.n_open_skipped);
+    }
+    println!();
+    let show = limit.unwrap_or(20).min(report.trades.len());
+    println!("Last {show} trades:");
+    println!("{:<12} {:<12} {:>10} {:>6}", "Entry", "Exit", "Return", "Days");
+    for t in report.trades.iter().rev().take(show).rev() {
+        println!(
+            "{:<12} {:<12} {:>9.1}% {:>6}",
+            t.entry_date, t.exit_date, t.return_pct, t.days_held
+        );
+    }
+    Ok(())
+}
+
+pub fn run_segment(
+    backend: &BackendConnection,
+    asset: &str,
+    when: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let loader = PriceHistoryLoader {
+        conn: backend.sqlite(),
+    };
+    let when_expr = parser::parse(when)?;
+    let (mut resolver, primary) = build_resolver(&loader, asset, from, to)?;
+    let report = strategy::run_segment(&mut resolver, &when_expr)?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "command": "strategy segment",
+                "asset": asset,
+                "resolved_symbol": primary,
+                "when": when,
+                "report": report,
+            }))?
+        );
+        return Ok(());
+    }
+    println!("═══ Regime Segmentation: {} ({}) ═══", asset, primary);
+    println!("In-state when: {when}");
+    println!();
+    print_segment_row("IN-STATE", &report.on);
+    print_segment_row("OUT", &report.off);
+    println!(
+        "Buy & hold:   total {:+.1}% over {:.1}y",
+        report.benchmark_hold.total_return_pct, report.benchmark_hold.years
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_compare(
+    backend: &BackendConnection,
+    asset: &str,
+    when: &str,
+    when_label: &str,
+    vs: &str,
+    vs_label: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let loader = PriceHistoryLoader {
+        conn: backend.sqlite(),
+    };
+    let when_expr = parser::parse(when)?;
+    let vs_expr = parser::parse(vs)?;
+    let (mut resolver, primary) = build_resolver(&loader, asset, from, to)?;
+    let report = strategy::run_compare(&mut resolver, &when_expr, when_label, &vs_expr, vs_label)?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "command": "strategy compare",
+                "asset": asset,
+                "resolved_symbol": primary,
+                "when": { "label": when_label, "expr": when },
+                "vs": { "label": vs_label, "expr": vs },
+                "report": report,
+            }))?
+        );
+        return Ok(());
+    }
+    println!("═══ Regime Comparison: {} ({}) ═══", asset, primary);
+    println!("{when_label}: {when}");
+    println!("{vs_label}: {vs}");
+    println!();
+    print_segment_row(when_label, &report.a);
+    print_segment_row(vs_label, &report.b);
+    println!(
+        "Buy & hold:   total {:+.1}% over {:.1}y",
+        report.benchmark_hold.total_return_pct, report.benchmark_hold.years
+    );
+    Ok(())
+}
+
+pub fn run_explain(
+    backend: &BackendConnection,
+    asset: &str,
+    entry: &str,
+    json_output: bool,
+) -> Result<()> {
+    let loader = PriceHistoryLoader {
+        conn: backend.sqlite(),
+    };
+    let expr = parser::parse(entry)?;
+    let (mut resolver, primary) = build_resolver(&loader, asset, None, None)?;
+    let val = eval::eval(&expr, Timeframe::Daily, &mut resolver)?;
+
+    let (kind, n_known, first, last, firings) = match &val {
+        Val::Num(s) => {
+            let (n, f, l) = coverage_num(s, resolver.master_dates());
+            ("numeric", n, f, l, None)
+        }
+        Val::Bool(s) => {
+            let (n, f, l) = coverage_bool(s, resolver.master_dates());
+            let fires = s.iter().filter(|x| **x == Some(true)).count();
+            ("boolean", n, f, l, Some(fires))
+        }
+    };
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "command": "strategy explain",
+                "asset": asset,
+                "resolved_symbol": primary,
+                "expr": entry,
+                "value_kind": kind,
+                "master_bars": resolver.master_len(),
+                "resolved_bars": n_known,
+                "first_resolved_date": first,
+                "last_resolved_date": last,
+                "firings": firings,
+            }))?
+        );
+        return Ok(());
+    }
+    println!("Expression parsed OK.");
+    println!("  Asset:        {asset} → {primary}");
+    println!("  Value kind:   {kind}");
+    println!(
+        "  Coverage:     {n_known}/{} bars resolved ({} → {})",
+        resolver.master_len(),
+        first.as_deref().unwrap_or("—"),
+        last.as_deref().unwrap_or("—"),
+    );
+    if let Some(f) = firings {
+        println!("  Firings:      {f} bars where the condition is true");
+    } else {
+        println!("  Note:         numeric series — use a comparison/crossing to form a condition");
+    }
+    Ok(())
+}
+
+fn coverage_num(s: &[Option<f64>], dates: &[String]) -> (usize, Option<String>, Option<String>) {
+    let known: Vec<usize> = (0..s.len()).filter(|&i| s[i].is_some()).collect();
+    coverage(&known, dates)
+}
+fn coverage_bool(s: &[Option<bool>], dates: &[String]) -> (usize, Option<String>, Option<String>) {
+    let known: Vec<usize> = (0..s.len()).filter(|&i| s[i].is_some()).collect();
+    coverage(&known, dates)
+}
+fn coverage(known: &[usize], dates: &[String]) -> (usize, Option<String>, Option<String>) {
+    let first = known.first().and_then(|&i| dates.get(i).cloned());
+    let last = known.last().and_then(|&i| dates.get(i).cloned());
+    (known.len(), first, last)
+}
+
+fn fmt_pct(v: Option<f64>) -> String {
+    v.map(|x| format!("{x:+.1}%")).unwrap_or_else(|| "—".into())
+}
+
+fn print_segment_row(label: &str, s: &strategy::engine::SegmentStats) {
+    println!(
+        "{:<12} {:>5} days ({:>4.0}% of bars, {:>3} episodes) | mean/day {} | annualized {} | up-days {}",
+        label,
+        s.n_days,
+        s.share_of_days_pct,
+        s.episodes,
+        fmt_pct(s.mean_daily_return_pct),
+        fmt_pct(s.annualized_return_pct),
+        fmt_pct(s.up_day_share_pct),
+    );
+}

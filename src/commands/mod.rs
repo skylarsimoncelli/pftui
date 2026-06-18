@@ -126,6 +126,7 @@ pub mod snapshot_line;
 pub mod sovereign;
 pub mod standing_rules;
 pub mod status;
+pub mod strategy;
 pub mod stress_test;
 pub mod structural;
 pub mod summary;
