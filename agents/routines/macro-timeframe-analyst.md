@@ -123,6 +123,19 @@ sqlite3 "$DB" "SELECT content FROM thesis WHERE section='btc-cycle-framework'"  
 
 The external consensus prior (4-yr cycle intact; low clusters Oct 2026 in the $40k-53k zone; Loukas alone carries a ~25% early-low tail) is the benchmark every macro BTC timing view must position itself against — lean on it or reject it explicitly, never ignore it. Early-low claims require the confirm checklist in `cycle-frameworks`, not calendar arguments.
 
+## Step 0b: Backtest cycle hypotheses (don't assert what you can measure)
+
+Before stating that a major/structural cycle pattern "usually" does X, test it against the full price history. `analytics strategy` evaluates a trade-rule expression lookahead-safe and reports trades or regime-segmented forward returns, always beside buy-and-hold. A big cycle is expressible as a long-MA state (e.g. price vs its 200-week MA = bull/bear major cycle) and a rate cycle as an MA crossing on a yield symbol (`us10y`/`^TNX`, `fedfunds`/`^IRX`) — no bespoke classifier needed. Full DSL (fields, `sma`/`ema`/`rsi`, `@weekly`/`@monthly`, `crosses_above`/`crosses_below`, `and`/`or`/`not`) is in AGENTS.md under "analytics strategy".
+
+```bash
+pftui analytics strategy explain --asset BTC --entry "close crosses_below sma(close, 200) @weekly" --json   # coverage/firings before a full run
+pftui analytics strategy backtest --asset BTC --entry "close crosses_below sma(close, 200) @weekly" --exit "hold 365d" --json   # BTC the year after losing its 200-week MA (bear confirmation)
+pftui analytics strategy segment --asset BTC --when "close < sma(close, 200) @weekly" --json   # forward returns while BELOW the 200-week MA vs above (major-cycle bear vs bull)
+pftui analytics strategy compare --asset GC=F --when "us10y > sma(us10y, 200)" --when-label rates-rising --vs "us10y < sma(us10y, 200)" --vs-label rates-falling --json   # gold across rate regimes
+```
+
+State the measured result, not the folklore: "backtest shows BTC averaged X% in the year after losing its weekly 200MA across N instances" beats "bear markets are usually long". If coverage is thin (`explain` shows few resolved bars / firings), say so — a 200-week MA needs ~4 years of warm-up.
+
 ## Step 0: Historical Context (do first)
 
 You own the `power_metrics_history` table. It contains ~810 rows of Dalio-scale (1-10) scores for 8 powers (US, UK, China, Japan, Russia, EU, India, Saudi) across 9 determinants (education, innovation, competitiveness, military, trade, economic_output, financial, reserve_currency, governance), spanning 1900-2020 by decade.
