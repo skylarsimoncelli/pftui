@@ -349,6 +349,13 @@ Key questions:
 
 State how backtest results influence this cycle's predictions.
 
+Before asserting a structural/supercycle pattern, test it. `analytics strategy` backtests a trade-rule expression over the full price history (lookahead-safe), reporting trades or regime-segmented forward returns beside buy-and-hold; a multi-year trend is expressible as price vs a long MA. Full DSL in AGENTS.md under "analytics strategy".
+
+```bash
+pftui analytics strategy segment --asset GC=F --when "close > sma(close, 200) @weekly" --json   # gold forward returns while in its long-MA uptrend vs not
+pftui analytics strategy backtest --asset BTC --entry "close crosses_above sma(close, 200) @weekly" --exit "hold 365d" --json   # BTC the year after reclaiming its 200-week MA
+```
+
 ## High Predictions
 
 Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If a specific lesson changes, narrows, or blocks a new call, carry its lesson ID into the prediction with `--lessons`. If no lesson applies, omit the flag.

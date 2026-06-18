@@ -796,3 +796,28 @@ pftui group remove "hard-assets"
 **Files:** new `src/db/groups.rs`, new `src/commands/group.rs`, modify `tui/views/positions.rs`, `tui/widgets/allocation_bars.rs`, `cli.rs`
 
 **Effort:** Small (1 session). Simple CRUD + filter.
+
+---
+
+### F15: Strategy Backtester (shipped 2026-06-18)
+
+**What:** Define a trade rule as an expression and backtest it against the full historical `price_history` database. One DSL, two interpretations: a rising-edge entry condition produces **trades**; a regime condition produces a **segmentation** of forward returns. Answers "buy BTC when it crosses its 200-week MA", "BTC when monthly RSI < 90", and "gold in rate-hiking vs cutting cycles" — the last needs no bespoke classifier because rate cycles are moving-average crossings on alias-resolved yield symbols (`us10y`/`^TNX`, `fedfunds`/`^IRX`).
+
+**DSL:** fields `close`/`open`/`high`/`low`/`volume`, `close(SYM)`; indicators `sma`/`ema`/`rsi`; arithmetic; comparisons `> < >= <= ==`; strict crossings `crosses_above`/`crosses_below`; boolean `and`/`or`/`not`; timeframe modifier `@weekly`/`@monthly` (resampled, indicator computed over the bucket series). Lookahead-safe: a higher-timeframe value is visible only after its bar closes; series resolve to `None` before their first datapoint (no fabricated history).
+
+**Commands (all `--json`):**
+```bash
+pftui analytics strategy backtest --asset BTC --entry "close crosses_above sma(close, 200) @weekly" --exit "hold 365d"
+pftui analytics strategy backtest --asset BTC --entry "rsi(14) @monthly < 90" --exit "hold 90d"
+pftui analytics strategy segment  --asset GC=F --when "us10y > sma(us10y, 200)"
+pftui analytics strategy compare  --asset GC=F --when "us10y > sma(us10y, 200)" --when-label hiking --vs "us10y < sma(us10y, 200)" --vs-label cutting
+pftui analytics strategy explain  --asset BTC --entry "close crosses_above sma(close, 200) @weekly"
+```
+
+**Output:** backtest → trades, win rate, mean/median/best/worst per-trade return, compounded total + CAGR + max-drawdown + time-in-market, beside the buy-and-hold benchmark. segment/compare → per-state n days, share of bars, episodes, mean daily / annualized return, up-day share. explain → value kind + data-coverage check without simulating. Returns are f64 statistics over price ratios (percent/growth), not monetary balances.
+
+**Design:** Stateless — no new tables. Pratt parser + lookahead-safe series resolver + evaluator + engine, all pure over `price_history`. Reuses the event-study / shadow-book walk-forward conventions.
+
+**Files:** `src/analytics/strategy/{mod,parser,resolver,eval,engine}.rs`, `src/commands/strategy.rs`, `cli.rs`, `main.rs`.
+
+**Effort:** Done. Full DSL + resolver + engine + CLI; 39 inline unit tests.

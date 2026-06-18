@@ -22,6 +22,7 @@
 | Data integrity | economic-data quarantine, BTC-series divergence doctor check, analyst spot-check audit | `economic_data.quarantined`, `system doctor`, report-skill Step 5.5 |
 | Instrumentation | run_health table, epistemics command family, report section | `analytics epistemics record/show/history/rivalry`, `private_epistemic_health` |
 | Existence proof | shadow book: mechanical execution of the recommendations ledger vs actual vs hold (policy v1, accruing <90d) | `research shadowbook`, summary line in `analytics epistemics show` |
+| Hypothesis backtesting | user-defined trade-rule DSL evaluated against full price history, lookahead-safe (LOCF resolver); rising edge → trades or regime mask → segmented forward returns, always shown beside buy-and-hold | `analytics strategy backtest/segment/compare`, `src/analytics/strategy/` |
 
 ## 1. Independence layer (anti-sycophancy)
 

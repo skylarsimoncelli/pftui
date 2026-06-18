@@ -63,7 +63,7 @@ This is pftui's core differentiator: no other retail tool offers structured mult
 **Signal type:** Entry/exit timing, volatility alerts, event risk warnings
 
 **Existing pftui commands that serve this layer:**
-`refresh`, `macro`, `movers`, `sentiment`, `predictions`, `calendar`, `etf-flows`, `correlations`, `alerts`, `sector`, `heatmap`, `scan`, `options`, `oil`, `crisis`
+`refresh`, `macro`, `movers`, `sentiment`, `predictions`, `calendar`, `etf-flows`, `correlations`, `alerts`, `sector`, `heatmap`, `scan`, `options`, `oil`, `crisis`, `strategy` (user-defined trade-rule backtests: `analytics strategy backtest/segment/compare/explain`)
 
 **Database tables:**
 `price_cache`, `price_history`, `predictions_cache`, `predictions_history`, `calendar_events`, `sentiment_cache`, `sentiment_history`, `onchain_cache`, `fx_cache`, `news_cache`, `alerts`, `correlation_snapshots` (F31.9), `regime_snapshots` (F31.10)

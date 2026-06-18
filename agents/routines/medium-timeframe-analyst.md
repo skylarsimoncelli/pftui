@@ -298,6 +298,13 @@ Key questions:
 
 State how backtest results influence this cycle's predictions.
 
+Test rate-cycle and regime claims before asserting them. `analytics strategy` segments an asset's forward returns by a regime mask (rate cycles are MA crossings on yield symbols `us10y`/`^TNX`, `fedfunds`/`^IRX`); full DSL in AGENTS.md under "analytics strategy".
+
+```bash
+pftui analytics strategy compare --asset GC=F --when "us10y > sma(us10y, 200)" --when-label rates-rising --vs "us10y < sma(us10y, 200)" --vs-label rates-falling --json   # gold in rising- vs falling-rate regimes
+pftui analytics strategy segment --asset BTC --when "us10y < sma(us10y, 200)" --json   # risk-asset forward returns while rates are easing
+```
+
 ## Medium Predictions
 
 Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If a specific lesson changes, narrows, or blocks a new call, carry its lesson ID into the prediction with `--lessons`. If no lesson applies, omit the flag.
