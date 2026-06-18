@@ -5423,6 +5423,63 @@ fn run_cli(cli: Cli) -> Result<()> {
                     commands::backtest_scenario::run_layer_bias(&backend, args, json)
                 }
             },
+            cli::AnalyticsCommand::Strategy { command } => match command {
+                cli::AnalyticsStrategyCommand::Backtest {
+                    asset,
+                    entry,
+                    exit,
+                    from,
+                    to,
+                    limit,
+                    json,
+                } => commands::strategy::run_backtest(
+                    &backend,
+                    &asset,
+                    &entry,
+                    exit.as_deref(),
+                    from.as_deref(),
+                    to.as_deref(),
+                    limit,
+                    json,
+                ),
+                cli::AnalyticsStrategyCommand::Segment {
+                    asset,
+                    when,
+                    from,
+                    to,
+                    json,
+                } => commands::strategy::run_segment(
+                    &backend,
+                    &asset,
+                    &when,
+                    from.as_deref(),
+                    to.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsStrategyCommand::Compare {
+                    asset,
+                    when,
+                    when_label,
+                    vs,
+                    vs_label,
+                    from,
+                    to,
+                    json,
+                } => commands::strategy::run_compare(
+                    &backend,
+                    &asset,
+                    &when,
+                    &when_label,
+                    &vs,
+                    &vs_label,
+                    from.as_deref(),
+                    to.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsStrategyCommand::Explain { asset, entry, json } => {
+                    commands::strategy::run_explain(&backend, &asset, &entry, json)
+                }
+            },
             cli::AnalyticsCommand::Sources { command } => match command {
                 cli::AnalyticsSourcesCommand::List { source_type, json } => {
                     commands::analytics_enrichment::sources_list(

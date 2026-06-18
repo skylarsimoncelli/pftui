@@ -5529,6 +5529,12 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         #[command(subcommand)]
         command: AnalyticsBacktestCommand,
     },
+    /// Strategy backtesting: define trade conditions as an expression and test them against full price history
+    #[command(after_help = "Define a trade rule as an expression over price, indicators, and timeframes,\nthen backtest it against the full historical price database.\n\nExpression language:\n  close, open, high, low, volume        primary asset's daily field\n  close(BTC), close(GC=F)               another symbol (alias-resolved)\n  sma(close, 200), ema(close, 21)       moving averages\n  rsi(14), rsi(close(BTC), 14)          RSI\n  ... @weekly | @monthly                evaluate at a higher timeframe\n  >  <  >=  <=  ==                       comparisons\n  crosses_above / crosses_below         strict edge crossings\n  and  or  not                          boolean logic\n\nInterest-rate proxies are ordinary symbols: us10y/^TNX, fedfunds/^IRX, so\n'rate hiking vs cutting' is just a moving-average crossing on a yield series.\n\nExamples:\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\" --exit \"hold 365d\" --json\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) @monthly < 90\" --exit \"hold 90d\"\n  pftui analytics strategy segment --asset GC=F --when \"us10y > sma(us10y, 200)\"\n  pftui analytics strategy compare --asset GC=F --when \"us10y > sma(us10y, 200)\" --when-label hiking --vs \"us10y < sma(us10y, 200)\" --vs-label cutting\n  pftui analytics strategy explain --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\"\n\nReturns are statistics over price ratios (percent / growth), not monetary balances.")]
+    Strategy {
+        #[command(subcommand)]
+        command: AnalyticsStrategyCommand,
+    },
     /// `sources_registry` — canonical person/framework/institution/outlet lookup
     Sources {
         #[command(subcommand)]
@@ -6164,6 +6170,82 @@ pub enum AnalyticsLessonsRulesCommand {
         /// Rule id
         id: i64,
         /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsStrategyCommand {
+    /// Backtest an entry rule with an exit rule → trades, win rate, CAGR, drawdown vs buy-and-hold
+    Backtest {
+        /// Primary asset traded (alias or ticker, e.g. BTC, GC=F, SPY)
+        #[arg(long)]
+        asset: String,
+        /// Entry condition expression (the rising edge opens a position)
+        #[arg(long)]
+        entry: String,
+        /// Exit rule: "hold <N>d" (default "hold 90d") or a condition expression
+        #[arg(long)]
+        exit: Option<String>,
+        /// Restrict the backtest to bars on/after this date (YYYY-MM-DD)
+        #[arg(long)]
+        from: Option<String>,
+        /// Restrict the backtest to bars on/before this date (YYYY-MM-DD)
+        #[arg(long)]
+        to: Option<String>,
+        /// Limit the printed trade list (human output only)
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Segment an asset's forward returns by a regime mask (in-state vs out-of-state)
+    Segment {
+        /// Asset whose returns are segmented
+        #[arg(long)]
+        asset: String,
+        /// Boolean condition defining the "in-state" regime
+        #[arg(long)]
+        when: String,
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Compare an asset's forward returns under two independent regime masks (e.g. hiking vs cutting)
+    Compare {
+        #[arg(long)]
+        asset: String,
+        /// First regime condition
+        #[arg(long)]
+        when: String,
+        /// Label for the first regime
+        #[arg(long = "when-label", default_value = "regime-a")]
+        when_label: String,
+        /// Second regime condition
+        #[arg(long)]
+        vs: String,
+        /// Label for the second regime
+        #[arg(long = "vs-label", default_value = "regime-b")]
+        vs_label: String,
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Parse and resolve an expression, reporting series coverage without simulating
+    Explain {
+        #[arg(long)]
+        asset: String,
+        /// Expression to parse and resolve (entry or condition)
+        #[arg(long)]
+        entry: String,
         #[arg(long)]
         json: bool,
     },
