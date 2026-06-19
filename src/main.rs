@@ -2673,6 +2673,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 include,
                 json,
             } => match command {
+                Some(cli::AnalyticsTechnicalsCommand::Indicators { symbol, json }) => {
+                    commands::technicals_indicators::run(&backend, &symbol, json)
+                }
                 Some(cli::AnalyticsTechnicalsCommand::Structure {
                     symbol,
                     timeframe,

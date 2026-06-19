@@ -134,6 +134,7 @@ pub mod summary;
 pub mod supply;
 pub mod target;
 pub mod technicals_cyber;
+pub mod technicals_indicators;
 pub mod technicals_structure;
 pub mod thesis;
 pub mod transaction_summary;

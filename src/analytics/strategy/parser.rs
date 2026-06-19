@@ -94,6 +94,19 @@ pub enum IndicatorKind {
     Rsi,
 }
 
+/// Window transforms over an already-evaluated numeric series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowKind {
+    /// Rolling maximum over the last `n` bars.
+    Highest,
+    /// Rolling minimum over the last `n` bars.
+    Lowest,
+    /// The value `n` bars ago (lag).
+    Ago,
+    /// Percent change over `n` bars: 100·(x[i]/x[i-n] − 1).
+    PctChange,
+}
+
 /// One untyped expression node. Numeric and boolean operators share the tree;
 /// the evaluator enforces types.
 #[derive(Debug, Clone, PartialEq)]
@@ -109,6 +122,14 @@ pub enum Expr {
         input: Box<Expr>,
         period: usize,
     },
+    /// A window transform (highest/lowest/ago/pct_change) over a numeric series.
+    Window {
+        kind: WindowKind,
+        input: Box<Expr>,
+        n: usize,
+    },
+    /// Absolute value of a numeric series.
+    Abs(Box<Expr>),
     Neg(Box<Expr>),
     Arith(ArithOp, Box<Expr>, Box<Expr>),
     Timeframed(Box<Expr>, Timeframe),
@@ -457,6 +478,30 @@ impl Parser {
                 _ => bail!("{name}(SYM) takes a single symbol argument"),
             };
             return Ok(Expr::Field { field, symbol });
+        }
+
+        // Window transforms: highest/lowest/ago/pct_change(series, n) and abs(series).
+        if name == "abs" {
+            return match args.as_slice() {
+                [input] => Ok(Expr::Abs(Box::new(input.clone()))),
+                _ => bail!("abs(series) takes one argument"),
+            };
+        }
+        if let Some(wkind) = match name {
+            "highest" => Some(WindowKind::Highest),
+            "lowest" => Some(WindowKind::Lowest),
+            "ago" => Some(WindowKind::Ago),
+            "pct_change" => Some(WindowKind::PctChange),
+            _ => None,
+        } {
+            return match args.as_slice() {
+                [input, n] => Ok(Expr::Window {
+                    kind: wkind,
+                    input: Box::new(input.clone()),
+                    n: expect_period(n)?,
+                }),
+                _ => bail!("{name}(series, n) takes a series and a positive integer"),
+            };
         }
 
         // Indicators.
