@@ -121,9 +121,14 @@ pub fn run_backtest(
     );
     println!();
     if report.n_trades == 0 {
-        println!("No trades triggered. Try `strategy explain` to check the expression resolves over this window.");
         if report.n_open_skipped > 0 {
-            println!("({} position opened but never closed within data)", report.n_open_skipped);
+            println!(
+                "{} position(s) opened but never closed within the data window — no completed trades to score. \
+                 The entry fired; the exit rule never triggered (try a shorter `hold Nd` or a different exit).",
+                report.n_open_skipped
+            );
+        } else {
+            println!("No trades triggered — the entry condition never fired. Try `strategy explain` to check the expression resolves over this window.");
         }
         return Ok(());
     }
@@ -160,23 +165,31 @@ pub fn run_backtest(
         println!("(+{} open position not yet closed, excluded)", report.n_open_skipped);
     }
     if let Some(v) = &report.validation {
-        let dsr = v
-            .dsr_vs_luck
-            .map(|d| format!("{:.0}%", d * 100.0))
-            .unwrap_or_else(|| "—".into());
-        let ci = v
-            .mean_return_ci_pct
-            .map(|(lo, hi)| format!("[{lo:+.1}%, {hi:+.1}%]"))
-            .unwrap_or_else(|| "—".into());
-        println!(
-            "Honesty:   edge-is-real {} {} | mean-return 90% CI {} | Sharpe/trade {}",
-            dsr,
-            if v.anecdotal { "(anecdotal n<10)" } else { "" },
-            ci,
-            v.trade_sharpe
-                .map(|s| format!("{s:.2}"))
-                .unwrap_or_else(|| "—".into()),
-        );
+        if v.anecdotal {
+            println!(
+                "Honesty:   n={} trades — too few for a reliable edge estimate (anecdotal). \
+                 Treat any pattern here as a lead, not evidence.",
+                report.n_trades
+            );
+        } else {
+            let psr = v
+                .psr_vs_zero
+                .map(|d| format!("{:.0}%", d * 100.0))
+                .unwrap_or_else(|| "n/a (degenerate distribution)".into());
+            let ci = v
+                .mean_return_ci_pct
+                .map(|(lo, hi)| format!("[{lo:+.1}%, {hi:+.1}%]"))
+                .unwrap_or_else(|| "—".into());
+            println!(
+                "Honesty:   edge>0 (PSR) {} | mean-return 90% CI {} | dispersion ratio {} \
+                 (single-rule PSR, not deflated; mixed holding periods)",
+                psr,
+                ci,
+                v.trade_dispersion_ratio
+                    .map(|s| format!("{s:.2}"))
+                    .unwrap_or_else(|| "—".into()),
+            );
+        }
     }
     println!();
     let show = limit.unwrap_or(20).min(report.trades.len());

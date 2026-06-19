@@ -90,8 +90,10 @@ sqlite3 -json "$DB" "SELECT date, section, content FROM daily_notes
 ```bash
 # Convergence + every layer's current view on the focus assets
 pftui analytics views convergence-all --json
-sqlite3 -json "$DB" "SELECT analyst, asset, direction, conviction, reasoning, blind_spots
+sqlite3 -json "$DB" "SELECT analyst, asset, direction, conviction, reasoning_summary, key_evidence, blind_spots
   FROM analyst_views WHERE updated_at >= datetime('now','-30 days') ORDER BY asset, analyst"
+# (column is reasoning_summary — the agents' actual argument; you NEED this to
+#  contradict their thesis, not just their direction label)
 # Recent analyst + synthesis + adversary + antithesis notes (30d)
 sqlite3 -json "$DB" "SELECT date, author, substr(content,1,600) AS content FROM daily_notes
   WHERE author LIKE 'analyst-%' AND date >= date('now','-30 days') ORDER BY date DESC LIMIT 120"
@@ -138,11 +140,14 @@ pftui analytics positioning --asset <SYM> --json                 # fused analog+
 pftui analytics cycles clock --asset <SYM> --json                # halving/Loukas/major-vs-4yr (BTC), cycle position (gold)
 pftui analytics cycles analyze <SYM> --json
 
-# ECONOMIC DATA
+# ECONOMIC DATA + the MARKET'S OWN expectations (so "confirm or deny market
+# expectations" has an external anchor, not just the desk's view)
 pftui data economy --json
 pftui data fedwatch --json
 pftui analytics real-rates differentials --json
 pftui data real-yields show --since 90d --json
+pftui data consensus list --json                                 # sell-side calls/targets
+pftui data predictions markets --search "<topic keyword>" --json # prediction-market odds (the money's view)
 
 # BACKTESTING — TEST THE TOPIC'S SPECIFIC CLAIM, don't assert folklore
 #   express the claim as a strategy and measure it (results carry DSR + bootstrap CI):
@@ -160,6 +165,16 @@ testable claim. If the topic says "X usually leads to Y", build the backtest and
 measured number + its honesty stats. If the topic is about cycle position, read the cycle
 clock + analog regime. If it's about positioning, read `analytics positioning` and interrogate
 its drivers.
+
+**Backtest safety rail (read before trusting any `strategy` number).** A single `strategy
+segment/backtest/compare` run is ONE in-sample measurement — it is exactly the "backtest
+theater" the engine warns against (ENVIRONMENT-ENGINE.md §8). Its `validation` block reports
+a single-rule PSR and a bootstrap CI, NOT a deflated / multiple-testing-corrected statistic.
+So: run `strategy explain` first and report the firing count; if firings/trades are few (a
+200-week MA needs ~4y of warm-up; crossings are rare), label the result **anecdotal** and do
+NOT let it carry the verdict. A measured result licenses a confident stance only when the
+sample is adequate (≥~10 non-overlapping instances) AND the CI does not straddle zero; below
+that, it is a lean. State which case you are in explicitly.
 
 ### Step 4 (deep mode only): Spawn focused subagents — SAME analysts, topic-pointed
 
@@ -209,15 +224,24 @@ You write the evaluation. Structure it for decisiveness, not balance:
 
 ### Step 6: Capture the verdict (optional but recommended)
 
-Write one journal note so the judgment feeds back into the loop and can be scored later:
+Write one journal note so the judgment feeds back into the loop and can be scored later. The
+note is PRIVATE (it ties to the portfolio) — tag it so a future public-report ingest filters
+it out:
 ```bash
 pftui journal notes add --section analysis --author analyst-deepdive \
-  "[deepdive $DATE_ISO] <topic>: VERDICT <confirm/deny> (<confidence>). Key measured evidence:
-   <...>. Errors called out — operator: <...>; desk: <...>. Flips if: <...>."
+  "[deepdive-private $DATE_ISO] <topic>: VERDICT <confirm/deny> (<confidence>). Key measured
+   evidence: <...>. Errors called out — operator: <...>; desk: <...>. Flips if: <...>."
 ```
-If the verdict implies a falsifiable market call, offer to log it as a scored prediction
-(`pftui journal prediction add --source-agent analyst-deepdive --falsify "..."`) so the
-deepdive's own track record accrues.
+If the verdict implies a falsifiable market call, offer to log it as a scored prediction so
+the deepdive's own track record accrues. IMPORTANT: `--falsify` requires the DETERMINISTIC
+grammar (`<SYMBOL> close above|below <value> by <YYYY-MM-DD>`) — a free-text reason parses as
+unstructured and silently caps confidence at 0.3, so the verdict's conviction is lost. Use the
+strict form:
+```bash
+pftui journal prediction add --source-agent analyst-deepdive --timeframe <tf> \
+  --conviction <n> --confidence <0..1> \
+  --claim "<the call>" --falsify "BTC close below 45000 by 2026-12-31"
+```
 
 ## Voice & stance
 
@@ -233,7 +257,7 @@ deepdive's own track record accrues.
 ## Canonical author
 
 Writes (when it captures a verdict) use author **`analyst-deepdive`** — a measurement/judgment
-layer, never a convergence-voting layer. (Registered in AGENTS.md / CLAUDE.md author tables.)
+layer, never a convergence-voting layer. (Registered in the CLAUDE.md canonical author table.)
 
 ## What this skill does NOT do
 

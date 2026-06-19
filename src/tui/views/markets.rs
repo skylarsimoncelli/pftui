@@ -830,7 +830,8 @@ mod tests {
     #[test]
     fn market_symbols_has_expected_count() {
         let items = market_symbols();
-        assert_eq!(items.len(), 22);
+        // 22 original + 4 Treasury total-return proxies (BIL/SHY/IEF/TLT).
+        assert_eq!(items.len(), 26);
     }
 
     #[test]

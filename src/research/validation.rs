@@ -22,6 +22,9 @@
 
 use rand::Rng;
 
+// Used by the full Deflated Sharpe (the Phase-3 positioning sweep); the
+// single-rule strategy path uses the PSR directly. Proven by the inline tests.
+#[allow(dead_code)]
 const EULER_MASCHERONI: f64 = 0.577_215_664_901_532_9;
 
 // ----------------------------------------------------------------------------
@@ -49,6 +52,7 @@ fn erfc(x: f64) -> f64 {
 
 /// Inverse standard normal CDF (quantile) via Acklam's algorithm. Valid for
 /// p in (0,1); clamps just inside the bounds.
+#[allow(dead_code)]
 pub fn normal_inv_cdf(p: f64) -> f64 {
     let p = p.clamp(1e-12, 1.0 - 1e-12);
     // Coefficients (Peter Acklam).
@@ -163,14 +167,23 @@ pub fn probabilistic_sharpe_ratio(sr: f64, sr_benchmark: f64, t: usize, skew: f6
     if t < 2 {
         return f64::NAN;
     }
-    let denom = (1.0 - skew * sr + (kurt - 1.0) / 4.0 * sr * sr).max(1e-12);
-    let z = (sr - sr_benchmark) * ((t as f64 - 1.0).sqrt()) / denom.sqrt();
+    // The variance term of the Sharpe estimator. For very fat-tailed / highly
+    // skewed distributions this bracket can go non-positive — in that regime
+    // the PSR is undefined, so return NaN rather than clamping (which would
+    // emit a spurious ~1.0 for exactly the lottery-like strategies most likely
+    // to be overfit).
+    let bracket = 1.0 - skew * sr + (kurt - 1.0) / 4.0 * sr * sr;
+    if bracket <= 0.0 {
+        return f64::NAN;
+    }
+    let z = (sr - sr_benchmark) * ((t as f64 - 1.0).sqrt()) / bracket.sqrt();
     normal_cdf(z)
 }
 
 /// Expected maximum Sharpe achievable by luck across `n_trials` independent
 /// strategies whose Sharpe estimates have variance `sharpe_variance` (the
 /// "False Strategy Theorem", Bailey & López de Prado 2014).
+#[allow(dead_code)]
 pub fn expected_max_sharpe(sharpe_variance: f64, n_trials: usize) -> f64 {
     if n_trials < 1 || sharpe_variance <= 0.0 {
         return 0.0;
@@ -182,6 +195,7 @@ pub fn expected_max_sharpe(sharpe_variance: f64, n_trials: usize) -> f64 {
     sharpe_variance.sqrt() * ((1.0 - g) * a + g * b)
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 pub struct DeflatedSharpe {
     pub sharpe: f64,
@@ -195,6 +209,7 @@ pub struct DeflatedSharpe {
 
 /// Deflated Sharpe Ratio. `trial_sharpes` are the Sharpe ratios of all configs
 /// tried (the candidate among them); their variance estimates the benchmark.
+#[allow(dead_code)]
 pub fn deflated_sharpe_ratio(candidate_returns: &[f64], trial_sharpes: &[f64]) -> Option<DeflatedSharpe> {
     let m = moments(candidate_returns)?;
     if m.std == 0.0 {
@@ -383,20 +398,28 @@ pub fn haircut_pvalues(pvalues: &[f64], method: HaircutMethod) -> Vec<f64> {
 /// series. `expected_block_len` should scale ~ T^(1/3). Returns
 /// `(lower, point, upper)` at the given two-sided alpha (e.g. 0.05 → 90% CI...
 /// here alpha is the total tail mass, so 0.10 → 5%/95%).
+///
+/// `seed` makes the resampling DETERMINISTIC — callers should derive it from
+/// the query identity (e.g. a hash of the date + asset) so the same inputs
+/// always produce the same CI. A non-reproducible CI would undermine the
+/// whole "open, reproducible" credibility model.
 pub fn block_bootstrap_ci<F: Fn(&[f64]) -> Option<f64>>(
     series: &[f64],
     statistic: F,
     n_boot: usize,
     expected_block_len: f64,
     alpha: f64,
+    seed: u64,
 ) -> Option<(f64, f64, f64)> {
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     let t = series.len();
     if t < 4 || n_boot == 0 {
         return None;
     }
     let point = statistic(series)?;
     let p_continue = 1.0 - (1.0 / expected_block_len.max(1.0));
-    let mut rng = rand::thread_rng();
+    let mut rng = StdRng::seed_from_u64(seed);
     let mut stats = Vec::with_capacity(n_boot);
     for _ in 0..n_boot {
         let mut sample = Vec::with_capacity(t);
@@ -420,6 +443,17 @@ pub fn block_bootstrap_ci<F: Fn(&[f64]) -> Option<f64>>(
     let lo = percentile(&stats, alpha / 2.0);
     let hi = percentile(&stats, 1.0 - alpha / 2.0);
     Some((lo, point, hi))
+}
+
+/// Derive a stable u64 seed from a string identity (FNV-1a) so a bootstrap CI
+/// is reproducible per (date, asset, ...).
+pub fn seed_from_str(s: &str) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in s.bytes() {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
 
 fn percentile(sorted: &[f64], q: f64) -> f64 {
@@ -549,6 +583,7 @@ mod tests {
             500,
             6.0,
             0.10,
+            7,
         )
         .unwrap();
         assert!(lo <= point && point <= hi);
