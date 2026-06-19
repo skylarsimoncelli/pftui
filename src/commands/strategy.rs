@@ -414,6 +414,11 @@ pub fn run_explain(
     let expr = parser::parse(entry)?;
     let (mut resolver, primary) = build_resolver(&loader, asset, None, None)?;
     let val = eval::eval(&expr, Timeframe::Daily, &mut resolver)?;
+    // Surface typo'd / historyless symbols — explain is the recommended
+    // validation tool, so it must catch the same missing-symbol case the
+    // backtest/segment/compare handlers bail on (here we report rather than
+    // bail, since explain's job is to diagnose).
+    let missing = resolver.missing_symbols();
 
     let (kind, n_known, first, last, firings) = match &val {
         Val::Num(s) => {
@@ -441,6 +446,7 @@ pub fn run_explain(
                 "first_resolved_date": first,
                 "last_resolved_date": last,
                 "firings": firings,
+                "missing_symbols": missing,
             }))?
         );
         return Ok(());
@@ -448,6 +454,12 @@ pub fn run_explain(
     println!("Expression parsed OK.");
     println!("  Asset:        {asset} → {primary}");
     println!("  Value kind:   {kind}");
+    if !missing.is_empty() {
+        println!(
+            "  ⚠ MISSING:    referenced symbol(s) with NO price history: {} — likely a typo, or a ticker with ^/=/- that must use its alias (gold, silver, us10y, fedfunds, dxy, vix).",
+            missing.join(", ")
+        );
+    }
     println!(
         "  Coverage:     {n_known}/{} bars resolved ({} → {})",
         resolver.master_len(),

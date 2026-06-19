@@ -55,7 +55,35 @@ struct OhlcBars {
     low: Vec<f64>,
     close: Vec<f64>,
     vol: Vec<f64>,
+    /// Per-bucket: did REAL high AND low exist (vs close-substituted fallback)?
+    hl_real: Vec<bool>,
+    /// Per-bucket: was there REAL (>0) volume?
+    vol_real: Vec<bool>,
 }
+
+impl OhlcBars {
+    /// Fraction of buckets with real high+low data (1.0 = fully populated).
+    fn hl_coverage(&self) -> f64 {
+        if self.hl_real.is_empty() {
+            return 0.0;
+        }
+        self.hl_real.iter().filter(|b| **b).count() as f64 / self.hl_real.len() as f64
+    }
+    /// Fraction of buckets with real (>0) volume.
+    fn vol_coverage(&self) -> f64 {
+        if self.vol_real.is_empty() {
+            return 0.0;
+        }
+        self.vol_real.iter().filter(|b| **b).count() as f64 / self.vol_real.len() as f64
+    }
+}
+
+/// Minimum data coverage before an OHLC-family indicator is trusted in the DSL.
+/// Mirrors the indicator-panel guard: below this, range indicators are computed
+/// on close-collapsed bars (or money-flow on a near-empty volume series) and
+/// would print confident garbage — so the DSL resolves them to all-`None`
+/// instead of feeding false signals into a backtest.
+const OHLC_COVERAGE_MIN: f64 = 0.8;
 
 pub struct Resolver<'a> {
     master_dates: Vec<String>,
@@ -145,9 +173,13 @@ impl<'a> Resolver<'a> {
         let mut bars = OhlcBars::default();
         let mut cur_key: Option<(i32, u32)> = None;
         for (d, c) in &close_raw {
-            let h = hmap.get(d.as_str()).copied().unwrap_or(*c);
-            let l = lmap.get(d.as_str()).copied().unwrap_or(*c);
+            let real_h = hmap.get(d.as_str()).copied();
+            let real_l = lmap.get(d.as_str()).copied();
+            let h = real_h.unwrap_or(*c);
+            let l = real_l.unwrap_or(*c);
             let v = vmap.get(d.as_str()).copied().unwrap_or(0.0);
+            let hl_real = real_h.is_some() && real_l.is_some();
+            let vol_real = v > 0.0;
             let date = NaiveDate::parse_from_str(d, "%Y-%m-%d")
                 .map_err(|_| anyhow::anyhow!("bad date in series: {d}"))?;
             let key = bucket_key(date, tf);
@@ -160,6 +192,9 @@ impl<'a> Resolver<'a> {
                     bars.close[i] = *c;
                     bars.vol[i] += v;
                     bars.end_date[i] = d.clone();
+                    // A bucket counts as real if ANY contributing day was real.
+                    bars.hl_real[i] |= hl_real;
+                    bars.vol_real[i] |= vol_real;
                 }
                 _ => {
                     bars.end_date.push(d.clone());
@@ -167,6 +202,8 @@ impl<'a> Resolver<'a> {
                     bars.low.push(l);
                     bars.close.push(*c);
                     bars.vol.push(v);
+                    bars.hl_real.push(hl_real);
+                    bars.vol_real.push(vol_real);
                     cur_key = Some(key);
                 }
             }
@@ -189,6 +226,31 @@ impl<'a> Resolver<'a> {
             return Ok(v.clone());
         }
         let bars = self.ohlc_bars(symbol, tf)?;
+        // Coverage gate: don't compute indicators on degenerate inputs (a
+        // close-collapsed series for range indicators, or a near-empty volume
+        // series for money-flow) — they'd feed false signals into a backtest.
+        // Below threshold the whole series resolves to None so no condition
+        // fires on it. Close-only indicators (roc/macd/bb_*) are exempt.
+        let needs_hl = matches!(
+            kind,
+            OhlcKind::Atr
+                | OhlcKind::Cci
+                | OhlcKind::WilliamsR
+                | OhlcKind::Mfi
+                | OhlcKind::StochK
+                | OhlcKind::StochD
+                | OhlcKind::Adx
+                | OhlcKind::PlusDi
+                | OhlcKind::MinusDi
+        );
+        let needs_vol = matches!(kind, OhlcKind::Obv | OhlcKind::Mfi);
+        if (needs_hl && bars.hl_coverage() < OHLC_COVERAGE_MIN)
+            || (needs_vol && bars.vol_coverage() < OHLC_COVERAGE_MIN)
+        {
+            let out = vec![None; self.master_dates.len()];
+            self.series_cache.insert(cache_key, out.clone());
+            return Ok(out);
+        }
         let p0 = params.first().map(|p| *p as usize).unwrap_or(0);
         let h_opt: Vec<Option<f64>> = bars.high.iter().map(|v| Some(*v)).collect();
         let l_opt: Vec<Option<f64>> = bars.low.iter().map(|v| Some(*v)).collect();
@@ -505,6 +567,58 @@ mod tests {
         // wk2 close (5.0) becomes visible on its end date 01-10 and carries
         // into wk3 until wk3 closes (9.0) on 01-17.
         assert_eq!(s, vec![None, Some(5.0), Some(5.0), Some(9.0)]);
+    }
+
+    /// A loader where high/low/volume can be independently absent, to exercise
+    /// the OHLC coverage gate.
+    struct FieldLoader {
+        close: Vec<(String, f64)>,
+        has_hl: bool,
+        has_vol: bool,
+    }
+    impl SeriesLoader for FieldLoader {
+        fn load(&self, _symbol: &str, field: PriceField) -> Result<Vec<(String, f64)>> {
+            Ok(match field {
+                PriceField::Close => self.close.clone(),
+                PriceField::High | PriceField::Low if self.has_hl => self.close.clone(),
+                PriceField::Volume if self.has_vol => {
+                    self.close.iter().map(|(d, _)| (d.clone(), 1000.0)).collect()
+                }
+                _ => Vec::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn ohlc_coverage_gate_suppresses_degenerate_inputs() {
+        // 40 sequential valid calendar dates (spanning month boundaries).
+        let base = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let close: Vec<(String, f64)> = (0..40)
+            .map(|i| {
+                let d = base + chrono::Duration::days(i as i64);
+                (d.format("%Y-%m-%d").to_string(), 100.0 + i as f64)
+            })
+            .collect();
+        let dates: Vec<String> = close.iter().map(|(d, _)| d.clone()).collect();
+
+        // Volume-less series: mfi/obv suppressed to all-None; a close-only
+        // indicator (roc) still resolves; adx (needs H/L, which IS present) too.
+        let loader = FieldLoader { close: close.clone(), has_hl: true, has_vol: false };
+        let mut r = Resolver::new(dates.clone(), "X", &loader);
+        let mfi = r.ohlc_indicator_series(OhlcKind::Mfi, None, &[14.0], Timeframe::Daily).unwrap();
+        assert!(mfi.iter().all(|x| x.is_none()), "mfi suppressed on no-volume series");
+        let obv = r.ohlc_indicator_series(OhlcKind::Obv, None, &[], Timeframe::Daily).unwrap();
+        assert!(obv.iter().all(|x| x.is_none()), "obv suppressed on no-volume series");
+        let adx = r.ohlc_indicator_series(OhlcKind::Adx, None, &[14.0], Timeframe::Daily).unwrap();
+        assert!(adx.iter().any(|x| x.is_some()), "adx computes when H/L present");
+
+        // Close-only series (no high/low): range indicators suppressed; roc (close-only) survives.
+        let loader2 = FieldLoader { close: close.clone(), has_hl: false, has_vol: false };
+        let mut r2 = Resolver::new(dates, "X", &loader2);
+        let adx2 = r2.ohlc_indicator_series(OhlcKind::Adx, None, &[14.0], Timeframe::Daily).unwrap();
+        assert!(adx2.iter().all(|x| x.is_none()), "adx suppressed on close-collapsed series");
+        let roc = r2.ohlc_indicator_series(OhlcKind::Roc, None, &[10.0], Timeframe::Daily).unwrap();
+        assert!(roc.iter().any(|x| x.is_some()), "roc (close-only) survives without H/L");
     }
 
     #[test]
