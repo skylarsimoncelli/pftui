@@ -101,6 +101,7 @@ Canonical author identifiers:
 | `analyst-newsletter` | Public daily newsletter routine |
 | `analyst-night-shift` | Night-shift agent (legacy/optional) |
 | `analyst-brief` | Pre-author historical briefs imported from `pftui-operator` |
+| `analyst-deepdive` | `/pftui-deepdive` topic-evaluation skill (`agents/deepdive/SKILL.md`) — renders an opinionated verdict on one topic from the full analytical arsenal + portfolio/thesis/journal/agent context; measurement/judgment layer, never votes in convergence |
 | `agent-feedback` | AGENT_FEEDBACK.md ingest |
 | `system` | Default — anything that didn't specify |
 
