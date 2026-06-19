@@ -337,6 +337,12 @@ pub fn run_backtest(
             s.min_leverage,
             s.max_leverage_used,
         );
+        if s.n_neutral_fallback > 0 {
+            println!(
+                "           ⚠ {} trade(s) had unknown entry-bar vol (warmup/gap) → sized at a neutral 1× (placeholder, not a measured weight).",
+                s.n_neutral_fallback
+            );
+        }
     }
     println!();
     let show = limit.unwrap_or(20).min(report.trades.len());
