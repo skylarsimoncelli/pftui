@@ -456,6 +456,83 @@ pub fn seed_from_str(s: &str) -> u64 {
     hash
 }
 
+/// Cross-path distribution from Monte-Carlo trade-sequence resampling.
+/// Drawdowns are NEGATIVE percentages (more negative = worse).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MonteCarloPaths {
+    pub n_paths: usize,
+    /// How paths were generated ("bootstrap-resample").
+    pub method: String,
+    /// Terminal compounded return (%) — unlucky (p5), median, lucky (p95).
+    pub terminal_return_p5_pct: f64,
+    pub terminal_return_p50_pct: f64,
+    pub terminal_return_p95_pct: f64,
+    /// Max drawdown (%) — typical (median), bad (95th-pct severity), worst
+    /// (99th-pct severity). All negative; the realistic worst-case the single
+    /// historical curve hides.
+    pub drawdown_median_pct: f64,
+    pub drawdown_p95_pct: f64,
+    pub drawdown_p99_pct: f64,
+    /// Share of paths ending below the starting equity.
+    pub prob_loss_pct: f64,
+}
+
+/// Monte-Carlo trade-path resampling. The realized equity curve is ONE ordering
+/// and draw of the trades; a different draw of the same edge could be far
+/// deeper. Bootstrap-resamples the per-trade return list (fractions) over
+/// `n_paths` independent paths, compounds each into an equity curve, and returns
+/// the cross-path distribution of terminal return and max drawdown — so the
+/// operator sizing into a position sees the realistic 95th/99th-percentile
+/// drawdown, not just the lucky historical path. Deterministic via `seed`.
+/// Returns `None` for fewer than 20 trades (resampling a tiny sample is noise).
+pub fn monte_carlo_trade_paths(returns: &[f64], n_paths: usize, seed: u64) -> Option<MonteCarloPaths> {
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+    let n = returns.len();
+    if n < 20 || n_paths == 0 {
+        return None;
+    }
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut terminals = Vec::with_capacity(n_paths);
+    let mut drawdowns = Vec::with_capacity(n_paths);
+    for _ in 0..n_paths {
+        let mut equity = 1.0f64;
+        let mut peak = 1.0f64;
+        let mut max_dd = 0.0f64;
+        for _ in 0..n {
+            let r = returns[rng.gen_range(0..n)];
+            equity *= 1.0 + r;
+            if equity > peak {
+                peak = equity;
+            }
+            if peak > 0.0 {
+                let dd = (equity / peak - 1.0) * 100.0;
+                if dd < max_dd {
+                    max_dd = dd;
+                }
+            }
+        }
+        terminals.push((equity - 1.0) * 100.0);
+        drawdowns.push(max_dd);
+    }
+    terminals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    // Ascending → the most-negative (worst) drawdowns sit at the LOW quantiles.
+    drawdowns.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let prob_loss_pct =
+        terminals.iter().filter(|t| **t < 0.0).count() as f64 / terminals.len() as f64 * 100.0;
+    Some(MonteCarloPaths {
+        n_paths,
+        method: "bootstrap-resample".to_string(),
+        terminal_return_p5_pct: percentile(&terminals, 0.05),
+        terminal_return_p50_pct: percentile(&terminals, 0.50),
+        terminal_return_p95_pct: percentile(&terminals, 0.95),
+        drawdown_median_pct: percentile(&drawdowns, 0.50),
+        drawdown_p95_pct: percentile(&drawdowns, 0.05), // 95th-percentile severity
+        drawdown_p99_pct: percentile(&drawdowns, 0.01), // 99th-percentile severity
+        prob_loss_pct,
+    })
+}
+
 fn percentile(sorted: &[f64], q: f64) -> f64 {
     if sorted.is_empty() {
         return f64::NAN;
@@ -492,6 +569,33 @@ pub fn min_backtest_length(n_trials: usize, expected_max_sharpe: f64) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monte_carlo_is_deterministic_and_sane() {
+        // 30 trades: mostly small wins, a few losses.
+        let rets: Vec<f64> = (0..30)
+            .map(|i| if i % 5 == 0 { -0.08 } else { 0.04 })
+            .collect();
+        let a = monte_carlo_trade_paths(&rets, 2000, 12345).unwrap();
+        let b = monte_carlo_trade_paths(&rets, 2000, 12345).unwrap();
+        // Determinism: same seed → identical distribution.
+        assert_eq!(a.terminal_return_p50_pct, b.terminal_return_p50_pct);
+        assert_eq!(a.drawdown_p99_pct, b.drawdown_p99_pct);
+        // Ordering sanity: p5 ≤ p50 ≤ p95 terminal; worse drawdowns are MORE
+        // negative at the deeper tail.
+        assert!(a.terminal_return_p5_pct <= a.terminal_return_p50_pct);
+        assert!(a.terminal_return_p50_pct <= a.terminal_return_p95_pct);
+        assert!(a.drawdown_p99_pct <= a.drawdown_p95_pct);
+        assert!(a.drawdown_p95_pct <= a.drawdown_median_pct);
+        assert!(a.drawdown_median_pct <= 0.0);
+        assert!((0.0..=100.0).contains(&a.prob_loss_pct));
+    }
+
+    #[test]
+    fn monte_carlo_none_below_threshold() {
+        let rets = vec![0.01; 19];
+        assert!(monte_carlo_trade_paths(&rets, 1000, 1).is_none());
+    }
 
     #[test]
     fn normal_cdf_known_values() {

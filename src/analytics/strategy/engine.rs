@@ -128,6 +128,10 @@ pub struct TradeReport {
     /// Statistical honesty stats on the per-trade return series (none when
     /// there are too few trades to be meaningful).
     pub validation: Option<TradeValidation>,
+    /// Monte-Carlo trade-path resampling — the cross-path drawdown/terminal
+    /// distribution (None below 20 trades). Shows the realistic worst-case
+    /// drawdown the single historical curve hides.
+    pub monte_carlo: Option<crate::research::validation::MonteCarloPaths>,
     pub trades: Vec<Trade>,
 }
 
@@ -452,6 +456,20 @@ pub fn trade_report(
         *exit_reason_counts.entry(t.exit_reason.clone()).or_insert(0) += 1;
     }
 
+    // Monte-Carlo trade-path resampling on the per-trade returns (deterministic
+    // seed from the trade span). 5000 paths; None below 20 trades.
+    let monte_carlo = {
+        use crate::research::validation as v;
+        let seed = v::seed_from_str(&format!(
+            "mc:{}:{}:{}",
+            trades.first().map(|t| t.entry_date.as_str()).unwrap_or(""),
+            trades.last().map(|t| t.exit_date.as_str()).unwrap_or(""),
+            n
+        ));
+        let rets_frac: Vec<f64> = trades.iter().map(|t| t.return_pct / 100.0).collect();
+        v::monte_carlo_trade_paths(&rets_frac, 5000, seed)
+    };
+
     rets.clear();
     TradeReport {
         n_trades: n,
@@ -479,6 +497,7 @@ pub fn trade_report(
         exit_reason_counts,
         benchmark_hold: bench,
         validation: trade_validation(&trades),
+        monte_carlo,
         trades,
     }
 }
