@@ -5451,6 +5451,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                 k,
                 json,
             } => commands::environment_cmd::run_positioning(&backend, &asset, horizon, k, json),
+            cli::AnalyticsCommand::TailRisk {
+                asset,
+                lookback,
+                threshold,
+                json,
+            } => commands::tail_risk::run(&backend, &asset, lookback, threshold, json),
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,
