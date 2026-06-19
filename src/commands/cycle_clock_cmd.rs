@@ -77,6 +77,11 @@ pub fn run(backend: &BackendConnection, asset: Option<&str>, json_output: bool) 
                 t.prior_cycle_high, t.prior_cycle_high_date, t.pct_vs_prior_high, t.note
             );
         }
+        let acc = &b.accumulation;
+        println!("    ▸ {} (score {:+})", acc.verdict, acc.score);
+        for f in &acc.factors {
+            println!("        · {f}");
+        }
         println!();
     }
     if let Some(g) = &gold {

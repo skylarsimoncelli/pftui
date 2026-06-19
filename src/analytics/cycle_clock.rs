@@ -106,6 +106,8 @@ pub struct BtcCycleClock {
     pub pct_vs_200wma: Option<Decimal>,
     /// The falsifiable 4-year-intact vs 16-18y-major-top adjudication.
     pub major_cycle_test: Option<MajorCycleTest>,
+    /// Synthesized accumulation stance (Loukas band + Mayer + Olson countdown).
+    pub accumulation: AccumulationClock,
     pub verdict: String,
 }
 
@@ -122,6 +124,122 @@ pub struct MajorCycleTest {
     pub pct_vs_prior_high: Decimal,
     pub above_prior_high: bool,
     pub note: String,
+}
+
+/// A plain, actionable accumulation read for a cycle-low buyer — synthesizes
+/// the three existing measured signals (Loukas low-band proximity, Mayer
+/// multiple band, Olson day-900 bottom countdown) into one stance. This is a
+/// POSITIONAL/probabilistic read, not a buy signal: it says where we sit in the
+/// cycle relative to the historical accumulation window, nothing about the next
+/// price tick.
+#[derive(Debug, Clone, Serialize)]
+pub struct AccumulationClock {
+    /// "accumulate" | "window-opening" | "early" | "elevated" | "advancing".
+    pub stance: String,
+    /// Summed factor score (higher = more aligned for buying a cycle low).
+    pub score: i32,
+    /// Per-factor reads (Loukas / Mayer / Olson).
+    pub factors: Vec<String>,
+    /// One-line plain-language synthesis.
+    pub verdict: String,
+}
+
+/// Derive the accumulation stance from a BTC cycle clock. Mirrors the
+/// positioning engine's gate (a strong accumulate needs BOTH Loukas-band
+/// proximity AND Mayer < 1 — being far below the ATH is NOT itself bullish).
+pub fn accumulation_clock(
+    loukas: &Option<LoukasBand>,
+    mayer_multiple: Option<Decimal>,
+    olson_days_remaining: i64,
+    olson_day900_date: &str,
+) -> AccumulationClock {
+    use rust_decimal::prelude::ToPrimitive;
+    let mut score = 0i32;
+    let mut factors = Vec::new();
+
+    // Loukas low-band proximity.
+    if let Some(l) = loukas {
+        if l.in_band {
+            score += 2;
+            factors.push(format!(
+                "Loukas: IN the low band (wk {} of {}-{}) — prime cycle-low window",
+                l.cycle_week, l.band_low_week, l.band_high_week
+            ));
+        } else if l.cycle_week > l.band_high_week {
+            score -= 1;
+            factors.push(format!(
+                "Loukas: PAST the low band (wk {} > {}) — cycle advancing off the low",
+                l.cycle_week, l.band_high_week
+            ));
+        } else if l.weeks_to_band_start <= 8 {
+            score += 1;
+            factors.push(format!(
+                "Loukas: entering the low band in ~{} wk — window opening",
+                l.weeks_to_band_start
+            ));
+        } else {
+            factors.push(format!(
+                "Loukas: {} wk before the low band — early",
+                l.weeks_to_band_start
+            ));
+        }
+    }
+
+    // Mayer multiple band (price / 200d MA).
+    if let Some(m) = mayer_multiple.and_then(|d| d.to_f64()) {
+        if m < 0.8 {
+            score += 2;
+            factors.push(format!("Mayer {m:.2} (<0.8) — deep-value zone (historically near cycle lows)"));
+        } else if m < 1.0 {
+            score += 1;
+            factors.push(format!("Mayer {m:.2} (<1) — below the 200d MA, lower-risk accumulation zone"));
+        } else if m > 2.4 {
+            score -= 2;
+            factors.push(format!("Mayer {m:.2} (>2.4) — historically euphoric/distribution, NOT accumulation"));
+        } else {
+            factors.push(format!("Mayer {m:.2} (mid-band) — neither cheap nor euphoric"));
+        }
+    }
+
+    // Olson day-900 bottom countdown.
+    let or = olson_days_remaining;
+    if (-30..=120).contains(&or) {
+        score += 1;
+        factors.push(format!(
+            "Olson day-900 bottom ~{olson_day900_date} ({or} d) — within the bottoming window"
+        ));
+    } else if or < -90 {
+        score -= 1;
+        factors.push(format!(
+            "Olson day-900 was ~{olson_day900_date} ({or} d ago) — well past the expected bottom"
+        ));
+    } else {
+        factors.push(format!(
+            "Olson day-900 bottom ~{olson_day900_date} (still {or} d out)"
+        ));
+    }
+
+    let (stance, lead) = if score >= 4 {
+        ("accumulate", "ACCUMULATE — multiple cycle-low signals aligned")
+    } else if score >= 2 {
+        ("window-opening", "WINDOW OPENING — accumulation conditions forming, not yet fully aligned")
+    } else if score >= 0 {
+        ("early", "EARLY/NEUTRAL — not yet a confirmed cycle-low window")
+    } else if score >= -2 {
+        ("advancing", "ADVANCING — past the low / mid-cycle; this is not a fresh accumulation window")
+    } else {
+        ("elevated", "ELEVATED — euphoric or well past the low; favor patience over accumulation")
+    };
+    let verdict = format!(
+        "BTC accumulation clock: {lead}. (Positional read of where the cycle sits vs the historical low window — not a price signal.)"
+    );
+
+    AccumulationClock {
+        stance: stance.to_string(),
+        score,
+        factors,
+        verdict,
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -332,6 +450,12 @@ pub fn btc_cycle_clock(series: &str, history: &[HistoryRecord]) -> Option<BtcCyc
         ));
     }
     let verdict = format!("BTC: {}", parts.join(", "));
+    let accumulation = accumulation_clock(
+        &loukas,
+        mayer_multiple,
+        olson_days_remaining,
+        &olson_date.format("%Y-%m-%d").to_string(),
+    );
 
     Some(BtcCycleClock {
         series: series.to_string(),
@@ -350,6 +474,7 @@ pub fn btc_cycle_clock(series: &str, history: &[HistoryRecord]) -> Option<BtcCyc
         ma_200w,
         pct_vs_200wma,
         major_cycle_test,
+        accumulation,
         verdict,
     })
 }
@@ -534,6 +659,30 @@ mod tests {
         let anchor = verify_anchor(&history, "2008-10-15");
         assert!(anchor.verified_date.is_none());
         assert!(anchor.confirms_documented.is_none());
+    }
+
+    #[test]
+    fn accumulation_clock_scores_band_mayer_olson() {
+        let band = |week: i64, lo: i64, hi: i64, in_band: bool, to_start: i64| LoukasBand {
+            cycle_week: week,
+            cycle_length_weeks: 208,
+            band_low_week: lo,
+            band_high_week: hi,
+            in_band,
+            weeks_to_band_start: to_start,
+            note: String::new(),
+        };
+        // In-band + deep-value Mayer + Olson within window → strong accumulate.
+        let a = accumulation_clock(&Some(band(190, 187, 229, true, 0)), Some(dec!(0.75)), 60, "2026-10-06");
+        assert_eq!(a.stance, "accumulate", "score {}", a.score);
+        assert!(a.score >= 4);
+        // Past band + euphoric Mayer + Olson long past → elevated/patience.
+        let b = accumulation_clock(&Some(band(240, 187, 229, false, 0)), Some(dec!(3.0)), -200, "2024-01-01");
+        assert!(b.score < 0, "score {}", b.score);
+        assert!(matches!(b.stance.as_str(), "advancing" | "elevated"));
+        // Early (far from band) + mid Mayer + Olson far out → early/neutral.
+        let c = accumulation_clock(&Some(band(120, 187, 229, false, 67)), Some(dec!(1.5)), 400, "2027-06-01");
+        assert_eq!(c.stance, "early");
     }
 
     #[test]
