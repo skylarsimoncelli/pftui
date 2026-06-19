@@ -5457,6 +5457,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                 threshold,
                 json,
             } => commands::tail_risk::run(&backend, &asset, lookback, threshold, json),
+            cli::AnalyticsCommand::TailDependence {
+                asset,
+                vs,
+                q,
+                json,
+            } => commands::tail_dependence::run(&backend, &asset, &vs, q, json),
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,
