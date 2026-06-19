@@ -64,30 +64,41 @@ pub fn tail_dependence(x: &[f64], y: &[f64], q: f64) -> Option<TailDependence> {
         (Some(alpha), 2f64.powf(-1.0 / alpha))
     };
 
-    // Empirical tail dependence at q.
+    // Empirical tail dependence at q. Normalize by the ACTUAL marginal tail
+    // count (symmetric average of the two), not the nominal q·n — this is the
+    // conditional P(both in tail)/P(one in tail) and is exact under ties at the
+    // quantile boundary. Under independence it floors at ≈ q.
     let lx = quantile(x, q);
     let ly = quantile(y, q);
     let ux = quantile(x, 1.0 - q);
     let uy = quantile(y, 1.0 - q);
     let both_low = (0..n).filter(|&i| x[i] <= lx && y[i] <= ly).count();
     let both_high = (0..n).filter(|&i| x[i] >= ux && y[i] >= uy).count();
-    let denom = q * n as f64;
-    let emp_lower_tail_dep = (both_low as f64 / denom).min(1.0);
-    let emp_upper_tail_dep = (both_high as f64 / denom).min(1.0);
+    let nx_low = (0..n).filter(|&i| x[i] <= lx).count();
+    let ny_low = (0..n).filter(|&i| y[i] <= ly).count();
+    let nx_high = (0..n).filter(|&i| x[i] >= ux).count();
+    let ny_high = (0..n).filter(|&i| y[i] >= uy).count();
+    let denom_low = ((nx_low + ny_low) as f64 / 2.0).max(1.0);
+    let denom_high = ((nx_high + ny_high) as f64 / 2.0).max(1.0);
+    let emp_lower_tail_dep = (both_low as f64 / denom_low).min(1.0);
+    let emp_upper_tail_dep = (both_high as f64 / denom_high).min(1.0);
 
+    // The empirical estimate floors at ≈ q under independence, so judge against
+    // that baseline, not against zero.
+    let floor = format!("independence floor ≈ {:.2}", q);
     let interpretation = if emp_lower_tail_dep >= 0.40 {
         format!(
-            "STRONG co-crash dependence (λ_L≈{:.2}): they tend to fall together — diversification largely fails in a crash",
+            "STRONG co-crash dependence (λ_L≈{:.2} vs {floor}): they tend to fall together — diversification largely fails in a crash",
             emp_lower_tail_dep
         )
     } else if emp_lower_tail_dep >= 0.20 {
         format!(
-            "MODERATE co-crash dependence (λ_L≈{:.2}): partial joint downside — diversification weakens but doesn't vanish in stress",
+            "MODERATE co-crash dependence (λ_L≈{:.2} vs {floor}): partial joint downside — diversification weakens but doesn't vanish in stress",
             emp_lower_tail_dep
         )
     } else {
         format!(
-            "WEAK co-crash dependence (λ_L≈{:.2}): tails are largely independent — the diversification holds up in crises",
+            "WEAK co-crash dependence (λ_L≈{:.2} vs {floor}): tails near independence — the diversification holds up in crises",
             emp_lower_tail_dep
         )
     };
