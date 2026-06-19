@@ -5529,6 +5529,29 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         #[command(subcommand)]
         command: AnalyticsBacktestCommand,
     },
+    /// Macro environment feature vector — where today sits vs its history (z-scored, no look-ahead)
+    Environment {
+        #[command(subcommand)]
+        command: AnalyticsEnvironmentCommand,
+    },
+    /// Closest historic environment analogs + the target asset's forward-return distribution after them
+    #[command(after_help = "Finds the historical days whose macro backdrop (equities/gold/oil/dollar/rates/vol)\nmost resembles today via a covariance-whitened (Mahalanobis) distance, then reports\nthe distribution of the chosen asset's forward returns following those analogs — with a\nbootstrap CI and an honest analog-quality note.\n\nExamples:\n  pftui analytics analog --asset BTC --horizon 90 --json\n  pftui analytics analog --asset GC=F --horizon 180 --k 30")]
+    Analog {
+        /// Asset whose forward returns are measured after each analog (alias or ticker)
+        #[arg(long)]
+        asset: String,
+        /// Forward-return horizon in calendar days
+        #[arg(long, default_value_t = 90)]
+        horizon: i64,
+        /// Number of nearest analogs to use
+        #[arg(long, default_value_t = 25)]
+        k: usize,
+        /// Exclude analogs within this many days of today (avoid trivially-recent matches)
+        #[arg(long = "exclude-days", default_value_t = 90)]
+        exclude_days: i64,
+        #[arg(long)]
+        json: bool,
+    },
     /// Strategy backtesting: define trade conditions as an expression and test them against full price history
     #[command(after_help = "Define a trade rule as an expression over price, indicators, and timeframes,\nthen backtest it against the full historical price database.\n\nExpression language:\n  close, open, high, low, volume        primary asset's daily field\n  close(BTC), close(GC=F)               another symbol (alias-resolved)\n  sma(close, 200), ema(close, 21)       moving averages\n  rsi(14), rsi(close(BTC), 14)          RSI\n  ... @weekly | @monthly                evaluate at a higher timeframe\n  >  <  >=  <=  ==                       comparisons\n  crosses_above / crosses_below         strict edge crossings\n  and  or  not                          boolean logic\n\nInterest-rate proxies are ordinary symbols: us10y/^TNX, fedfunds/^IRX, so\n'rate hiking vs cutting' is just a moving-average crossing on a yield series.\n\nExamples:\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\" --exit \"hold 365d\" --json\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) @monthly < 90\" --exit \"hold 90d\"\n  pftui analytics strategy segment --asset GC=F --when \"us10y > sma(us10y, 200)\"\n  pftui analytics strategy compare --asset GC=F --when \"us10y > sma(us10y, 200)\" --when-label hiking --vs \"us10y < sma(us10y, 200)\" --vs-label cutting\n  pftui analytics strategy explain --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\"\n\nReturns are statistics over price ratios (percent / growth), not monetary balances.")]
     Strategy {
@@ -6170,6 +6193,15 @@ pub enum AnalyticsLessonsRulesCommand {
         /// Rule id
         id: i64,
         /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsEnvironmentCommand {
+    /// Show today's macro environment as z-scored features (vs their history)
+    Current {
         #[arg(long)]
         json: bool,
     },

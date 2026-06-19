@@ -5423,6 +5423,25 @@ fn run_cli(cli: Cli) -> Result<()> {
                     commands::backtest_scenario::run_layer_bias(&backend, args, json)
                 }
             },
+            cli::AnalyticsCommand::Environment { command } => match command {
+                cli::AnalyticsEnvironmentCommand::Current { json } => {
+                    commands::environment_cmd::run_current(&backend, json)
+                }
+            },
+            cli::AnalyticsCommand::Analog {
+                asset,
+                horizon,
+                k,
+                exclude_days,
+                json,
+            } => commands::environment_cmd::run_analog(
+                &backend,
+                &asset,
+                horizon,
+                k,
+                exclude_days,
+                json,
+            ),
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,
