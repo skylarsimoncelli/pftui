@@ -124,9 +124,25 @@ fn print_text(read: &StructureRead, series: &str) {
         );
     }
     let ma = &read.ma;
+    let fmt_ma = |v: &Option<rust_decimal::Decimal>| {
+        v.map(|d| d.round_dp(2).to_string()).unwrap_or_else(|| "n/a".into())
+    };
+    let fmt_slope = |s: &Option<market_structure::Slope>| {
+        s.map(|x| match x {
+            market_structure::Slope::Rising => "rising",
+            market_structure::Slope::Falling => "falling",
+            market_structure::Slope::Flat => "flat",
+        })
+        .unwrap_or("n/a")
+    };
     println!(
-        "  MA posture: fast {}={:?} (slope {:?}), slow {}={:?} (slope {:?})",
-        ma.fast_period, ma.fast_ma, ma.fast_slope, ma.slow_period, ma.slow_ma, ma.slow_slope
+        "  MA posture: fast {}={} ({}), slow {}={} ({})",
+        ma.fast_period,
+        fmt_ma(&ma.fast_ma),
+        fmt_slope(&ma.fast_slope),
+        ma.slow_period,
+        fmt_ma(&ma.slow_ma),
+        fmt_slope(&ma.slow_slope),
     );
     if let Some(ext) = ma.extension_pct_vs_slow {
         println!(
