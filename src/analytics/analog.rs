@@ -40,7 +40,11 @@ pub struct AnalogReport {
     pub query_regime: String,
     pub target_asset: String,
     pub horizon_days: i64,
+    /// Requested number of analogs.
     pub k: usize,
+    /// Distinct ≥180-day-apart episodes actually selected (capped by
+    /// de-clustering — can be well below `k` over a finite history).
+    pub k_effective: usize,
     /// Analogs actually used in the forward-return stats (target data present).
     pub n_with_forward: usize,
     pub analogs: Vec<AnalogMatch>,
@@ -256,27 +260,48 @@ pub fn run(
     });
     let mean_forward_ci_pct = if n_fwd >= 8 {
         let block = (n_fwd as f64).powf(1.0 / 3.0).max(2.0);
+        // Deterministic seed from the query identity so the CI is reproducible.
+        let seed = validation::seed_from_str(&format!(
+            "{}:{}:{}:{}",
+            env.dates[query_idx], target_asset, horizon_days, k
+        ));
         validation::block_bootstrap_ci(
             &fwd,
             |s| Some(s.iter().sum::<f64>() / s.len() as f64),
             1000,
             block,
             0.10,
+            seed,
         )
         .map(|(lo, _p, hi)| ((lo * 100.0).round() / 100.0, (hi * 100.0).round() / 100.0))
     } else {
         None
     };
 
-    let note = if n_fwd < k {
+    // Honesty note — distinguish the three distinct limiters so the diagnosis
+    // is correct: (a) the asset is too young to have data at the analogs,
+    // (b) the forward horizon exceeds the data that remains after the analogs,
+    // (c) de-clustering capped the number of distinct episodes below k.
+    let k_effective = dists.len();
+    let note = if n_fwd == 0 {
         format!(
-            "only {n_fwd}/{k} analogs had {target_asset} data at the forward horizon \
-             (young/short target series) — treat the distribution as indicative, not robust"
+            "no analog resolved a {horizon_days}d forward return for {target_asset} — either the \
+             horizon exceeds the data after the analog dates, or the target has no overlapping history"
+        )
+    } else if n_fwd < k_effective {
+        format!(
+            "only {n_fwd}/{k_effective} matched analogs had {target_asset} data at the +{horizon_days}d \
+             horizon (young/short target series) — treat the distribution as indicative, not robust"
+        )
+    } else if k_effective < k {
+        format!(
+            "de-clustering yielded {k_effective} distinct ≥180-day-apart episodes (you asked for {k}); \
+             {n_fwd} resolved forward returns"
         )
     } else if n_fwd < 10 {
-        "thin sample (<10 resolved analogs) — anecdotal".to_string()
+        format!("thin sample ({n_fwd} resolved analogs, <10) — anecdotal")
     } else {
-        "analog forward-return distribution over the k nearest macro environments".to_string()
+        format!("forward-return distribution over {n_fwd} distinct macro-environment analogs")
     };
 
     Some(AnalogReport {
@@ -285,6 +310,7 @@ pub fn run(
         target_asset: target_asset.to_string(),
         horizon_days,
         k,
+        k_effective,
         n_with_forward: n_fwd,
         analogs,
         mean_distance: (mean_distance * 1000.0).round() / 1000.0,

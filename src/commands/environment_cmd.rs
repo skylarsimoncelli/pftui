@@ -178,12 +178,22 @@ fn cycle_lean(conn: &Connection, resolved: &str) -> Option<(f64, String)> {
     if up.contains("BTC") {
         let c = cycle_clock::btc_cycle_clock(resolved, &history)?;
         let mut score = 0.0f64;
-        // Below the prior cycle high = the measured accumulation zone (mild +).
-        if c.major_cycle_test.as_ref().map(|t| !t.above_prior_high).unwrap_or(false) {
-            score += 0.2;
-        }
-        // Inside the Loukas low band = additional accumulation lean.
-        if c.loukas.as_ref().map(|l| l.in_band).unwrap_or(false) {
+        // Accumulation lean only when the cycle is genuinely near its low — being
+        // far below the prior ATH is NOT itself bullish (it is equally the
+        // Loukas major-top "lower high" condition). Gate on Loukas-band
+        // proximity and an undervalued Mayer Multiple (price < 200d MA).
+        let near_band = c
+            .loukas
+            .as_ref()
+            .map(|l| l.in_band || (l.weeks_to_band_start > 0 && l.weeks_to_band_start <= 12))
+            .unwrap_or(false);
+        let cheap = c
+            .mayer_multiple
+            .map(|m| m < rust_decimal::Decimal::ONE)
+            .unwrap_or(false);
+        if near_band && cheap {
+            score += 0.25; // measured accumulation zone (low band + below 200d MA)
+        } else if near_band || cheap {
             score += 0.1;
         }
         Some((score.clamp(-1.0, 1.0), c.verdict))

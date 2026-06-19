@@ -74,13 +74,18 @@ pub struct TradeReport {
 /// (Phase 3 positioning), not a single rule.
 #[derive(Debug, Clone, Serialize)]
 pub struct TradeValidation {
-    /// Per-trade Sharpe (mean / std of trade returns).
-    pub trade_sharpe: Option<f64>,
-    /// Deflated Sharpe / PSR vs luck — P(the per-trade edge is real). For a
-    /// single rule this is the probabilistic Sharpe against a zero benchmark.
-    /// > 0.95 is strong evidence the edge is not noise.
-    pub dsr_vs_luck: Option<f64>,
-    /// Block-bootstrap 90% CI on the mean trade return (percent).
+    /// Per-trade dispersion ratio (mean / std of trade returns). NOT a
+    /// time-based Sharpe — trades may have different holding periods, so this
+    /// is not comparable across exit rules. Interpret as the consistency of
+    /// the per-trade edge, not an annualized risk-adjusted return.
+    pub trade_dispersion_ratio: Option<f64>,
+    /// Probabilistic Sharpe vs a ZERO benchmark — P(the per-trade edge > 0).
+    /// This is a SINGLE-rule PSR, NOT a deflated/multiple-testing-corrected
+    /// statistic. Only populated when the sample is adequate (n >= 10); `None`
+    /// (anecdotal) below that, because a confident-looking number on 3 trades
+    /// is exactly the failure mode to avoid.
+    pub psr_vs_zero: Option<f64>,
+    /// Block-bootstrap 90% CI on the mean trade return (percent), deterministic.
     pub mean_return_ci_pct: Option<(f64, f64)>,
     /// True when the sample is too small to trust (n < 10).
     pub anecdotal: bool,
@@ -93,9 +98,26 @@ fn trade_validation(trades: &[Trade]) -> Option<TradeValidation> {
     }
     // Per-trade returns as fractions.
     let rets: Vec<f64> = trades.iter().map(|t| t.return_pct / 100.0).collect();
-    let trade_sharpe = v::sharpe(&rets);
-    // A single rule = one trial; DSR reduces to PSR vs a zero benchmark.
-    let dsr = v::deflated_sharpe_ratio(&rets, &[trade_sharpe.unwrap_or(0.0)]);
+    let trade_dispersion_ratio = v::sharpe(&rets);
+    let anecdotal = trades.len() < 10;
+    // Only report a PSR when the sample is adequate — never put a confident %
+    // on a handful of trades.
+    let psr_vs_zero = (!anecdotal)
+        .then(|| {
+            v::moments(&rets).map(|m| {
+                let sr = if m.std > 0.0 { m.mean / m.std } else { 0.0 };
+                v::probabilistic_sharpe_ratio(sr, 0.0, m.n, m.skew, m.kurtosis)
+            })
+        })
+        .flatten()
+        .filter(|p| p.is_finite());
+    // Deterministic seed from the trade span so the CI is reproducible.
+    let seed = v::seed_from_str(&format!(
+        "{}:{}:{}",
+        trades.first().map(|t| t.entry_date.as_str()).unwrap_or(""),
+        trades.last().map(|t| t.exit_date.as_str()).unwrap_or(""),
+        trades.len()
+    ));
     let block = (rets.len() as f64).powf(1.0 / 3.0).max(2.0);
     let mean_return_ci_pct = v::block_bootstrap_ci(
         &rets,
@@ -103,13 +125,14 @@ fn trade_validation(trades: &[Trade]) -> Option<TradeValidation> {
         1000,
         block,
         0.10,
+        seed,
     )
     .map(|(lo, _p, hi)| (lo * 100.0, hi * 100.0));
     Some(TradeValidation {
-        trade_sharpe,
-        dsr_vs_luck: dsr.map(|d| d.dsr),
+        trade_dispersion_ratio,
+        psr_vs_zero,
         mean_return_ci_pct,
-        anecdotal: trades.len() < 10,
+        anecdotal,
     })
 }
 

@@ -70,6 +70,10 @@ fn bucket(asset: &str) -> &'static str {
         "hard_money"
     } else if a.contains("SPY") || a.contains("QQQ") || a.contains("GSPC") || a.contains("NDX") {
         "equity"
+    } else if matches!(a.as_str(), "TLT" | "IEF" | "SHY" | "BIL" | "ZB=F" | "ZN=F" | "ZF=F" | "ZT=F")
+        || a.contains("TREASURY")
+    {
+        "bonds"
     } else {
         "other"
     }
@@ -92,6 +96,11 @@ fn regime_lean(asset: &str, quad: Quad) -> (f64, String) {
         ("equity", Quad::Reflation) => 0.3,
         ("equity", Quad::Inflation) => -0.3,
         ("equity", Quad::Deflation) => -0.6,
+        // Duration: the textbook deflation/disinflation winner, inflation loser.
+        ("bonds", Quad::Goldilocks) => 0.2,
+        ("bonds", Quad::Reflation) => -0.3,
+        ("bonds", Quad::Inflation) => -0.6,
+        ("bonds", Quad::Deflation) => 0.6,
         _ => 0.0,
     };
     let detail = format!(
@@ -229,19 +238,25 @@ pub fn synthesize(
     }
 }
 
-/// Agreement in [0,1]: 1 when all non-trivial drivers share a sign, 0 when split.
+/// Agreement in [0,1]: 1 when ≥2 non-trivial drivers share a sign, 0 when split.
+/// A LONE firing driver scores 0.5 (neither corroborated nor contradicted) and
+/// no firing driver scores 0 — an uncorroborated single signal must not earn
+/// the full "everyone agrees" multiplier.
 fn driver_agreement(drivers: &[Driver]) -> f64 {
     let signs: Vec<f64> = drivers
         .iter()
         .filter(|d| d.score.abs() > 0.05)
         .map(|d| d.score.signum())
         .collect();
-    if signs.len() < 2 {
-        return 1.0;
+    match signs.len() {
+        0 => 0.0,
+        1 => 0.5, // uncorroborated — moderate, not max
+        _ => {
+            let pos = signs.iter().filter(|s| **s > 0.0).count() as f64;
+            let frac = pos / signs.len() as f64;
+            (frac - 0.5).abs() * 2.0
+        }
     }
-    let pos = signs.iter().filter(|s| **s > 0.0).count() as f64;
-    let frac = pos / signs.len() as f64;
-    (frac - 0.5).abs() * 2.0
 }
 
 fn round1(x: f64) -> f64 {
@@ -263,6 +278,7 @@ mod tests {
             target_asset: "BTC-USD".to_string(),
             horizon_days: 90,
             k: 25,
+            k_effective: 25,
             n_with_forward: n,
             analogs: vec![],
             mean_distance: 3.0,
