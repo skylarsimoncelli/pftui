@@ -515,9 +515,11 @@ pub fn monte_carlo_trade_paths(returns: &[f64], n_paths: usize, seed: u64) -> Op
         terminals.push((equity - 1.0) * 100.0);
         drawdowns.push(max_dd);
     }
-    terminals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    // total_cmp is a total order (no NaN-panic) — a stray non-finite value
+    // sorts to an end rather than taking down the whole backtest.
+    terminals.sort_by(|a, b| a.total_cmp(b));
     // Ascending → the most-negative (worst) drawdowns sit at the LOW quantiles.
-    drawdowns.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    drawdowns.sort_by(|a, b| a.total_cmp(b));
     let prob_loss_pct =
         terminals.iter().filter(|t| **t < 0.0).count() as f64 / terminals.len() as f64 * 100.0;
     Some(MonteCarloPaths {
