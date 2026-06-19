@@ -20,13 +20,20 @@ use serde::Serialize;
 
 use crate::models::price::HistoryRecord;
 
+/// Minimum fraction of bars in the window that must carry real volume before we
+/// trust a true volume-weighted AVWAP. Below this (e.g. a ratio-chart series with
+/// no volume at all) we fall back to a flat-weight anchored average price.
+const VWAP_COVERAGE_MIN: f64 = 0.5;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AvwapQuality {
-    /// True volume-weighted AVWAP (every bar in the window has real volume).
+    /// True volume-weighted AVWAP. Bars without volume (e.g. the close-only
+    /// trailing bars the daily feed writes) simply don't contribute to a
+    /// volume-weighted average — they are skipped, not degraded.
     VolumeWeighted,
-    /// Flat (unit) weights — a bar in the window lacked volume; this is an
-    /// anchored AVERAGE PRICE, not a true VWAP.
+    /// Flat (unit) weights — the series lacks volume for most of the window
+    /// (coverage < 50%); this is an anchored AVERAGE PRICE, not a true VWAP.
     FlatWeightDegraded,
 }
 
@@ -35,6 +42,10 @@ pub struct AnchoredVwap {
     pub anchor_date: String,
     pub anchor_idx: usize,
     pub quality: AvwapQuality,
+    /// Fraction of bars in the window that carried real volume (0..1).
+    pub volume_coverage: f64,
+    /// Bars in the window with no/zero volume (skipped in volume-weighted mode).
+    pub null_volume_bars: usize,
     /// AVWAP value at each bar from the anchor (inclusive) to the last bar.
     pub values: Vec<Decimal>,
     /// AVWAP at the latest bar.
@@ -43,7 +54,9 @@ pub struct AnchoredVwap {
 
 /// Compute the anchored VWAP series from `anchor_idx` (inclusive) to the end of
 /// `bars`. Typical price = (high+low+close)/3, falling back to `close` when a
-/// bar lacks high/low.
+/// bar lacks high/low. Bars without volume are skipped (they contribute nothing
+/// to a volume-weighted average) UNLESS volume coverage is poor, in which case
+/// the whole window degrades to flat weights and says so.
 pub fn anchored_vwap(bars: &[HistoryRecord], anchor_idx: usize) -> Result<AnchoredVwap> {
     if bars.is_empty() {
         bail!("no price history to anchor against");
@@ -52,10 +65,11 @@ pub fn anchored_vwap(bars: &[HistoryRecord], anchor_idx: usize) -> Result<Anchor
         bail!("anchor index {anchor_idx} is past the end of the {}-bar series", bars.len());
     }
     let window = &bars[anchor_idx..];
-    // Degrade to flat weights if ANY bar in the window lacks positive volume —
-    // mixing weighted and unit-weight bars is worse than uniform flat weight.
-    let all_have_volume = window.iter().all(|b| b.volume.map(|v| v > 0).unwrap_or(false));
-    let quality = if all_have_volume {
+    let has_vol = |b: &HistoryRecord| b.volume.map(|v| v > 0).unwrap_or(false);
+    let volumed = window.iter().filter(|b| has_vol(b)).count();
+    let null_volume_bars = window.len() - volumed;
+    let volume_coverage = volumed as f64 / window.len() as f64;
+    let quality = if volume_coverage >= VWAP_COVERAGE_MIN {
         AvwapQuality::VolumeWeighted
     } else {
         AvwapQuality::FlatWeightDegraded
@@ -70,7 +84,10 @@ pub fn anchored_vwap(bars: &[HistoryRecord], anchor_idx: usize) -> Result<Anchor
             _ => b.close,
         };
         let w = match quality {
-            AvwapQuality::VolumeWeighted => Decimal::from(b.volume.unwrap_or(0)),
+            // Skip no-volume bars: weight 0 leaves num/den (hence the AVWAP)
+            // unchanged, so they carry the prior value rather than corrupting it.
+            AvwapQuality::VolumeWeighted if has_vol(b) => Decimal::from(b.volume.unwrap_or(0)),
+            AvwapQuality::VolumeWeighted => Decimal::ZERO,
             AvwapQuality::FlatWeightDegraded => Decimal::ONE,
         };
         num += tp * w;
@@ -83,6 +100,8 @@ pub fn anchored_vwap(bars: &[HistoryRecord], anchor_idx: usize) -> Result<Anchor
         anchor_date: window[0].date.clone(),
         anchor_idx,
         quality,
+        volume_coverage,
+        null_volume_bars,
         values,
         current,
     })
@@ -121,11 +140,29 @@ mod tests {
     }
 
     #[test]
-    fn missing_volume_degrades_to_flat_weight() {
+    fn sparse_null_volume_is_skipped_not_degraded() {
+        // 1 of 3 bars lacks volume → coverage 67% ≥ 50% → still volume-weighted;
+        // the null bar is skipped (contributes nothing), AVWAP carries.
         let bars = vec![
             bar("d0", 10.0, 10.0, 10.0, Some(10)),
-            bar("d1", 20.0, 20.0, 20.0, None), // missing → degrade whole window
+            bar("d1", 20.0, 20.0, 20.0, None), // skipped
             bar("d2", 30.0, 30.0, 30.0, Some(30)),
+        ];
+        let a = anchored_vwap(&bars, 0).unwrap();
+        assert_eq!(a.quality, AvwapQuality::VolumeWeighted);
+        assert_eq!(a.null_volume_bars, 1);
+        // (10*10 + 30*30)/(10+30) = 1000/40 = 25.00 (null bar carries the prior 10 mid-window)
+        assert_eq!(a.values[1], dec!(10.00)); // carried (null bar adds nothing)
+        assert_eq!(a.current, dec!(25.00));
+    }
+
+    #[test]
+    fn mostly_missing_volume_degrades_to_flat_weight() {
+        // 2 of 3 bars lack volume → coverage 33% < 50% → flat-weight degrade.
+        let bars = vec![
+            bar("d0", 10.0, 10.0, 10.0, None),
+            bar("d1", 20.0, 20.0, 20.0, Some(10)),
+            bar("d2", 30.0, 30.0, 30.0, None),
         ];
         let a = anchored_vwap(&bars, 0).unwrap();
         assert_eq!(a.quality, AvwapQuality::FlatWeightDegraded);
