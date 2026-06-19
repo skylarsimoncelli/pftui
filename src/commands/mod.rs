@@ -132,6 +132,7 @@ pub mod stress_test;
 pub mod structural;
 pub mod summary;
 pub mod supply;
+pub mod tail_dependence;
 pub mod tail_risk;
 pub mod target;
 pub mod technicals_cyber;
