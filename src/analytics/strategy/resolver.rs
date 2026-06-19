@@ -25,8 +25,13 @@ use std::collections::HashMap;
 use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
 
-use super::parser::{IndicatorKind, PriceField, Timeframe};
-use crate::indicators::{compute_ema, compute_rsi, compute_sma};
+use super::parser::{IndicatorKind, OhlcKind, PriceField, Timeframe};
+use crate::indicators::atr::compute_atr;
+use crate::indicators::bollinger::compute_bollinger;
+use crate::indicators::{
+    compute_adx, compute_cci, compute_ema, compute_macd, compute_mfi, compute_obv, compute_roc,
+    compute_rsi, compute_sma, compute_stochastic, compute_williams_r,
+};
 
 /// Abstracts where raw `(date, value)` series come from, so the engine is
 /// testable without a database. Returned series must be oldest-first with
@@ -40,6 +45,16 @@ struct BucketSeries {
     values: Vec<f64>,
     /// Date each bucket completes (its last bar's date), ascending.
     end_date: Vec<String>,
+}
+
+/// Aligned OHLCV bars at a timeframe (one entry per completed bucket).
+#[derive(Default)]
+struct OhlcBars {
+    end_date: Vec<String>,
+    high: Vec<f64>,
+    low: Vec<f64>,
+    close: Vec<f64>,
+    vol: Vec<f64>,
 }
 
 pub struct Resolver<'a> {
@@ -93,6 +108,159 @@ impl<'a> Resolver<'a> {
             self.raw_cache.insert(key.clone(), series);
         }
         Ok(self.raw_cache.get(&key).map(|v| v.as_slice()).unwrap())
+    }
+
+    /// Like [`raw`](Self::raw) but does NOT flag an empty result as a missing
+    /// symbol. Used for the secondary OHLC fields (high/low/volume), which are
+    /// legitimately absent for many series and fall back to close / zero — only
+    /// a missing CLOSE means a bad symbol.
+    fn raw_untracked(&mut self, symbol: &str, field: PriceField) -> Result<Vec<(String, f64)>> {
+        let resolved = resolve_alias(symbol);
+        let key = (resolved.clone(), field);
+        if let Some(v) = self.raw_cache.get(&key) {
+            return Ok(v.clone());
+        }
+        let series = self.loader.load(&resolved, field)?;
+        self.raw_cache.insert(key, series.clone());
+        Ok(series)
+    }
+
+    /// Assemble a symbol's OHLCV bars at the requested timeframe. Missing
+    /// high/low fall back to that bar's close; missing volume is zero. Weekly /
+    /// monthly buckets aggregate correctly (high=max, low=min, close=last,
+    /// volume=sum) — unlike the last-value bucketing used for plain fields.
+    fn ohlc_bars(&mut self, symbol: Option<&str>, tf: Timeframe) -> Result<OhlcBars> {
+        let sym = symbol
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| self.primary_symbol.clone());
+        // Close is the existence proxy and the bar axis (tracked).
+        let close_raw = self.raw(&sym, PriceField::Close)?.to_vec();
+        let high_raw = self.raw_untracked(&sym, PriceField::High)?;
+        let low_raw = self.raw_untracked(&sym, PriceField::Low)?;
+        let vol_raw = self.raw_untracked(&sym, PriceField::Volume)?;
+        let hmap: HashMap<&str, f64> = high_raw.iter().map(|(d, v)| (d.as_str(), *v)).collect();
+        let lmap: HashMap<&str, f64> = low_raw.iter().map(|(d, v)| (d.as_str(), *v)).collect();
+        let vmap: HashMap<&str, f64> = vol_raw.iter().map(|(d, v)| (d.as_str(), *v)).collect();
+
+        let mut bars = OhlcBars::default();
+        let mut cur_key: Option<(i32, u32)> = None;
+        for (d, c) in &close_raw {
+            let h = hmap.get(d.as_str()).copied().unwrap_or(*c);
+            let l = lmap.get(d.as_str()).copied().unwrap_or(*c);
+            let v = vmap.get(d.as_str()).copied().unwrap_or(0.0);
+            let date = NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                .map_err(|_| anyhow::anyhow!("bad date in series: {d}"))?;
+            let key = bucket_key(date, tf);
+            match cur_key {
+                Some(k) if k == key => {
+                    // Extend the open bucket.
+                    let i = bars.close.len() - 1;
+                    bars.high[i] = bars.high[i].max(h);
+                    bars.low[i] = bars.low[i].min(l);
+                    bars.close[i] = *c;
+                    bars.vol[i] += v;
+                    bars.end_date[i] = d.clone();
+                }
+                _ => {
+                    bars.end_date.push(d.clone());
+                    bars.high.push(h);
+                    bars.low.push(l);
+                    bars.close.push(*c);
+                    bars.vol.push(v);
+                    cur_key = Some(key);
+                }
+            }
+        }
+        Ok(bars)
+    }
+
+    /// Resolve an OHLC-family indicator to a daily-aligned series. Computed at
+    /// the requested timeframe's bucket granularity then projected to daily.
+    /// Memoized like the other indicator paths.
+    pub fn ohlc_indicator_series(
+        &mut self,
+        kind: OhlcKind,
+        symbol: Option<&str>,
+        params: &[f64],
+        tf: Timeframe,
+    ) -> Result<Vec<Option<f64>>> {
+        let cache_key = format!("O:{}:{:?}:{:?}:{:?}", symbol.unwrap_or("@"), kind, params, tf);
+        if let Some(v) = self.series_cache.get(&cache_key) {
+            return Ok(v.clone());
+        }
+        let bars = self.ohlc_bars(symbol, tf)?;
+        let p0 = params.first().map(|p| *p as usize).unwrap_or(0);
+        let h_opt: Vec<Option<f64>> = bars.high.iter().map(|v| Some(*v)).collect();
+        let l_opt: Vec<Option<f64>> = bars.low.iter().map(|v| Some(*v)).collect();
+        let computed: Vec<Option<f64>> = match kind {
+            OhlcKind::Atr => compute_atr(&h_opt, &l_opt, &bars.close, p0),
+            OhlcKind::Cci => compute_cci(&bars.high, &bars.low, &bars.close, p0),
+            OhlcKind::WilliamsR => compute_williams_r(&bars.high, &bars.low, &bars.close, p0),
+            OhlcKind::Roc => compute_roc(&bars.close, p0),
+            OhlcKind::Mfi => compute_mfi(&bars.high, &bars.low, &bars.close, &bars.vol, p0),
+            OhlcKind::Obv => compute_obv(&bars.close, &bars.vol),
+            OhlcKind::StochK | OhlcKind::StochD => {
+                let k = params.first().map(|p| *p as usize).unwrap_or(0);
+                let d = params.get(1).map(|p| *p as usize).unwrap_or(0);
+                let s = compute_stochastic(&bars.high, &bars.low, &bars.close, k, d);
+                s.iter()
+                    .map(|o| o.map(|r| if matches!(kind, OhlcKind::StochK) { r.k } else { r.d }))
+                    .collect()
+            }
+            OhlcKind::Adx | OhlcKind::PlusDi | OhlcKind::MinusDi => {
+                let a = compute_adx(&bars.high, &bars.low, &bars.close, p0);
+                a.iter()
+                    .map(|o| {
+                        o.map(|r| match kind {
+                            OhlcKind::PlusDi => r.plus_di,
+                            OhlcKind::MinusDi => r.minus_di,
+                            _ => r.adx,
+                        })
+                    })
+                    .collect()
+            }
+            OhlcKind::MacdLine | OhlcKind::MacdSignal | OhlcKind::MacdHist => {
+                let f = params.first().map(|p| *p as usize).unwrap_or(0);
+                let s = params.get(1).map(|p| *p as usize).unwrap_or(0);
+                let sig = params.get(2).map(|p| *p as usize).unwrap_or(0);
+                let m = compute_macd(&bars.close, f, s, sig);
+                m.iter()
+                    .map(|o| {
+                        o.map(|r| match kind {
+                            OhlcKind::MacdLine => r.macd,
+                            OhlcKind::MacdSignal => r.signal,
+                            _ => r.histogram,
+                        })
+                    })
+                    .collect()
+            }
+            OhlcKind::BbUpper | OhlcKind::BbLower | OhlcKind::BbMid | OhlcKind::BbPct => {
+                let mult = params.get(1).copied().unwrap_or(2.0);
+                let b = compute_bollinger(&bars.close, p0, mult);
+                b.iter()
+                    .enumerate()
+                    .map(|(i, o)| {
+                        o.map(|bb| match kind {
+                            OhlcKind::BbUpper => bb.upper,
+                            OhlcKind::BbLower => bb.lower,
+                            OhlcKind::BbMid => bb.middle,
+                            // %b = (close − lower) / (upper − lower).
+                            _ => {
+                                let range = bb.upper - bb.lower;
+                                if range > 0.0 {
+                                    (bars.close[i] - bb.lower) / range
+                                } else {
+                                    0.5
+                                }
+                            }
+                        })
+                    })
+                    .collect()
+            }
+        };
+        let out = project(&bars.end_date, &computed, &self.master_dates);
+        self.series_cache.insert(cache_key, out.clone());
+        Ok(out)
     }
 
     fn bucket_series(

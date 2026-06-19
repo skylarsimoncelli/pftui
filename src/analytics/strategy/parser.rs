@@ -94,6 +94,97 @@ pub enum IndicatorKind {
     Rsi,
 }
 
+/// OHLC-family indicators — computed from a symbol's full high/low/close/volume
+/// bars (not an arbitrary numeric series), so they take an optional leading
+/// symbol then numeric parameters. Each maps to one scalar output series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OhlcKind {
+    /// Average True Range — `atr(period)`.
+    Atr,
+    /// Commodity Channel Index — `cci(period)`.
+    Cci,
+    /// Williams %R — `williams_r(period)`.
+    WilliamsR,
+    /// Rate of Change (close) — `roc(period)`.
+    Roc,
+    /// Money Flow Index (needs volume) — `mfi(period)`.
+    Mfi,
+    /// On-Balance Volume (needs volume) — `obv()`.
+    Obv,
+    /// Stochastic %K — `stoch_k(k_period, d_period)`.
+    StochK,
+    /// Stochastic %D — `stoch_d(k_period, d_period)`.
+    StochD,
+    /// ADX trend strength — `adx(period)`.
+    Adx,
+    /// +DI — `plus_di(period)`.
+    PlusDi,
+    /// −DI — `minus_di(period)`.
+    MinusDi,
+    /// MACD line — `macd_line(fast, slow, signal)`.
+    MacdLine,
+    /// MACD signal line — `macd_signal(fast, slow, signal)`.
+    MacdSignal,
+    /// MACD histogram — `macd_hist(fast, slow, signal)` (alias `macd(...)`).
+    MacdHist,
+    /// Bollinger upper band — `bb_upper(period, mult)`.
+    BbUpper,
+    /// Bollinger lower band — `bb_lower(period, mult)`.
+    BbLower,
+    /// Bollinger middle band (SMA) — `bb_mid(period, mult)`.
+    BbMid,
+    /// Bollinger %b — `bb_pct(period, mult)`: (close − lower)/(upper − lower).
+    BbPct,
+}
+
+impl OhlcKind {
+    /// Required numeric-parameter count (after the optional leading symbol).
+    fn arity(self) -> usize {
+        match self {
+            OhlcKind::Obv => 0,
+            OhlcKind::Atr
+            | OhlcKind::Cci
+            | OhlcKind::WilliamsR
+            | OhlcKind::Roc
+            | OhlcKind::Mfi
+            | OhlcKind::Adx
+            | OhlcKind::PlusDi
+            | OhlcKind::MinusDi => 1,
+            OhlcKind::StochK
+            | OhlcKind::StochD
+            | OhlcKind::BbUpper
+            | OhlcKind::BbLower
+            | OhlcKind::BbMid
+            | OhlcKind::BbPct => 2,
+            OhlcKind::MacdLine | OhlcKind::MacdSignal | OhlcKind::MacdHist => 3,
+        }
+    }
+
+    fn from_name(name: &str) -> Option<OhlcKind> {
+        Some(match name {
+            "atr" => OhlcKind::Atr,
+            "cci" => OhlcKind::Cci,
+            "williams_r" | "willr" => OhlcKind::WilliamsR,
+            "roc" => OhlcKind::Roc,
+            "mfi" => OhlcKind::Mfi,
+            "obv" => OhlcKind::Obv,
+            "stoch_k" | "stoch" => OhlcKind::StochK,
+            "stoch_d" => OhlcKind::StochD,
+            "adx" => OhlcKind::Adx,
+            "plus_di" | "pdi" => OhlcKind::PlusDi,
+            "minus_di" | "mdi" => OhlcKind::MinusDi,
+            "macd_line" => OhlcKind::MacdLine,
+            "macd_signal" => OhlcKind::MacdSignal,
+            "macd_hist" | "macd" => OhlcKind::MacdHist,
+            "bb_upper" => OhlcKind::BbUpper,
+            "bb_lower" => OhlcKind::BbLower,
+            "bb_mid" => OhlcKind::BbMid,
+            "bb_pct" | "bb_percent" => OhlcKind::BbPct,
+            _ => return None,
+        })
+    }
+}
+
 /// Window transforms over an already-evaluated numeric series.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowKind {
@@ -121,6 +212,12 @@ pub enum Expr {
         kind: IndicatorKind,
         input: Box<Expr>,
         period: usize,
+    },
+    /// An OHLC-family indicator over a symbol's full bars (None = primary asset).
+    Ohlc {
+        kind: OhlcKind,
+        symbol: Option<String>,
+        params: Vec<f64>,
     },
     /// A window transform (highest/lowest/ago/pct_change) over a numeric series.
     Window {
@@ -504,6 +601,37 @@ impl Parser {
             };
         }
 
+        // OHLC-family indicators: optional leading symbol, then numeric params.
+        if let Some(okind) = OhlcKind::from_name(name) {
+            let (symbol, params) = split_symbol_params(name, &args)?;
+            if params.len() != okind.arity() {
+                bail!(
+                    "{name}(...) takes {} numeric parameter(s) (plus an optional leading symbol)",
+                    okind.arity()
+                );
+            }
+            // Period-like params must be positive integers; the Bollinger
+            // multiplier (the 2nd bb_* param) may be any positive real.
+            for (i, p) in params.iter().enumerate() {
+                let is_mult = matches!(
+                    okind,
+                    OhlcKind::BbUpper | OhlcKind::BbLower | OhlcKind::BbMid | OhlcKind::BbPct
+                ) && i == 1;
+                if is_mult {
+                    if *p <= 0.0 {
+                        bail!("{name}: the multiplier must be positive");
+                    }
+                } else if *p < 1.0 || p.fract() != 0.0 {
+                    bail!("{name}: parameter {} must be a positive integer", i + 1);
+                }
+            }
+            return Ok(Expr::Ohlc {
+                kind: okind,
+                symbol,
+                params,
+            });
+        }
+
         // Indicators.
         let kind = match name {
             "sma" => IndicatorKind::Sma,
@@ -535,6 +663,37 @@ impl Parser {
             period,
         })
     }
+}
+
+/// Split an OHLC-indicator argument list into an optional leading symbol and
+/// numeric parameters. The symbol (if any) parses as a bare-symbol field
+/// (`Field { Close, Some(sym) }`); everything else must be a numeric literal.
+fn split_symbol_params(name: &str, args: &[Expr]) -> Result<(Option<String>, Vec<f64>)> {
+    let mut symbol = None;
+    let mut rest = args;
+    if let Some(Expr::Field {
+        field: PriceField::Close,
+        symbol: Some(s),
+    }) = args.first()
+    {
+        symbol = Some(s.clone());
+        rest = &args[1..];
+    }
+    let mut params = Vec::with_capacity(rest.len());
+    for a in rest {
+        match a {
+            Expr::Num(n) => params.push(*n),
+            // Fold a unary-minus literal (e.g. `-1`) so the downstream
+            // positivity check produces a precise message instead of a vague
+            // "not a literal".
+            Expr::Neg(inner) => match inner.as_ref() {
+                Expr::Num(n) => params.push(-*n),
+                _ => bail!("{name}: arguments after the optional symbol must be numeric literals"),
+            },
+            _ => bail!("{name}: arguments after the optional symbol must be numeric literals"),
+        }
+    }
+    Ok((symbol, params))
 }
 
 fn expect_period(e: &Expr) -> Result<usize> {
@@ -656,5 +815,60 @@ mod tests {
     #[test]
     fn rejects_single_equals() {
         assert!(parse("close = 5").is_err());
+    }
+
+    #[test]
+    fn parses_ohlc_indicator_atr() {
+        let e = parse("atr(14)").unwrap();
+        assert_eq!(
+            e,
+            Expr::Ohlc {
+                kind: OhlcKind::Atr,
+                symbol: None,
+                params: vec![14.0]
+            }
+        );
+    }
+
+    #[test]
+    fn parses_ohlc_with_symbol_and_aliases() {
+        // williams_r alias + leading symbol.
+        let e = parse("willr(BTC, 14)").unwrap();
+        assert_eq!(
+            e,
+            Expr::Ohlc {
+                kind: OhlcKind::WilliamsR,
+                symbol: Some("BTC".to_string()),
+                params: vec![14.0]
+            }
+        );
+        // macd alias -> histogram, 3 params.
+        assert!(matches!(
+            parse("macd(12, 26, 9)").unwrap(),
+            Expr::Ohlc { kind: OhlcKind::MacdHist, .. }
+        ));
+        // stoch alias -> %K.
+        assert!(matches!(
+            parse("stoch(14, 3)").unwrap(),
+            Expr::Ohlc { kind: OhlcKind::StochK, .. }
+        ));
+    }
+
+    #[test]
+    fn ohlc_arity_and_param_validation() {
+        assert!(parse("atr(14, 3)").is_err()); // too many params
+        assert!(parse("macd(12, 26)").is_err()); // too few
+        assert!(parse("atr(0)").is_err()); // non-positive period
+        assert!(parse("adx(14.5)").is_err()); // non-integer period
+        assert!(parse("bb_pct(20, -2)").is_err()); // negative multiplier
+        assert!(parse("bb_pct(20, 2.5)").is_ok()); // float multiplier allowed
+        assert!(parse("obv()").is_ok()); // zero-arity
+        assert!(parse("obv(5)").is_err()); // obv takes no params
+    }
+
+    #[test]
+    fn ohlc_indicator_in_full_condition() {
+        let e = parse("macd(12,26,9) > 0 and adx(14) > 25").unwrap();
+        assert!(matches!(e, Expr::And(_, _)));
     }
 }

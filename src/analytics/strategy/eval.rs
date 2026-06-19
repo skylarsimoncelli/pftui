@@ -61,6 +61,16 @@ pub fn eval(expr: &Expr, tf: Timeframe, resolver: &mut Resolver) -> Result<Val> 
                 tf,
             )?))
         }
+        Expr::Ohlc {
+            kind,
+            symbol,
+            params,
+        } => Ok(Val::Num(resolver.ohlc_indicator_series(
+            *kind,
+            symbol.as_deref(),
+            params,
+            tf,
+        )?)),
         Expr::Timeframed(inner, tf2) => eval(inner, *tf2, resolver),
         Expr::Window { kind, input, n } => {
             let v = eval(input, tf, resolver)?.into_num()?;
@@ -347,6 +357,38 @@ mod tests {
         let pc = super::window(WindowKind::PctChange, &[Some(100.0), Some(110.0), Some(99.0)], 1);
         assert!((pc[1].unwrap() - 10.0).abs() < 1e-9);
         assert!((pc[2].unwrap() + 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ohlc_atr_evaluates_to_positive_numeric_series() {
+        // A rising series → ATR is defined and positive after warmup; the
+        // condition `atr(3) > 0` should fire on later bars.
+        let raw = series(&[10.0, 11.0, 12.0, 11.0, 13.0, 14.0, 15.0, 16.0]);
+        let dates: Vec<String> = raw.iter().map(|(d, _)| d.clone()).collect();
+        let mut map = HashMap::new();
+        map.insert("X".to_string(), raw);
+        let loader = MapLoader(map);
+        let mut r = resolver_for(&loader, dates);
+        let e = parse("atr(3) > 0").unwrap();
+        let b = eval_condition(&e, &mut r).unwrap();
+        // First few bars are None (warmup); a later bar must be Some(true).
+        assert!(b.iter().any(|x| *x == Some(true)));
+        assert!(b[0].is_none());
+    }
+
+    #[test]
+    fn ohlc_roc_matches_manual() {
+        // roc(2) over close = 100·(x[i]/x[i-2] − 1).
+        let raw = series(&[100.0, 105.0, 110.0, 121.0]);
+        let dates: Vec<String> = raw.iter().map(|(d, _)| d.clone()).collect();
+        let mut map = HashMap::new();
+        map.insert("X".to_string(), raw);
+        let loader = MapLoader(map);
+        let mut r = resolver_for(&loader, dates);
+        // roc(2) at bar3 = 100·(121/105 − 1) ≈ 15.238; compare via > 15 and < 16.
+        let e = parse("roc(2) > 15 and roc(2) < 16").unwrap();
+        let b = eval_condition(&e, &mut r).unwrap();
+        assert_eq!(b[3], Some(true));
     }
 
     #[test]
