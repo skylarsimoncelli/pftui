@@ -5575,7 +5575,7 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Extreme-Value-Theory tail risk (POT/GPD): fat-tail-aware VaR + Expected Shortfall + tail-fatness ξ
-    #[command(name = "tail-risk", after_help = "Fits a Generalized Pareto Distribution to the LEFT TAIL of an asset's daily\nreturns (Peaks-Over-Threshold). Gaussian/historical VaR understates crash depth\nfor fat-tailed assets; the GPD shape ξ measures HOW fat the tail is (ξ>0 = power-law,\nfatter than normal) and gives a principled VaR / Expected-Shortfall, with the\nhistorical estimate shown alongside. Closed-form method-of-moments fit (auditable,\nvalid for ξ<0.5); flagged unreliable otherwise.\n\nExamples:\n  pftui analytics tail-risk --asset BTC --json\n  pftui analytics tail-risk --asset gold --lookback 1000 --threshold 95")]
+    #[command(name = "tail-risk", after_help = "Fits a Generalized Pareto Distribution to the LEFT TAIL of an asset's daily\nreturns (Peaks-Over-Threshold). Gaussian/historical VaR understates crash depth\nfor fat-tailed assets; the GPD shape ξ measures HOW fat the tail is (ξ>0 = power-law,\nfatter than normal) and gives a principled VaR / Expected-Shortfall, with the\nhistorical estimate shown alongside. Closed-form probability-weighted-moments fit\n(auditable, far less shape-biased than plain method-of-moments; valid for ξ<1).\nVaR below the threshold quantile uses the empirical quantile (POT is valid only above it).\n\nExamples:\n  pftui analytics tail-risk --asset BTC --json\n  pftui analytics tail-risk --asset gold --lookback 1000 --threshold 95")]
     TailRisk {
         /// Asset to analyze (alias or ticker, e.g. BTC, gold, SPY)
         #[arg(long)]
