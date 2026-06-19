@@ -126,8 +126,13 @@ pub fn run_analog(
         crate::analytics::regime_quad::Quad::from_short(&report.query_regime).label()
     );
     println!(
-        "Target: {} | horizon: {}d | k={} nearest macro analogs | mean distance {:.2}",
-        report.target_asset, report.horizon_days, report.k, report.mean_distance
+        "Target: {} | horizon: {}d | k={} requested → {} distinct episodes → {} with forward data (effective sample) | mean distance {:.2}",
+        report.target_asset,
+        report.horizon_days,
+        report.k,
+        report.n_distinct_episodes,
+        report.k_effective,
+        report.mean_distance
     );
     println!();
     let fmt = |o: Option<f64>| o.map(|v| format!("{v:+.1}%")).unwrap_or_else(|| "—".into());

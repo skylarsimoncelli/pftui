@@ -183,7 +183,7 @@ fn print_degree(d: &DegreeStatus) {
     }
     if let Some(top) = &d.current_top {
         println!(
-            "    current top: {} @ {} (bar {} of expected {} → provisional translation {})",
+            "    current top: {} @ {} (intraday high; bar {} of expected {} → provisional translation {})",
             top.date,
             top.price.round_dp(2),
             top.bars_from_low,

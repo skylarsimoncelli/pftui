@@ -325,7 +325,7 @@ pub fn btc_cycle_clock(series: &str, history: &[HistoryRecord]) -> Option<BtcCyc
     }
     if let Some(t) = &major_cycle_test {
         parts.push(format!(
-            "major-vs-4yr: {} prior high {} ({:+}%)",
+            "major-vs-4yr: {} prior-high CLOSE {} ({:+}%)",
             if t.above_prior_high { "at/above" } else { "below" },
             t.prior_cycle_high,
             t.pct_vs_prior_high

@@ -4930,7 +4930,7 @@ pub enum AnalyticsTechnicalsCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsCyclesCommand {
-    /// Cycle-position read (BTC halving/4yr cycle, gold ~8yr cycle).
+    /// Cycle-position read (BTC halving/4yr cycle, gold ~6.9yr cycle (8yr is folklore)).
     /// Position only — never a price prediction.
     Clock {
         /// Restrict to one asset: BTC or GC=F (default: both)
@@ -5006,7 +5006,7 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Market cycle position clocks (BTC halving/4yr cycle, gold ~8yr cycle)
+    /// Market cycle position clocks (BTC halving/4yr cycle, gold ~6.9yr cycle (8yr is folklore))
     Cycles {
         #[command(subcommand)]
         command: AnalyticsCyclesCommand,
