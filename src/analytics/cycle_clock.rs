@@ -145,8 +145,12 @@ pub struct AccumulationClock {
 }
 
 /// Derive the accumulation stance from a BTC cycle clock. Mirrors the
-/// positioning engine's gate (a strong accumulate needs BOTH Loukas-band
-/// proximity AND Mayer < 1 — being far below the ATH is NOT itself bullish).
+/// positioning engine's discipline: a strong accumulate needs BOTH Loukas-band
+/// proximity (in-band, or ≤8 weeks approaching it) AND Mayer < 1 — being far
+/// below the ATH is NOT itself bullish (it is equally the Loukas major-top
+/// lower-high condition). Named Mayer thresholds (≤0.8 deep value, ≥2.4
+/// euphoric) are inclusive; the Olson bonus window is [−30,120] d with a
+/// penalty for any bar past it.
 pub fn accumulation_clock(
     loukas: &Option<LoukasBand>,
     mayer_multiple: Option<Decimal>,
@@ -185,33 +189,37 @@ pub fn accumulation_clock(
         }
     }
 
-    // Mayer multiple band (price / 200d MA).
+    // Mayer multiple band (price / 200d MA). The doctrine treats ≤0.8 as the
+    // deep-value floor and ≥2.4 as the euphoric ceiling, so the named
+    // thresholds belong to the strong tiers (inclusive comparisons).
     if let Some(m) = mayer_multiple.and_then(|d| d.to_f64()) {
-        if m < 0.8 {
+        if m <= 0.8 {
             score += 2;
-            factors.push(format!("Mayer {m:.2} (<0.8) — deep-value zone (historically near cycle lows)"));
+            factors.push(format!("Mayer {m:.2} (≤0.8) — deep-value zone (historically near cycle lows)"));
         } else if m < 1.0 {
             score += 1;
             factors.push(format!("Mayer {m:.2} (<1) — below the 200d MA, lower-risk accumulation zone"));
-        } else if m > 2.4 {
+        } else if m >= 2.4 {
             score -= 2;
-            factors.push(format!("Mayer {m:.2} (>2.4) — historically euphoric/distribution, NOT accumulation"));
+            factors.push(format!("Mayer {m:.2} (≥2.4) — historically euphoric/distribution, NOT accumulation"));
         } else {
             factors.push(format!("Mayer {m:.2} (mid-band) — neither cheap nor euphoric"));
         }
     }
 
-    // Olson day-900 bottom countdown.
+    // Olson day-900 bottom countdown. The bonus window is [−30, 120] d; any bar
+    // PAST the window (more than 30 d after the expected bottom) takes the
+    // penalty — no silent dead zone between −30 and −90.
     let or = olson_days_remaining;
     if (-30..=120).contains(&or) {
         score += 1;
         factors.push(format!(
             "Olson day-900 bottom ~{olson_day900_date} ({or} d) — within the bottoming window"
         ));
-    } else if or < -90 {
+    } else if or < -30 {
         score -= 1;
         factors.push(format!(
-            "Olson day-900 was ~{olson_day900_date} ({or} d ago) — well past the expected bottom"
+            "Olson day-900 was ~{olson_day900_date} ({or} d ago) — past the expected bottom"
         ));
     } else {
         factors.push(format!(
@@ -676,6 +684,15 @@ mod tests {
         let a = accumulation_clock(&Some(band(190, 187, 229, true, 0)), Some(dec!(0.75)), 60, "2026-10-06");
         assert_eq!(a.stance, "accumulate", "score {}", a.score);
         assert!(a.score >= 4);
+        // Boundary: Mayer EXACTLY 0.8 is deep-value (+2), not the weak <1 tier.
+        let m08 = accumulation_clock(&Some(band(190, 187, 229, true, 0)), Some(dec!(0.80)), 60, "2026-10-06");
+        assert_eq!(m08.stance, "accumulate", "Mayer 0.80 must be deep-value; score {}", m08.score);
+        // Boundary: Mayer EXACTLY 2.4 is euphoric (−2), not mid-band.
+        let m24 = accumulation_clock(&Some(band(190, 187, 229, true, 0)), Some(dec!(2.4)), 60, "2026-10-06");
+        assert!(m24.factors.iter().any(|f| f.contains("≥2.4")), "Mayer 2.4 must be euphoric");
+        // Olson dead-zone closed: −60 d (past the window) takes the penalty.
+        let dz = accumulation_clock(&Some(band(190, 187, 229, true, 0)), Some(dec!(1.5)), -60, "2026-01-01");
+        assert!(dz.factors.iter().any(|f| f.contains("past the expected bottom")));
         // Past band + euphoric Mayer + Olson long past → elevated/patience.
         let b = accumulation_clock(&Some(band(240, 187, 229, false, 0)), Some(dec!(3.0)), -200, "2024-01-01");
         assert!(b.score < 0, "score {}", b.score);
