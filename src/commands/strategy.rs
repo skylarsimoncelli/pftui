@@ -288,6 +288,19 @@ pub fn run_backtest(
             );
         }
     }
+    if let Some(mc) = &report.monte_carlo {
+        println!(
+            "Monte-Carlo: {} paths — terminal {:+.0}% / {:+.0}% / {:+.0}% (p5/50/95) | drawdown med {:.0}% · bad(p95) {:.0}% · worst(p99) {:.0}% | P(loss) {:.0}%",
+            mc.n_paths,
+            mc.terminal_return_p5_pct,
+            mc.terminal_return_p50_pct,
+            mc.terminal_return_p95_pct,
+            mc.drawdown_median_pct,
+            mc.drawdown_p95_pct,
+            mc.drawdown_p99_pct,
+            mc.prob_loss_pct,
+        );
+    }
     println!();
     let show = limit.unwrap_or(20).min(report.trades.len());
     println!("Last {show} trades:");
