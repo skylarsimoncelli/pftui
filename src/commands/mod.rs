@@ -40,6 +40,7 @@ pub mod doctor;
 pub mod drift;
 pub mod drawdown;
 pub mod economy;
+pub mod environment_cmd;
 pub mod eod;
 pub mod epistemics;
 pub mod etf_flows;
