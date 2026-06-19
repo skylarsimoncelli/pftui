@@ -5463,6 +5463,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                 q,
                 json,
             } => commands::tail_dependence::run(&backend, &asset, &vs, q, json),
+            cli::AnalyticsCommand::Avwap {
+                asset,
+                anchor,
+                anchor_date,
+                json,
+            } => commands::avwap::run(&backend, &asset, &anchor, anchor_date.as_deref(), json),
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,
