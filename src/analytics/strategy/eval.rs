@@ -8,7 +8,7 @@
 
 use anyhow::{bail, Result};
 
-use super::parser::{ArithOp, CmpOp, CrossDir, Expr, PriceField, Timeframe};
+use super::parser::{ArithOp, CmpOp, CrossDir, Expr, PriceField, Timeframe, WindowKind};
 use super::resolver::Resolver;
 
 #[derive(Debug, Clone)]
@@ -62,6 +62,14 @@ pub fn eval(expr: &Expr, tf: Timeframe, resolver: &mut Resolver) -> Result<Val> 
             )?))
         }
         Expr::Timeframed(inner, tf2) => eval(inner, *tf2, resolver),
+        Expr::Window { kind, input, n } => {
+            let v = eval(input, tf, resolver)?.into_num()?;
+            Ok(Val::Num(window(*kind, &v, *n)))
+        }
+        Expr::Abs(inner) => {
+            let v = eval(inner, tf, resolver)?.into_num()?;
+            Ok(Val::Num(v.into_iter().map(|x| x.map(|y| y.abs())).collect()))
+        }
         Expr::Neg(inner) => {
             let v = eval(inner, tf, resolver)?.into_num()?;
             Ok(Val::Num(v.into_iter().map(|x| x.map(|y| -y)).collect()))
@@ -96,6 +104,55 @@ pub fn eval(expr: &Expr, tf: Timeframe, resolver: &mut Resolver) -> Result<Val> 
             Ok(Val::Bool(v.into_iter().map(|x| x.map(|b| !b)).collect()))
         }
     }
+}
+
+/// Apply a window transform over a numeric series. Bars without enough history
+/// (or with any `None` inside the window for highest/lowest) resolve to `None`.
+fn window(kind: WindowKind, v: &[Option<f64>], n: usize) -> Vec<Option<f64>> {
+    let len = v.len();
+    let mut out = vec![None; len];
+    if n == 0 {
+        return out;
+    }
+    match kind {
+        WindowKind::Highest | WindowKind::Lowest => {
+            for i in (n - 1)..len {
+                let mut acc: Option<f64> = None;
+                let mut complete = true;
+                for x in &v[i + 1 - n..=i] {
+                    match x {
+                        Some(val) => {
+                            acc = Some(match (acc, matches!(kind, WindowKind::Highest)) {
+                                (None, _) => *val,
+                                (Some(a), true) => a.max(*val),
+                                (Some(a), false) => a.min(*val),
+                            })
+                        }
+                        None => {
+                            complete = false;
+                            break;
+                        }
+                    }
+                }
+                out[i] = if complete { acc } else { None };
+            }
+        }
+        WindowKind::Ago => {
+            if len > n {
+                out[n..].copy_from_slice(&v[..len - n]);
+            }
+        }
+        WindowKind::PctChange => {
+            for i in n..len {
+                if let (Some(now), Some(prev)) = (v[i], v[i - n]) {
+                    if prev != 0.0 {
+                        out[i] = Some(100.0 * (now / prev - 1.0));
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 fn as_field(e: &Expr) -> Result<(Option<String>, PriceField)> {
@@ -267,5 +324,45 @@ mod tests {
         let e = parse("close > 5 and close < 25").unwrap();
         let b = eval_condition(&e, &mut r).unwrap();
         assert_eq!(b, vec![Some(true), Some(true), Some(false)]);
+    }
+
+    #[test]
+    fn window_highest_lowest() {
+        assert_eq!(
+            super::window(WindowKind::Highest, &[Some(1.0), Some(3.0), Some(2.0), Some(5.0)], 2),
+            vec![None, Some(3.0), Some(3.0), Some(5.0)]
+        );
+        assert_eq!(
+            super::window(WindowKind::Lowest, &[Some(1.0), Some(3.0), Some(2.0), Some(5.0)], 2),
+            vec![None, Some(1.0), Some(2.0), Some(2.0)]
+        );
+    }
+
+    #[test]
+    fn window_ago_and_pct_change() {
+        assert_eq!(
+            super::window(WindowKind::Ago, &[Some(10.0), Some(20.0), Some(30.0)], 1),
+            vec![None, Some(10.0), Some(20.0)]
+        );
+        let pc = super::window(WindowKind::PctChange, &[Some(100.0), Some(110.0), Some(99.0)], 1);
+        assert!((pc[1].unwrap() - 10.0).abs() < 1e-9);
+        assert!((pc[2].unwrap() + 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn breakout_rule_with_highest_evaluates() {
+        // close crosses_above highest(high, 2) — a Donchian-style breakout.
+        let raw = series(&[10.0, 12.0, 11.0, 20.0]);
+        let dates: Vec<String> = raw.iter().map(|(d, _)| d.clone()).collect();
+        let mut map = HashMap::new();
+        map.insert("X".to_string(), raw);
+        let loader = MapLoader(map);
+        let mut r = resolver_for(&loader, dates);
+        // Breakout idiom: close above the PRIOR 2-bar high (highest includes the
+        // current bar, so use ago to look back one). At bar3: prior 2-high = max(12,11)=12.
+        let e = parse("close > ago(highest(close, 2), 1)").unwrap();
+        let b = eval_condition(&e, &mut r).unwrap();
+        assert_eq!(b.len(), 4);
+        assert_eq!(b[3], Some(true)); // 20 > 12
     }
 }

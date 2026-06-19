@@ -4884,6 +4884,15 @@ pub enum AnalyticsAlignmentCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsTechnicalsCommand {
+    /// Full standard-indicator panel (momentum/trend/volume/volatility) with a
+    /// bull/bear scorecard — Stochastic, Williams %R, CCI, ROC, ADX/DMI, MACD,
+    /// OBV, MFI, ATR, Bollinger %b, computed on the fly.
+    Indicators {
+        /// Symbol to analyze (alias or ticker, e.g. BTC, GC=F, SPY)
+        symbol: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Pure price-action market-structure read: swing highs/lows, trend
     /// classification (uptrend/downtrend/range), break-of-structure events,
     /// MA posture + extension. Computed straight from price_history.
@@ -5566,7 +5575,7 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Strategy backtesting: define trade conditions as an expression and test them against full price history
-    #[command(after_help = "Define a trade rule as an expression over price, indicators, and timeframes,\nthen backtest it against the full historical price database.\n\nExpression language:\n  close, open, high, low, volume        primary asset's daily field\n  close(BTC), close(GOLD)               another symbol (alphanumeric ticker OR alias)\n  sma(close, 200), ema(close, 21)       moving averages\n  rsi(14), rsi(close(BTC), 14)          RSI\n  ... @weekly | @monthly                evaluate at a higher timeframe\n  >  <  >=  <=  ==                       comparisons\n  crosses_above / crosses_below         strict edge crossings\n  and  or  not                          boolean logic\n\nSYMBOLS IN EXPRESSIONS must be alphanumeric (SPY, BTC) — tickers with '^', '=',\nor '-' (^TNX, GC=F, BTC-USD) CANNOT be typed directly; use their ALIAS instead:\n  gold=GC=F  silver=SI=F  us10y=^TNX  fedfunds=^IRX  us5y=^FVX  us30y=^TYX  dxy=DX-Y.NYB.\nSo 'rate hiking vs cutting' is a moving-average crossing on us10y (the ^TNX alias).\n\nExamples:\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\" --exit \"hold 365d\" --json\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) @monthly < 90\" --exit \"hold 90d\"\n  pftui analytics strategy segment --asset GC=F --when \"us10y > sma(us10y, 200)\"\n  pftui analytics strategy compare --asset GC=F --when \"us10y > sma(us10y, 200)\" --when-label hiking --vs \"us10y < sma(us10y, 200)\" --vs-label cutting\n  pftui analytics strategy explain --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\"\n\nReturns are statistics over price ratios (percent / growth), not monetary balances.")]
+    #[command(after_help = "Define a trade rule as an expression over price, indicators, and timeframes,\nthen backtest it against the full historical price database.\n\nExpression language:\n  close, open, high, low, volume        primary asset's daily field\n  close(BTC), close(GOLD)               another symbol (alphanumeric ticker OR alias)\n  sma(close, 200), ema(close, 21)       moving averages\n  rsi(14), rsi(close(BTC), 14)          RSI\n  highest(close,20) lowest(low,20)      rolling max/min over N bars\n  ago(close,1) pct_change(close,5)      lag / N-bar percent change\n  abs(close - sma(close,50))            absolute value\n  ... @weekly | @monthly                evaluate at a higher timeframe\n  >  <  >=  <=  ==                       comparisons\n  crosses_above / crosses_below         strict edge crossings\n  and  or  not                          boolean logic\n\nBreakout idiom: highest/lowest INCLUDE the current bar, so a prior-N-bar high is\n  ago(highest(high, N), 1) — e.g. entry \"close > ago(highest(close, 50), 1)\".\n\nSYMBOLS IN EXPRESSIONS must be alphanumeric (SPY, BTC) — tickers with '^', '=',\nor '-' (^TNX, GC=F, BTC-USD) CANNOT be typed directly; use their ALIAS instead:\n  gold=GC=F  silver=SI=F  us10y=^TNX  fedfunds=^IRX  us5y=^FVX  us30y=^TYX  dxy=DX-Y.NYB.\nSo 'rate hiking vs cutting' is a moving-average crossing on us10y (the ^TNX alias).\n\nExamples:\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\" --exit \"hold 365d\" --json\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) @monthly < 90\" --exit \"hold 90d\"\n  pftui analytics strategy segment --asset GC=F --when \"us10y > sma(us10y, 200)\"\n  pftui analytics strategy compare --asset GC=F --when \"us10y > sma(us10y, 200)\" --when-label hiking --vs \"us10y < sma(us10y, 200)\" --vs-label cutting\n  pftui analytics strategy explain --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\"\n\nReturns are statistics over price ratios (percent / growth), not monetary balances.")]
     Strategy {
         #[command(subcommand)]
         command: AnalyticsStrategyCommand,

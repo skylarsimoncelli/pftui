@@ -26,7 +26,7 @@ use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
 
 use super::parser::{IndicatorKind, PriceField, Timeframe};
-use crate::indicators::{compute_rsi, compute_sma};
+use crate::indicators::{compute_ema, compute_rsi, compute_sma};
 
 /// Abstracts where raw `(date, value)` series come from, so the engine is
 /// testable without a database. Returned series must be oldest-first with
@@ -184,26 +184,6 @@ fn compute_indicator(kind: IndicatorKind, values: &[f64], period: usize) -> Vec<
         IndicatorKind::Rsi => compute_rsi(values, period),
         IndicatorKind::Ema => compute_ema(values, period),
     }
-}
-
-/// EMA with an SMA seed at index `period-1` (same convention as the MACD
-/// engine's internal EMA). First `period-1` entries are `None`.
-fn compute_ema(values: &[f64], period: usize) -> Vec<Option<f64>> {
-    let n = values.len();
-    let mut out = vec![None; n];
-    if period == 0 || n < period {
-        return out;
-    }
-    let k = 2.0 / (period as f64 + 1.0);
-    let seed: f64 = values[..period].iter().sum::<f64>() / period as f64;
-    out[period - 1] = Some(seed);
-    let mut prev = seed;
-    for i in period..n {
-        let cur = (values[i] - prev) * k + prev;
-        out[i] = Some(cur);
-        prev = cur;
-    }
-    out
 }
 
 /// Group a raw oldest-first series into timeframe buckets, taking the last
