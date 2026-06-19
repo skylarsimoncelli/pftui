@@ -9,11 +9,13 @@
 //! principled, tail-aware VaR / Expected-Shortfall and, via the shape
 //! parameter ξ, a single number for *how fat* each asset's tail is.
 //!
-//! Estimator: closed-form **method of moments** (not an opaque optimizer) —
-//! transparent and auditable, valid for ξ < ½ (finite variance, which holds
-//! for daily financial returns). When the tail is heavier than that, the fit
-//! is flagged unreliable rather than silently trusted. All math on `f64`
-//! (these are return statistics, not money).
+//! Estimator: closed-form **probability-weighted moments** (PWM, Hosking &
+//! Wallis 1987) — transparent and auditable like method-of-moments, but with
+//! far less finite-sample bias on the shape ξ (plain MoM systematically
+//! under-states heavy tails, which would flatter the risk picture). Valid for
+//! ξ < 1 (the mean exists); flagged unreliable as ξ approaches 1 (ES diverges)
+//! or when there are too few exceedances. All math on `f64` (these are return
+//! statistics, not money).
 
 use serde::Serialize;
 
@@ -73,15 +75,29 @@ pub fn fit_evt_tail_risk(returns: &[f64], threshold_quantile: f64) -> Option<Evt
         tail_99.iter().sum::<f64>() / tail_99.len() as f64
     };
 
-    // Method-of-moments GPD fit on the exceedances.
-    // GPD(ξ,σ): mean = σ/(1−ξ), var = σ²/[(1−ξ)²(1−2ξ)] ⇒ mean²/var = 1−2ξ.
-    let (xi, sigma, mom_ok) = if nu >= 10 {
-        let mean = exceed.iter().sum::<f64>() / nu as f64;
-        let var = exceed.iter().map(|y| (y - mean).powi(2)).sum::<f64>() / (nu as f64 - 1.0);
-        if var > 0.0 && mean > 0.0 {
-            let xi = 0.5 * (1.0 - mean * mean / var);
-            let sigma = mean * (1.0 - xi);
-            (xi, sigma.max(1e-9), sigma > 0.0)
+    // Probability-Weighted-Moments GPD fit on the exceedances.
+    // For GPD(ξ,σ): α_r = E[Y(1−G)^r] = σ/[(r+1)(r+1−ξ)], so
+    //   α_0 = σ/(1−ξ),  α_1 = σ/[2(2−ξ)]  ⇒  R = α_0/α_1 = 2(2−ξ)/(1−ξ)
+    //   ⇒  ξ = (R−4)/(R−2),  σ = α_0(1−ξ).
+    // Unbiased sample estimators (y ascending, j = 1..n):
+    //   a_0 = mean(y),  a_1 = (1/n) Σ ((n−j)/(n−1)) y_(j).
+    let (xi, sigma, fit_ok) = if nu >= 10 {
+        let mut ys = exceed.clone();
+        ys.sort_by(f64::total_cmp);
+        let nf = nu as f64;
+        let a0 = ys.iter().sum::<f64>() / nf;
+        let a1 = ys
+            .iter()
+            .enumerate()
+            .map(|(idx, y)| ((nu - (idx + 1)) as f64 / (nf - 1.0)) * y)
+            .sum::<f64>()
+            / nf;
+        if a0 > 0.0 && a1 > 0.0 && (a0 - 2.0 * a1).abs() > 1e-12 {
+            let r = a0 / a1;
+            let xi = (r - 4.0) / (r - 2.0);
+            let sigma = a0 * (1.0 - xi);
+            // Valid while the mean exists (ξ<1) and the scale is positive.
+            (xi, sigma.max(1e-9), sigma > 0.0 && xi < 1.0)
         } else {
             (0.0, 0.0, false)
         }
@@ -90,12 +106,14 @@ pub fn fit_evt_tail_risk(returns: &[f64], threshold_quantile: f64) -> Option<Evt
     };
 
     // VaR at confidence α via the POT tail estimator. ξ→0 uses the exponential
-    // limit. Falls back to historical when the MoM fit is unusable.
+    // limit. The POT formula is only valid ABOVE the threshold quantile; when
+    // α sits at/below it (ratio ≥ 1, i.e. extrapolating into the body) or the
+    // fit is unusable, fall back to the empirical quantile.
     let pot_var = |alpha: f64| -> f64 {
-        if !mom_ok {
+        let ratio = (m as f64 / nu as f64) * (1.0 - alpha);
+        if !fit_ok || ratio >= 1.0 {
             return quantile_sorted(&losses, alpha);
         }
-        let ratio = (m as f64 / nu as f64) * (1.0 - alpha); // < 1 for α > threshold
         if xi.abs() < 1e-6 {
             u - sigma * ratio.ln()
         } else {
@@ -106,14 +124,16 @@ pub fn fit_evt_tail_risk(returns: &[f64], threshold_quantile: f64) -> Option<Evt
     let var_99 = pot_var(0.99);
     let var_999 = pot_var(0.999);
     // ES_α = VaR_α/(1−ξ) + (σ − ξu)/(1−ξ), for ξ < 1.
-    let es_99 = if mom_ok && xi < 1.0 {
+    let es_99 = if fit_ok && xi < 1.0 {
         var_99 / (1.0 - xi) + (sigma - xi * u) / (1.0 - xi)
     } else {
         hist_es_99
     };
 
-    let reliable = mom_ok && nu >= 20 && xi < 0.5;
-    let tail_class = if !mom_ok {
+    // PWM is unbiased for ξ<1; flag unreliable only as ξ→1 (ES diverges) or
+    // when exceedances are too few.
+    let reliable = fit_ok && nu >= 20 && xi < 0.9;
+    let tail_class = if !fit_ok {
         "unfitted".to_string()
     } else if xi >= 0.4 {
         "extreme (very heavy tail)".to_string()
@@ -128,13 +148,15 @@ pub fn fit_evt_tail_risk(returns: &[f64], threshold_quantile: f64) -> Option<Evt
     };
     let note = if nu < 10 {
         format!("only {nu} exceedances over the threshold — too few to fit a tail; showing historical VaR/ES")
-    } else if !mom_ok {
+    } else if !fit_ok {
         "degenerate exceedance distribution — falling back to historical VaR/ES".to_string()
+    } else if xi >= 0.9 {
+        format!("ξ={xi:.2} ≈ 1 — extremely heavy tail; Expected Shortfall is unstable and figures are indicative only")
     } else if xi >= 0.5 {
-        format!("ξ={xi:.2} ≥ 0.5 — tail heavier than the method-of-moments variance assumption; EVT figures are indicative only")
+        format!("ξ={xi:.2} — very heavy tail (power-law); VaR/ES are highly sensitive, treat the deep quantiles with caution")
     } else {
         let mult = if hist_var_99 > 0.0 { var_99 / hist_var_99 } else { 1.0 };
-        format!("ξ={xi:.2} ({tail_class}); EVT 99% VaR is {mult:.2}× the historical 99% VaR")
+        format!("ξ={xi:.2} ({tail_class}); EVT 99% VaR is {mult:.2}× the historical 99% VaR. (PWM fit; VaR_95≈threshold by construction at --threshold 95.)")
     };
 
     Some(EvtTailRisk {
