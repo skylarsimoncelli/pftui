@@ -62,7 +62,55 @@ pub struct TradeReport {
     pub time_in_market_pct: f64,
     pub avg_days_held: Option<f64>,
     pub benchmark_hold: BenchStats,
+    /// Statistical honesty stats on the per-trade return series (none when
+    /// there are too few trades to be meaningful).
+    pub validation: Option<TradeValidation>,
     pub trades: Vec<Trade>,
+}
+
+/// A small slice of the validation gauntlet applied to a single strategy's
+/// per-trade returns — enough to flag "is this distinguishable from luck?"
+/// The full PBO / multiple-testing haircut applies to multi-config sweeps
+/// (Phase 3 positioning), not a single rule.
+#[derive(Debug, Clone, Serialize)]
+pub struct TradeValidation {
+    /// Per-trade Sharpe (mean / std of trade returns).
+    pub trade_sharpe: Option<f64>,
+    /// Deflated Sharpe / PSR vs luck — P(the per-trade edge is real). For a
+    /// single rule this is the probabilistic Sharpe against a zero benchmark.
+    /// > 0.95 is strong evidence the edge is not noise.
+    pub dsr_vs_luck: Option<f64>,
+    /// Block-bootstrap 90% CI on the mean trade return (percent).
+    pub mean_return_ci_pct: Option<(f64, f64)>,
+    /// True when the sample is too small to trust (n < 10).
+    pub anecdotal: bool,
+}
+
+fn trade_validation(trades: &[Trade]) -> Option<TradeValidation> {
+    use crate::research::validation as v;
+    if trades.len() < 3 {
+        return None;
+    }
+    // Per-trade returns as fractions.
+    let rets: Vec<f64> = trades.iter().map(|t| t.return_pct / 100.0).collect();
+    let trade_sharpe = v::sharpe(&rets);
+    // A single rule = one trial; DSR reduces to PSR vs a zero benchmark.
+    let dsr = v::deflated_sharpe_ratio(&rets, &[trade_sharpe.unwrap_or(0.0)]);
+    let block = (rets.len() as f64).powf(1.0 / 3.0).max(2.0);
+    let mean_return_ci_pct = v::block_bootstrap_ci(
+        &rets,
+        |s| Some(s.iter().sum::<f64>() / s.len() as f64),
+        1000,
+        block,
+        0.10,
+    )
+    .map(|(lo, _p, hi)| (lo * 100.0, hi * 100.0));
+    Some(TradeValidation {
+        trade_sharpe,
+        dsr_vs_luck: dsr.map(|d| d.dsr),
+        mean_return_ci_pct,
+        anecdotal: trades.len() < 10,
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -237,6 +285,7 @@ pub fn trade_report(
         time_in_market_pct,
         avg_days_held,
         benchmark_hold: bench,
+        validation: trade_validation(&trades),
         trades,
     }
 }

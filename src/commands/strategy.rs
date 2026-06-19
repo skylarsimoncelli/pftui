@@ -159,6 +159,25 @@ pub fn run_backtest(
     if report.n_open_skipped > 0 {
         println!("(+{} open position not yet closed, excluded)", report.n_open_skipped);
     }
+    if let Some(v) = &report.validation {
+        let dsr = v
+            .dsr_vs_luck
+            .map(|d| format!("{:.0}%", d * 100.0))
+            .unwrap_or_else(|| "—".into());
+        let ci = v
+            .mean_return_ci_pct
+            .map(|(lo, hi)| format!("[{lo:+.1}%, {hi:+.1}%]"))
+            .unwrap_or_else(|| "—".into());
+        println!(
+            "Honesty:   edge-is-real {} {} | mean-return 90% CI {} | Sharpe/trade {}",
+            dsr,
+            if v.anecdotal { "(anecdotal n<10)" } else { "" },
+            ci,
+            v.trade_sharpe
+                .map(|s| format!("{s:.2}"))
+                .unwrap_or_else(|| "—".into()),
+        );
+    }
     println!();
     let show = limit.unwrap_or(20).min(report.trades.len());
     println!("Last {show} trades:");
