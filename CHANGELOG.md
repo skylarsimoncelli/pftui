@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-19 — fix(analytics): strip Rust debug-format leak from `technicals structure` (fresh-agent QA)
+
+- What: an end-to-end CLI smoke test found `analytics technicals structure` printing raw `Some(...)`/`{:?}` debug formatting — `MA posture: fast 50=Some(74744.26) (slope Some(Falling))` — a direct violation of the repo's no-debug-format output standard. Replaced with clean formatting: `MA posture: fast 50=74744.26 (falling), slow 200=78015.89 (falling)` (MA values rounded to 2dp or `n/a`; slope as a lowercase word). The `--json` path was already clean (serde-derived).
+- Files: `src/commands/technicals_structure.rs`, `CHANGELOG.md`.
+
 ### 2026-06-19 — feat(analytics): tail-dependence command (do two assets co-crash?)
 
 - What: the EVT companion — `tail-risk` gives each asset's univariate tail; this gives the JOINT picture. Correlation hides the failure mode an operator most cares about (two assets can have modest correlation yet plunge together in a crash). New `pftui analytics tail-dependence --asset X --vs Y` reports the lower-tail-dependence λ_L = P(Y crashing | X crashing) two ways: an **empirical** estimate at a finite tail quantile `--q` (model-free: share of days both assets sit in their joint bottom-q tail, normalized) and the **Clayton-copula** λ_L = 2^(−1/α) via Kendall-τ inversion (α = 2τ/(1−τ); Clayton chosen because it models asymmetric lower-tail/joint-crash dependence specifically). Also reports Pearson, Kendall τ, and the upper-tail (co-rally) λ_U. New module `src/analytics/copula.rs` (pure fns + 4 tests), command `src/commands/tail_dependence.rs`, CLI `analytics tail-dependence`. Returns align the two assets' daily returns on common dates. Live & on-thesis: **BTC↔gold λ_L≈0.03 (WEAK)** — the operator's two stores of value are tail-independent, so the diversification holds up in a crisis (it answers the core BTC+gold thesis question); BTC↔SPY λ_L≈0.22 (MODERATE — BTC partly co-crashes with equities); gold↔SPY λ_L≈0.10. This is research item #9; with EVT (#936/#938) it completes the tail-risk picture.
