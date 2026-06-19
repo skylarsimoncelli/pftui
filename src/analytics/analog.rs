@@ -42,9 +42,15 @@ pub struct AnalogReport {
     pub horizon_days: i64,
     /// Requested number of analogs.
     pub k: usize,
-    /// Distinct ≥180-day-apart episodes actually selected (capped by
-    /// de-clustering — can be well below `k` over a finite history).
+    /// Effective sample size of the forward-return distribution — the number of
+    /// analogs that ACTUALLY resolved a forward return (equals `n_with_forward`;
+    /// NOT the raw neighbor count, which can be inflated by analog dates before
+    /// the target asset existed).
     pub k_effective: usize,
+    /// Distinct ≥180-day-apart episodes selected by de-clustering (can be well
+    /// below `k` over a finite history). Of these, only `n_with_forward`
+    /// contribute to the stats.
+    pub n_distinct_episodes: usize,
     /// Analogs actually used in the forward-return stats (target data present).
     pub n_with_forward: usize,
     pub analogs: Vec<AnalogMatch>,
@@ -282,20 +288,24 @@ pub fn run(
     // is correct: (a) the asset is too young to have data at the analogs,
     // (b) the forward horizon exceeds the data that remains after the analogs,
     // (c) de-clustering capped the number of distinct episodes below k.
-    let k_effective = dists.len();
+    let n_distinct_episodes = dists.len();
+    // Effective sample = analogs that actually resolved a forward return, NOT
+    // the raw neighbor count (which can include dates before the target asset
+    // existed — e.g. pre-2009 analogs for BTC carry no forward return).
+    let k_effective = n_fwd;
     let note = if n_fwd == 0 {
         format!(
             "no analog resolved a {horizon_days}d forward return for {target_asset} — either the \
              horizon exceeds the data after the analog dates, or the target has no overlapping history"
         )
-    } else if n_fwd < k_effective {
+    } else if n_fwd < n_distinct_episodes {
         format!(
-            "only {n_fwd}/{k_effective} matched analogs had {target_asset} data at the +{horizon_days}d \
-             horizon (young/short target series) — treat the distribution as indicative, not robust"
+            "only {n_fwd}/{n_distinct_episodes} matched analogs had {target_asset} data at the +{horizon_days}d \
+             horizon (young/short target series) — effective sample is {n_fwd}; treat the distribution as indicative, not robust"
         )
-    } else if k_effective < k {
+    } else if n_distinct_episodes < k {
         format!(
-            "de-clustering yielded {k_effective} distinct ≥180-day-apart episodes (you asked for {k}); \
+            "de-clustering yielded {n_distinct_episodes} distinct ≥180-day-apart episodes (you asked for {k}); \
              {n_fwd} resolved forward returns"
         )
     } else if n_fwd < 10 {
@@ -311,6 +321,7 @@ pub fn run(
         horizon_days,
         k,
         k_effective,
+        n_distinct_episodes,
         n_with_forward: n_fwd,
         analogs,
         mean_distance: (mean_distance * 1000.0).round() / 1000.0,
