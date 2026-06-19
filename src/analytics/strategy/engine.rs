@@ -378,7 +378,7 @@ pub fn trade_report(
     let avg_loss_pct = (!losses.is_empty()).then(|| losses.iter().sum::<f64>() / losses.len() as f64);
     let gross_profit: f64 = wins.iter().sum();
     let gross_loss: f64 = losses.iter().map(|l| l.abs()).sum();
-    let profit_factor = (gross_loss > 0.0).then(|| gross_profit / gross_loss);
+    let profit_factor = (gross_loss > 0.0).then(|| gross_profit / gross_loss).map(|p| p + 0.0); // normalize -0.0
     let expectancy_pct = mean; // mean per-trade return already is the expectancy
     let payoff_ratio = match (avg_win_pct, avg_loss_pct) {
         (Some(w), Some(l)) if l.abs() > 0.0 => Some(w / l.abs()),
@@ -664,6 +664,23 @@ mod tests {
         assert_eq!(trades[0].exit_reason, "stop");
         assert!((trades[0].exit_price - 85.0).abs() < 1e-9); // exits at the stop, not the low
         assert!((trades[0].return_pct + 15.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn null_ohlc_bar_falls_back_to_close_not_a_phantom_stop() {
+        // bar2 has NO high/low (None) but its close rose to 110. A 15% stop
+        // (at 85) must NOT fire on the missing-OHLC bar; it should fall back to
+        // the bar's own close (110), so the trade survives to the rule exit.
+        let d = dates(4);
+        let closes = vec![Some(100.0), Some(100.0), Some(110.0), Some(120.0)];
+        let highs = vec![Some(100.0), Some(100.0), None, Some(121.0)];
+        let lows = vec![Some(100.0), Some(100.0), None, Some(119.0)];
+        let entry = vec![Some(false), Some(true), Some(false), Some(false)];
+        let mut exit = ExitConfig::new(ExitKind::HoldDays(2));
+        exit.stop_loss_pct = Some(15.0);
+        let (trades, _) = simulate_trades(&d, &closes, &highs, &lows, &entry, &exit);
+        assert_eq!(trades.len(), 1);
+        assert_ne!(trades[0].exit_reason, "stop", "no phantom stop on a NULL-OHLC bar");
     }
 
     #[test]

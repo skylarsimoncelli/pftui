@@ -91,6 +91,26 @@ pub fn run_backtest(
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
+    // Validate the risk parameters (percents must be positive; stops < 100%).
+    for (name, v) in [
+        ("stop-loss", stop_loss),
+        ("take-profit", take_profit),
+        ("trailing-stop", trailing_stop),
+    ] {
+        if let Some(p) = v {
+            if p <= 0.0 {
+                bail!("--{name} must be a positive percent (got {p})");
+            }
+        }
+    }
+    for (name, v) in [("stop-loss", stop_loss), ("trailing-stop", trailing_stop)] {
+        if let Some(p) = v {
+            if p >= 100.0 {
+                bail!("--{name} must be below 100% (got {p})");
+            }
+        }
+    }
+
     let loader = PriceHistoryLoader {
         conn: backend.sqlite(),
     };
@@ -228,6 +248,11 @@ pub fn run_backtest(
                 v.trade_dispersion_ratio
                     .map(|s| format!("{s:.2}"))
                     .unwrap_or_else(|| "—".into()),
+            );
+        }
+        if stop_loss.is_some() || take_profit.is_some() || trailing_stop.is_some() {
+            println!(
+                "           ⚠ risk exits bound each trade's outcome, which compresses the return dispersion — the PSR/CI can look more consistent than the underlying edge."
             );
         }
     }
