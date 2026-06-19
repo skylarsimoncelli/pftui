@@ -511,9 +511,12 @@ mod tests {
     #[test]
     fn pbo_high_for_pure_noise() {
         // N configs of pure noise: the IS-best should be ~random OOS -> PBO ~0.5.
+        // Seed deterministically so the test never flakes.
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
         let t = 120;
         let n = 8;
-        let mut rng = rand::thread_rng();
+        let mut rng = StdRng::seed_from_u64(42);
         let matrix: Vec<Vec<f64>> = (0..t)
             .map(|_| (0..n).map(|_| rng.gen::<f64>() - 0.5).collect())
             .collect();

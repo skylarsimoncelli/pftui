@@ -69,7 +69,12 @@ pub fn run_current(backend: &BackendConnection, json_output: bool) -> Result<()>
         return Ok(());
     }
 
+    let quad = env.regime_quads.last().cloned().unwrap_or_default();
     println!("═══ Macro Environment — {} ═══", date);
+    println!(
+        "Regime quad (growth×inflation): {}",
+        crate::analytics::regime_quad::Quad::from_short(&quad).label()
+    );
     println!("(expanding-window z-scores: how far each reading sits from its historical norm)");
     println!("{} days of history\n", env.len());
     for (name, v) in env.feature_names.iter().zip(vec.iter()) {
@@ -115,6 +120,10 @@ pub fn run_analog(
         report.query_date
     );
     println!(
+        "Today's regime quad: {}",
+        crate::analytics::regime_quad::Quad::from_short(&report.query_regime).label()
+    );
+    println!(
         "Target: {} | horizon: {}d | k={} nearest macro analogs | mean distance {:.2}",
         report.target_asset, report.horizon_days, report.k, report.mean_distance
     );
@@ -141,12 +150,13 @@ pub fn run_analog(
     println!("  {}", report.note);
     println!();
     println!("Nearest analog dates (closest first):");
-    println!("{:<12} {:>9} {:>12}", "Date", "Distance", "Fwd return");
+    println!("{:<12} {:>9} {:<11} {:>12}", "Date", "Distance", "Regime", "Fwd return");
     for a in report.analogs.iter().take(15) {
         println!(
-            "{:<12} {:>9.2} {:>12}",
+            "{:<12} {:>9.2} {:<11} {:>12}",
             a.date,
             a.distance,
+            a.regime,
             a.forward_return_pct
                 .map(|v| format!("{v:+.1}%"))
                 .unwrap_or_else(|| "—".into())

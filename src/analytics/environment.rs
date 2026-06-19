@@ -48,6 +48,8 @@ pub struct EnvironmentSeries {
     pub dates: Vec<String>,
     pub vectors: Vec<Vec<f64>>,
     pub feature_names: Vec<String>,
+    /// Growth×inflation regime quad label per date (parallel to `dates`).
+    pub regime_quads: Vec<String>,
 }
 
 impl EnvironmentSeries {
@@ -126,6 +128,7 @@ pub fn build(series: &BTreeMap<String, Vec<(String, f64)>>) -> Result<Environmen
     let start = RET_WINDOW.max(VOL_WINDOW);
     let mut raw_rows: Vec<Vec<f64>> = Vec::with_capacity(n - start);
     let mut raw_dates: Vec<NaiveDate> = Vec::with_capacity(n - start);
+    let mut raw_quads: Vec<String> = Vec::with_capacity(n - start);
     for i in start..n {
         let f = |sym: &str| &aligned[sym];
         let ret = |s: &str| log_return(f(s), i, RET_WINDOW);
@@ -145,8 +148,10 @@ pub fn build(series: &BTreeMap<String, Vec<(String, f64)>>) -> Result<Environmen
             f("^VIX")[i],
         ];
         if row.iter().all(|x| x.is_finite()) {
+            let quad = super::regime_quad::classify(f("^GSPC"), f("GC=F"), f("CL=F"), i);
             raw_rows.push(row);
             raw_dates.push(master[i]);
+            raw_quads.push(quad.short().to_string());
         }
     }
 
@@ -154,6 +159,7 @@ pub fn build(series: &BTreeMap<String, Vec<(String, f64)>>) -> Result<Environmen
     let dim = feature_names.len();
     let mut vectors = Vec::new();
     let mut dates = Vec::new();
+    let mut regime_quads = Vec::new();
     let mut sums = vec![0.0f64; dim];
     let mut sumsq = vec![0.0f64; dim];
     for (t, row) in raw_rows.iter().enumerate() {
@@ -174,12 +180,14 @@ pub fn build(series: &BTreeMap<String, Vec<(String, f64)>>) -> Result<Environmen
             .collect();
         vectors.push(z);
         dates.push(raw_dates[t].format("%Y-%m-%d").to_string());
+        regime_quads.push(raw_quads[t].clone());
     }
 
     Ok(EnvironmentSeries {
         dates,
         vectors,
         feature_names,
+        regime_quads,
     })
 }
 

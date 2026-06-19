@@ -27,6 +27,8 @@ pub struct AnalogMatch {
     pub date: String,
     /// Mahalanobis distance from the query environment (smaller = closer).
     pub distance: f64,
+    /// Growth×inflation regime quad on the analog date.
+    pub regime: String,
     /// Target asset's forward return from this analog date (%), if resolvable.
     pub forward_return_pct: Option<f64>,
 }
@@ -34,6 +36,8 @@ pub struct AnalogMatch {
 #[derive(Debug, Clone, Serialize)]
 pub struct AnalogReport {
     pub query_date: String,
+    /// Growth×inflation regime quad today.
+    pub query_regime: String,
     pub target_asset: String,
     pub horizon_days: i64,
     pub k: usize,
@@ -234,6 +238,7 @@ pub fn run(
         analogs.push(AnalogMatch {
             date: env.dates[*i].clone(),
             distance: (*dist * 1000.0).round() / 1000.0,
+            regime: env.regime_quads.get(*i).cloned().unwrap_or_default(),
             forward_return_pct: fr.map(|r| (r * 100.0).round() / 100.0),
         });
     }
@@ -276,6 +281,7 @@ pub fn run(
 
     Some(AnalogReport {
         query_date: env.dates[query_idx].clone(),
+        query_regime: env.regime_quads.get(query_idx).cloned().unwrap_or_default(),
         target_asset: target_asset.to_string(),
         horizon_days,
         k,
@@ -337,6 +343,7 @@ mod tests {
             dates: dates.clone(),
             vectors,
             feature_names: (0..dim).map(|j| format!("f{j}")).collect(),
+            regime_quads: dates.iter().map(|_| "reflation".to_string()).collect(),
         };
         // Target = a rising series across the whole span.
         let target: Vec<(String, f64)> = (0..400)
