@@ -54,16 +54,37 @@ pub fn parse_exit(arg: Option<&str>) -> Result<ExitSpec> {
     Ok(ExitSpec::When(parser::parse(trimmed)?))
 }
 
-/// Run a trade backtest: entry edge + exit rule → trades + stats + benchmark.
-pub fn run_backtest(resolver: &mut Resolver, entry: &Expr, exit: &ExitSpec) -> Result<TradeReport> {
+/// Optional risk exits checked intra-bar (percentages, 15.0 = 15%).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RiskExits {
+    pub stop_loss_pct: Option<f64>,
+    pub take_profit_pct: Option<f64>,
+    pub trailing_pct: Option<f64>,
+}
+
+/// Run a trade backtest: entry edge + exit rule (+ optional stop/target/trailing)
+/// → trades + stats + benchmark.
+pub fn run_backtest(
+    resolver: &mut Resolver,
+    entry: &Expr,
+    exit: &ExitSpec,
+    risk: RiskExits,
+) -> Result<TradeReport> {
     let dates = resolver.master_dates().to_vec();
     let closes = resolver.field_series(None, parser::PriceField::Close, parser::Timeframe::Daily)?;
+    let highs = resolver.field_series(None, parser::PriceField::High, parser::Timeframe::Daily)?;
+    let lows = resolver.field_series(None, parser::PriceField::Low, parser::Timeframe::Daily)?;
     let entry_mask = eval::eval_condition(entry, resolver)?;
-    let exit_kind = match exit {
+    let base = match exit {
         ExitSpec::HoldDays(d) => ExitKind::HoldDays(*d),
         ExitSpec::When(e) => ExitKind::Condition(eval::eval_condition(e, resolver)?),
     };
-    let (trades, open_skipped) = simulate_trades(&dates, &closes, &entry_mask, &exit_kind);
+    let mut exit_cfg = engine::ExitConfig::new(base);
+    exit_cfg.stop_loss_pct = risk.stop_loss_pct;
+    exit_cfg.take_profit_pct = risk.take_profit_pct;
+    exit_cfg.trailing_pct = risk.trailing_pct;
+    let (trades, open_skipped) =
+        simulate_trades(&dates, &closes, &highs, &lows, &entry_mask, &exit_cfg);
     Ok(engine::trade_report(&dates, &closes, trades, open_skipped))
 }
 
