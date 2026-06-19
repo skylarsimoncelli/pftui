@@ -16,8 +16,10 @@ pub mod resolver;
 use anyhow::{bail, Result};
 
 use engine::{
-    buy_hold, segment_stats, simulate_trades, BenchStats, ExitKind, SegmentStats, TradeReport,
+    buy_hold, segment_stats, simulate_trades, BenchStats, CostModel, ExitKind, SegmentStats,
+    TradeReport,
 };
+pub use engine::CostModel as Costs;
 use parser::Expr;
 use resolver::Resolver;
 
@@ -69,6 +71,7 @@ pub fn run_backtest(
     entry: &Expr,
     exit: &ExitSpec,
     risk: RiskExits,
+    cost: CostModel,
 ) -> Result<TradeReport> {
     let dates = resolver.master_dates().to_vec();
     let closes = resolver.field_series(None, parser::PriceField::Close, parser::Timeframe::Daily)?;
@@ -87,7 +90,7 @@ pub fn run_backtest(
     exit_cfg.take_profit_pct = risk.take_profit_pct;
     exit_cfg.trailing_pct = risk.trailing_pct;
     let (trades, open_skipped) =
-        simulate_trades(&dates, &closes, &highs, &lows, &entry_mask, &exit_cfg);
+        simulate_trades(&dates, &closes, &highs, &lows, &entry_mask, &exit_cfg, &cost);
     Ok(engine::trade_report(&dates, &closes, trades, open_skipped))
 }
 

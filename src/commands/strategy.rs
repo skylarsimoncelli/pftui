@@ -86,6 +86,9 @@ pub fn run_backtest(
     stop_loss: Option<f64>,
     take_profit: Option<f64>,
     trailing_stop: Option<f64>,
+    commission: Option<f64>,
+    slippage: Option<f64>,
+    next_bar_fill: bool,
     from: Option<&str>,
     to: Option<&str>,
     limit: Option<usize>,
@@ -110,6 +113,17 @@ pub fn run_backtest(
             }
         }
     }
+    // Costs must be non-negative and sane (a >100% per-side cost is a typo).
+    for (name, v) in [("commission", commission), ("slippage", slippage)] {
+        if let Some(p) = v {
+            if p < 0.0 {
+                bail!("--{name} must be non-negative (got {p})");
+            }
+            if p >= 100.0 {
+                bail!("--{name} is a per-side PERCENT; {p} looks like a typo (use 0.1 for 0.1%)");
+            }
+        }
+    }
 
     let loader = PriceHistoryLoader {
         conn: backend.sqlite(),
@@ -121,8 +135,13 @@ pub fn run_backtest(
         take_profit_pct: take_profit,
         trailing_pct: trailing_stop,
     };
+    let cost = strategy::Costs {
+        commission_pct: commission.unwrap_or(0.0),
+        slippage_pct: slippage.unwrap_or(0.0),
+        fill_delay_bars: if next_bar_fill { 1 } else { 0 },
+    };
     let (mut resolver, primary) = build_resolver(&loader, asset, from, to)?;
-    let report = strategy::run_backtest(&mut resolver, &entry_expr, &exit_spec, risk)?;
+    let report = strategy::run_backtest(&mut resolver, &entry_expr, &exit_spec, risk, cost)?;
     let missing = resolver.missing_symbols();
     if !missing.is_empty() {
         bail!(
@@ -140,6 +159,11 @@ pub fn run_backtest(
                 "resolved_symbol": primary,
                 "entry": entry,
                 "exit": exit.unwrap_or("hold 90d (default)"),
+                "costs": {
+                    "commission_pct_per_side": cost.commission_pct,
+                    "slippage_pct_per_side": cost.slippage_pct,
+                    "fill": if next_bar_fill { "next-bar-close" } else { "same-bar-close" },
+                },
                 "report": report,
             }))?
         );
@@ -149,6 +173,14 @@ pub fn run_backtest(
     println!("═══ Strategy Backtest: {} ({}) ═══", asset, primary);
     println!("Entry: {entry}");
     println!("Exit:  {}", exit.unwrap_or("hold 90d (default)"));
+    if commission.is_some() || slippage.is_some() || next_bar_fill {
+        println!(
+            "Costs: {:.3}%/side commission · {:.3}%/side slippage · {} fill",
+            cost.commission_pct,
+            cost.slippage_pct,
+            if next_bar_fill { "next-bar" } else { "same-bar" },
+        );
+    }
     let b = &report.benchmark_hold;
     println!(
         "Window: {} → {} ({:.1}y)",
