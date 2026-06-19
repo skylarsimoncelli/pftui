@@ -5469,6 +5469,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                 anchor_date,
                 json,
             } => commands::avwap::run(&backend, &asset, &anchor, anchor_date.as_deref(), json),
+            cli::AnalyticsCommand::Hurst {
+                asset,
+                lookback,
+                json,
+            } => commands::hurst::run(&backend, &asset, lookback, json),
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,

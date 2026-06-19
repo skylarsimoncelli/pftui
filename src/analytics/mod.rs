@@ -4,6 +4,7 @@ pub mod catalysts;
 pub mod copula;
 pub mod environment;
 pub mod evt;
+pub mod hurst_rs;
 pub mod cyber;
 pub mod cycle_clock;
 pub mod cycle_engine;

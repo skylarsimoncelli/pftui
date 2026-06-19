@@ -56,6 +56,7 @@ pub mod guidance;
 pub mod group;
 pub mod heatmap;
 pub mod history;
+pub mod hurst;
 pub mod impact_estimate;
 pub mod impact_matrix;
 pub mod import;
