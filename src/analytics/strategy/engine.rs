@@ -15,12 +15,36 @@
 use chrono::NaiveDate;
 use serde::Serialize;
 
-/// How a position is closed.
+/// The base exit rule (how a position closes absent a stop/target).
 pub enum ExitKind {
     /// Exit at the first bar on/after `entry_date + days`.
     HoldDays(i64),
     /// Exit at the first bar (after entry) where this condition fires.
     Condition(Vec<Option<bool>>),
+}
+
+/// Full exit configuration: the base rule plus optional risk exits checked
+/// intra-bar against the high/low. Percentages are whole numbers (15.0 = 15%).
+pub struct ExitConfig {
+    pub base: ExitKind,
+    /// Hard stop: exit if the bar's low breaches entry·(1 − stop/100).
+    pub stop_loss_pct: Option<f64>,
+    /// Profit target: exit if the bar's high reaches entry·(1 + target/100).
+    pub take_profit_pct: Option<f64>,
+    /// Trailing stop: exit if the bar's low falls trailing% below the highest
+    /// high seen since entry.
+    pub trailing_pct: Option<f64>,
+}
+
+impl ExitConfig {
+    pub fn new(base: ExitKind) -> Self {
+        ExitConfig {
+            base,
+            stop_loss_pct: None,
+            take_profit_pct: None,
+            trailing_pct: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -32,6 +56,8 @@ pub struct Trade {
     pub return_pct: f64,
     pub bars_held: usize,
     pub days_held: i64,
+    /// What closed the trade: "rule" | "stop" | "target" | "trailing".
+    pub exit_reason: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -61,6 +87,24 @@ pub struct TradeReport {
     pub max_drawdown_pct: f64,
     pub time_in_market_pct: f64,
     pub avg_days_held: Option<f64>,
+    // --- tearsheet ---
+    /// Mean / median win and loss magnitudes (percent).
+    pub avg_win_pct: Option<f64>,
+    pub avg_loss_pct: Option<f64>,
+    /// Gross profit / gross loss. > 1 is profitable; >1.5 is good.
+    pub profit_factor: Option<f64>,
+    /// Win-rate-weighted expected return per trade (percent).
+    pub expectancy_pct: Option<f64>,
+    /// Payoff ratio (avg win / |avg loss|).
+    pub payoff_ratio: Option<f64>,
+    /// Downside-deviation risk-adjusted CAGR (annualized).
+    pub sortino_ratio: Option<f64>,
+    /// CAGR / |max drawdown| of the strategy equity curve.
+    pub calmar_ratio: Option<f64>,
+    /// Longest run of consecutive losing trades.
+    pub max_consecutive_losses: usize,
+    /// Count of trades closed by each exit reason.
+    pub exit_reason_counts: std::collections::BTreeMap<String, usize>,
     pub benchmark_hold: BenchStats,
     /// Statistical honesty stats on the per-trade return series (none when
     /// there are too few trades to be meaningful).
@@ -160,12 +204,18 @@ fn parse_dates(dates: &[String]) -> Vec<Option<NaiveDate>> {
         .collect()
 }
 
-/// Simulate one-position-at-a-time trades from an entry-edge and an exit rule.
+/// Simulate one-position-at-a-time trades. Risk exits (stop/target/trailing)
+/// are checked INTRA-BAR against `highs`/`lows` (falling back to the close when
+/// OHLC is unavailable); the base rule exits at the close. On a bar where both
+/// a downside (stop/trailing) and the upside target could trigger, the downside
+/// is taken (conservative — we cannot know intra-bar order).
 pub fn simulate_trades(
     dates: &[String],
     closes: &[Option<f64>],
+    highs: &[Option<f64>],
+    lows: &[Option<f64>],
     entry: &[Option<bool>],
-    exit: &ExitKind,
+    exit: &ExitConfig,
 ) -> (Vec<Trade>, usize) {
     let n = dates.len().min(closes.len()).min(entry.len());
     let parsed = parse_dates(dates);
@@ -179,34 +229,63 @@ pub fn simulate_trades(
             continue;
         }
         let (entry_price, entry_date, entry_nd) = match (closes[i], parsed[i]) {
-            (Some(p), Some(d)) => (p, dates[i].clone(), d),
+            (Some(p), Some(d)) if p > 0.0 => (p, dates[i].clone(), d),
             _ => {
                 i += 1;
                 continue;
             }
         };
-        // Find the exit bar j > i.
+        let stop_price = exit.stop_loss_pct.map(|p| entry_price * (1.0 - p / 100.0));
+        let target_price = exit.take_profit_pct.map(|p| entry_price * (1.0 + p / 100.0));
+        let mut peak = entry_price; // highest high since entry, for the trailing stop
+
+        // Walk bars j > i, taking the first exit.
+        let mut outcome: Option<(usize, f64, &'static str)> = None; // (idx, exit_price, reason)
         let mut j = i + 1;
-        let mut exit_idx = None;
         while j < n {
-            let close_ok = closes[j].is_some();
-            let hit = match exit {
-                ExitKind::HoldDays(days) => match (parsed[j], close_ok) {
-                    (Some(dj), true) => (dj - entry_nd).num_days() >= *days,
-                    _ => false,
-                },
-                ExitKind::Condition(c) => c.get(j).copied().flatten() == Some(true) && close_ok,
+            let Some(close_j) = closes[j] else {
+                j += 1;
+                continue;
             };
-            if hit {
-                exit_idx = Some(j);
+            let high_j = highs[j].unwrap_or(close_j).max(close_j);
+            let low_j = lows[j].unwrap_or(close_j).min(close_j);
+            peak = peak.max(high_j);
+
+            // Downside first (conservative).
+            if let Some(sp) = stop_price {
+                if low_j <= sp {
+                    outcome = Some((j, sp, "stop"));
+                    break;
+                }
+            }
+            if let Some(tr) = exit.trailing_pct {
+                let trail = peak * (1.0 - tr / 100.0);
+                if low_j <= trail && trail < entry_price.max(peak) {
+                    outcome = Some((j, trail, "trailing"));
+                    break;
+                }
+            }
+            if let Some(tp) = target_price {
+                if high_j >= tp {
+                    outcome = Some((j, tp, "target"));
+                    break;
+                }
+            }
+            // Base rule (exits at the close).
+            let rule_hit = match &exit.base {
+                ExitKind::HoldDays(days) => parsed[j].map(|dj| (dj - entry_nd).num_days() >= *days).unwrap_or(false),
+                ExitKind::Condition(c) => c.get(j).copied().flatten() == Some(true),
+            };
+            if rule_hit {
+                outcome = Some((j, close_j, "rule"));
                 break;
             }
             j += 1;
         }
-        match exit_idx {
-            Some(j) => {
-                let exit_price = closes[j].unwrap();
-                let exit_nd = parsed[j].unwrap();
+
+        match outcome {
+            Some((j, exit_price, reason)) => {
+                let exit_nd = parsed[j].unwrap_or(entry_nd);
                 let return_pct = (exit_price / entry_price - 1.0) * 100.0;
                 trades.push(Trade {
                     entry_date,
@@ -216,6 +295,7 @@ pub fn simulate_trades(
                     return_pct,
                     bars_held: j - i,
                     days_held: (exit_nd - entry_nd).num_days(),
+                    exit_reason: reason.to_string(),
                 });
                 i = j + 1; // no overlapping positions
             }
@@ -291,6 +371,57 @@ pub fn trade_report(
         None
     };
 
+    // --- tearsheet ---
+    let wins: Vec<f64> = rets.iter().copied().filter(|r| *r > 0.0).collect();
+    let losses: Vec<f64> = rets.iter().copied().filter(|r| *r < 0.0).collect();
+    let avg_win_pct = (!wins.is_empty()).then(|| wins.iter().sum::<f64>() / wins.len() as f64);
+    let avg_loss_pct = (!losses.is_empty()).then(|| losses.iter().sum::<f64>() / losses.len() as f64);
+    let gross_profit: f64 = wins.iter().sum();
+    let gross_loss: f64 = losses.iter().map(|l| l.abs()).sum();
+    let profit_factor = (gross_loss > 0.0).then(|| gross_profit / gross_loss);
+    let expectancy_pct = mean; // mean per-trade return already is the expectancy
+    let payoff_ratio = match (avg_win_pct, avg_loss_pct) {
+        (Some(w), Some(l)) if l.abs() > 0.0 => Some(w / l.abs()),
+        _ => None,
+    };
+    // Sortino: CAGR over downside deviation of per-trade returns (annualized by
+    // the trade frequency).
+    let sortino_ratio = (n >= 3).then(|| {
+        let mean_r = rets.iter().sum::<f64>() / n as f64 / 100.0;
+        let downside = rets
+            .iter()
+            .map(|r| r / 100.0)
+            .filter(|r| *r < 0.0)
+            .map(|r| r * r)
+            .sum::<f64>()
+            / n as f64;
+        let dd = downside.sqrt();
+        if dd > 0.0 {
+            mean_r / dd
+        } else {
+            f64::INFINITY
+        }
+    }).filter(|v| v.is_finite());
+    let calmar_ratio = match cagr_pct {
+        Some(c) if max_dd < 0.0 => Some(c / max_dd.abs()),
+        _ => None,
+    };
+    // Longest consecutive-loss streak.
+    let mut max_consecutive_losses = 0usize;
+    let mut streak = 0usize;
+    for t in &trades {
+        if t.return_pct < 0.0 {
+            streak += 1;
+            max_consecutive_losses = max_consecutive_losses.max(streak);
+        } else {
+            streak = 0;
+        }
+    }
+    let mut exit_reason_counts: std::collections::BTreeMap<String, usize> = Default::default();
+    for t in &trades {
+        *exit_reason_counts.entry(t.exit_reason.clone()).or_insert(0) += 1;
+    }
+
     rets.clear();
     TradeReport {
         n_trades: n,
@@ -307,6 +438,15 @@ pub fn trade_report(
         max_drawdown_pct: max_dd,
         time_in_market_pct,
         avg_days_held,
+        avg_win_pct,
+        avg_loss_pct,
+        profit_factor,
+        expectancy_pct,
+        payoff_ratio,
+        sortino_ratio,
+        calmar_ratio,
+        max_consecutive_losses,
+        exit_reason_counts,
         benchmark_hold: bench,
         validation: trade_validation(&trades),
         trades,
@@ -450,8 +590,9 @@ mod tests {
         ];
         let closes = vec![Some(100.0), Some(110.0), Some(121.0)];
         let entry = vec![Some(false), Some(true), Some(false)];
-        let exit = ExitKind::Condition(vec![Some(false), Some(false), Some(true)]);
-        let (trades, open) = simulate_trades(&d, &closes, &entry, &exit);
+        let exit = ExitConfig::new(ExitKind::Condition(vec![Some(false), Some(false), Some(true)]));
+        let hl = vec![None; closes.len()];
+        let (trades, open) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit);
         assert_eq!(open, 0);
         assert_eq!(trades.len(), 1);
         let t = &trades[0];
@@ -469,8 +610,9 @@ mod tests {
         ];
         let closes = vec![Some(10.0), Some(12.0), Some(15.0)];
         let entry = vec![Some(false), Some(true), Some(false)];
-        let exit = ExitKind::HoldDays(10);
-        let (trades, _) = simulate_trades(&d, &closes, &entry, &exit);
+        let exit = ExitConfig::new(ExitKind::HoldDays(10));
+        let hl = vec![None; closes.len()];
+        let (trades, _) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit);
         assert_eq!(trades.len(), 1);
         // entry 01-05 @12, exit first bar >= +10d = 01-20 @15.
         assert_eq!(trades[0].exit_date, "2020-01-20");
@@ -498,12 +640,45 @@ mod tests {
             Some(false),
         ];
         // exit fires every bar; first exit after entry closes the single trade.
-        let exit = ExitKind::Condition(vec![Some(true); 6]);
-        let (trades, _) = simulate_trades(&d, &closes, &entry, &exit);
+        let exit = ExitConfig::new(ExitKind::Condition(vec![Some(true); 6]));
+        let hl = vec![None; closes.len()];
+        let (trades, _) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit);
         // Edge at bar1 -> exit bar2. Next edge would need a false->true flip;
         // entry stays true so no new edge until after it resets.
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0].entry_date, d[1]);
+    }
+
+    #[test]
+    fn stop_loss_fires_intra_bar_on_the_low() {
+        // Enter at bar1 @100; bar2 low dips to 80 (a 15% stop sits at 85).
+        let d = dates(4);
+        let closes = vec![Some(100.0), Some(100.0), Some(95.0), Some(95.0)];
+        let highs = vec![Some(100.0), Some(100.0), Some(98.0), Some(96.0)];
+        let lows = vec![Some(100.0), Some(100.0), Some(80.0), Some(94.0)];
+        let entry = vec![Some(false), Some(true), Some(false), Some(false)];
+        let mut exit = ExitConfig::new(ExitKind::HoldDays(365));
+        exit.stop_loss_pct = Some(15.0);
+        let (trades, _) = simulate_trades(&d, &closes, &highs, &lows, &entry, &exit);
+        assert_eq!(trades.len(), 1);
+        assert_eq!(trades[0].exit_reason, "stop");
+        assert!((trades[0].exit_price - 85.0).abs() < 1e-9); // exits at the stop, not the low
+        assert!((trades[0].return_pct + 15.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn take_profit_fires_intra_bar_on_the_high() {
+        let d = dates(4);
+        let closes = vec![Some(100.0), Some(100.0), Some(105.0), Some(105.0)];
+        let highs = vec![Some(100.0), Some(100.0), Some(140.0), Some(106.0)];
+        let lows = vec![Some(100.0), Some(100.0), Some(99.0), Some(104.0)];
+        let entry = vec![Some(false), Some(true), Some(false), Some(false)];
+        let mut exit = ExitConfig::new(ExitKind::HoldDays(365));
+        exit.take_profit_pct = Some(30.0);
+        let (trades, _) = simulate_trades(&d, &closes, &highs, &lows, &entry, &exit);
+        assert_eq!(trades.len(), 1);
+        assert_eq!(trades[0].exit_reason, "target");
+        assert!((trades[0].exit_price - 130.0).abs() < 1e-9);
     }
 
     #[test]

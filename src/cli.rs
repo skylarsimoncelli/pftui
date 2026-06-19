@@ -6233,6 +6233,15 @@ pub enum AnalyticsStrategyCommand {
         /// Exit rule: "hold <N>d" (default "hold 90d") or a condition expression
         #[arg(long)]
         exit: Option<String>,
+        /// Stop-loss percent (e.g. 15 = exit if price falls 15% from entry, checked intra-bar)
+        #[arg(long = "stop-loss")]
+        stop_loss: Option<f64>,
+        /// Take-profit percent (e.g. 30 = exit if price rises 30% from entry, checked intra-bar)
+        #[arg(long = "take-profit")]
+        take_profit: Option<f64>,
+        /// Trailing-stop percent (exit if price falls this % below the highest high since entry)
+        #[arg(long = "trailing-stop")]
+        trailing_stop: Option<f64>,
         /// Restrict the backtest to bars on/after this date (YYYY-MM-DD)
         #[arg(long)]
         from: Option<String>,

@@ -83,6 +83,9 @@ pub fn run_backtest(
     asset: &str,
     entry: &str,
     exit: Option<&str>,
+    stop_loss: Option<f64>,
+    take_profit: Option<f64>,
+    trailing_stop: Option<f64>,
     from: Option<&str>,
     to: Option<&str>,
     limit: Option<usize>,
@@ -93,8 +96,20 @@ pub fn run_backtest(
     };
     let entry_expr = parser::parse(entry)?;
     let exit_spec = strategy::parse_exit(exit)?;
+    let risk = strategy::RiskExits {
+        stop_loss_pct: stop_loss,
+        take_profit_pct: take_profit,
+        trailing_pct: trailing_stop,
+    };
     let (mut resolver, primary) = build_resolver(&loader, asset, from, to)?;
-    let report = strategy::run_backtest(&mut resolver, &entry_expr, &exit_spec)?;
+    let report = strategy::run_backtest(&mut resolver, &entry_expr, &exit_spec, risk)?;
+    let missing = resolver.missing_symbols();
+    if !missing.is_empty() {
+        bail!(
+            "referenced symbol(s) resolved to NO price history: {} — likely a typo, or a ticker with ^/=/- that must use its alias (gold, silver, us10y, fedfunds, dxy, vix). Validate with `analytics strategy explain`.",
+            missing.join(", ")
+        );
+    }
 
     if json_output {
         println!(
@@ -161,6 +176,31 @@ pub fn run_backtest(
         fmt_pct(b.cagr_pct),
         b.max_drawdown_pct,
     );
+    let fmt_ratio = |o: Option<f64>| o.map(|v| format!("{v:.2}")).unwrap_or_else(|| "—".into());
+    println!(
+        "Tearsheet: profit-factor {} | expectancy {} | payoff {} | Sortino {} | Calmar {} | max-consec-loss {}",
+        fmt_ratio(report.profit_factor),
+        fmt_pct(report.expectancy_pct),
+        fmt_ratio(report.payoff_ratio),
+        fmt_ratio(report.sortino_ratio),
+        fmt_ratio(report.calmar_ratio),
+        report.max_consecutive_losses,
+    );
+    println!(
+        "           avg win {} | avg loss {}",
+        fmt_pct(report.avg_win_pct),
+        fmt_pct(report.avg_loss_pct),
+    );
+    if !report.exit_reason_counts.is_empty()
+        && report.exit_reason_counts.keys().any(|k| k != "rule")
+    {
+        let mix: Vec<String> = report
+            .exit_reason_counts
+            .iter()
+            .map(|(k, n)| format!("{k} {n}"))
+            .collect();
+        println!("Exits:     {}", mix.join(" | "));
+    }
     if report.n_open_skipped > 0 {
         println!("(+{} open position not yet closed, excluded)", report.n_open_skipped);
     }
@@ -218,6 +258,13 @@ pub fn run_segment(
     let when_expr = parser::parse(when)?;
     let (mut resolver, primary) = build_resolver(&loader, asset, from, to)?;
     let report = strategy::run_segment(&mut resolver, &when_expr)?;
+    let missing = resolver.missing_symbols();
+    if !missing.is_empty() {
+        bail!(
+            "referenced symbol(s) resolved to NO price history: {} — likely a typo, or a ticker with ^/=/- that must use its alias (gold, silver, us10y, fedfunds, dxy, vix). Validate with `analytics strategy explain`.",
+            missing.join(", ")
+        );
+    }
 
     if json_output {
         println!(
@@ -263,6 +310,13 @@ pub fn run_compare(
     let vs_expr = parser::parse(vs)?;
     let (mut resolver, primary) = build_resolver(&loader, asset, from, to)?;
     let report = strategy::run_compare(&mut resolver, &when_expr, when_label, &vs_expr, vs_label)?;
+    let missing = resolver.missing_symbols();
+    if !missing.is_empty() {
+        bail!(
+            "referenced symbol(s) resolved to NO price history: {} — likely a typo, or a ticker with ^/=/- that must use its alias (gold, silver, us10y, fedfunds, dxy, vix). Validate with `analytics strategy explain`.",
+            missing.join(", ")
+        );
+    }
 
     if json_output {
         println!(

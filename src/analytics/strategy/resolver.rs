@@ -47,6 +47,14 @@ pub struct Resolver<'a> {
     primary_symbol: String,
     loader: &'a dyn SeriesLoader,
     raw_cache: HashMap<(String, PriceField), Vec<(String, f64)>>,
+    /// Memoized daily-aligned series (field + indicator) keyed by a stable
+    /// string — avoids recomputing `sma(close, 200)` each time it appears in an
+    /// expression (or across a parameter sweep).
+    series_cache: HashMap<String, Vec<Option<f64>>>,
+    /// Symbols referenced that resolved to ZERO data (likely typos / no history)
+    /// — surfaced so the caller can fail loudly instead of silently producing
+    /// an all-`None` mask.
+    missing: std::collections::BTreeSet<String>,
 }
 
 impl<'a> Resolver<'a> {
@@ -56,6 +64,8 @@ impl<'a> Resolver<'a> {
             primary_symbol: primary_symbol.to_string(),
             loader,
             raw_cache: HashMap::new(),
+            series_cache: HashMap::new(),
+            missing: std::collections::BTreeSet::new(),
         }
     }
 
@@ -67,11 +77,19 @@ impl<'a> Resolver<'a> {
         &self.master_dates
     }
 
+    /// Symbols referenced in resolved expressions that had no price history.
+    pub fn missing_symbols(&self) -> Vec<String> {
+        self.missing.iter().cloned().collect()
+    }
+
     fn raw(&mut self, symbol: &str, field: PriceField) -> Result<&[(String, f64)]> {
         let resolved = resolve_alias(symbol);
         let key = (resolved.clone(), field);
         if !self.raw_cache.contains_key(&key) {
             let series = self.loader.load(&resolved, field)?;
+            if series.is_empty() {
+                self.missing.insert(resolved.clone());
+            }
             self.raw_cache.insert(key.clone(), series);
         }
         Ok(self.raw_cache.get(&key).map(|v| v.as_slice()).unwrap())
@@ -97,14 +115,20 @@ impl<'a> Resolver<'a> {
         field: PriceField,
         tf: Timeframe,
     ) -> Result<Vec<Option<f64>>> {
+        let cache_key = format!("F:{}:{:?}:{:?}", symbol.unwrap_or("@"), field, tf);
+        if let Some(v) = self.series_cache.get(&cache_key) {
+            return Ok(v.clone());
+        }
         let bs = self.bucket_series(symbol, field, tf)?;
         let vals: Vec<Option<f64>> = bs.values.iter().map(|v| Some(*v)).collect();
-        Ok(project(&bs.end_date, &vals, &self.master_dates))
+        let out = project(&bs.end_date, &vals, &self.master_dates);
+        self.series_cache.insert(cache_key, out.clone());
+        Ok(out)
     }
 
     /// Resolve an indicator over a field reference to a daily-aligned series.
     /// The indicator is computed at the requested timeframe's bucket
-    /// granularity, then projected to daily.
+    /// granularity, then projected to daily. Memoized.
     pub fn indicator_series(
         &mut self,
         kind: IndicatorKind,
@@ -113,9 +137,22 @@ impl<'a> Resolver<'a> {
         period: usize,
         tf: Timeframe,
     ) -> Result<Vec<Option<f64>>> {
+        let cache_key = format!(
+            "I:{}:{:?}:{:?}:{}:{:?}",
+            symbol.unwrap_or("@"),
+            field,
+            kind,
+            period,
+            tf
+        );
+        if let Some(v) = self.series_cache.get(&cache_key) {
+            return Ok(v.clone());
+        }
         let bs = self.bucket_series(symbol, field, tf)?;
         let computed = compute_indicator(kind, &bs.values, period);
-        Ok(project(&bs.end_date, &computed, &self.master_dates))
+        let out = project(&bs.end_date, &computed, &self.master_dates);
+        self.series_cache.insert(cache_key, out.clone());
+        Ok(out)
     }
 }
 
