@@ -19,13 +19,21 @@ fn resolve_anchor(
     anchor: &str,
     anchor_date: Option<&str>,
 ) -> Result<(usize, String)> {
-    // Explicit date wins: first bar on/after it.
+    // Explicit date wins: first bar on/after it. Validate the format first so a
+    // malformed/unpadded date can't lexically anchor to the wrong bar.
     if let Some(d) = anchor_date {
+        // Parse then compare against the CANONICAL YYYY-MM-DD form, so an
+        // unpadded "2026-6-4" anchors to the right bar instead of mis-sorting
+        // lexically against the zero-padded dates in price_history.
+        let canonical = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+            .map_err(|_| anyhow::anyhow!("--anchor-date must be YYYY-MM-DD (got '{d}')"))?
+            .format("%Y-%m-%d")
+            .to_string();
         let idx = hist
             .iter()
-            .position(|b| b.date.as_str() >= d)
-            .ok_or_else(|| anyhow::anyhow!("no bar on/after anchor-date {d}"))?;
-        return Ok((idx, format!("explicit date {d}")));
+            .position(|b| b.date >= canonical)
+            .ok_or_else(|| anyhow::anyhow!("no bar on/after anchor-date {canonical}"))?;
+        return Ok((idx, format!("explicit date {canonical}")));
     }
     let find_date = |target: &str| hist.iter().position(|b| b.date.as_str() >= target);
     match anchor {
@@ -114,6 +122,8 @@ pub fn run(
                 "anchor_desc": anchor_desc,
                 "bars_since_anchor": bars_since,
                 "quality": av.quality,
+                "volume_coverage_pct": (av.volume_coverage * 100.0 * 100.0).round() / 100.0,
+                "null_volume_bars": av.null_volume_bars,
                 "avwap": av.current,
                 "price": price,
                 "pct_vs_avwap": pct_vs,
@@ -127,7 +137,15 @@ pub fn run(
     println!("═══ Anchored VWAP — {symbol} ({resolved}) ═══");
     println!("Anchor: {anchor_desc} · {bars_since} bars since\n");
     if degraded {
-        println!("⚠ DEGRADED: a bar in the window lacked volume → flat-weight anchored AVERAGE price (not a true VWAP).");
+        println!(
+            "⚠ DEGRADED: only {:.0}% of bars have volume → flat-weight anchored AVERAGE price (not a true VWAP).",
+            av.volume_coverage * 100.0
+        );
+    } else if av.null_volume_bars > 0 {
+        println!(
+            "(volume-weighted; {} of {} bars lacked volume and were skipped — {:.1}% coverage)",
+            av.null_volume_bars, bars_since, av.volume_coverage * 100.0
+        );
     }
     println!(
         "AVWAP {} | price {} | {} {}%",
