@@ -2,6 +2,7 @@ pub mod analog;
 pub mod calibration_scorer;
 pub mod catalysts;
 pub mod environment;
+pub mod evt;
 pub mod cyber;
 pub mod cycle_clock;
 pub mod cycle_engine;
