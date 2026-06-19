@@ -11,6 +11,7 @@ pub mod impact;
 pub mod levels;
 pub mod market_structure;
 pub mod narrative;
+pub mod positioning;
 pub mod regime_quad;
 pub mod risk;
 pub mod scenarios;

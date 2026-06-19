@@ -5552,6 +5552,19 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         #[arg(long)]
         json: bool,
     },
+    /// Synthesized positioning for an asset: analog forward returns + regime quad + cycle clock, with honesty stats
+    #[command(after_help = "Composes the measured analog forward-return distribution, the growth×inflation\nregime quad, and the cycle clock into a single auditable stance (each driver shows its\nscore, weight, and reason). Applies a humility default — thin analog evidence or a CI\nstraddling zero caps confidence and says so.\n\nExample:\n  pftui analytics positioning --asset BTC --horizon 90 --json")]
+    Positioning {
+        /// Asset to position (alias or ticker)
+        #[arg(long)]
+        asset: String,
+        #[arg(long, default_value_t = 90)]
+        horizon: i64,
+        #[arg(long, default_value_t = 25)]
+        k: usize,
+        #[arg(long)]
+        json: bool,
+    },
     /// Strategy backtesting: define trade conditions as an expression and test them against full price history
     #[command(after_help = "Define a trade rule as an expression over price, indicators, and timeframes,\nthen backtest it against the full historical price database.\n\nExpression language:\n  close, open, high, low, volume        primary asset's daily field\n  close(BTC), close(GC=F)               another symbol (alias-resolved)\n  sma(close, 200), ema(close, 21)       moving averages\n  rsi(14), rsi(close(BTC), 14)          RSI\n  ... @weekly | @monthly                evaluate at a higher timeframe\n  >  <  >=  <=  ==                       comparisons\n  crosses_above / crosses_below         strict edge crossings\n  and  or  not                          boolean logic\n\nInterest-rate proxies are ordinary symbols: us10y/^TNX, fedfunds/^IRX, so\n'rate hiking vs cutting' is just a moving-average crossing on a yield series.\n\nExamples:\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\" --exit \"hold 365d\" --json\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) @monthly < 90\" --exit \"hold 90d\"\n  pftui analytics strategy segment --asset GC=F --when \"us10y > sma(us10y, 200)\"\n  pftui analytics strategy compare --asset GC=F --when \"us10y > sma(us10y, 200)\" --when-label hiking --vs \"us10y < sma(us10y, 200)\" --vs-label cutting\n  pftui analytics strategy explain --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\"\n\nReturns are statistics over price ratios (percent / growth), not monetary balances.")]
     Strategy {
