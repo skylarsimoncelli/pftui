@@ -5442,6 +5442,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                 exclude_days,
                 json,
             ),
+            cli::AnalyticsCommand::Positioning {
+                asset,
+                horizon,
+                k,
+                json,
+            } => commands::environment_cmd::run_positioning(&backend, &asset, horizon, k, json),
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,

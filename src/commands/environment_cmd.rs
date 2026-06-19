@@ -9,10 +9,12 @@ use anyhow::{bail, Result};
 use rusqlite::Connection;
 use serde_json::json;
 
-use crate::analytics::analog;
 use crate::analytics::environment::{self, ENV_SYMBOLS};
+use crate::analytics::regime_quad::Quad;
 use crate::analytics::strategy::resolver::resolve_alias;
+use crate::analytics::{analog, cycle_clock, positioning};
 use crate::db::backend::BackendConnection;
+use crate::db::price_history;
 
 /// Load a symbol's full oldest-first `(date, close)` series from price_history.
 fn load_series(conn: &Connection, symbol: &str) -> Result<Vec<(String, f64)>> {
@@ -162,6 +164,101 @@ pub fn run_analog(
                 .unwrap_or_else(|| "—".into())
         );
     }
+    Ok(())
+}
+
+/// Derive a coarse cycle lean (score, detail) from the cycle clock for the
+/// assets that have one (BTC, gold). None for everything else.
+fn cycle_lean(conn: &Connection, resolved: &str) -> Option<(f64, String)> {
+    let up = resolved.to_uppercase();
+    let history = price_history::get_history(conn, resolved, u32::MAX).ok()?;
+    if history.len() < 200 {
+        return None;
+    }
+    if up.contains("BTC") {
+        let c = cycle_clock::btc_cycle_clock(resolved, &history)?;
+        let mut score = 0.0f64;
+        // Below the prior cycle high = the measured accumulation zone (mild +).
+        if c.major_cycle_test.as_ref().map(|t| !t.above_prior_high).unwrap_or(false) {
+            score += 0.2;
+        }
+        // Inside the Loukas low band = additional accumulation lean.
+        if c.loukas.as_ref().map(|l| l.in_band).unwrap_or(false) {
+            score += 0.1;
+        }
+        Some((score.clamp(-1.0, 1.0), c.verdict))
+    } else if up.contains("GC=F") || up.contains("GOLD") {
+        let c = cycle_clock::gold_cycle_clock(resolved, &history)?;
+        // Early in the cycle (before the half-cycle mark) = mild accumulation lean.
+        let score = if c.past_half_cycle == Some(false) { 0.1 } else { 0.0 };
+        Some((score, c.verdict))
+    } else {
+        None
+    }
+}
+
+pub fn run_positioning(
+    backend: &BackendConnection,
+    asset: &str,
+    horizon_days: i64,
+    k: usize,
+    json_output: bool,
+) -> Result<()> {
+    let conn = backend.sqlite();
+    let env = build_env(conn)?;
+    let resolved = resolve_alias(asset);
+    let target = load_series(conn, &resolved)?;
+    if target.is_empty() {
+        bail!("no price history for '{asset}' (resolved '{resolved}')");
+    }
+    let analog_rep = analog::run(&env, &resolved, &target, horizon_days, k, 90)
+        .ok_or_else(|| anyhow::anyhow!("insufficient data to compute analogs"))?;
+    let quad = Quad::from_short(&analog_rep.query_regime);
+    let cycle = cycle_lean(conn, &resolved);
+    let card = positioning::synthesize(asset, &analog_rep.query_date, &analog_rep, quad, cycle);
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "command": "positioning",
+                "card": card,
+            }))?
+        );
+        return Ok(());
+    }
+
+    println!("═══ Positioning — {} ({}) ═══", asset, card.as_of);
+    println!(
+        "Stance: {}  |  confidence {:.0}%  |  blend {:+.2}  |  regime {}",
+        card.stance.label(),
+        card.confidence_pct,
+        card.blend_score,
+        card.regime.to_uppercase(),
+    );
+    println!();
+    println!("Drivers:");
+    for d in &card.drivers {
+        println!(
+            "  {:<24} {:+.2} (w{:.0}%)  {}",
+            d.name,
+            d.score,
+            d.weight * 100.0,
+            d.detail
+        );
+    }
+    println!();
+    if let Some(m) = card.analog_median_forward_pct {
+        let ci = card
+            .analog_ci_pct
+            .map(|(lo, hi)| format!(" (90% CI [{lo:+.1}%, {hi:+.1}%])"))
+            .unwrap_or_default();
+        println!(
+            "Measured anchor: {} analogs, median forward {:+.1}%{}",
+            card.analog_n, m, ci
+        );
+    }
+    println!("Honesty: {}", card.honesty_note);
     Ok(())
 }
 
