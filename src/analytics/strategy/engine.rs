@@ -47,6 +47,145 @@ impl ExitConfig {
     }
 }
 
+/// Volatility-targeting position sizing config.
+#[derive(Debug, Clone, Copy)]
+pub struct SizingConfig {
+    /// Target annualized volatility, percent (e.g. 20.0 = 20%/yr).
+    pub vol_target_pct: f64,
+    /// Trailing window (bars) for the realized-vol estimate at each entry.
+    pub vol_window: usize,
+    /// Cap on the per-trade leverage weight (e.g. 3.0 = never size above 3×).
+    pub max_leverage: f64,
+}
+
+/// Result of applying vol-targeting to a trade list — the risk-normalized
+/// equity curve alongside the leverage actually used. Each trade is weighted by
+/// `clip(vol_target / realized_vol_at_entry, 0, max_leverage)`, so the strategy
+/// holds roughly constant risk: it de-risks into high-vol regimes and adds size
+/// in quiet ones. Makes assets with very different vol (BTC vs gold) comparable.
+#[derive(Debug, Clone, Serialize)]
+pub struct SizedStats {
+    pub vol_target_pct: f64,
+    pub vol_window: usize,
+    pub max_leverage: f64,
+    /// Leverage weight applied across trades (mean / min / max).
+    pub avg_leverage: f64,
+    pub min_leverage: f64,
+    pub max_leverage_used: f64,
+    /// Compounded equity of the SIZED curve (percent) + its CAGR / max-DD.
+    pub sized_total_return_pct: f64,
+    pub sized_cagr_pct: Option<f64>,
+    pub sized_max_drawdown_pct: f64,
+    /// Sortino of the sized per-trade returns (downside-deviation adjusted).
+    pub sized_sortino_ratio: Option<f64>,
+}
+
+/// Trailing annualized realized volatility (percent) of daily close-to-close
+/// returns over the last `window` returns ending at each bar. `None` until the
+/// window is full or where data is missing.
+fn trailing_realized_vol(closes: &[Option<f64>], window: usize) -> Vec<Option<f64>> {
+    let n = closes.len();
+    let mut out = vec![None; n];
+    if window < 2 {
+        return out;
+    }
+    // Daily log-free simple returns, aligned to bar i (return into bar i).
+    let mut rets: Vec<Option<f64>> = vec![None; n];
+    for i in 1..n {
+        if let (Some(a), Some(b)) = (closes[i - 1], closes[i]) {
+            if a > 0.0 {
+                rets[i] = Some(b / a - 1.0);
+            }
+        }
+    }
+    #[allow(clippy::needless_range_loop)] // index drives both the window and out[i]
+    for i in 0..n {
+        if i + 1 < window {
+            continue;
+        }
+        let w: Vec<f64> = (i + 1 - window..=i).filter_map(|j| rets[j]).collect();
+        if w.len() < window.saturating_sub(1).max(2) {
+            continue; // too many gaps in the window
+        }
+        let mean = w.iter().sum::<f64>() / w.len() as f64;
+        let var = w.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (w.len() as f64 - 1.0);
+        out[i] = Some(var.sqrt() * TRADING_DAYS.sqrt() * 100.0);
+    }
+    out
+}
+
+/// Apply vol-targeting to a trade list, producing the sized equity stats.
+pub fn sized_stats(
+    dates: &[String],
+    closes: &[Option<f64>],
+    trades: &[Trade],
+    years: f64,
+    cfg: SizingConfig,
+) -> Option<SizedStats> {
+    if trades.is_empty() || cfg.vol_target_pct <= 0.0 {
+        return None;
+    }
+    let vol = trailing_realized_vol(closes, cfg.vol_window);
+    let date_idx: std::collections::HashMap<&str, usize> =
+        dates.iter().enumerate().map(|(i, d)| (d.as_str(), i)).collect();
+    let mut equity = 1.0f64;
+    let mut peak = 1.0f64;
+    let mut max_dd = 0.0f64;
+    let mut levs: Vec<f64> = Vec::with_capacity(trades.len());
+    let mut sized_rets: Vec<f64> = Vec::with_capacity(trades.len());
+    for t in trades {
+        let lev = match date_idx.get(t.entry_date.as_str()).and_then(|i| vol[*i]) {
+            Some(v) if v > 0.0 => (cfg.vol_target_pct / v).clamp(0.0, cfg.max_leverage),
+            // Unknown vol at entry (warmup/gap): neutral full weight.
+            _ => 1.0,
+        };
+        levs.push(lev);
+        let r = lev * (t.return_pct / 100.0);
+        sized_rets.push(r);
+        equity *= 1.0 + r;
+        if equity > peak {
+            peak = equity;
+        }
+        let dd = (equity / peak - 1.0) * 100.0;
+        if dd < max_dd {
+            max_dd = dd;
+        }
+    }
+    let nlev = levs.len() as f64;
+    let avg_leverage = levs.iter().sum::<f64>() / nlev;
+    let min_leverage = levs.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max_leverage_used = levs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let sized_total_return_pct = (equity - 1.0) * 100.0;
+    let sized_cagr_pct = (years > 0.0)
+        .then(|| (equity.powf(1.0 / years) - 1.0) * 100.0)
+        .filter(|v| v.is_finite());
+    // Sortino over the sized per-trade returns.
+    let n = sized_rets.len();
+    let sized_sortino_ratio = (n >= 3).then(|| {
+        let mean = sized_rets.iter().sum::<f64>() / n as f64;
+        let downside =
+            sized_rets.iter().filter(|r| **r < 0.0).map(|r| r * r).sum::<f64>() / n as f64;
+        let dd = downside.sqrt();
+        if dd > 0.0 {
+            mean / dd
+        } else {
+            f64::INFINITY
+        }
+    }).filter(|v| v.is_finite());
+    Some(SizedStats {
+        vol_target_pct: cfg.vol_target_pct,
+        vol_window: cfg.vol_window,
+        max_leverage: cfg.max_leverage,
+        avg_leverage,
+        min_leverage,
+        max_leverage_used,
+        sized_total_return_pct,
+        sized_cagr_pct,
+        sized_max_drawdown_pct: max_dd,
+        sized_sortino_ratio,
+    })
+}
+
 /// Execution realism: per-side trading frictions and fill timing. The default
 /// (all zero, same-bar fill) reproduces the original cost-free behaviour, so
 /// existing results are unchanged unless costs are explicitly requested.
@@ -132,6 +271,9 @@ pub struct TradeReport {
     /// distribution (None below 20 trades). Shows the realistic worst-case
     /// drawdown the single historical curve hides.
     pub monte_carlo: Option<crate::research::validation::MonteCarloPaths>,
+    /// Vol-targeted sizing stats (None unless `--vol-target` was requested) —
+    /// the risk-normalized equity curve + leverage actually used.
+    pub sizing: Option<SizedStats>,
     pub trades: Vec<Trade>,
 }
 
@@ -498,6 +640,7 @@ pub fn trade_report(
         benchmark_hold: bench,
         validation: trade_validation(&trades),
         monte_carlo,
+        sizing: None, // set by run_backtest when --vol-target is requested
         trades,
     }
 }
@@ -745,6 +888,50 @@ mod tests {
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0].exit_reason, "target");
         assert!((trades[0].exit_price - 130.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn vol_target_sizing_scales_leverage_and_equity() {
+        // 40 bars of mild zig-zag (gives a finite realized vol), two trades.
+        let base = NaiveDate::from_ymd_opt(2021, 1, 1).unwrap();
+        let d: Vec<String> = (0..40)
+            .map(|i| (base + chrono::Duration::days(i)).format("%Y-%m-%d").to_string())
+            .collect();
+        let closes: Vec<Option<f64>> = (0..40)
+            .map(|i| Some(100.0 + (i % 3) as f64)) // small bounded moves
+            .collect();
+        let mk = |ei: usize, xi: usize, ret: f64| Trade {
+            entry_date: d[ei].clone(),
+            entry_price: 100.0,
+            exit_date: d[xi].clone(),
+            exit_price: 100.0 * (1.0 + ret / 100.0),
+            return_pct: ret,
+            bars_held: xi - ei,
+            days_held: (xi - ei) as i64,
+            exit_reason: "rule".into(),
+        };
+        let trades = vec![mk(35, 36, 10.0), mk(37, 38, 10.0)];
+
+        // Huge vol target → every weight clamps to the cap; sized returns amplify.
+        let big = sized_stats(&d, &closes, &trades, 1.0, SizingConfig {
+            vol_target_pct: 1_000_000.0,
+            vol_window: 30,
+            max_leverage: 3.0,
+        })
+        .unwrap();
+        assert!((big.avg_leverage - 3.0).abs() < 1e-9, "lev capped at 3, got {}", big.avg_leverage);
+        // Two +10% trades at 3× ≈ (1.3)^2 − 1 = 69%.
+        assert!((big.sized_total_return_pct - 69.0).abs() < 1e-6, "got {}", big.sized_total_return_pct);
+
+        // Tiny vol target → near-zero leverage → sized return ≈ 0.
+        let small = sized_stats(&d, &closes, &trades, 1.0, SizingConfig {
+            vol_target_pct: 0.0001,
+            vol_window: 30,
+            max_leverage: 3.0,
+        })
+        .unwrap();
+        assert!(small.avg_leverage < 0.01, "lev tiny, got {}", small.avg_leverage);
+        assert!(small.sized_total_return_pct.abs() < 0.1, "got {}", small.sized_total_return_pct);
     }
 
     #[test]

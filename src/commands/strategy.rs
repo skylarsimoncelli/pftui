@@ -89,6 +89,9 @@ pub fn run_backtest(
     commission: Option<f64>,
     slippage: Option<f64>,
     next_bar_fill: bool,
+    vol_target: Option<f64>,
+    vol_window: usize,
+    max_leverage: f64,
     from: Option<&str>,
     to: Option<&str>,
     limit: Option<usize>,
@@ -140,8 +143,28 @@ pub fn run_backtest(
         slippage_pct: slippage.unwrap_or(0.0),
         fill_delay_bars: if next_bar_fill { 1 } else { 0 },
     };
+    // Vol-target sizing (opt-in). Validate the knobs.
+    let sizing = if let Some(vt) = vol_target {
+        if vt <= 0.0 {
+            bail!("--vol-target must be a positive annualized percent (got {vt})");
+        }
+        if vol_window < 2 {
+            bail!("--vol-window must be at least 2 bars (got {vol_window})");
+        }
+        if max_leverage <= 0.0 {
+            bail!("--max-leverage must be positive (got {max_leverage})");
+        }
+        Some(strategy::SizingConfig {
+            vol_target_pct: vt,
+            vol_window,
+            max_leverage,
+        })
+    } else {
+        None
+    };
     let (mut resolver, primary) = build_resolver(&loader, asset, from, to)?;
-    let report = strategy::run_backtest(&mut resolver, &entry_expr, &exit_spec, risk, cost)?;
+    let report =
+        strategy::run_backtest(&mut resolver, &entry_expr, &exit_spec, risk, cost, sizing)?;
     let missing = resolver.missing_symbols();
     if !missing.is_empty() {
         bail!(
@@ -290,7 +313,7 @@ pub fn run_backtest(
     }
     if let Some(mc) = &report.monte_carlo {
         println!(
-            "Monte-Carlo: {} paths — terminal {:+.0}% / {:+.0}% / {:+.0}% (p5/50/95) | drawdown med {:.0}% · bad(p95) {:.0}% · worst(p99) {:.0}% | P(loss) {:.0}%",
+            "Monte-Carlo: {} paths — terminal {:+.0}% / {:+.0}% / {:+.0}% (unlucky/median/lucky) | drawdown: typical {:.0}%, 1-in-20 path {:.0}%, 1-in-100 path {:.0}% | P(loss) {:.0}%",
             mc.n_paths,
             mc.terminal_return_p5_pct,
             mc.terminal_return_p50_pct,
@@ -299,6 +322,20 @@ pub fn run_backtest(
             mc.drawdown_p95_pct,
             mc.drawdown_p99_pct,
             mc.prob_loss_pct,
+        );
+    }
+    if let Some(s) = &report.sizing {
+        println!(
+            "Sizing:    vol-target {:.0}% (≤{:.1}× lev) — sized total {:+.1}% | CAGR {} | maxDD {:.1}% | Sortino {} | leverage avg {:.2}× (range {:.2}–{:.2}×)",
+            s.vol_target_pct,
+            s.max_leverage,
+            s.sized_total_return_pct,
+            fmt_pct(s.sized_cagr_pct),
+            s.sized_max_drawdown_pct,
+            s.sized_sortino_ratio.map(|v| format!("{v:.2}")).unwrap_or_else(|| "—".into()),
+            s.avg_leverage,
+            s.min_leverage,
+            s.max_leverage_used,
         );
     }
     println!();

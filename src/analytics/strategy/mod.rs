@@ -19,7 +19,7 @@ use engine::{
     buy_hold, segment_stats, simulate_trades, BenchStats, CostModel, ExitKind, SegmentStats,
     TradeReport,
 };
-pub use engine::CostModel as Costs;
+pub use engine::{CostModel as Costs, SizingConfig};
 use parser::Expr;
 use resolver::Resolver;
 
@@ -72,6 +72,7 @@ pub fn run_backtest(
     exit: &ExitSpec,
     risk: RiskExits,
     cost: CostModel,
+    sizing: Option<SizingConfig>,
 ) -> Result<TradeReport> {
     let dates = resolver.master_dates().to_vec();
     let closes = resolver.field_series(None, parser::PriceField::Close, parser::Timeframe::Daily)?;
@@ -91,7 +92,12 @@ pub fn run_backtest(
     exit_cfg.trailing_pct = risk.trailing_pct;
     let (trades, open_skipped) =
         simulate_trades(&dates, &closes, &highs, &lows, &entry_mask, &exit_cfg, &cost);
-    Ok(engine::trade_report(&dates, &closes, trades, open_skipped))
+    let mut report = engine::trade_report(&dates, &closes, trades, open_skipped);
+    if let Some(cfg) = sizing {
+        report.sizing =
+            engine::sized_stats(&dates, &closes, &report.trades, report.benchmark_hold.years, cfg);
+    }
+    Ok(report)
 }
 
 #[derive(serde::Serialize)]
