@@ -40,7 +40,17 @@ pub fn run(backend: &BackendConnection, symbol: &str, json_output: bool) -> Resu
     let highs_opt: Vec<Option<f64>> = highs.iter().map(|v| Some(*v)).collect();
     let lows_opt: Vec<Option<f64>> = lows.iter().map(|v| Some(*v)).collect();
     let vols: Vec<f64> = hist.iter().map(|h| h.volume.map(|v| v as f64).unwrap_or(0.0)).collect();
-    let has_volume = vols.iter().any(|v| *v > 0.0);
+    // Coverage over the recent window that the indicators actually read. A single
+    // nonzero/real bar must NOT flip a series "on" — sparse OHLC/volume produces
+    // degenerate inputs (high=low=close, or money-flow on a near-empty series)
+    // that would otherwise print confident garbage (e.g. MFI=100 on a no-volume
+    // ETF). Require ≥80% real coverage over the window before trusting a family.
+    let cov_n = hist.len().min(60);
+    let recent = &hist[hist.len() - cov_n..];
+    let ohlc_cov = recent.iter().filter(|h| h.high.is_some() && h.low.is_some()).count() as f64 / cov_n as f64;
+    let vol_cov = recent.iter().filter(|h| h.volume.map(|v| v > 0).unwrap_or(false)).count() as f64 / cov_n as f64;
+    let ohlc_ok = ohlc_cov >= 0.8;
+    let has_volume = vol_cov >= 0.8;
 
     // Compute.
     let rsi = last(&compute_rsi(&closes, 14));
@@ -82,21 +92,26 @@ pub fn run(backend: &BackendConnection, symbol: &str, json_output: bool) -> Resu
             bear += 1;
         }
     };
+    // RSI and MACD/SMA are close-only — always trustworthy. The range-based
+    // family (Stoch/Williams/CCI/ADX) only votes when OHLC coverage is good;
+    // otherwise it is computed on close-collapsed bars and must not count.
     if let Some(r) = rsi {
         tally(r < 30.0, r > 70.0);
     }
-    if let Some(s) = stoch {
-        tally(s.k < 20.0, s.k > 80.0);
-    }
-    if let Some(w) = willr {
-        tally(w < -80.0, w > -20.0);
-    }
-    if let Some(c) = cci {
-        tally(c < -100.0, c > 100.0);
-    }
-    if let Some(a) = adx {
-        // Directional bias only counts when the trend is real (ADX > 20).
-        tally(a.adx > 20.0 && a.plus_di > a.minus_di, a.adx > 20.0 && a.minus_di > a.plus_di);
+    if ohlc_ok {
+        if let Some(s) = stoch {
+            tally(s.k < 20.0, s.k > 80.0);
+        }
+        if let Some(w) = willr {
+            tally(w < -80.0, w > -20.0);
+        }
+        if let Some(c) = cci {
+            tally(c < -100.0, c > 100.0);
+        }
+        if let Some(a) = adx {
+            // Directional bias only counts when the trend is real (ADX > 20).
+            tally(a.adx > 20.0 && a.plus_di > a.minus_di, a.adx > 20.0 && a.minus_di > a.plus_di);
+        }
     }
     if let Some(m) = &macd {
         tally(m.histogram > 0.0, m.histogram < 0.0);
@@ -142,20 +157,37 @@ pub fn run(backend: &BackendConnection, symbol: &str, json_output: bool) -> Resu
                     "atr_14": atr,
                     "bb_pct_b": bb.map(|b| if b.upper > b.lower { (price - b.lower) / (b.upper - b.lower) } else { 0.5 }),
                 },
+                "coverage": {
+                    "ohlc": ohlc_cov,
+                    "volume": vol_cov,
+                    // Range indicators (stoch/williams/cci/adx/atr) are reliable
+                    // only when ohlc_ok; range_indicators_degraded flags otherwise.
+                    "range_indicators_degraded": !ohlc_ok,
+                },
                 "scorecard": { "bullish": bull, "bearish": bear },
             }))?
         );
         return Ok(());
     }
 
-    let f = |o: Option<f64>, dp: usize| o.map(|v| format!("{v:.*}", dp)).unwrap_or_else(|| "—".into());
+    // Format with signed-zero suppression: a value that rounds to zero at `dp`
+    // prints as a clean "0.0", never "-0.0".
+    let f = |o: Option<f64>, dp: usize| {
+        o.map(|v| {
+            let scale = 10f64.powi(dp as i32);
+            let v = if (v * scale).round() == 0.0 { 0.0 } else { v };
+            format!("{v:.*}", dp)
+        })
+        .unwrap_or_else(|| "—".into())
+    };
     let tag = |v: Option<f64>, lo: f64, hi: f64| match v {
         Some(x) if x < lo => " (oversold)",
         Some(x) if x > hi => " (overbought)",
         _ => "",
     };
+    let degraded = if ohlc_ok { "" } else { "  ⚠ close-only (sparse OHLC — range indicators unreliable, excluded from scorecard)" };
     println!("═══ Indicator Panel — {} ({}) ═══", symbol, resolved);
-    println!("As of {as_of} · price {price:.2}\n");
+    println!("As of {as_of} · price {price:.2}{degraded}\n");
     println!(
         "Momentum:   RSI(14) {}{} | Stoch %K {} %D {} | Williams%R {} | CCI(20) {} | ROC(10) {}%",
         f(rsi, 1),
