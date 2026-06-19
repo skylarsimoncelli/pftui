@@ -3,6 +3,7 @@
 //! Pure functions that compute RSI, MACD, SMA, Bollinger Bands, ATR, and correlation
 //! from price history slices (`&[f64]`). No I/O, no side effects — just math.
 
+pub mod anchored_vwap;
 pub mod atr;
 pub mod bollinger;
 pub mod correlation;
