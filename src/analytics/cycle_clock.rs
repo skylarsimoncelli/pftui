@@ -104,7 +104,24 @@ pub struct BtcCycleClock {
     pub mayer_multiple: Option<Decimal>,
     pub ma_200w: Option<Decimal>,
     pub pct_vs_200wma: Option<Decimal>,
+    /// The falsifiable 4-year-intact vs 16-18y-major-top adjudication.
+    pub major_cycle_test: Option<MajorCycleTest>,
     pub verdict: String,
+}
+
+/// The single falsifiable test that separates "the 4-year cycle is intact"
+/// from "the larger (Loukas ~16-18y) cycle has topped": after the next cycle
+/// low, does the rally CLEAR the prior cycle high (4yr-intact → new bull) or
+/// fail beneath it (major-top → lower high). Until the next low forms the test
+/// is pending; the level to clear is reported either way.
+#[derive(Debug, Clone, Serialize)]
+pub struct MajorCycleTest {
+    pub prior_cycle_high: Decimal,
+    pub prior_cycle_high_date: String,
+    /// Current close vs the prior cycle high (negative = below it).
+    pub pct_vs_prior_high: Decimal,
+    pub above_prior_high: bool,
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -241,6 +258,35 @@ pub fn btc_cycle_clock(series: &str, history: &[HistoryRecord]) -> Option<BtcCyc
     let ma_200w = sma_last(&weekly_closes, 200).map(|d| d.round_dp(2));
     let pct_vs_200wma = ma_200w.and_then(|ma| pct_vs(last_close, ma));
 
+    // Major-vs-4yr falsifiable test: the prior cycle high is the all-time-high
+    // close; the next cycle's rally either clears it (4yr-intact) or fails it
+    // (major top). Reported live with the level to clear.
+    let major_cycle_test = history
+        .iter()
+        .filter_map(|r| parse_date(&r.date).map(|d| (d, r.close)))
+        .max_by(|a, b| a.1.cmp(&b.1))
+        .map(|(d, high)| {
+            let pct = pct_vs(last_close, high).unwrap_or(Decimal::ZERO);
+            let above = last_close >= high;
+            let note = if above {
+                "price is AT/ABOVE the prior cycle high — the 4-year-intact read \
+                 is live; a confirmed cycle low followed by a HIGHER high keeps it intact"
+                    .to_string()
+            } else {
+                "test PENDING the next cycle low: the post-low rally clearing this \
+                 level confirms 4-year-intact; failing beneath it confirms the \
+                 Loukas major-cycle top (a lower high)"
+                    .to_string()
+            };
+            MajorCycleTest {
+                prior_cycle_high: high.round_dp(2),
+                prior_cycle_high_date: d.format("%Y-%m-%d").to_string(),
+                pct_vs_prior_high: pct,
+                above_prior_high: above,
+                note,
+            }
+        });
+
     let mut parts: Vec<String> = vec![format!(
         "day {days_since_halving} post-halving (Olson day-900 = {})",
         olson_date.format("%Y-%m-%d")
@@ -277,6 +323,14 @@ pub fn btc_cycle_clock(series: &str, history: &[HistoryRecord]) -> Option<BtcCyc
     if let Some(p) = pct_vs_200wma {
         parts.push(format!("{p:+}% vs 200w MA"));
     }
+    if let Some(t) = &major_cycle_test {
+        parts.push(format!(
+            "major-vs-4yr: {} prior high {} ({:+}%)",
+            if t.above_prior_high { "at/above" } else { "below" },
+            t.prior_cycle_high,
+            t.pct_vs_prior_high
+        ));
+    }
     let verdict = format!("BTC: {}", parts.join(", "));
 
     Some(BtcCycleClock {
@@ -295,6 +349,7 @@ pub fn btc_cycle_clock(series: &str, history: &[HistoryRecord]) -> Option<BtcCyc
         mayer_multiple,
         ma_200w,
         pct_vs_200wma,
+        major_cycle_test,
         verdict,
     })
 }
@@ -526,6 +581,25 @@ mod tests {
         assert!(loukas.in_band);
         assert!(clock.midterm_h2);
         assert!(clock.verdict.contains("IN BAND"), "{}", clock.verdict);
+    }
+
+    #[test]
+    fn btc_clock_major_cycle_test_reports_prior_high() {
+        // Base 50k with a 120k ATH spike in 2025-10; last close (flat 50k) is
+        // below it -> test pending, level to clear = 120k.
+        let history = flat_history(
+            "2018-01-01",
+            "2026-06-18",
+            dec!(50000),
+            &[("2022-11-21", dec!(15787)), ("2025-10-06", dec!(120000))],
+        );
+        let clock = btc_cycle_clock("BTC-USD", &history).unwrap();
+        let t = clock.major_cycle_test.as_ref().unwrap();
+        assert_eq!(t.prior_cycle_high, dec!(120000));
+        assert_eq!(t.prior_cycle_high_date, "2025-10-06");
+        assert!(!t.above_prior_high);
+        assert!(t.pct_vs_prior_high < dec!(0)); // below the high
+        assert!(t.note.contains("PENDING"));
     }
 
     #[test]

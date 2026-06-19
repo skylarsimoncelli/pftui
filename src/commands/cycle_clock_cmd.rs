@@ -71,6 +71,12 @@ pub fn run(backend: &BackendConnection, asset: Option<&str>, json_output: bool) 
                     .unwrap_or_else(|| "unknown".to_string())
             );
         }
+        if let Some(t) = &b.major_cycle_test {
+            println!(
+                "    major-vs-4yr test: prior cycle high {} ({}), now {:+}% — {}",
+                t.prior_cycle_high, t.prior_cycle_high_date, t.pct_vs_prior_high, t.note
+            );
+        }
         println!();
     }
     if let Some(g) = &gold {

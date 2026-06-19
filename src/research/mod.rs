@@ -30,3 +30,4 @@ pub mod forecast_scoring;
 pub mod registry;
 pub mod shadow_book;
 pub mod thesis_verify;
+pub mod validation;

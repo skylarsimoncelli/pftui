@@ -33,6 +33,7 @@ fn known_variables() -> HashSet<&'static str> {
         "SECTION_CATALOG",
         "CTX",
         "DEEP",
+        "DATE_HUMAN",
     ]
     .into_iter()
     .collect()
