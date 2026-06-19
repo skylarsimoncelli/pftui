@@ -47,6 +47,25 @@ impl ExitConfig {
     }
 }
 
+/// Execution realism: per-side trading frictions and fill timing. The default
+/// (all zero, same-bar fill) reproduces the original cost-free behaviour, so
+/// existing results are unchanged unless costs are explicitly requested.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CostModel {
+    /// Commission per side as a percent of notional (0.1 = 0.1%). Charged on
+    /// both entry and exit → a round-trip drag of `2 × commission_pct`.
+    pub commission_pct: f64,
+    /// Slippage per side as a percent: entries fill `slippage_pct` HIGHER and
+    /// exits `slippage_pct` LOWER than the reference price (you cross the
+    /// spread against yourself both ways).
+    pub slippage_pct: f64,
+    /// Bars to wait between the signal bar and the fill. 0 = fill at the
+    /// signal bar's close (same-bar); 1 = fill at the NEXT bar's close — the
+    /// honest default for a signal only known after its bar closes (removes the
+    /// same-bar look-ahead that flatters the equity curve and the gauntlet).
+    pub fill_delay_bars: usize,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Trade {
     pub entry_date: String,
@@ -216,9 +235,12 @@ pub fn simulate_trades(
     lows: &[Option<f64>],
     entry: &[Option<bool>],
     exit: &ExitConfig,
+    cost: &CostModel,
 ) -> (Vec<Trade>, usize) {
     let n = dates.len().min(closes.len()).min(entry.len());
     let parsed = parse_dates(dates);
+    let slip = cost.slippage_pct / 100.0;
+    let round_trip_commission = 2.0 * cost.commission_pct / 100.0;
     let mut trades = Vec::new();
     let mut open_skipped = 0usize;
     let mut i = 1usize; // edge needs a previous bar
@@ -228,8 +250,12 @@ pub fn simulate_trades(
             i += 1;
             continue;
         }
-        let (entry_price, entry_date, entry_nd) = match (closes[i], parsed[i]) {
-            (Some(p), Some(d)) if p > 0.0 => (p, dates[i].clone(), d),
+        // The fill lands `fill_delay_bars` after the signal bar (next-bar fill
+        // removes same-bar look-ahead). The reference price is that bar's close;
+        // slippage moves the actual entry fill against us (higher).
+        let fill_bar = i + cost.fill_delay_bars;
+        let (entry_price, entry_date, entry_nd) = match (closes.get(fill_bar).copied().flatten(), parsed.get(fill_bar).copied().flatten()) {
+            (Some(p), Some(d)) if p > 0.0 => (p * (1.0 + slip), dates[fill_bar].clone(), d),
             _ => {
                 i += 1;
                 continue;
@@ -239,9 +265,9 @@ pub fn simulate_trades(
         let target_price = exit.take_profit_pct.map(|p| entry_price * (1.0 + p / 100.0));
         let mut peak = entry_price; // highest high since entry, for the trailing stop
 
-        // Walk bars j > i, taking the first exit.
+        // Walk bars j > fill_bar, taking the first exit.
         let mut outcome: Option<(usize, f64, &'static str)> = None; // (idx, exit_price, reason)
-        let mut j = i + 1;
+        let mut j = fill_bar + 1;
         while j < n {
             let Some(close_j) = closes[j] else {
                 j += 1;
@@ -284,16 +310,20 @@ pub fn simulate_trades(
         }
 
         match outcome {
-            Some((j, exit_price, reason)) => {
+            Some((j, exit_ref, reason)) => {
                 let exit_nd = parsed[j].unwrap_or(entry_nd);
-                let return_pct = (exit_price / entry_price - 1.0) * 100.0;
+                // Slippage moves the exit fill against us (lower); commission is
+                // a round-trip drag on the net return.
+                let exit_price = exit_ref * (1.0 - slip);
+                let return_pct =
+                    (exit_price / entry_price - 1.0 - round_trip_commission) * 100.0;
                 trades.push(Trade {
                     entry_date,
                     entry_price,
                     exit_date: dates[j].clone(),
                     exit_price,
                     return_pct,
-                    bars_held: j - i,
+                    bars_held: j - fill_bar,
                     days_held: (exit_nd - entry_nd).num_days(),
                     exit_reason: reason.to_string(),
                 });
@@ -592,7 +622,7 @@ mod tests {
         let entry = vec![Some(false), Some(true), Some(false)];
         let exit = ExitConfig::new(ExitKind::Condition(vec![Some(false), Some(false), Some(true)]));
         let hl = vec![None; closes.len()];
-        let (trades, open) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit);
+        let (trades, open) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit, &CostModel::default());
         assert_eq!(open, 0);
         assert_eq!(trades.len(), 1);
         let t = &trades[0];
@@ -612,7 +642,7 @@ mod tests {
         let entry = vec![Some(false), Some(true), Some(false)];
         let exit = ExitConfig::new(ExitKind::HoldDays(10));
         let hl = vec![None; closes.len()];
-        let (trades, _) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit);
+        let (trades, _) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit, &CostModel::default());
         assert_eq!(trades.len(), 1);
         // entry 01-05 @12, exit first bar >= +10d = 01-20 @15.
         assert_eq!(trades[0].exit_date, "2020-01-20");
@@ -642,7 +672,7 @@ mod tests {
         // exit fires every bar; first exit after entry closes the single trade.
         let exit = ExitConfig::new(ExitKind::Condition(vec![Some(true); 6]));
         let hl = vec![None; closes.len()];
-        let (trades, _) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit);
+        let (trades, _) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit, &CostModel::default());
         // Edge at bar1 -> exit bar2. Next edge would need a false->true flip;
         // entry stays true so no new edge until after it resets.
         assert_eq!(trades.len(), 1);
@@ -659,7 +689,7 @@ mod tests {
         let entry = vec![Some(false), Some(true), Some(false), Some(false)];
         let mut exit = ExitConfig::new(ExitKind::HoldDays(365));
         exit.stop_loss_pct = Some(15.0);
-        let (trades, _) = simulate_trades(&d, &closes, &highs, &lows, &entry, &exit);
+        let (trades, _) = simulate_trades(&d, &closes, &highs, &lows, &entry, &exit, &CostModel::default());
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0].exit_reason, "stop");
         assert!((trades[0].exit_price - 85.0).abs() < 1e-9); // exits at the stop, not the low
@@ -678,7 +708,7 @@ mod tests {
         let entry = vec![Some(false), Some(true), Some(false), Some(false)];
         let mut exit = ExitConfig::new(ExitKind::HoldDays(2));
         exit.stop_loss_pct = Some(15.0);
-        let (trades, _) = simulate_trades(&d, &closes, &highs, &lows, &entry, &exit);
+        let (trades, _) = simulate_trades(&d, &closes, &highs, &lows, &entry, &exit, &CostModel::default());
         assert_eq!(trades.len(), 1);
         assert_ne!(trades[0].exit_reason, "stop", "no phantom stop on a NULL-OHLC bar");
     }
@@ -692,10 +722,70 @@ mod tests {
         let entry = vec![Some(false), Some(true), Some(false), Some(false)];
         let mut exit = ExitConfig::new(ExitKind::HoldDays(365));
         exit.take_profit_pct = Some(30.0);
-        let (trades, _) = simulate_trades(&d, &closes, &highs, &lows, &entry, &exit);
+        let (trades, _) = simulate_trades(&d, &closes, &highs, &lows, &entry, &exit, &CostModel::default());
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0].exit_reason, "target");
         assert!((trades[0].exit_price - 130.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn commission_and_slippage_drag_the_return() {
+        // Enter at bar1 @100, exit via condition at bar2 @110 = +10% gross.
+        let d = vec![
+            "2020-01-01".to_string(),
+            "2020-01-02".to_string(),
+            "2020-01-03".to_string(),
+        ];
+        let closes = vec![Some(100.0), Some(100.0), Some(110.0)];
+        let entry = vec![Some(false), Some(true), Some(false)];
+        let exit = ExitConfig::new(ExitKind::Condition(vec![Some(false), Some(false), Some(true)]));
+        let hl = vec![None; closes.len()];
+        // 0.1% commission/side + 0.05% slippage/side.
+        let cost = CostModel {
+            commission_pct: 0.1,
+            slippage_pct: 0.05,
+            fill_delay_bars: 0,
+        };
+        let (trades, _) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit, &cost);
+        assert_eq!(trades.len(), 1);
+        let t = &trades[0];
+        // entry fill 100·1.0005 = 100.05; exit fill 110·0.9995 = 109.945.
+        // gross = 109.945/100.05 − 1 = 0.098901; minus 0.002 round-trip commission.
+        let expected = (109.945 / 100.05 - 1.0 - 0.002) * 100.0;
+        assert!((t.return_pct - expected).abs() < 1e-6, "got {}", t.return_pct);
+        // Strictly worse than the cost-free +10%.
+        assert!(t.return_pct < 10.0);
+    }
+
+    #[test]
+    fn next_bar_fill_enters_one_bar_after_the_signal() {
+        // Signal (rising edge) at bar1; with fill_delay 1 the entry is bar2.
+        let d = vec![
+            "2020-01-01".to_string(),
+            "2020-01-02".to_string(),
+            "2020-01-03".to_string(),
+            "2020-01-04".to_string(),
+        ];
+        let closes = vec![Some(100.0), Some(105.0), Some(110.0), Some(121.0)];
+        let entry = vec![Some(false), Some(true), Some(false), Some(false)];
+        let exit = ExitConfig::new(ExitKind::Condition(vec![
+            Some(false),
+            Some(false),
+            Some(false),
+            Some(true),
+        ]));
+        let hl = vec![None; closes.len()];
+        let cost = CostModel {
+            commission_pct: 0.0,
+            slippage_pct: 0.0,
+            fill_delay_bars: 1,
+        };
+        let (trades, _) = simulate_trades(&d, &closes, &hl, &hl, &entry, &exit, &cost);
+        assert_eq!(trades.len(), 1);
+        // Entry at bar2 (@110, the bar AFTER the signal), exit bar3 @121 = +10%.
+        assert_eq!(trades[0].entry_date, "2020-01-03");
+        assert_eq!(trades[0].entry_price, 110.0);
+        assert!((trades[0].return_pct - 10.0).abs() < 1e-9);
     }
 
     #[test]
