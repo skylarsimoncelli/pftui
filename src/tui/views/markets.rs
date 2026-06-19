@@ -155,6 +155,32 @@ pub fn market_symbols() -> Vec<MarketItem> {
             category: AssetCategory::Fund,
             yahoo_symbol: "LQD".into(),
         },
+        // Treasury total-return proxies (the defensive/dry-powder leg —
+        // backtestable cash & duration, unlike the yield indices ^IRX/^TNX)
+        MarketItem {
+            symbol: "BIL".into(),
+            name: "1-3mo T-Bill ETF (cash proxy)".into(),
+            category: AssetCategory::Fund,
+            yahoo_symbol: "BIL".into(),
+        },
+        MarketItem {
+            symbol: "SHY".into(),
+            name: "1-3yr Treasury ETF".into(),
+            category: AssetCategory::Fund,
+            yahoo_symbol: "SHY".into(),
+        },
+        MarketItem {
+            symbol: "IEF".into(),
+            name: "7-10yr Treasury ETF".into(),
+            category: AssetCategory::Fund,
+            yahoo_symbol: "IEF".into(),
+        },
+        MarketItem {
+            symbol: "TLT".into(),
+            name: "20+yr Treasury ETF".into(),
+            category: AssetCategory::Fund,
+            yahoo_symbol: "TLT".into(),
+        },
         // Metals & Industrial
         MarketItem {
             symbol: "Copper".into(),

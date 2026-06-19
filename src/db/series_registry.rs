@@ -205,6 +205,12 @@ pub fn seed_entries() -> Vec<SeriesEntry> {
         price("dxy", "DX-Y.NYB", 72, Some("Index points, not USD")),
         price("us10y", "^TNX", 72, Some("Yield x10, not USD")),
         price("wti", "CL=F", 72, None),
+        // Treasury total-return proxies — the backtestable cash/duration leg
+        // (the defensive side of the Environment Engine's positioning).
+        price("bil", "BIL", 72, Some("1-3mo T-Bill ETF — cash/dry-powder total-return proxy")),
+        price("shy", "SHY", 72, Some("1-3yr Treasury ETF total return")),
+        price("ief", "IEF", 72, Some("7-10yr Treasury ETF total return")),
+        price("tlt", "TLT", 72, Some("20+yr Treasury ETF total return")),
     ];
     let mut btc = price(
         "btc",

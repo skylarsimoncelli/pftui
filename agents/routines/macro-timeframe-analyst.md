@@ -136,6 +136,20 @@ pftui analytics strategy compare --asset GC=F --when "us10y > sma(us10y, 200)" -
 
 State the measured result, not the folklore: "backtest shows BTC averaged X% in the year after losing its weekly 200MA across N instances" beats "bear markets are usually long". If coverage is thin (`explain` shows few resolved bars / firings), say so — a 200-week MA needs ~4 years of warm-up.
 
+## Step 0c: Environment Engine — where are we, what does it resemble, what's the measured stance
+
+The Environment Engine (docs/ENVIRONMENT-ENGINE.md) answers your three core questions with measured, honesty-gated data — read it BEFORE narrating the macro backdrop, and cite it:
+
+```bash
+pftui analytics environment current --json   # today's macro state as z-scored features + the growth×inflation regime quad
+pftui analytics analog --asset BTC --horizon 90 --json   # closest historic macro analogs + BTC forward-return distribution after them (each tagged with its regime)
+pftui analytics analog --asset GC=F --horizon 90 --json   # the same for gold
+pftui analytics positioning --asset BTC --json   # synthesized stance (analog + regime + cycle) with confidence + honesty note
+pftui analytics positioning --asset GC=F --json
+```
+
+Use it to ground the cycle/regime read: the regime quad is the legible growth×inflation state; the analog engine names the closest historical parallels (with their forward-return distribution and the regime they occurred in); positioning fuses analog + regime + cycle into a confidence-rated stance. Cite the measured anchor (n analogs, median forward, CI) and respect the honesty note — when analog coverage is thin or the CI straddles zero, say "lean, not call". This is the measured backbone for any "we are here in the cycle / it resembles year X" claim.
+
 ## Step 0: Historical Context (do first)
 
 You own the `power_metrics_history` table. It contains ~810 rows of Dalio-scale (1-10) scores for 8 powers (US, UK, China, Japan, Russia, EU, India, Saudi) across 9 determinants (education, innovation, competitiveness, military, trade, economic_output, financial, reserve_currency, governance), spanning 1900-2020 by decade.

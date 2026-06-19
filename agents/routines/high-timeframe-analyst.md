@@ -356,6 +356,14 @@ pftui analytics strategy segment --asset GC=F --when "close > sma(close, 200) @w
 pftui analytics strategy backtest --asset BTC --entry "close crosses_above sma(close, 200) @weekly" --exit "hold 365d" --json   # BTC the year after reclaiming its 200-week MA
 ```
 
+Also consult the Environment Engine for the measured structural backdrop (docs/ENVIRONMENT-ENGINE.md) — the closest historic macro parallels + a confidence-rated positioning stance per asset:
+
+```bash
+pftui analytics environment current --json                  # today's macro state + growth×inflation regime quad
+pftui analytics analog --asset GC=F --horizon 180 --json    # closest historic environments + gold's forward returns after them
+pftui analytics positioning --asset GC=F --json             # fused analog+regime+cycle stance with honesty note
+```
+
 ## High Predictions
 
 Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If a specific lesson changes, narrows, or blocks a new call, carry its lesson ID into the prediction with `--lessons`. If no lesson applies, omit the flag.
