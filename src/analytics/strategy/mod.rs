@@ -94,8 +94,20 @@ pub fn run_backtest(
         simulate_trades(&dates, &closes, &highs, &lows, &entry_mask, &exit_cfg, &cost);
     let mut report = engine::trade_report(&dates, &closes, trades, open_skipped);
     if let Some(cfg) = sizing {
-        report.sizing =
-            engine::sized_stats(&dates, &closes, &report.trades, report.benchmark_hold.years, cfg);
+        // Warm the realized-vol estimate on FULL history (not the windowed
+        // axis), so trades near a `--from` start are sized on real vol rather
+        // than silently neutralized to 1×. Trades are unchanged; only the vol
+        // lookup axis is widened.
+        let full = resolver.primary_close_history()?;
+        let full_dates: Vec<String> = full.iter().map(|(d, _)| d.clone()).collect();
+        let full_closes: Vec<Option<f64>> = full.iter().map(|(_, c)| Some(*c)).collect();
+        report.sizing = engine::sized_stats(
+            &full_dates,
+            &full_closes,
+            &report.trades,
+            report.benchmark_hold.years,
+            cfg,
+        );
     }
     Ok(report)
 }

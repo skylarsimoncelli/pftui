@@ -125,6 +125,15 @@ impl<'a> Resolver<'a> {
         self.missing.iter().cloned().collect()
     }
 
+    /// The primary asset's FULL close history (oldest→newest), independent of
+    /// the `--from`/`--to` master-axis window. Used so vol-targeting can warm
+    /// up its realized-vol estimate on all available history rather than
+    /// silently neutralizing leverage on trades near a window start.
+    pub fn primary_close_history(&mut self) -> Result<Vec<(String, f64)>> {
+        let sym = self.primary_symbol.clone();
+        Ok(self.raw(&sym, PriceField::Close)?.to_vec())
+    }
+
     fn raw(&mut self, symbol: &str, field: PriceField) -> Result<&[(String, f64)]> {
         let resolved = resolve_alias(symbol);
         let key = (resolved.clone(), field);

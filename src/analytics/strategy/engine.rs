@@ -72,6 +72,10 @@ pub struct SizedStats {
     pub avg_leverage: f64,
     pub min_leverage: f64,
     pub max_leverage_used: f64,
+    /// Trades whose entry-bar vol was unknown (warmup/gap) → sized at a neutral
+    /// 1× rather than a real risk weight. A nonzero count means some leverage
+    /// figures are placeholders, not measured.
+    pub n_neutral_fallback: usize,
     /// Compounded equity of the SIZED curve (percent) + its CAGR / max-DD.
     pub sized_total_return_pct: f64,
     pub sized_cagr_pct: Option<f64>,
@@ -133,11 +137,15 @@ pub fn sized_stats(
     let mut max_dd = 0.0f64;
     let mut levs: Vec<f64> = Vec::with_capacity(trades.len());
     let mut sized_rets: Vec<f64> = Vec::with_capacity(trades.len());
+    let mut n_neutral_fallback = 0usize;
     for t in trades {
         let lev = match date_idx.get(t.entry_date.as_str()).and_then(|i| vol[*i]) {
             Some(v) if v > 0.0 => (cfg.vol_target_pct / v).clamp(0.0, cfg.max_leverage),
             // Unknown vol at entry (warmup/gap): neutral full weight.
-            _ => 1.0,
+            _ => {
+                n_neutral_fallback += 1;
+                1.0
+            }
         };
         levs.push(lev);
         let r = lev * (t.return_pct / 100.0);
@@ -179,6 +187,7 @@ pub fn sized_stats(
         avg_leverage,
         min_leverage,
         max_leverage_used,
+        n_neutral_fallback,
         sized_total_return_pct,
         sized_cagr_pct,
         sized_max_drawdown_pct: max_dd,
