@@ -126,6 +126,28 @@ impl<'a> Resolver<'a> {
         Ok(out)
     }
 
+    /// Resolve a field to the master axis by EXACT date match — `None` where
+    /// the symbol has no value on that exact date (NO carry-forward). This is
+    /// the correct alignment for intra-bar high/low used by stop/target checks:
+    /// carrying a stale prior extreme forward would fabricate phantom stops on
+    /// bars whose OHLC is NULL. Daily timeframe only.
+    pub fn field_series_exact(
+        &mut self,
+        symbol: Option<&str>,
+        field: PriceField,
+    ) -> Result<Vec<Option<f64>>> {
+        let sym = symbol
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| self.primary_symbol.clone());
+        let raw = self.raw(&sym, field)?.to_vec();
+        let map: HashMap<&str, f64> = raw.iter().map(|(d, v)| (d.as_str(), *v)).collect();
+        Ok(self
+            .master_dates
+            .iter()
+            .map(|d| map.get(d.as_str()).copied())
+            .collect())
+    }
+
     /// Resolve an indicator over a field reference to a daily-aligned series.
     /// The indicator is computed at the requested timeframe's bucket
     /// granularity, then projected to daily. Memoized.

@@ -72,8 +72,11 @@ pub fn run_backtest(
 ) -> Result<TradeReport> {
     let dates = resolver.master_dates().to_vec();
     let closes = resolver.field_series(None, parser::PriceField::Close, parser::Timeframe::Daily)?;
-    let highs = resolver.field_series(None, parser::PriceField::High, parser::Timeframe::Daily)?;
-    let lows = resolver.field_series(None, parser::PriceField::Low, parser::Timeframe::Daily)?;
+    // EXACT-date H/L (no carry-forward) so a NULL-OHLC bar falls back to its own
+    // close in the engine rather than a stale prior extreme (which would fire
+    // phantom stops). See resolver::field_series_exact.
+    let highs = resolver.field_series_exact(None, parser::PriceField::High)?;
+    let lows = resolver.field_series_exact(None, parser::PriceField::Low)?;
     let entry_mask = eval::eval_condition(entry, resolver)?;
     let base = match exit {
         ExitSpec::HoldDays(d) => ExitKind::HoldDays(*d),
