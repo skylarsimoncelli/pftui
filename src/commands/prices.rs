@@ -645,6 +645,7 @@ pub struct SuspectPrint {
     pub jump_pct: Decimal,
     /// Signed % move from the spike bar to the next bar.
     pub revert_pct: Decimal,
+    pub severity: &'static str,
 }
 
 /// Pure spike-and-revert scan over one symbol's chronological close series.
@@ -679,10 +680,23 @@ pub fn scan_spike_reverts(
                 next_close: next.close,
                 jump_pct: jump_pct.round_dp(1),
                 revert_pct: revert_pct.round_dp(1),
+                severity: audit_severity(symbol),
             });
         }
     }
     findings
+}
+
+fn audit_severity(symbol: &str) -> &'static str {
+    let s = symbol.trim().to_ascii_uppercase();
+    if matches!(s.as_str(), "^IRX" | "^FVX" | "^TNX" | "^TYX" | "^VIX")
+        || s.ends_with("Y")
+        || s.contains("YIELD")
+    {
+        "review"
+    } else {
+        "suspect"
+    }
 }
 
 /// `pftui data prices audit [--symbol X] [--json]` — read-only retro-scan.
@@ -703,10 +717,19 @@ pub fn run_audit(backend: &BackendConnection, symbol: Option<&str>, json: bool) 
     }
 
     if json {
+        let mut by_symbol = std::collections::BTreeMap::<String, usize>::new();
+        let mut by_severity = std::collections::BTreeMap::<&str, usize>::new();
+        for finding in &findings {
+            *by_symbol.entry(finding.symbol.clone()).or_default() += 1;
+            *by_severity.entry(finding.severity).or_default() += 1;
+        }
         let payload = serde_json::json!({
             "symbols_scanned": scanned,
             "jump_threshold_pct": AUDIT_JUMP_PCT,
             "revert_threshold_pct": AUDIT_REVERT_PCT,
+            "suspect_count": findings.len(),
+            "by_symbol": by_symbol,
+            "by_severity": by_severity,
             "suspect_prints": findings,
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);

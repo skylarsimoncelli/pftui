@@ -1081,15 +1081,7 @@ pub fn public_section_plan() -> Vec<SectionSpec> {
             visibility: SectionVisibility::Public,
         },
         SectionSpec {
-            name: "public_how_we_analyse",
-            visibility: SectionVisibility::Public,
-        },
-        SectionSpec {
             name: "public_allocation_framework",
-            visibility: SectionVisibility::Public,
-        },
-        SectionSpec {
-            name: "public_methodology",
             visibility: SectionVisibility::Public,
         },
     ]

@@ -100,14 +100,14 @@ struct SocrataRecord {
     report_date: String,
     #[serde(rename = "open_interest_all")]
     open_interest: String,
-    #[serde(rename = "noncomm_positions_long_all")]
-    managed_money_long: String,
-    #[serde(rename = "noncomm_positions_short_all")]
-    managed_money_short: String,
-    #[serde(rename = "comm_positions_long_all")]
-    commercial_long: String,
-    #[serde(rename = "comm_positions_short_all")]
-    commercial_short: String,
+    #[serde(default, alias = "noncomm_positions_long_all")]
+    m_money_positions_long_all: Option<String>,
+    #[serde(default, alias = "noncomm_positions_short_all")]
+    m_money_positions_short_all: Option<String>,
+    #[serde(default, alias = "comm_positions_long_all")]
+    prod_merc_positions_long: Option<String>,
+    #[serde(default, alias = "comm_positions_short_all")]
+    prod_merc_positions_short: Option<String>,
 }
 
 /// Fetch latest COT report for a specific contract.
@@ -170,14 +170,14 @@ fn reports_url(cftc_code: &str, limit: usize) -> String {
 
 /// Parse a Socrata API record into CotReport.
 fn parse_record(record: &SocrataRecord) -> Result<CotReport> {
-    let managed_money_long = parse_i64(&record.managed_money_long)?;
-    let managed_money_short = parse_i64(&record.managed_money_short)?;
-    let commercial_long = parse_i64(&record.commercial_long)?;
-    let commercial_short = parse_i64(&record.commercial_short)?;
+    let managed_money_long = parse_required_i64(record.m_money_positions_long_all.as_deref(), "m_money_positions_long_all")?;
+    let managed_money_short = parse_required_i64(record.m_money_positions_short_all.as_deref(), "m_money_positions_short_all")?;
+    let commercial_long = parse_required_i64(record.prod_merc_positions_long.as_deref(), "prod_merc_positions_long")?;
+    let commercial_short = parse_required_i64(record.prod_merc_positions_short.as_deref(), "prod_merc_positions_short")?;
 
     Ok(CotReport {
         cftc_code: record.cftc_code.clone(),
-        report_date: record.report_date.clone(),
+        report_date: normalize_report_date(&record.report_date)?,
         open_interest: parse_i64(&record.open_interest)?,
         managed_money_long,
         managed_money_short,
@@ -188,12 +188,31 @@ fn parse_record(record: &SocrataRecord) -> Result<CotReport> {
     })
 }
 
+fn parse_required_i64(value: Option<&str>, field: &str) -> Result<i64> {
+    parse_i64(value.ok_or_else(|| anyhow!("CFTC response missing field {}", field))?)
+}
+
 /// Parse integer from string field (handles commas).
 fn parse_i64(s: &str) -> Result<i64> {
     let cleaned = s.replace(',', "");
     cleaned
         .parse::<i64>()
         .map_err(|e| anyhow::anyhow!("Failed to parse integer '{}': {}", s, e))
+}
+
+pub(crate) fn parse_report_date(raw: &str) -> Option<NaiveDate> {
+    let trimmed = raw.trim();
+    NaiveDate::parse_from_str(trimmed, "%Y-%m-%d")
+        .ok()
+        .or_else(|| DateTime::parse_from_rfc3339(trimmed).ok().map(|dt| dt.date_naive()))
+        .or_else(|| chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S%.f").ok().map(|dt| dt.date()))
+        .or_else(|| chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S%.f").ok().map(|dt| dt.date()))
+}
+
+fn normalize_report_date(raw: &str) -> Result<String> {
+    parse_report_date(raw)
+        .map(|date| date.format("%Y-%m-%d").to_string())
+        .ok_or_else(|| anyhow!("failed to parse COT report_date '{}'", raw))
 }
 
 /// Find the pftui symbol for a CFTC contract code.
@@ -213,12 +232,12 @@ pub fn symbol_to_cftc_code(symbol: &str) -> Option<&'static str> {
 }
 
 pub fn next_report_date(report_date: &str) -> Option<String> {
-    let report_date = NaiveDate::parse_from_str(report_date, "%Y-%m-%d").ok()?;
+    let report_date = parse_report_date(report_date)?;
     Some((report_date + Duration::days(7)).format("%Y-%m-%d").to_string())
 }
 
 pub fn next_release_date(report_date: &str) -> Option<String> {
-    let report_date = NaiveDate::parse_from_str(report_date, "%Y-%m-%d").ok()?;
+    let report_date = parse_report_date(report_date)?;
     Some((report_date + Duration::days(10)).format("%Y-%m-%d").to_string())
 }
 
@@ -374,6 +393,8 @@ mod tests {
     fn schedule_helpers_derive_next_report_and_release_dates() {
         assert_eq!(next_report_date("2026-03-31").as_deref(), Some("2026-04-07"));
         assert_eq!(next_release_date("2026-03-31").as_deref(), Some("2026-04-10"));
+        assert_eq!(next_report_date("2026-05-19T00:00:00.000").as_deref(), Some("2026-05-26"));
+        assert_eq!(next_release_date("2026-05-19T00:00:00.000").as_deref(), Some("2026-05-29"));
     }
 
     #[test]
@@ -382,10 +403,10 @@ mod tests {
             cftc_code: "088691".to_string(),
             report_date: "2026-04-14".to_string(),
             open_interest: "362274".to_string(),
-            managed_money_long: "210009".to_string(),
-            managed_money_short: "47483".to_string(),
-            commercial_long: "55757".to_string(),
-            commercial_short: "256839".to_string(),
+            m_money_positions_long_all: Some("210009".to_string()),
+            m_money_positions_short_all: Some("47483".to_string()),
+            prod_merc_positions_long: Some("55757".to_string()),
+            prod_merc_positions_short: Some("256839".to_string()),
         };
 
         let parsed = parse_record(&record).unwrap();

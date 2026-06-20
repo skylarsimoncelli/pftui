@@ -565,7 +565,11 @@ pub fn lesson_coverage(conn: &Connection) -> Result<(usize, usize)> {
         |row| row.get(0),
     )?;
     let with_lessons: usize = conn.query_row(
-        "SELECT COUNT(*) FROM prediction_lessons",
+        "SELECT COUNT(DISTINCT p.id)
+         FROM user_predictions p
+         JOIN prediction_lessons l ON l.prediction_id = p.id
+         WHERE p.outcome = 'wrong'
+           AND COALESCE(l.status, 'active') = 'active'",
         [],
         |row| row.get(0),
     )?;
@@ -579,7 +583,13 @@ fn lesson_coverage_postgres(pool: &PgPool) -> Result<(usize, usize)> {
         )
         .fetch_one(pool)
         .await?;
-        let wl: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM prediction_lessons")
+        let wl: (i64,) = sqlx::query_as(
+            "SELECT COUNT(DISTINCT p.id)
+             FROM user_predictions p
+             JOIN prediction_lessons l ON l.prediction_id = p.id
+             WHERE p.outcome = 'wrong'
+               AND COALESCE(l.status, 'active') = 'active'",
+        )
             .fetch_one(pool)
             .await?;
         Ok::<(i64, i64), sqlx::Error>((tw.0, wl.0))
@@ -1083,6 +1093,7 @@ mod tests {
         assert_eq!(with_lessons, 0);
 
         add_lesson(&conn, 1, "directional", "Test 1", "Wrong", "Reason", None).unwrap();
+        add_lesson(&conn, 3, "directional", "Test 3", "Correct", "Legacy reason", None).unwrap();
         let (total_wrong, with_lessons) = lesson_coverage(&conn).unwrap();
         assert_eq!(total_wrong, 2);
         assert_eq!(with_lessons, 1);

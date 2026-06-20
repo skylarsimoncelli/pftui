@@ -648,7 +648,7 @@ fn latest_cot_report_date(
 ) -> Option<chrono::NaiveDate> {
     reports
         .iter()
-        .filter_map(|report| chrono::NaiveDate::parse_from_str(&report.report_date, "%Y-%m-%d").ok())
+        .filter_map(|report| cot::parse_report_date(&report.report_date))
         .max()
 }
 
@@ -6560,6 +6560,15 @@ mod tests {
         assert!(note.contains("2026-03-20"), "uses newest report date: {note}");
         assert!(note.contains("10 days old"), "age-stamped: {note}");
         assert!(note.to_lowercase().contains("cached"));
+    }
+
+    #[test]
+    fn cot_stale_cache_note_accepts_timestamped_report_dates() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 5, 29).unwrap();
+        let reports = vec![cot_entry("2026-05-19T00:00:00.000")];
+        let note = cot_stale_cache_note(&reports, today).expect("expected stale note");
+        assert!(note.contains("2026-05-19"), "uses parsed report date: {note}");
+        assert!(note.contains("10 days old"), "age-stamped: {note}");
     }
 
     #[test]

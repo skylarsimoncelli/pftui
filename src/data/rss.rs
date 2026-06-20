@@ -222,6 +222,8 @@ pub async fn fetch_feed(feed: &RssFeed) -> Result<Vec<NewsItem>> {
         .send()
         .await
         .context("Failed to fetch RSS feed")?
+        .error_for_status()
+        .context("RSS feed returned non-success HTTP status")?
         .text()
         .await?;
 

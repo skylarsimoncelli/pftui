@@ -24,6 +24,9 @@ pub fn render_private_overview(ctx: &BuildContext) -> Result<String> {
     // operator's tolerance for empty-state filler is low; a missing overview
     // is better than a placeholder that adds no signal.
     let Some(economy) = economy else {
+        if let Some(fallback) = deterministic_overview(ctx) {
+            return Ok(fallback);
+        }
         return Ok(super::suppressed(
             "no [synthesis-economy] note for the report date",
         ));
@@ -36,6 +39,82 @@ pub fn render_private_overview(ctx: &BuildContext) -> Result<String> {
     );
     output.push_str(economy);
     Ok(output.trim_end().to_string())
+}
+
+fn deterministic_overview(ctx: &BuildContext) -> Option<String> {
+    if ctx.market_snapshot.is_empty()
+        && ctx.scenario_deltas.is_empty()
+        && ctx.news_catalysts.is_empty()
+    {
+        return None;
+    }
+
+    let mut output = String::from("## Overview — State of Market\n\n");
+    output.push_str(
+        "_Deterministic fallback from cached market, scenario, and catalyst data; no same-day synthesis note was attached._\n\n",
+    );
+
+    let mut moves = ctx
+        .market_snapshot
+        .iter()
+        .filter_map(|row| {
+            let change = row.daily_change_pct.or(row.weekly_change_pct)?;
+            Some((change.abs(), row, change))
+        })
+        .collect::<Vec<_>>();
+    moves.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    if !moves.is_empty() {
+        output.push_str("Market tape: ");
+        let parts = moves
+            .iter()
+            .take(4)
+            .map(|(_, row, change)| {
+                let price = row.price.as_deref().unwrap_or("n/a");
+                let signal = row.signal.as_deref().unwrap_or("no cached signal");
+                format!("{} {} ({:+.1}%, {})", row.asset, price, change, signal)
+            })
+            .collect::<Vec<_>>();
+        output.push_str(&parts.join("; "));
+        output.push_str(".\n\n");
+    }
+
+    let mut deltas = ctx
+        .scenario_deltas
+        .iter()
+        .filter_map(|row| row.delta_7d.map(|delta| (delta.abs(), row, delta)))
+        .collect::<Vec<_>>();
+    deltas.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    if !deltas.is_empty() {
+        output.push_str("Scenario movement: ");
+        let parts = deltas
+            .iter()
+            .take(3)
+            .map(|(_, row, delta)| {
+                format!("{} {:.0}% ({:+.1}pp 7d)", row.name, row.probability, delta)
+            })
+            .collect::<Vec<_>>();
+        output.push_str(&parts.join("; "));
+        output.push_str(".\n\n");
+    }
+
+    if !ctx.news_catalysts.is_empty() {
+        output.push_str("Catalysts: ");
+        let parts = ctx
+            .news_catalysts
+            .iter()
+            .take(3)
+            .map(|row| match row.market_read.as_deref() {
+                Some(read) if !read.trim().is_empty() => {
+                    format!("{} ({})", row.headline, read.trim())
+                }
+                _ => row.headline.clone(),
+            })
+            .collect::<Vec<_>>();
+        output.push_str(&parts.join("; "));
+        output.push('.');
+    }
+
+    Some(output.trim_end().to_string())
 }
 
 #[cfg(test)]
@@ -65,6 +144,23 @@ mod tests {
         let out = render_private_overview(&ctx).unwrap();
         assert!(out.contains("## Overview — Week in Review"));
         assert!(out.contains("Hot NFP reinforces the dollar bid"));
+    }
+
+    #[test]
+    fn fallback_renders_when_cached_market_context_exists() {
+        let ctx = BuildContext {
+            market_snapshot: vec![crate::report::build::daily::MarketSnapshotRow {
+                asset: "BTC".to_string(),
+                price: Some("$100,000".to_string()),
+                daily_change_pct: Some(2.4),
+                weekly_change_pct: None,
+                signal: Some("risk bid".to_string()),
+            }],
+            ..BuildContext::default()
+        };
+        let out = render_private_overview(&ctx).unwrap();
+        assert!(out.contains("## Overview — State of Market"));
+        assert!(out.contains("BTC"));
     }
 
     #[test]

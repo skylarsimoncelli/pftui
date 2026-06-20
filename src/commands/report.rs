@@ -56,6 +56,19 @@ struct ReportChartOutput {
     content_base64: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct ReportChartErrorOutput {
+    chart: String,
+    ok: bool,
+    error: ReportChartErrorBody,
+}
+
+#[derive(Debug, Serialize)]
+struct ReportChartErrorBody {
+    kind: &'static str,
+    message: String,
+}
+
 pub struct ReportChartOptions<'a> {
     pub chart_name: &'a str,
     pub from_db: Option<&'a str>,
@@ -168,6 +181,7 @@ pub fn run_build_daily(
             let data_rows: Vec<BuildDailyDataRowJson> = summary
                 .data_availability
                 .iter()
+                .filter(|row| diagnostic_visible_for_mode(row.field, mode))
                 .map(|row| BuildDailyDataRowJson {
                     field: row.field,
                     populated: row.populated,
@@ -191,10 +205,11 @@ pub fn run_build_daily(
             let staleness_rows: Vec<BuildDailyStalenessJson> = summary
                 .staleness
                 .iter()
+                .filter(|w| staleness_visible_for_mode(w, mode))
                 .map(|w| BuildDailyStalenessJson {
                     input: w.input,
                     message: w.message.clone(),
-                    sections: w.sections.clone(),
+                    sections: filter_staleness_sections_for_mode(&w.sections, mode),
                 })
                 .collect();
             let output_paths: Vec<String> = summary
@@ -269,27 +284,88 @@ pub fn run_build_daily(
     Ok(())
 }
 
+fn diagnostic_visible_for_mode(field: &str, mode: build_daily::BuildMode) -> bool {
+    match mode {
+        build_daily::BuildMode::Public => !field.starts_with("private_"),
+        build_daily::BuildMode::Private => !field.starts_with("public_"),
+        build_daily::BuildMode::Both => true,
+    }
+}
+
+fn staleness_visible_for_mode(
+    warning: &build_daily::StalenessWarning,
+    mode: build_daily::BuildMode,
+) -> bool {
+    match mode {
+        build_daily::BuildMode::Both => true,
+        build_daily::BuildMode::Public => warning.sections.iter().any(|section| section.starts_with("public_")),
+        build_daily::BuildMode::Private => warning.sections.iter().any(|section| section.starts_with("private_")),
+    }
+}
+
+fn filter_staleness_sections_for_mode(
+    sections: &[&'static str],
+    mode: build_daily::BuildMode,
+) -> Vec<&'static str> {
+    sections
+        .iter()
+        .copied()
+        .filter(|section| match mode {
+            build_daily::BuildMode::Both => true,
+            build_daily::BuildMode::Public => section.starts_with("public_"),
+            build_daily::BuildMode::Private => section.starts_with("private_"),
+        })
+        .collect()
+}
+
 pub fn run_chart(
     backend: &BackendConnection,
     config: &Config,
     options: ReportChartOptions<'_>,
 ) -> Result<()> {
-    let kind = registry::kind_from_name(options.chart_name)?;
-    let input = load_chart_input(backend, config, kind, options.from_db, options.from_json)?;
-    emit_chart(input, options.out, options.format, options.json_output)
+    let result = (|| {
+        let kind = registry::kind_from_name(options.chart_name)?;
+        let input = load_chart_input(backend, config, kind, options.from_db, options.from_json)?;
+        emit_chart(input, options.out, options.format, options.json_output)
+    })();
+    handle_chart_result(options.chart_name, options.json_output, result)
 }
 
 pub fn run_chart_without_db(options: ReportChartOptions<'_>) -> Result<()> {
-    let kind = registry::kind_from_name(options.chart_name)?;
-    let path = options
-        .from_json
-        .context("report chart requires --from-json when --from-db is absent")?;
-    let raw =
-        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
-    let value: Value = serde_json::from_str(&raw)
-        .with_context(|| format!("failed to parse JSON from {}", path.display()))?;
-    let input = registry::parse_input(kind, value)?;
-    emit_chart(input, options.out, options.format, options.json_output)
+    let result = (|| {
+        let kind = registry::kind_from_name(options.chart_name)?;
+        let path = options
+            .from_json
+            .context("report chart requires --from-json when --from-db is absent")?;
+        let raw =
+            fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+        let value: Value = serde_json::from_str(&raw)
+            .with_context(|| format!("failed to parse JSON from {}", path.display()))?;
+        let input = registry::parse_input(kind, value)?;
+        emit_chart(input, options.out, options.format, options.json_output)
+    })();
+    handle_chart_result(options.chart_name, options.json_output, result)
+}
+
+fn handle_chart_result(chart_name: &str, json_output: bool, result: Result<()>) -> Result<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(err) if json_output => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&ReportChartErrorOutput {
+                    chart: chart_name.to_string(),
+                    ok: false,
+                    error: ReportChartErrorBody {
+                        kind: "chart_error",
+                        message: format!("{err:#}"),
+                    },
+                })?
+            );
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
 }
 
 fn emit_chart(

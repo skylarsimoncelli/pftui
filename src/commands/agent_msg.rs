@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use chrono::Utc;
+use chrono::{Duration, NaiveDate, Utc};
 use serde_json::json;
 
 use crate::db::agent_messages;
@@ -154,8 +154,9 @@ pub fn run(
             if let Some(l) = layer {
                 validate_layer(l)?;
             }
+            let parsed_since = since.map(parse_since_filter).transpose()?;
             let rows = agent_messages::list_messages_backend(
-                backend, from, to, layer, unacked, since, package_id, limit,
+                backend, from, to, layer, unacked, parsed_since.as_deref(), package_id, limit,
             )?;
             if json_output {
                 println!(
@@ -398,6 +399,34 @@ fn sanitize_package_fragment(value: &str) -> String {
         .collect()
 }
 
+fn parse_since_filter(value: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        bail!("--since cannot be empty");
+    }
+    if NaiveDate::parse_from_str(trimmed, "%Y-%m-%d").is_ok()
+        || chrono::DateTime::parse_from_rfc3339(trimmed).is_ok()
+        || chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S").is_ok()
+        || chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S%.f").is_ok()
+    {
+        return Ok(trimmed.to_string());
+    }
+
+    let (amount, unit) = trimmed.split_at(trimmed.len().saturating_sub(1));
+    let n: i64 = amount.parse().map_err(|_| anyhow::anyhow!("invalid --since '{}': use YYYY-MM-DD, RFC3339, or a relative window like 30d/12h/2w/3m", value))?;
+    if n < 0 {
+        bail!("invalid --since '{}': relative window must be positive", value);
+    }
+    let cutoff = match unit {
+        "h" => Utc::now() - Duration::hours(n),
+        "d" => Utc::now() - Duration::days(n),
+        "w" => Utc::now() - Duration::weeks(n),
+        "m" => Utc::now() - Duration::days(n * 30),
+        _ => bail!("invalid --since '{}': use YYYY-MM-DD, RFC3339, or a relative window like 30d/12h/2w/3m", value),
+    };
+    Ok(cutoff.format("%Y-%m-%d %H:%M:%S").to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -423,6 +452,14 @@ mod tests {
     fn unknown_category_still_rejected() {
         assert!(validate_category("panel").is_err());
         assert!(validate_category("steelman").is_err());
+    }
+
+    #[test]
+    fn parses_relative_since_filters() {
+        let parsed = parse_since_filter("30d").unwrap();
+        assert!(parsed.len() >= 10);
+        assert!(parse_since_filter("2026-05-21").is_ok());
+        assert!(parse_since_filter("not-a-window").is_err());
     }
 
     #[test]
