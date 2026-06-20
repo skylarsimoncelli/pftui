@@ -5456,33 +5456,57 @@ fn run_cli(cli: Cli) -> Result<()> {
                 lookback,
                 threshold,
                 json,
-            } => commands::tail_risk::run(&backend, &asset, lookback, threshold, json),
+            } => commands::cli_json::or_json_error(
+                "analytics tail-risk",
+                json,
+                commands::tail_risk::run(&backend, &asset, lookback, threshold, json),
+            ),
             cli::AnalyticsCommand::TailDependence {
                 asset,
                 vs,
                 q,
                 json,
-            } => commands::tail_dependence::run(&backend, &asset, &vs, q, json),
+            } => commands::cli_json::or_json_error(
+                "analytics tail-dependence",
+                json,
+                commands::tail_dependence::run(&backend, &asset, &vs, q, json),
+            ),
             cli::AnalyticsCommand::Avwap {
                 asset,
                 anchor,
                 anchor_date,
                 json,
-            } => commands::avwap::run(&backend, &asset, &anchor, anchor_date.as_deref(), json),
+            } => commands::cli_json::or_json_error(
+                "analytics avwap",
+                json,
+                commands::avwap::run(&backend, &asset, &anchor, anchor_date.as_deref(), json),
+            ),
             cli::AnalyticsCommand::Hurst {
                 asset,
                 lookback,
                 json,
-            } => commands::hurst::run(&backend, &asset, lookback, json),
+            } => commands::cli_json::or_json_error(
+                "analytics hurst",
+                json,
+                commands::hurst::run(&backend, &asset, lookback, json),
+            ),
             cli::AnalyticsCommand::RegimeBreak {
                 asset,
                 lookback,
                 k,
                 h,
                 json,
-            } => commands::regime_break::run(&backend, &asset, lookback, k, h, json),
+            } => commands::cli_json::or_json_error(
+                "analytics regime-break",
+                json,
+                commands::regime_break::run(&backend, &asset, lookback, k, h, json),
+            ),
             cli::AnalyticsCommand::RiskDashboard { asset, vs, json } => {
-                commands::risk_dashboard::run(&backend, &asset, vs.as_deref(), json)
+                commands::cli_json::or_json_error(
+                    "analytics risk-dashboard",
+                    json,
+                    commands::risk_dashboard::run(&backend, &asset, vs.as_deref(), json),
+                )
             }
             cli::AnalyticsCommand::Basket { command } => match command {
                 cli::AnalyticsBasketCommand::Weights {
@@ -5490,7 +5514,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                     method,
                     lookback,
                     json,
-                } => commands::basket::run(&backend, &assets, &method, lookback, json),
+                } => commands::cli_json::or_json_error(
+                    "analytics basket weights",
+                    json,
+                    commands::basket::run(&backend, &assets, &method, lookback, json),
+                ),
             },
             cli::AnalyticsCommand::Survival {
                 asset,
@@ -5498,7 +5526,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                 confidence,
                 lookback,
                 json,
-            } => commands::survival::run(&backend, &asset, budget, confidence, lookback, json),
+            } => commands::cli_json::or_json_error(
+                "analytics survival",
+                json,
+                commands::survival::run(&backend, &asset, budget, confidence, lookback, json),
+            ),
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,
