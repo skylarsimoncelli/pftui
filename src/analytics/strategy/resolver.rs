@@ -30,7 +30,8 @@ use crate::indicators::atr::compute_atr;
 use crate::indicators::bollinger::compute_bollinger;
 use crate::indicators::{
     compute_adx, compute_cci, compute_ema, compute_fisher, compute_macd, compute_mfi, compute_obv,
-    compute_roc, compute_rsi, compute_sma, compute_stochastic, compute_williams_r,
+    compute_roc, compute_rsi, compute_sma, compute_stochastic, compute_supertrend,
+    compute_williams_r,
 };
 
 /// Abstracts where raw `(date, value)` series come from, so the engine is
@@ -252,6 +253,8 @@ impl<'a> Resolver<'a> {
                 | OhlcKind::Adx
                 | OhlcKind::PlusDi
                 | OhlcKind::MinusDi
+                | OhlcKind::Supertrend
+                | OhlcKind::SupertrendDir
         );
         let needs_vol = matches!(kind, OhlcKind::Obv | OhlcKind::Mfi);
         if (needs_hl && bars.hl_coverage() < OHLC_COVERAGE_MIN)
@@ -270,6 +273,21 @@ impl<'a> Resolver<'a> {
             OhlcKind::WilliamsR => compute_williams_r(&bars.high, &bars.low, &bars.close, p0),
             OhlcKind::Roc => compute_roc(&bars.close, p0),
             OhlcKind::Fisher => compute_fisher(&bars.high, &bars.low, p0),
+            OhlcKind::Supertrend | OhlcKind::SupertrendDir => {
+                let mult = params.get(1).copied().unwrap_or(3.0);
+                let st = compute_supertrend(&bars.high, &bars.low, &bars.close, p0, mult);
+                st.iter()
+                    .map(|o| {
+                        o.map(|r| {
+                            if matches!(kind, OhlcKind::SupertrendDir) {
+                                r.dir as f64
+                            } else {
+                                r.line
+                            }
+                        })
+                    })
+                    .collect()
+            }
             OhlcKind::Mfi => compute_mfi(&bars.high, &bars.low, &bars.close, &bars.vol, p0),
             OhlcKind::Obv => compute_obv(&bars.close, &bars.vol),
             OhlcKind::StochK | OhlcKind::StochD => {

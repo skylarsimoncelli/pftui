@@ -22,5 +22,5 @@ pub use macd::{compute_macd, MacdResult};
 pub use momentum::{compute_cci, compute_fisher, compute_roc, compute_stochastic, compute_williams_r};
 pub use rsi::compute_rsi;
 pub use sma::compute_sma;
-pub use trend::compute_adx;
+pub use trend::{compute_adx, compute_supertrend};
 pub use volume::{compute_mfi, compute_obv};
