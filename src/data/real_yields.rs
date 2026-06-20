@@ -171,7 +171,9 @@ pub struct DifferentialSnapshot {
     pub us_tips_10y: Option<f64>,
     pub us_breakeven_10y: Option<f64>,
     pub us_nominal_10y: Option<f64>,
-    /// US 10Y nominal minus the simple average of GB/DE/JP/CA 10Y, in bp.
+    /// US 10Y NOMINAL minus the simple average of GB/DE/JP/CA 10Y NOMINAL
+    /// (OECD long-term rates), in bp — a nominal-vs-nominal sovereign spread.
+    /// The real/breakeven legs (`us_tips_10y`/`us_breakeven_10y`) are US-only.
     pub us_minus_g10_avg_bp: Option<f64>,
     pub pairs: Vec<PairDifferential>,
 }
@@ -330,5 +332,29 @@ mod tests {
         assert_eq!(day3.pairs.len(), 4);
         let de3 = day3.pairs.iter().find(|p| p.country == "DE").expect("DE pair");
         assert!((de3.spread_bp - 205.0).abs() < 1e-6); // (4.30 − 2.25)·100
+    }
+
+    #[test]
+    fn forward_fill_uses_the_prior_g10_print_not_a_future_one() {
+        // Two monthly DE prints; a US day sits BETWEEN them. The carry MUST use
+        // the prior (04-01) print, never the future (05-01) one — the
+        // no-look-ahead property. (A bug grabbing the nearest/next would give a
+        // different spread.)
+        let rows: Vec<(String, String, f64)> = vec![
+            ("2026-04-01".into(), "IRLTLT01DEM156N".into(), 3.00),
+            ("2026-04-15".into(), US_NOMINAL_10Y.into(), 4.40), // between the two prints
+            ("2026-05-01".into(), "IRLTLT01DEM156N".into(), 3.05),
+            ("2026-05-15".into(), US_NOMINAL_10Y.into(), 4.45), // after 05-01
+        ];
+        let snaps = compute_differentials(rows);
+        let mid = snaps.iter().find(|s| s.date == "2026-04-15").expect("mid snapshot");
+        let de_mid = mid.pairs.iter().find(|p| p.country == "DE").expect("DE pair");
+        // (4.40 − 3.00)·100 = 140 (PRIOR print), NOT (4.40 − 3.05)·100 = 135.
+        assert!((de_mid.spread_bp - 140.0).abs() < 1e-6, "must use prior print, got {}", de_mid.spread_bp);
+        assert!((de_mid.spread_bp - 135.0).abs() > 1.0, "must NOT use the future print");
+        // The later US day flips to the 05-01 print: (4.45 − 3.05)·100 = 140.
+        let late = snaps.iter().find(|s| s.date == "2026-05-15").expect("late snapshot");
+        let de_late = late.pairs.iter().find(|p| p.country == "DE").expect("DE pair");
+        assert!((de_late.spread_bp - 140.0).abs() < 1e-6, "got {}", de_late.spread_bp);
     }
 }

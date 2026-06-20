@@ -231,6 +231,9 @@ pub fn differentials(backend: &BackendConnection, since: Option<&str>, json: boo
             snapshots.len(),
             since_date.as_deref().unwrap_or("(all)")
         );
+        println!(
+            "  (us-vs-g10 spread compares NOMINAL US 10y vs NOMINAL G10 OECD 10y; the tips10y/be10y columns are the US REAL/breakeven legs. G10 prints are monthly, forward-filled to each US day.)"
+        );
         for snap in snapshots.iter().take(20) {
             let avg = snap
                 .us_minus_g10_avg_bp
