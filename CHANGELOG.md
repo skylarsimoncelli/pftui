@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-20 — fix(cli): clarify technicals bare-flags vs subcommand-positional help (smoke-test polish)
+
+- What: a smoke test noted `technicals --help` advertises `--symbol/--timeframe/--limit/--include`, but the `indicators`/`structure`/`cyber` SUBCOMMANDS take a POSITIONAL `<SYMBOL>` and reject `--symbol` — a user copying `--symbol` from the parent help hits "unexpected argument". Added an `after_help` to the parent `technicals` command spelling out that those flags apply to the BARE form (the legacy panel) while the subcommands take a positional symbol, with three worked examples. Also annotated the `--symbol` arg doc. No behavior change — help-text only.
+- Files: `src/cli.rs`, `CHANGELOG.md`.
+
 ### 2026-06-20 — fix(analytics): FLD "% achieved" reads cleanly past target (smoke-test polish)
 
 - What: a smoke test flagged `cycles analyze` printing absurd FLD target progress like "845% achieved" — the `(extreme − cross)/(target − cross)` ratio balloons once the post-cross move reaches then runs well past the (often modest) 2× measured-move target, which reads like a bug. The math is per-spec; only the DISPLAY was confusing. Now once achieved ≥ 100% the line reads "target {t} (REACHED, +N% past)" instead of "{big}% achieved" — clearly an overshoot, not a glitch. Under-target FLDs (e.g. "26% achieved") are unchanged, and the raw `achieved_pct` stays in `--json` for anyone who wants the number.
