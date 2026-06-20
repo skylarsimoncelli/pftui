@@ -26,7 +26,9 @@ fn dated_closes(backend: &BackendConnection, resolved: &str) -> Result<HashMap<S
 
 pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: usize, json_output: bool) -> Result<()> {
     let method = Method::parse(method).ok_or_else(|| {
-        anyhow::anyhow!("unknown --method '{method}' (use: equal | inverse-vol | risk-parity)")
+        anyhow::anyhow!(
+            "unknown --method '{method}' (use: equal | inverse-vol | risk-parity | downside-risk-parity)"
+        )
     })?;
     // Resolve + de-dup the basket, preserving input order.
     let mut symbols: Vec<String> = Vec::new();
@@ -100,7 +102,12 @@ pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: us
         alloc.n_obs,
         common.last().map(|s| s.as_str()).unwrap_or("—")
     );
-    println!("{:<12} {:>8} {:>10} {:>14}", "Asset", "Weight", "Vol/yr", "Risk-Contrib");
+    let rc_label = if alloc.risk_basis == "semivariance" {
+        "Downside-RC"
+    } else {
+        "Risk-Contrib"
+    };
+    println!("{:<12} {:>8} {:>10} {:>14}", "Asset", "Weight", "Vol/yr", rc_label);
     for w in &alloc.weights {
         println!(
             "{:<12} {:>7.1}% {:>9.1}% {:>13.1}%",
@@ -109,6 +116,12 @@ pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: us
             w.vol_pct,
             w.risk_contribution * 100.0,
         );
+    }
+    if alloc.risk_basis == "semivariance" {
+        println!("(risk contributions equalized on the SEMIcovariance — co-downside, not symmetric vol)");
+    }
+    if let Some(note) = &alloc.note {
+        println!("⚠ {note}");
     }
     println!(
         "\nPortfolio vol {:.1}%/yr · diversification ratio {:.2} (higher = more benefit captured)",

@@ -3224,7 +3224,7 @@ pub enum AnalyticsBasketCommand {
         /// Comma-separated assets (alias or ticker), e.g. "BTC,gold,SPY"
         #[arg(long)]
         assets: String,
-        /// Allocation scheme: equal | inverse-vol | risk-parity
+        /// Allocation scheme: equal | inverse-vol | risk-parity | downside-risk-parity
         #[arg(long, default_value = "risk-parity")]
         method: String,
         /// Lookback window in trading days (0 = all common history)
@@ -5681,8 +5681,8 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         #[arg(long)]
         json: bool,
     },
-    /// Risk-aware basket weights (equal / inverse-vol / risk-parity) with per-asset risk contributions + diversification ratio
-    #[command(after_help = "Compute portfolio weights for a basket of assets from their common price\nhistory, under three risk-aware schemes:\n  equal         1/N (baseline)\n  inverse-vol   w_i ∝ 1/σ_i — equalizes standalone risk, ignores correlation\n  risk-parity   equal risk CONTRIBUTION (ERC) — each asset adds the same share\n                of portfolio variance, using the full covariance\n\nReports each asset's weight, annualized vol, and risk contribution, plus the\nportfolio vol and the diversification ratio (Σwᵢσᵢ / σ_portfolio, ≥1; higher =\nmore diversification benefit captured). Tickers with ^/=/- use their alias\n(gold, silver, us10y, dxy, vix).\n\nExamples:\n  pftui analytics basket weights --assets BTC,gold,SPY --method risk-parity\n  pftui analytics basket weights --assets BTC,gold --method inverse-vol --lookback 365 --json")]
+    /// Risk-aware basket weights (equal / inverse-vol / risk-parity / downside-risk-parity) with per-asset risk contributions + diversification ratio
+    #[command(after_help = "Compute portfolio weights for a basket of assets from their common price\nhistory, under four risk-aware schemes:\n  equal                 1/N (baseline)\n  inverse-vol           w_i ∝ 1/σ_i — equalizes standalone risk, ignores correlation\n  risk-parity           equal risk CONTRIBUTION (ERC) — each asset adds the same\n                        share of portfolio variance, using the full covariance\n  downside-risk-parity  ERC on the SEMIcovariance (co-downside only) — sizes for\n                        JOINT-CRASH risk rather than symmetric vol\n\nReports each asset's weight, annualized vol, and risk contribution, plus the\nportfolio vol and the diversification ratio (Σwᵢσᵢ / σ_portfolio, ≥1; higher =\nmore diversification benefit captured). Portfolio vol + diversification are\nalways full-variance (comparable across methods). Tickers with ^/=/- use their\nalias (gold, silver, us10y, dxy, vix).\n\nExamples:\n  pftui analytics basket weights --assets BTC,gold,SPY --method risk-parity\n  pftui analytics basket weights --assets BTC,gold,SPY --method downside-risk-parity\n  pftui analytics basket weights --assets BTC,gold --method inverse-vol --lookback 365 --json")]
     Basket {
         #[command(subcommand)]
         command: AnalyticsBasketCommand,
