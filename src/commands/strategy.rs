@@ -384,6 +384,13 @@ pub fn run_sweep(
     if vals.len() < 2 {
         bail!("--values needs at least 2 comma-separated values to sweep");
     }
+    // Validate values are numeric up front so a typo errors clearly instead of
+    // failing late as a "no price history" symbol-resolution error.
+    for v in &vals {
+        if v.parse::<f64>().is_err() {
+            bail!("--values entry '{v}' is not a number");
+        }
+    }
 
     let loader = PriceHistoryLoader { conn: backend.sqlite() };
     let exit_spec = strategy::parse_exit(exit)?;
@@ -431,8 +438,12 @@ pub fn run_sweep(
         );
     }
 
-    // Trial Sharpes (configs with a usable sample); best = max Sharpe with n≥10.
-    let trial_sharpes: Vec<f64> = cfgs.iter().filter_map(|c| c.sharpe).collect();
+    // Trial Sharpes — EVERY swept value counts as a trial (a config you ran is
+    // a trial you ran). A no-trade/degenerate config contributes 0 (it had no
+    // edge); dropping such configs would silently shrink n_trials AND collapse
+    // the trial-Sharpe variance, LOOSENING the Deflated-Sharpe bar — which an
+    // operator could exploit by padding --values with never-firing entries.
+    let trial_sharpes: Vec<f64> = cfgs.iter().map(|c| c.sharpe.unwrap_or(0.0)).collect();
     let best = cfgs
         .iter()
         .filter(|c| c.n_trades >= 10 && c.sharpe.is_some())
@@ -501,13 +512,13 @@ pub fn run_sweep(
                 if d.passes {
                     "the best config's edge SURVIVES selection over the grid"
                 } else {
-                    "the best config does NOT survive selection — likely in-sample overfitting, not a real edge"
+                    "this PARAMETER SELECTION is NOT proven after the search — the best value isn't distinguishable from the luckiest of the grid (not a claim the underlying rule is bad)"
                 },
             );
         }
         None => println!("Multiple-testing: no config had ≥10 trades with a usable return spread — sweep is anecdotal."),
     }
-    println!("(In-sample best is optimistic by construction; the Deflated Sharpe is the honest read.)");
+    println!("(In-sample best is optimistic by construction; the Deflated Sharpe is the honest read. Per-trade Sharpe mixes holding periods — not a time-based Sharpe.)");
     Ok(())
 }
 
