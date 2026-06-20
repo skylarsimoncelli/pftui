@@ -5474,6 +5474,13 @@ fn run_cli(cli: Cli) -> Result<()> {
                 lookback,
                 json,
             } => commands::hurst::run(&backend, &asset, lookback, json),
+            cli::AnalyticsCommand::RegimeBreak {
+                asset,
+                lookback,
+                k,
+                h,
+                json,
+            } => commands::regime_break::run(&backend, &asset, lookback, k, h, json),
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,

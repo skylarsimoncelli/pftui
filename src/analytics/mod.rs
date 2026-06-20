@@ -1,6 +1,7 @@
 pub mod analog;
 pub mod calibration_scorer;
 pub mod catalysts;
+pub mod changepoint;
 pub mod copula;
 pub mod environment;
 pub mod evt;
