@@ -1,5 +1,5 @@
 ---
-description: Deep, opinionated evaluation of ONE topic — marshals pftui's full analytical arsenal (TA, historic analogs, cycles, economic data, backtesting, positioning) plus the operator's portfolio/thesis/journal and what the multi-timeframe agents have been thinking, then confirms or denies the prevailing expectations with conviction and calls out flawed reasoning. Not a report — a verdict.
+description: Deep, opinionated evaluation of ONE topic — marshals pftui's full analytical arsenal (TA, historic analogs, cycles, tail-risk/regime measurement, economic data, backtesting, positioning) plus the operator's portfolio/thesis/journal and what the multi-timeframe agents have been thinking, then confirms or denies the prevailing expectations with conviction and calls out flawed reasoning. Not a report — a verdict.
 argument-hint: <topic or question to evaluate> [--asset SYM] [--quick] [--no-refresh]
 ---
 
@@ -137,8 +137,15 @@ pftui analytics analog --asset <SYM> --horizon 180 --json
 pftui analytics positioning --asset <SYM> --json                 # fused analog+regime+cycle stance + honesty note
 
 # MARKET CYCLES
-pftui analytics cycles clock --asset <SYM> --json                # halving/Loukas/major-vs-4yr (BTC), cycle position (gold)
+pftui analytics cycles clock --asset <SYM> --json                # halving/Loukas/major-vs-4yr (BTC) + the accumulation-clock stance; cycle position (gold)
 pftui analytics cycles analyze <SYM> --json
+
+# RISK & REGIME MEASUREMENT (the measurement layer — answer "how bad / what regime / is my basis defended")
+pftui analytics tail-risk --asset <SYM> --json                   # EVT (POT/GPD) fat-tail VaR 95/99/99.9 + Expected Shortfall + tail-fatness ξ
+pftui analytics tail-dependence --asset <SYM> --vs <OTHER> --json # do two assets co-crash? lower-tail λ_L (e.g. BTC vs gold — does diversification hold?)
+pftui analytics hurst --asset <SYM> --json                       # trending vs mean-reverting (R/S, Anis-Lloyd corrected) — is there a trend-follow edge?
+pftui analytics regime-break --asset <SYM> --json                # CUSUM change-point: did the drift just structurally break (dip vs regime change)?
+pftui analytics avwap --asset <SYM> --json                       # anchored VWAP from the cycle low — is price above/below the post-low average cost basis?
 
 # ECONOMIC DATA + the MARKET'S OWN expectations (so "confirm or deny market
 # expectations" has an external anchor, not just the desk's view)
