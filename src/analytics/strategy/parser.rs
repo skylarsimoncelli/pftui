@@ -107,6 +107,8 @@ pub enum OhlcKind {
     WilliamsR,
     /// Rate of Change (close) — `roc(period)`.
     Roc,
+    /// Ehlers Fisher Transform — `fisher(period)` (sharp turning-point oscillator).
+    Fisher,
     /// Money Flow Index (needs volume) — `mfi(period)`.
     Mfi,
     /// On-Balance Volume (needs volume) — `obv()`.
@@ -146,6 +148,7 @@ impl OhlcKind {
             | OhlcKind::Cci
             | OhlcKind::WilliamsR
             | OhlcKind::Roc
+            | OhlcKind::Fisher
             | OhlcKind::Mfi
             | OhlcKind::Adx
             | OhlcKind::PlusDi
@@ -166,6 +169,7 @@ impl OhlcKind {
             "cci" => OhlcKind::Cci,
             "williams_r" | "willr" => OhlcKind::WilliamsR,
             "roc" => OhlcKind::Roc,
+            "fisher" => OhlcKind::Fisher,
             "mfi" => OhlcKind::Mfi,
             "obv" => OhlcKind::Obv,
             "stoch_k" | "stoch" => OhlcKind::StochK,

@@ -29,8 +29,8 @@ use super::parser::{IndicatorKind, OhlcKind, PriceField, Timeframe};
 use crate::indicators::atr::compute_atr;
 use crate::indicators::bollinger::compute_bollinger;
 use crate::indicators::{
-    compute_adx, compute_cci, compute_ema, compute_macd, compute_mfi, compute_obv, compute_roc,
-    compute_rsi, compute_sma, compute_stochastic, compute_williams_r,
+    compute_adx, compute_cci, compute_ema, compute_fisher, compute_macd, compute_mfi, compute_obv,
+    compute_roc, compute_rsi, compute_sma, compute_stochastic, compute_williams_r,
 };
 
 /// Abstracts where raw `(date, value)` series come from, so the engine is
@@ -245,6 +245,7 @@ impl<'a> Resolver<'a> {
             OhlcKind::Atr
                 | OhlcKind::Cci
                 | OhlcKind::WilliamsR
+                | OhlcKind::Fisher
                 | OhlcKind::Mfi
                 | OhlcKind::StochK
                 | OhlcKind::StochD
@@ -268,6 +269,7 @@ impl<'a> Resolver<'a> {
             OhlcKind::Cci => compute_cci(&bars.high, &bars.low, &bars.close, p0),
             OhlcKind::WilliamsR => compute_williams_r(&bars.high, &bars.low, &bars.close, p0),
             OhlcKind::Roc => compute_roc(&bars.close, p0),
+            OhlcKind::Fisher => compute_fisher(&bars.high, &bars.low, p0),
             OhlcKind::Mfi => compute_mfi(&bars.high, &bars.low, &bars.close, &bars.vol, p0),
             OhlcKind::Obv => compute_obv(&bars.close, &bars.vol),
             OhlcKind::StochK | OhlcKind::StochD => {

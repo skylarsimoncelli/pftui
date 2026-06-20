@@ -98,6 +98,37 @@ pub fn compute_cci(highs: &[f64], lows: &[f64], closes: &[f64], period: usize) -
     out
 }
 
+/// Ehlers Fisher Transform — sharpens price extremes into a near-Gaussian
+/// oscillator with crisp turning points. Normalizes the median price
+/// `(high+low)/2` to [−1,1] over `period`, smooths it, then applies the Fisher
+/// transform `0.5·ln((1+x)/(1−x))` with a 0.5 EMA. Reversals show as sharp
+/// peaks/troughs; the classic trigger is a cross of the value vs its 1-bar lag.
+pub fn compute_fisher(highs: &[f64], lows: &[f64], period: usize) -> Vec<Option<f64>> {
+    let n = highs.len().min(lows.len());
+    let mut out = vec![None; n];
+    if period == 0 || n < period {
+        return out;
+    }
+    let median: Vec<f64> = (0..n).map(|i| (highs[i] + lows[i]) / 2.0).collect();
+    let mut value = 0.0f64; // smoothed normalized position
+    let mut fish = 0.0f64; // smoothed Fisher value
+    for i in (period - 1)..n {
+        let win = &median[i + 1 - period..=i];
+        let hh = win.iter().cloned().fold(f64::MIN, f64::max);
+        let ll = win.iter().cloned().fold(f64::MAX, f64::min);
+        let range = hh - ll;
+        let raw = if range > 0.0 {
+            2.0 * ((median[i] - ll) / range - 0.5)
+        } else {
+            0.0
+        };
+        value = (0.33 * raw + 0.67 * value).clamp(-0.999, 0.999);
+        fish = 0.5 * ((1.0 + value) / (1.0 - value)).ln() + 0.5 * fish;
+        out[i] = Some(fish);
+    }
+    out
+}
+
 /// Rate of Change = 100·(value − value[period bars ago]) / value[period ago].
 pub fn compute_roc(values: &[f64], period: usize) -> Vec<Option<f64>> {
     let n = values.len();
@@ -152,5 +183,20 @@ mod tests {
         let v = vec![100.0; 40];
         let c = compute_cci(&v, &v, &v, 20);
         assert_eq!(c[30], Some(0.0));
+    }
+
+    #[test]
+    fn fisher_high_at_top_of_range() {
+        // Price pinned at the top of a rising range → Fisher value strongly
+        // positive; at the bottom → strongly negative.
+        let highs: Vec<f64> = (0..40).map(|i| 100.0 + i as f64).collect();
+        let lows: Vec<f64> = (0..40).map(|i| 90.0 + i as f64).collect();
+        let f = compute_fisher(&highs, &lows, 10);
+        let last = f.last().unwrap().unwrap();
+        assert!(last > 1.0, "rising-to-high Fisher should be strongly positive, got {last}");
+        // Flat series → undefined range → Fisher stays at 0 (no signal).
+        let flat = vec![100.0; 40];
+        let ff = compute_fisher(&flat, &flat, 10);
+        assert_eq!(ff[30], Some(0.0));
     }
 }
