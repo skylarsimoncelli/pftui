@@ -6406,6 +6406,28 @@ pub enum AnalyticsStrategyCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Parameter sweep with multiple-testing correction: backtest each value of $P and judge the BEST via Deflated Sharpe
+    #[command(after_help = "Sweep one parameter across a grid and apply the Deflated Sharpe Ratio so the\nbest config is judged AFTER accounting for selection over N trials — the\noverfitting guard a single backtest can't give. Put `$P` in the entry rule where\nthe swept value goes.\n\nExamples:\n  pftui analytics strategy sweep --asset BTC --entry \"rsi(14) < $P\" --values \"20,25,30,35,40\" --exit \"hold 10d\"\n  pftui analytics strategy sweep --asset BTC --entry \"rsi($P) < 35\" --values \"7,14,21,28\" --exit \"hold 14d\" --json")]
+    Sweep {
+        /// Primary asset traded (alias or ticker)
+        #[arg(long)]
+        asset: String,
+        /// Entry rule containing the `$P` placeholder for the swept value
+        #[arg(long)]
+        entry: String,
+        /// Comma-separated values to substitute for `$P` (e.g. "20,25,30,35,40")
+        #[arg(long)]
+        values: String,
+        /// Exit rule: "hold <N>d" (default "hold 90d") or a condition expression
+        #[arg(long)]
+        exit: Option<String>,
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
