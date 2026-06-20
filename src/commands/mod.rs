@@ -98,6 +98,7 @@ pub mod real_yields;
 pub mod rebalance;
 pub mod recommendations;
 pub mod regime_break;
+pub mod risk_dashboard;
 pub mod refresh;
 pub mod refresh_dag;
 pub mod regime;

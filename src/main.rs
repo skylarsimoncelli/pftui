@@ -5481,6 +5481,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 h,
                 json,
             } => commands::regime_break::run(&backend, &asset, lookback, k, h, json),
+            cli::AnalyticsCommand::RiskDashboard { asset, vs, json } => {
+                commands::risk_dashboard::run(&backend, &asset, vs.as_deref(), json)
+            }
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,
