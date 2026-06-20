@@ -511,6 +511,214 @@ pub fn run_sweep(
     Ok(())
 }
 
+/// Walk-forward optimization: split the timeline into folds, optimize `$P` on
+/// each train segment, and measure the chosen value on the NEXT (held-out) test
+/// segment. The Walk-Forward Efficiency (OOS edge / in-sample-best edge) is the
+/// honest "does the optimization generalize, or is it curve-fit?" read.
+///
+/// Warmup-correct: each param is backtested over FULL history once, then trades
+/// are partitioned by entry date into segments — so indicators warm up on all
+/// data rather than losing their lookback at each window boundary.
+#[allow(clippy::too_many_arguments)]
+pub fn run_walkforward(
+    backend: &BackendConnection,
+    asset: &str,
+    entry: &str,
+    values: &str,
+    exit: Option<&str>,
+    folds: usize,
+    json_output: bool,
+) -> Result<()> {
+    use crate::research::validation as v;
+    if !entry.contains("$P") {
+        bail!("--entry must contain the sweep placeholder `$P` (e.g. \"rsi(14) < $P\")");
+    }
+    if folds < 2 {
+        bail!("--folds must be at least 2");
+    }
+    let vals: Vec<String> = values
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if vals.len() < 2 {
+        bail!("--values needs at least 2 comma-separated values to optimize over");
+    }
+
+    let loader = PriceHistoryLoader { conn: backend.sqlite() };
+    let exit_spec = strategy::parse_exit(exit)?;
+    // Full-history resolver (no window) so indicators warm up on all data; we
+    // partition the resulting TRADES by date into folds afterward.
+    let (mut resolver, primary) = build_resolver(&loader, asset, None, None)?;
+    let master: Vec<String> = resolver.master_dates().to_vec();
+    if master.len() < folds * 30 {
+        bail!("not enough history for {folds} folds (need ≥{} bars, have {})", folds * 30, master.len());
+    }
+
+    // Backtest each param over full history → its trades (entry_date, return).
+    let mut by_param: Vec<(String, Vec<(String, f64)>)> = Vec::new();
+    for value in &vals {
+        let entry_str = entry.replace("$P", value);
+        let expr = parser::parse(&entry_str)
+            .map_err(|e| anyhow::anyhow!("value '{value}' → parse error: {e}"))?;
+        let report = strategy::run_backtest(
+            &mut resolver,
+            &expr,
+            &exit_spec,
+            strategy::RiskExits::default(),
+            strategy::Costs::default(),
+            None,
+        )?;
+        let trades: Vec<(String, f64)> = report
+            .trades
+            .iter()
+            .map(|t| (t.entry_date.clone(), t.return_pct / 100.0))
+            .collect();
+        by_param.push((value.clone(), trades));
+    }
+    let missing = resolver.missing_symbols();
+    if !missing.is_empty() {
+        bail!("referenced symbol(s) resolved to NO price history: {}", missing.join(", "));
+    }
+
+    // Split the master axis into `folds + 1` contiguous segments by index; fold
+    // i optimizes on segment i, tests on segment i+1.
+    let n = master.len();
+    let seg = |k: usize| -> (String, String) {
+        let lo = k * n / (folds + 1);
+        let hi = ((k + 1) * n / (folds + 1)).saturating_sub(1).max(lo);
+        (master[lo].clone(), master[hi].clone())
+    };
+    let sharpe_in = |trades: &[(String, f64)], from: &str, to: &str| -> (usize, Option<f64>, Option<f64>) {
+        let rets: Vec<f64> = trades
+            .iter()
+            .filter(|(d, _)| d.as_str() >= from && d.as_str() <= to)
+            .map(|(_, r)| *r)
+            .collect();
+        let mean = (!rets.is_empty()).then(|| rets.iter().sum::<f64>() / rets.len() as f64);
+        (rets.len(), mean, v::sharpe(&rets))
+    };
+
+    struct Fold {
+        train: (String, String),
+        test: (String, String),
+        best_value: Option<String>,
+        is_sharpe: Option<f64>,
+        is_n: usize,
+        oos_sharpe: Option<f64>,
+        oos_mean_pct: Option<f64>,
+        oos_n: usize,
+    }
+    let mut fold_rows: Vec<Fold> = Vec::new();
+    for i in 0..folds {
+        let train = seg(i);
+        let test = seg(i + 1);
+        // Optimize: best param by in-sample Sharpe (require ≥5 train trades).
+        let mut best: Option<(String, f64)> = None;
+        for (val, trades) in &by_param {
+            let (cnt, _m, sh) = sharpe_in(trades, &train.0, &train.1);
+            if cnt >= 5 {
+                if let Some(s) = sh {
+                    if best.as_ref().map(|(_, bs)| s > *bs).unwrap_or(true) {
+                        best = Some((val.clone(), s));
+                    }
+                }
+            }
+        }
+        let (oos_n, oos_mean, oos_sharpe, best_value, is_sharpe, is_n) = match &best {
+            Some((val, is_s)) => {
+                let trades = &by_param.iter().find(|(v, _)| v == val).unwrap().1;
+                let (is_cnt, _, _) = sharpe_in(trades, &train.0, &train.1);
+                let (cnt, mean, sh) = sharpe_in(trades, &test.0, &test.1);
+                (cnt, mean.map(|m| m * 100.0), sh, Some(val.clone()), Some(*is_s), is_cnt)
+            }
+            None => (0, None, None, None, None, 0),
+        };
+        fold_rows.push(Fold { train, test, best_value, is_sharpe, is_n, oos_sharpe, oos_mean_pct: oos_mean, oos_n });
+    }
+
+    // Aggregate: avg IS-best Sharpe vs avg OOS Sharpe, and WFE = their ratio.
+    let is_sharpes: Vec<f64> = fold_rows.iter().filter_map(|f| f.is_sharpe).collect();
+    let oos_sharpes: Vec<f64> = fold_rows.iter().filter_map(|f| f.oos_sharpe).collect();
+    let avg_is = (!is_sharpes.is_empty()).then(|| is_sharpes.iter().sum::<f64>() / is_sharpes.len() as f64);
+    let avg_oos = (!oos_sharpes.is_empty()).then(|| oos_sharpes.iter().sum::<f64>() / oos_sharpes.len() as f64);
+    let wfe = match (avg_is, avg_oos) {
+        (Some(i), Some(o)) if i.abs() > 1e-9 => Some(o / i),
+        _ => None,
+    };
+
+    if json_output {
+        let folds_json: Vec<_> = fold_rows
+            .iter()
+            .map(|f| {
+                json!({
+                    "train": [f.train.0, f.train.1],
+                    "test": [f.test.0, f.test.1],
+                    "best_value": f.best_value,
+                    "is_sharpe": f.is_sharpe,
+                    "is_trades": f.is_n,
+                    "oos_sharpe": f.oos_sharpe,
+                    "oos_mean_return_pct": f.oos_mean_pct,
+                    "oos_trades": f.oos_n,
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "command": "strategy walkforward",
+                "asset": asset,
+                "resolved_symbol": primary,
+                "entry": entry,
+                "exit": exit.unwrap_or("hold 90d (default)"),
+                "values": vals,
+                "folds": folds_json,
+                "avg_is_sharpe": avg_is,
+                "avg_oos_sharpe": avg_oos,
+                "walk_forward_efficiency": wfe,
+            }))?
+        );
+        return Ok(());
+    }
+
+    println!("═══ Walk-Forward Optimization: {} ({}) ═══", asset, primary);
+    println!("Entry: {entry}   (optimizing $P over {} values, {folds} folds)", vals.len());
+    println!("Exit:  {}\n", exit.unwrap_or("hold 90d (default)"));
+    let r = |o: Option<f64>| o.map(|x| format!("{x:.3}")).unwrap_or_else(|| "—".into());
+    println!("{:<22} {:>8} {:>22} {:>9} {:>8}", "test window", "best $P", "IS Sh (n)", "OOS Sh", "OOS n");
+    println!("{}", "─".repeat(74));
+    for f in &fold_rows {
+        println!(
+            "{:<22} {:>8} {:>14} ({:>3}) {:>9} {:>8}",
+            format!("{}→{}", f.test.0, f.test.1),
+            f.best_value.clone().unwrap_or_else(|| "—".into()),
+            r(f.is_sharpe),
+            f.is_n,
+            r(f.oos_sharpe),
+            f.oos_n,
+        );
+    }
+    println!();
+    match wfe {
+        Some(w) => {
+            let verdict = if w >= 0.5 {
+                "ROBUST — OOS retains ≥half the in-sample edge; the optimization generalizes"
+            } else if w > 0.0 {
+                "FRAGILE — OOS keeps only a fraction of the in-sample edge; partly curve-fit"
+            } else {
+                "FAILS OOS — the in-sample-best param has no (or negative) edge out of sample; overfit"
+            };
+            println!(
+                "Walk-forward efficiency: avg IS Sharpe {} → avg OOS Sharpe {} → WFE {:.2} → {}",
+                r(avg_is), r(avg_oos), w, verdict
+            );
+        }
+        None => println!("Walk-forward efficiency: not enough train/test trades across folds — inconclusive."),
+    }
+    println!("(OOS = held-out forward segment never seen during $P selection — the honest forward read.)");
+    Ok(())
+}
+
 pub fn run_segment(
     backend: &BackendConnection,
     asset: &str,

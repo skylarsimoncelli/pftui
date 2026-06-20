@@ -5573,6 +5573,22 @@ fn run_cli(cli: Cli) -> Result<()> {
                     to.as_deref(),
                     json,
                 ),
+                cli::AnalyticsStrategyCommand::Walkforward {
+                    asset,
+                    entry,
+                    values,
+                    exit,
+                    folds,
+                    json,
+                } => commands::strategy::run_walkforward(
+                    &backend,
+                    &asset,
+                    &entry,
+                    &values,
+                    exit.as_deref(),
+                    folds,
+                    json,
+                ),
             },
             cli::AnalyticsCommand::Sources { command } => match command {
                 cli::AnalyticsSourcesCommand::List { source_type, json } => {
