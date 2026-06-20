@@ -104,6 +104,14 @@ pub struct SupertrendResult {
 /// price holds above the lower band, −1 while it sits below the upper band.
 ///
 /// Warmup follows ATR: `None` until the first ATR value (bar `period-1`).
+///
+/// This is the **Everget v3** variant: Wilder-smoothed ATR and a flip check
+/// against the *current* (just-ratcheted) band (`close > final_upper`). Note a
+/// SECOND, intentionally distinct Supertrend port lives in
+/// [`crate::analytics::cyber::dots`] (CyberDots): SMA-smoothed range and a flip
+/// check against the *previous* band (`close > prev_dn`). They can disagree by
+/// a bar when ATR expands on the flip bar — by design; don't "reconcile" one to
+/// the other. This DSL primitive (`supertrend`/`supertrend_dir`) uses THIS one.
 pub fn compute_supertrend(
     highs: &[f64],
     lows: &[f64],
@@ -245,13 +253,41 @@ mod tests {
         let last = st.last().unwrap().unwrap();
         assert_eq!(last.dir, -1, "ends in a downtrend");
         assert!(last.line > *closes.last().unwrap(), "downtrend line must be above price");
+        // Pin the flip-bar INDICES so a one-bar-early/late regression fails
+        // (the regime-presence checks above would pass either way). For this
+        // exact series: seed downtrend at bar 9, up-flip at 22, down-flip at 47.
+        let flips: Vec<(usize, i8)> = st
+            .iter()
+            .enumerate()
+            .filter_map(|(i, o)| o.map(|r| (i, r.dir)))
+            .scan(0i8, |prev, (i, d)| {
+                let changed = d != *prev;
+                *prev = d;
+                Some((i, d, changed))
+            })
+            .filter_map(|(i, d, changed)| changed.then_some((i, d)))
+            .collect();
+        assert_eq!(flips, vec![(9, -1), (22, 1), (47, -1)], "flip bars drifted: {flips:?}");
     }
 
     #[test]
     fn supertrend_guards_bad_params() {
         let v = vec![100.0; 30];
+        // Bad params → all-None.
         assert!(compute_supertrend(&v, &v, &v, 0, 3.0).iter().all(|x| x.is_none()));
         assert!(compute_supertrend(&v, &v, &v, 10, 0.0).iter().all(|x| x.is_none()));
-        assert!(compute_supertrend(&v, &v, &v, 10, 3.0).len() == 30);
+        assert!(compute_supertrend(&v, &v, &v, 10, -1.0).iter().all(|x| x.is_none()));
+        // Valid params on a non-trivial series → None strictly before the ATR
+        // warmup boundary (bar period-1) and Some from there on (no NaN/inf).
+        let highs: Vec<f64> = (0..30).map(|i| 102.0 + i as f64).collect();
+        let lows: Vec<f64> = (0..30).map(|i| 98.0 + i as f64).collect();
+        let closes: Vec<f64> = (0..30).map(|i| 100.0 + i as f64).collect();
+        let st = compute_supertrend(&highs, &lows, &closes, 10, 3.0);
+        assert_eq!(st.len(), 30);
+        assert!(st[..9].iter().all(|x| x.is_none()), "None before warmup boundary");
+        assert!(
+            st[9..].iter().all(|x| x.map(|r| r.line.is_finite()).unwrap_or(false)),
+            "finite line from the warmup boundary onward"
+        );
     }
 }
