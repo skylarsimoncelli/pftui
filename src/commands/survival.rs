@@ -85,8 +85,9 @@ pub fn run(
             pct(s.max_dd_ar1),
         );
         println!(
-            "Underwater:  to-trough {} · total time-under-water {} i.i.d · {} AR(1)",
+            "Underwater:  to-trough {} i.i.d · {} AR(1) · total time-under-water {} i.i.d · {} AR(1)",
             days(s.time_to_dd_days),
+            days(s.time_to_dd_ar1_days),
             days(s.max_tuw_iid_days),
             days(s.max_tuw_ar1_days),
         );

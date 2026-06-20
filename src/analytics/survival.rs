@@ -34,12 +34,17 @@ pub struct Survival {
     pub sigma_pct: f64,
     /// Lag-1 autocorrelation used for the AR(1) correction (clamped ±0.95).
     pub phi: f64,
-    /// Expected max drawdown at confidence α — i.i.d. Gaussian (fraction).
+    /// Expected max drawdown at confidence α — i.i.d. Gaussian, as an
+    /// ARITHMETIC fraction (`1−e^−x` of the log-space Triple-Penance output, so
+    /// it is comparable to CDaR/EVT and reads as the "price fell by X%" a human
+    /// expects — NOT the raw log drop).
     pub max_dd_iid: Option<f64>,
-    /// Expected max drawdown with the AR(1) variance correction (fraction).
+    /// Expected max drawdown with the AR(1) variance correction (arithmetic).
     pub max_dd_ar1: Option<f64>,
     /// Time to reach the expected max drawdown (trading days), i.i.d.
     pub time_to_dd_days: Option<f64>,
+    /// Time-to-trough with the AR(1) serial-correlation correction (days).
+    pub time_to_dd_ar1_days: Option<f64>,
     /// Max time-under-water (drawdown + recovery ≈ 4·T_DD), i.i.d. (days).
     pub max_tuw_iid_days: Option<f64>,
     /// Max time-under-water with the AR(1) correction (days).
@@ -138,6 +143,7 @@ pub fn compute(
             max_dd_iid: None,
             max_dd_ar1: None,
             time_to_dd_days: None,
+            time_to_dd_ar1_days: None,
             max_tuw_iid_days: None,
             max_tuw_ar1_days: None,
             recovery_required_at_cdar95,
@@ -150,13 +156,19 @@ pub fn compute(
         });
     }
 
-    // Triple Penance (Gaussian): T_DD = (z·σ/(2μ))²; MaxDD = z²σ²/(4μ);
-    // recovery ≈ 3·T_DD so total time-under-water ≈ 4·T_DD.
+    // Triple Penance in LOG-wealth space: T_DD = (z·σ/(2μ))²; the max LOG
+    // drawdown = z²σ²/(4μ); recovery ≈ 3·T_DD so total time-under-water ≈ 4·T_DD.
     let t_dd = (z * sigma / (2.0 * mu)).powi(2);
-    let max_dd_iid = z * z * var / (4.0 * mu);
-    let max_dd_ar1 = z * z * var_lr / (4.0 * mu);
+    let t_dd_ar1 = t_dd * (1.0 + phi) / (1.0 - phi);
+    let max_dd_log_iid = z * z * var / (4.0 * mu);
+    let max_dd_log_ar1 = z * z * var_lr / (4.0 * mu);
+    // Convert the log drop to an ARITHMETIC drawdown fraction (1−e^−x), so it is
+    // comparable to the arithmetic CDaR/EVT figures shown alongside it and reads
+    // as the actual percentage price fall (log 0.27 → arithmetic 0.237).
+    let max_dd_iid = 1.0 - (-max_dd_log_iid).exp();
+    let max_dd_ar1 = 1.0 - (-max_dd_log_ar1).exp();
     let max_tuw_iid = 4.0 * t_dd;
-    let max_tuw_ar1 = 4.0 * t_dd * (1.0 + phi) / (1.0 - phi);
+    let max_tuw_ar1 = 4.0 * t_dd_ar1;
 
     let regime = if phi > 0.05 {
         format!("positive drift; trending (φ={phi:.2}) — AR(1) figures are the honest ones, i.i.d. understates underwater time")
@@ -171,6 +183,7 @@ pub fn compute(
         max_dd_iid: Some(max_dd_iid),
         max_dd_ar1: Some(max_dd_ar1),
         time_to_dd_days: Some(t_dd),
+        time_to_dd_ar1_days: Some(t_dd_ar1),
         max_tuw_iid_days: Some(max_tuw_iid),
         max_tuw_ar1_days: Some(max_tuw_ar1),
         recovery_required_at_cdar95,
@@ -218,23 +231,60 @@ mod tests {
 
     #[test]
     fn triple_penance_matches_hand_computation() {
-        // Use compute() but isolate the Triple-Penance formula by feeding a
-        // series with μ=0.001, σ=0.02. The ±σ pattern gives sample var slightly
-        // above σ² (n−1), so check the FORMULA directly on exact μ,σ instead.
+        // Check the Triple-Penance FORMULAS directly on exact μ=0.001, σ=0.02
+        // (the ±σ test series gives a slightly different sample var). MaxDD here
+        // is the LOG-space drop; the reported field is its arithmetic conversion.
         let mu = 0.001_f64;
         let sigma = 0.02_f64;
         let z = normal_inv_cdf(0.95);
         let t_dd = (z * sigma / (2.0 * mu)).powi(2);
-        let max_dd = z * z * (sigma * sigma) / (4.0 * mu);
+        let max_dd_log = z * z * (sigma * sigma) / (4.0 * mu);
         let max_tuw = 4.0 * t_dd;
         assert!((t_dd - 270.55).abs() < 0.1, "T_DD={t_dd}");
-        assert!((max_dd - 0.270554).abs() < 1e-4, "MaxDD={max_dd}");
+        assert!((max_dd_log - 0.270554).abs() < 1e-4, "MaxDD(log)={max_dd_log}");
         assert!((max_tuw - 1082.2).abs() < 0.5, "MaxTuW={max_tuw}");
         // And compute() wires it together without panicking on a real series.
         let s = compute(&series_mu_sigma(mu, sigma, 400), Some(0.3), 25.0, 0.95).unwrap();
         assert!(s.reliable);
         assert!(s.max_dd_iid.unwrap() > 0.0);
         assert_eq!(s.recovery_required_at_cdar95, recovery_required(0.3));
+    }
+
+    #[test]
+    fn max_dd_is_reported_in_arithmetic_space() {
+        // QA #974: the Triple-Penance MaxDD is a LOG drop; the reported field
+        // must be the arithmetic `1−e^−x` so it is comparable to CDaR/EVT.
+        let series = series_mu_sigma(0.001, 0.02, 400);
+        let n = series.len() as f64;
+        let mu = series.iter().sum::<f64>() / n;
+        let var = series.iter().map(|r| (r - mu).powi(2)).sum::<f64>() / (n - 1.0);
+        let z = normal_inv_cdf(0.95);
+        let log_dd = z * z * var / (4.0 * mu);
+        let expected_arith = 1.0 - (-log_dd).exp();
+        let s = compute(&series, None, 25.0, 0.95).unwrap();
+        assert!(
+            (s.max_dd_iid.unwrap() - expected_arith).abs() < 1e-9,
+            "max_dd_iid should be arithmetic 1−e^−log: got {} want {expected_arith}",
+            s.max_dd_iid.unwrap()
+        );
+        // The conversion strictly shrinks a positive drop: arithmetic < log.
+        assert!(s.max_dd_iid.unwrap() < log_dd);
+    }
+
+    /// Positive-lag-1-autocorrelation series (a slow sinusoid, φ≈cos(0.6)≈0.82,
+    /// unclamped) — the trending case the AR(1) correction exists for.
+    fn series_positive_autocorr(mu: f64, amp: f64, n: usize) -> Vec<f64> {
+        (0..n).map(|t| mu + amp * (t as f64 * 0.6).sin()).collect()
+    }
+
+    #[test]
+    fn ar1_inflates_underwater_time_for_a_trending_series() {
+        let s = compute(&series_positive_autocorr(0.001, 0.03, 400), None, 25.0, 0.95).unwrap();
+        assert!(s.phi > 0.05, "expected positive autocorrelation, got φ={}", s.phi);
+        // φ>0 → long-run variance inflated → AR(1) depth AND time exceed i.i.d.
+        assert!(s.max_dd_ar1.unwrap() > s.max_dd_iid.unwrap());
+        assert!(s.max_tuw_ar1_days.unwrap() > s.max_tuw_iid_days.unwrap());
+        assert!(s.time_to_dd_ar1_days.unwrap() > s.time_to_dd_days.unwrap());
     }
 
     #[test]
