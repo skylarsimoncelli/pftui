@@ -635,7 +635,7 @@ Skill package:
 
 1. **Always `pftui data refresh` before reading data.** Cached prices go stale. Refresh fetches from 19+ sources in one call and runs the recurring scoring/detection tail.
 
-2. **Use `--json` for programmatic access.** Every command supports it. Parse structured output instead of scraping text.
+2. **Use `--json` for programmatic access.** Every command supports it. Parse structured output instead of scraping text. On the `analytics` risk/measurement commands (`survival`, `risk-dashboard`, `tail-risk`, `tail-dependence`, `hurst`, `regime-break`, `avwap`, `basket weights`), a FAILURE under `--json` now emits a machine-readable envelope on STDOUT — `{"error": {"command": "...", "message": "..."}}` — with exit code 1 (the human-readable line still goes to stderr). So a `--json` consumer always gets parseable stdout, never an empty buffer.
 
 3. **Keep the journal active.** `pftui journal entry add` builds a searchable decision history. Log your predictions, rationale, and outcomes.
 

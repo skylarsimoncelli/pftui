@@ -7,6 +7,7 @@ pub mod allocation;
 pub mod analyst_views;
 pub mod adversary_synthesis;
 pub mod basket;
+pub mod cli_json;
 pub mod analytics;
 pub mod analytics_enrichment;
 pub mod annotate;
