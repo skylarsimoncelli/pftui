@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-20 — feat(analytics): downside (semivariance) risk-parity for the basket allocator
+
+- What: added a fourth `analytics basket weights --method downside-risk-parity` scheme that runs the existing ERC solver on the **Estrada semicovariance** `SC_ij = (1/n)·Σ min(rᵢ,0)·min(rⱼ,0)` (co-movement of LOSSES only) instead of the full covariance — so the basket is sized to equalize JOINT-CRASH risk rather than symmetric volatility. The semicovariance is symmetric/PSD (a Gram matrix of the downside-clipped returns) so the Maillard fixed point applies unchanged. A new `risk_basis` field (`variance`|`semivariance`) records what the solver + risk-contributions used; portfolio vol + diversification ratio stay full-variance so they remain comparable across all four methods.
+- Why: the operator's whole thesis rests on BTC↔gold *crash* behaviour (cf. the tail-dependence/co-crash work). Symmetric risk-parity weights by total vol; downside-RP weights by the vol that actually hurts. On BTC/gold/SPY the two agree closely (BTC 11.7% downside vs 10.8% symmetric — its co-downside is milder than its symmetric vol), confirming the diversification is real, not an artifact of quiet-day noise.
+- Tests: 2 new unit tests (downside-RP equalizes semivariance risk contributions AND its weights differ from symmetric RP on a deliberately down-day-correlated pair; semicovariance is symmetric, downside-only, zero when no losses); full `cargo test` + `cli_help_smoke` green; clippy clean.
+- Files: `src/analytics/basket.rs`, `src/commands/basket.rs`, `src/cli.rs`, `AGENTS.md`.
+
+
 ### 2026-06-20 — feat(analytics): risk-aware basket allocator (equal / inverse-vol / risk-parity ERC)
 
 - What: new `analytics basket weights --assets A,B,C [--method ...] [--lookback N]` — the first analytical portfolio-construction surface (the existing allocation commands manage user-SET targets; this COMPUTES risk-optimal weights). New `src/analytics/basket.rs` (pure f64, zero deps/tables): covariance matrix, inverse-vol weights, and equal-risk-contribution (risk parity) via the Maillard fixed point `w_i ← (1/N)/(Cov·w)_i` (normalized each step, seeded from inverse-vol, converges to the unique long-only ERC portfolio). Reports per-asset weight + annualized vol + fractional risk contribution, portfolio vol, and the diversification ratio (Σwᵢσᵢ/σ_p). Read-only over `price_history` (public market data; no portfolio data touched). `src/commands/basket.rs` aligns the basket on its common date axis (intersect-then-difference, same as tail-dependence) before estimating covariance; ≥21 common dates required.
