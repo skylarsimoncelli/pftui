@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-20 — feat(analytics): wire survival into the risk-dashboard capstone
+
+- What: the `risk-dashboard` now carries a **Survival** line + `survival` JSON field — risk-of-ruin vs the 25% Kelly budget, Triple-Penance arithmetic max-DD, and time-under-water (i.i.d. + AR(1)), computed by `analytics::survival::compute` on the same price series + CDaR-95 the dashboard already measures. The composite risk verdict now also fires on **HIGH ruin** (≥50% to breach budget), **survivable** (<15%), and **no-positive-drift** (recovery unbounded → hold only with cycle conviction). This makes the risk capstone complete: depth (EVT/CDaR) AND time/solvency (survival) in one auditable view, the way `positioning` is the direction capstone.
+- Why: depth alone ("how far can it fall?") under-serves a multi-year accumulator; the binding question is "how long underwater + will I be forced out?". BTC reads HIGH ruin (58%) vs gold survivable (15%) at a 25% budget — the contrast that sizes the accumulation.
+- Tests: full `cargo test` + `cli_help_smoke` green; clippy clean. Live: BTC risk-dashboard composite "high vol; co-crash LOW; HIGH ruin risk (58%)"; gold "co-crash LOW; survivable (15%)". (Survival math itself is unit-tested in #974.)
+- Files: `src/commands/risk_dashboard.rs`, `AGENTS.md`.
+
+
 ### 2026-06-20 — feat(analytics): drawdown survival & recovery engine (Triple Penance + risk-of-ruin)
 
 - What: new `analytics survival --asset SYM` + `src/analytics/survival.rs` (pure f64, zero deps/tables) — the TIME and SOLVENCY axis the risk suite was missing. Every existing risk view (EVT VaR, CDaR/Ulcer, co-crash λ_L) answers "how deep?"; none answered "how LONG underwater, and will I be forced out before the cycle turns?" — the binding question for a multi-year accumulator. Three closed-form pieces (Bailey & López de Prado, "Stop-Outs Under Serial Correlation"): the **recovery cliff** `D/(1−D)` on the measured CDaR-95; **Triple Penance** expected max-drawdown / time-to-trough / total-time-under-water at confidence α, each shown i.i.d. AND with an **AR(1) serial-correlation correction** (`σ²(1+φ)/(1−φ)`); and **risk of ruin** `exp(−2μ·b/σ²)` against a drawdown budget. Composes with the prior PRs: reads CDaR-95 from `drawdown_metrics`, and the budget defaults to `kelly::DEFAULT_DRAWDOWN_BUDGET_PCT`.
