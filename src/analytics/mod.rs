@@ -13,6 +13,7 @@ pub mod deltas;
 pub mod drawdown_metrics;
 pub mod drawdown;
 pub mod impact;
+pub mod kelly;
 pub mod levels;
 pub mod market_structure;
 pub mod narrative;

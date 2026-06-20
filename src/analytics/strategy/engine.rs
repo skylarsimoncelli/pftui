@@ -286,6 +286,9 @@ pub struct TradeReport {
     /// Drawdown-path-coherent risk metrics (CDaR / Ulcer / Omega) over the
     /// per-trade equity curve. `None` below 20 trades (estimator unreliable).
     pub drawdown_metrics: Option<crate::analytics::drawdown_metrics::DrawdownMetrics>,
+    /// Fractional-Kelly sizing guidance from the realized per-trade edge,
+    /// uncertainty-haircut + CDaR-capped. `None` below 20 trades.
+    pub kelly: Option<crate::analytics::kelly::KellySizing>,
     pub trades: Vec<Trade>,
 }
 
@@ -632,6 +635,15 @@ pub fn trade_report(
     let drawdown_metrics =
         crate::analytics::drawdown_metrics::compute(&equity_curve, cagr_pct, 0.0);
 
+    // Fractional-Kelly sizing from the realized per-trade edge, capped by the
+    // measured CDaR-95 drawdown budget (the coherent risk denominator).
+    let kelly_returns: Vec<f64> = trades.iter().map(|t| t.return_pct / 100.0).collect();
+    let kelly = crate::analytics::kelly::compute(
+        &kelly_returns,
+        drawdown_metrics.as_ref().map(|d| d.cdar_95),
+        crate::analytics::kelly::DEFAULT_DRAWDOWN_BUDGET_PCT,
+    );
+
     rets.clear();
     TradeReport {
         n_trades: n,
@@ -662,6 +674,7 @@ pub fn trade_report(
         monte_carlo,
         sizing: None, // set by run_backtest when --vol-target is requested
         drawdown_metrics,
+        kelly,
         trades,
     }
 }
