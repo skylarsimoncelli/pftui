@@ -71,6 +71,14 @@ pub fn run(
     // (tail of the drawdown distribution) + duration-aware Ulcer/Omega. This is
     // the buy-and-hold risk the operator actually sits through accumulating.
     let dd_metrics = crate::analytics::drawdown_metrics::compute(&closes, None, 0.0);
+    // Survival: the TIME/solvency complement — how long underwater + risk-of-ruin
+    // against the Kelly drawdown budget, feeding the same CDaR-95 just measured.
+    let survival = crate::analytics::survival::compute(
+        &log_rets,
+        dd_metrics.as_ref().map(|d| d.cdar_95),
+        crate::analytics::kelly::DEFAULT_DRAWDOWN_BUDGET_PCT,
+        0.95,
+    );
 
     // Co-crash partner — reuse the SHARED aligned-returns helper that
     // `tail-dependence` uses (intersect dates first, difference over consecutive
@@ -96,6 +104,7 @@ pub fn run(
                 "drawdown_from_ath_pct": (dd_from_ath * 100.0).round() / 100.0,
                 "tail_risk": evt,
                 "drawdown_path": dd_metrics,
+                "survival": survival,
                 "hurst": hurst_res,
                 "regime_break": regime,
                 "co_crash": td.as_ref().map(|t| json!({ "vs": partner, "tail_dependence": t })),
@@ -128,6 +137,29 @@ pub fn run(
             d.omega_ratio.map(|v| format!("{v:.2}")).unwrap_or_else(|| "—".into()),
         );
     }
+    if let Some(s) = &survival {
+        // The TIME/solvency complement: how long underwater + risk-of-ruin.
+        if s.reliable {
+            let yrs = |o: Option<f64>| {
+                o.map(|d| format!("{:.1}y", d / 365.25)).unwrap_or_else(|| "—".into())
+            };
+            println!(
+                "Survival:    ruin {:.0}% vs {:.0}% budget | max-DD@95% {} | time-under-water {} (AR(1) {}) — depth above is the complement",
+                s.ruin_prob * 100.0,
+                s.budget_pct,
+                s.max_dd_iid.map(|v| format!("{:.0}%", v * 100.0)).unwrap_or_else(|| "—".into()),
+                yrs(s.max_tuw_iid_days),
+                yrs(s.max_tuw_ar1_days),
+            );
+        } else {
+            println!(
+                "Survival:    ruin {:.0}% vs {:.0}% budget | {}",
+                s.ruin_prob * 100.0,
+                s.budget_pct,
+                s.regime,
+            );
+        }
+    }
     match &hurst_res {
         Some(h) => println!(
             "Regime:      Hurst {:.2} ({}) | DFA {} | {}",
@@ -155,7 +187,7 @@ pub fn run(
             },
         );
     }
-    println!("\n{}", risk_verdict(&evt, vol, &td));
+    println!("\n{}", risk_verdict(&evt, vol, &td, &survival));
     Ok(())
 }
 
@@ -164,6 +196,7 @@ fn risk_verdict(
     evt: &Option<crate::analytics::evt::EvtTailRisk>,
     vol: Option<f64>,
     td: &Option<crate::analytics::copula::TailDependence>,
+    survival: &Option<crate::analytics::survival::Survival>,
 ) -> String {
     let mut notes = Vec::new();
     if let Some(e) = evt {
@@ -181,6 +214,15 @@ fn risk_verdict(
             notes.push("co-crash risk LOW (diversification intact)".to_string());
         } else if t.emp_lower_tail_dep >= 0.40 {
             notes.push("co-crash risk HIGH (diversification fails when needed)".to_string());
+        }
+    }
+    if let Some(s) = survival {
+        if !s.reliable {
+            notes.push("no positive drift — recovery unbounded, hold only with cycle conviction".to_string());
+        } else if s.ruin_prob >= 0.50 {
+            notes.push(format!("HIGH ruin risk ({:.0}% to breach the {:.0}% budget)", s.ruin_prob * 100.0, s.budget_pct));
+        } else if s.ruin_prob < 0.15 {
+            notes.push(format!("survivable (ruin {:.0}% vs {:.0}% budget)", s.ruin_prob * 100.0, s.budget_pct));
         }
     }
     if notes.is_empty() {
