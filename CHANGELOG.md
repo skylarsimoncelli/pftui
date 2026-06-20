@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-06-20 — test(analytics): Supertrend QA hardening — pin flip-bar indices, cross-reference the two impls
+
+- What: a fresh-agent QA pass confirmed the Supertrend core math is correct (exact 4-decimal parity to an independent Python recomputation at every bar including both regime-flip bars; matches canonical Everget v3 Pine; no look-ahead). It surfaced three non-bug nits, now addressed: (1) the flip test only checked that both regimes APPEAR — it would pass even if a flip drifted a bar; now it pins the exact flip-bar indices `[(9,-1),(22,+1),(47,-1)]` so a one-bar-early/late regression fails. (2) `supertrend_guards_bad_params` had a tautological `len()==30` assertion; replaced with a meaningful warmup-boundary + finite-line check (and a third bad-mult case). (3) documented that a SECOND, intentionally distinct Supertrend port lives in `analytics/cyber/dots.rs` (CyberDots: SMA range + previous-band flip check) vs this Everget v3 one (Wilder ATR + current-band flip check) — they can differ by a bar by design; added a cross-reference doc comment so nobody "reconciles" them.
+- Tests: `cargo test` green; clippy clean.
+- Files: `src/indicators/trend.rs`, `CHANGELOG.md`.
+
+
 ### 2026-06-20 — feat(analytics): Supertrend (ATR-band trailing stop + regime) in the strategy DSL
 
 - What: added the Supertrend indicator (Seban) — an ATR-banded trailing-stop trend follower whose bands ratchet one way until price closes through them, flipping the regime. New `compute_supertrend(highs, lows, closes, period, mult) -> Vec<Option<SupertrendResult{line, dir}>>` in `indicators/trend.rs`, exposed in the backtest DSL as two OHLC primitives: `supertrend(period, mult)` (the trailing-stop LINE) and `supertrend_dir(period, mult)` (the regime: +1 uptrend / −1 downtrend). Enables trailing-stop and regime-filter strategies, e.g. `--entry "close crosses_above supertrend(10,3)" --exit "close crosses_below supertrend(10,3)"` or `--entry "supertrend_dir(10,3) crosses_above 0"`. The 2nd param is a positive real multiplier (like Bollinger's), validated alongside the integer period; both go through the OHLC coverage gate (needs real H/L) so a close-collapsed series resolves to all-None rather than feeding false signals.
