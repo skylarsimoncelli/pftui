@@ -266,6 +266,18 @@ pub fn run_backtest(
         fmt_pct(report.avg_win_pct),
         fmt_pct(report.avg_loss_pct),
     );
+    if let Some(d) = &report.drawdown_metrics {
+        // Drawdown-path risk: the tail of the DRAWDOWN distribution (vs Calmar's
+        // single worst point) + duration-aware Ulcer + distribution-shape Omega.
+        println!(
+            "Drawdown:  Ulcer {:.1}% | Martin {} | CDaR-90 {:.1}% | CDaR-95 {:.1}% | Omega(τ=0) {}",
+            d.ulcer_index_pct,
+            fmt_ratio(d.martin_ratio),
+            d.cdar_90 * 100.0,
+            d.cdar_95 * 100.0,
+            fmt_ratio(d.omega_ratio),
+        );
+    }
     if !report.exit_reason_counts.is_empty()
         && report.exit_reason_counts.keys().any(|k| k != "rule")
     {

@@ -67,6 +67,10 @@ pub fn run(
     let evt = fit_evt_tail_risk(&returns, 0.95);
     let hurst_res = hurst(&log_rets);
     let regime = detect_regime_breaks(&ret_dates, &returns, 0.5, 5.0);
+    // Drawdown-path risk on the price series as a long-hold equity curve: CDaR
+    // (tail of the drawdown distribution) + duration-aware Ulcer/Omega. This is
+    // the buy-and-hold risk the operator actually sits through accumulating.
+    let dd_metrics = crate::analytics::drawdown_metrics::compute(&closes, None, 0.0);
 
     // Co-crash partner — reuse the SHARED aligned-returns helper that
     // `tail-dependence` uses (intersect dates first, difference over consecutive
@@ -91,6 +95,7 @@ pub fn run(
                 "max_drawdown_pct": max_dd,
                 "drawdown_from_ath_pct": (dd_from_ath * 100.0).round() / 100.0,
                 "tail_risk": evt,
+                "drawdown_path": dd_metrics,
                 "hurst": hurst_res,
                 "regime_break": regime,
                 "co_crash": td.as_ref().map(|t| json!({ "vs": partner, "tail_dependence": t })),
@@ -113,6 +118,15 @@ pub fn run(
             e.xi, e.tail_class, e.var_99_pct, e.var_999_pct, e.es_99_pct
         ),
         None => println!("Tail risk:   (insufficient data)"),
+    }
+    if let Some(d) = &dd_metrics {
+        println!(
+            "Drawdown:    CDaR-95 {:.1}% (worst-5% mean depth) | CDaR-90 {:.1}% | Ulcer {:.1}% | Omega(τ=0) {}",
+            d.cdar_95 * 100.0,
+            d.cdar_90 * 100.0,
+            d.ulcer_index_pct,
+            d.omega_ratio.map(|v| format!("{v:.2}")).unwrap_or_else(|| "—".into()),
+        );
     }
     match &hurst_res {
         Some(h) => println!(
