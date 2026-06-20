@@ -3218,6 +3218,25 @@ pub enum JournalRepliesCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsBasketCommand {
+    /// Compute risk-aware portfolio weights for a basket of assets
+    Weights {
+        /// Comma-separated assets (alias or ticker), e.g. "BTC,gold,SPY"
+        #[arg(long)]
+        assets: String,
+        /// Allocation scheme: equal | inverse-vol | risk-parity
+        #[arg(long, default_value = "risk-parity")]
+        method: String,
+        /// Lookback window in trading days (0 = all common history)
+        #[arg(long, default_value = "0")]
+        lookback: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsCorrelationsCommand {
     /// Compute rolling correlations
     Compute {
@@ -5661,6 +5680,12 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         vs: Option<String>,
         #[arg(long)]
         json: bool,
+    },
+    /// Risk-aware basket weights (equal / inverse-vol / risk-parity) with per-asset risk contributions + diversification ratio
+    #[command(after_help = "Compute portfolio weights for a basket of assets from their common price\nhistory, under three risk-aware schemes:\n  equal         1/N (baseline)\n  inverse-vol   w_i ∝ 1/σ_i — equalizes standalone risk, ignores correlation\n  risk-parity   equal risk CONTRIBUTION (ERC) — each asset adds the same share\n                of portfolio variance, using the full covariance\n\nReports each asset's weight, annualized vol, and risk contribution, plus the\nportfolio vol and the diversification ratio (Σwᵢσᵢ / σ_portfolio, ≥1; higher =\nmore diversification benefit captured). Tickers with ^/=/- use their alias\n(gold, silver, us10y, dxy, vix).\n\nExamples:\n  pftui analytics basket weights --assets BTC,gold,SPY --method risk-parity\n  pftui analytics basket weights --assets BTC,gold --method inverse-vol --lookback 365 --json")]
+    Basket {
+        #[command(subcommand)]
+        command: AnalyticsBasketCommand,
     },
     /// Strategy backtesting: define trade conditions as an expression and test them against full price history
     #[command(after_help = "Define a trade rule as an expression over price, indicators, and timeframes,\nthen backtest it against the full historical price database.\n\nExpression language:\n  close, open, high, low, volume        primary asset's daily field\n  close(BTC), close(GOLD)               another symbol (alphanumeric ticker OR alias)\n  sma(close, 200), ema(close, 21)       moving averages\n  rsi(14), rsi(close(BTC), 14)          RSI\n  atr(14) cci(20) williams_r(14) roc(10) standard OHLC indicators\n  fisher(10)                            Ehlers Fisher Transform (sharp turning-point oscillator)\n  stoch_k(14,3) stoch_d(14,3)           Stochastic %K / %D\n  adx(14) plus_di(14) minus_di(14)      ADX trend strength + directional\n  supertrend(10,3) supertrend_dir(10,3) ATR-band trailing stop + regime (+1/−1)\n  macd(12,26,9)  macd_line/macd_signal(12,26,9)   MACD (macd()=histogram)\n  bb_upper/bb_lower/bb_mid/bb_pct(20,2) Bollinger bands + %b\n  obv() mfi(14)                         volume indicators (need volume data)\n  atr(BTC,14) adx(gold,14)              any OHLC indicator on another symbol\n  highest(close,20) lowest(low,20)      rolling max/min over N bars\n  ago(close,1) pct_change(close,5)      lag / N-bar percent change\n  abs(close - sma(close,50))            absolute value\n  ... @weekly | @monthly                evaluate at a higher timeframe\n  >  <  >=  <=  ==                       comparisons\n  crosses_above / crosses_below         strict edge crossings\n  and  or  not                          boolean logic\n\nBreakout idiom: highest/lowest INCLUDE the current bar, so a prior-N-bar high is\n  ago(highest(high, N), 1) — e.g. entry \"close > ago(highest(close, 50), 1)\".\n\nSYMBOLS IN EXPRESSIONS must be alphanumeric (SPY, BTC) — tickers with '^', '=',\nor '-' (^TNX, GC=F, BTC-USD) CANNOT be typed directly; use their ALIAS instead:\n  gold=GC=F  silver=SI=F  us10y=^TNX  fedfunds=^IRX  us5y=^FVX  us30y=^TYX  dxy=DX-Y.NYB.\nSo 'rate hiking vs cutting' is a moving-average crossing on us10y (the ^TNX alias).\n\nExamples:\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\" --exit \"hold 365d\" --json\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) @monthly < 90\" --exit \"hold 90d\"\n  pftui analytics strategy backtest --asset BTC --entry \"macd(12,26,9) > 0 and adx(14) > 25\" --exit \"hold 10d\"\n  pftui analytics strategy backtest --asset BTC --entry \"bb_pct(20,2) < 0.05\" --exit \"hold 10d\" --trailing-stop 15\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) < 35\" --exit \"hold 10d\" --commission 0.1 --slippage 0.05 --next-bar-fill\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close,200)\" --exit \"hold 180d\" --vol-target 20\n  pftui analytics strategy segment --asset GC=F --when \"us10y > sma(us10y, 200)\"\n  pftui analytics strategy compare --asset GC=F --when \"us10y > sma(us10y, 200)\" --when-label hiking --vs \"us10y < sma(us10y, 200)\" --vs-label cutting\n  pftui analytics strategy explain --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\"\n\nReturns are statistics over price ratios (percent / growth), not monetary balances.")]

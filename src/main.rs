@@ -5484,6 +5484,14 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::AnalyticsCommand::RiskDashboard { asset, vs, json } => {
                 commands::risk_dashboard::run(&backend, &asset, vs.as_deref(), json)
             }
+            cli::AnalyticsCommand::Basket { command } => match command {
+                cli::AnalyticsBasketCommand::Weights {
+                    assets,
+                    method,
+                    lookback,
+                    json,
+                } => commands::basket::run(&backend, &assets, &method, lookback, json),
+            },
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,
