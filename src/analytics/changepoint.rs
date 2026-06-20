@@ -6,9 +6,13 @@
 //! `μ₀`, slack `k` (half the shift to detect) and decision threshold `h`,
 //!   S⁺ₜ = max(0, S⁺ₜ₋₁ + (xₜ − μ₀) − k),   alarm when S⁺ > h (drift up-shift)
 //!   S⁻ₜ = max(0, S⁻ₜ₋₁ − (xₜ − μ₀) − k),   alarm when S⁻ > h (drift down-shift)
-//! On alarm the change-point is the last bar where that CUSUM was zero (the
-//! start of the excursion), and the CUSUM resets. `k`/`h` are scaled by the
-//! return stddev so the test is unit-free. All `f64` (return statistics).
+//! On alarm the change-point is the last bar where that CUSUM was zero (the bar
+//! just BEFORE the excursion started), and the CUSUM resets. The reference
+//! `μ₀`/`σ` are **causal expanding estimates** — computed only from returns
+//! STRICTLY BEFORE the current bar — so a later regime shift can never reach
+//! back and contaminate the baseline (which would manufacture phantom
+//! opposite-sign breaks in an otherwise stable stretch). `k`/`h` are scaled by
+//! that running σ so the test is unit-free. All `f64` (return statistics).
 
 use serde::Serialize;
 
@@ -52,23 +56,45 @@ pub fn detect_regime_breaks(
     if n < 30 || dates.len() < n {
         return None;
     }
-    let mean = returns.iter().sum::<f64>() / n as f64;
-    let var = returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n as f64 - 1.0);
-    let sigma = var.sqrt();
-    if sigma <= 0.0 {
+    // Whole-window σ used only as a FLOOR for the early expanding estimate (so a
+    // freak-quiet warm-up can't make k/h absurdly tiny). The reference used in
+    // the recursion is the causal expanding one below.
+    let gmean = returns.iter().sum::<f64>() / n as f64;
+    let gvar = returns.iter().map(|r| (r - gmean).powi(2)).sum::<f64>() / (n as f64 - 1.0);
+    let gsigma = gvar.sqrt();
+    if gsigma <= 0.0 {
         return None;
     }
-    let k = k_sigma * sigma;
-    let h = h_sigma * sigma;
+    // Reference window: a TRAILING, causal window of recent returns (≈6 months)
+    // — adaptive to the prevailing trend (so a regime break is measured vs the
+    // RECENT baseline, not the whole-history average) yet contains no future
+    // data. Warm up before raising alarms.
+    let w_ref = 120usize.min(n / 2).max(30);
+    let warmup = 30usize.min(n / 2).max(2);
 
     let mut sp = 0.0; // S+
     let mut sn = 0.0; // S-
     let mut sp_zero_idx = 0usize; // last bar S+ was 0
     let mut sn_zero_idx = 0usize;
     let mut change_points = Vec::new();
+    // Rolling sum / sum-of-squares over the trailing reference window [i−w_ref, i).
+    let mut rsum = 0.0;
+    let mut rsq = 0.0;
+    let mut cnt = 0usize;
+    let mut last_h = h_sigma * gsigma; // for the trailing building% normalization
     #[allow(clippy::needless_range_loop)] // index tracks the change-point bar (sp_zero_idx)
     for i in 0..n {
-        let dev = returns[i] - mean;
+        // Causal reference from the trailing window of data before bar i.
+        let mu = if cnt > 0 { rsum / cnt as f64 } else { returns[i] };
+        let sigma = if cnt > 1 {
+            ((rsq / cnt as f64) - mu * mu).max(0.0).sqrt().max(gsigma * 0.25)
+        } else {
+            gsigma
+        };
+        let k = k_sigma * sigma;
+        let h = h_sigma * sigma;
+        last_h = h;
+        let dev = returns[i] - mu;
         sp = (sp + dev - k).max(0.0);
         sn = (sn - dev - k).max(0.0);
         if sp == 0.0 {
@@ -77,27 +103,43 @@ pub fn detect_regime_breaks(
         if sn == 0.0 {
             sn_zero_idx = i;
         }
-        if sp > h {
-            change_points.push(ChangePoint {
-                date: dates[sp_zero_idx].clone(),
-                direction: "up-shift".to_string(),
-                bars_ago: n - 1 - sp_zero_idx,
-            });
-            sp = 0.0;
-            sp_zero_idx = i;
+        // Only raise alarms once the reference is warmed up.
+        if cnt >= warmup {
+            if sp > h {
+                change_points.push(ChangePoint {
+                    date: dates[sp_zero_idx].clone(),
+                    direction: "up-shift".to_string(),
+                    bars_ago: n - 1 - sp_zero_idx,
+                });
+                sp = 0.0;
+                sp_zero_idx = i;
+            }
+            if sn > h {
+                change_points.push(ChangePoint {
+                    date: dates[sn_zero_idx].clone(),
+                    direction: "down-shift".to_string(),
+                    bars_ago: n - 1 - sn_zero_idx,
+                });
+                sn = 0.0;
+                sn_zero_idx = i;
+            }
         }
-        if sn > h {
-            change_points.push(ChangePoint {
-                date: dates[sn_zero_idx].clone(),
-                direction: "down-shift".to_string(),
-                bars_ago: n - 1 - sn_zero_idx,
-            });
-            sn = 0.0;
-            sn_zero_idx = i;
+        // Slide the trailing window forward: include bar i (now "before" the
+        // next bar), and drop the oldest once the window is full — keeps μ₀/σ
+        // causal AND adaptive to the recent trend.
+        rsum += returns[i];
+        rsq += returns[i] * returns[i];
+        cnt += 1;
+        if cnt > w_ref {
+            let old = returns[i - w_ref];
+            rsum -= old;
+            rsq -= old * old;
+            cnt -= 1;
         }
     }
-    // Recompute bars_ago against the latest bar for stable reporting.
     let last_change = change_points.last().cloned();
+    let h = last_h;
+    let sigma = gsigma;
     let building_up_pct = (sp / h * 100.0).min(999.0);
     let building_down_pct = (sn / h * 100.0).min(999.0);
 
@@ -125,7 +167,7 @@ pub fn detect_regime_breaks(
 
     Some(RegimeBreak {
         n_obs: n,
-        mean_return_pct: mean * 100.0,
+        mean_return_pct: gmean * 100.0,
         sigma_pct: sigma * 100.0,
         k_sigma,
         h_sigma,
