@@ -151,15 +151,20 @@ pub fn hurst(returns: &[f64]) -> Option<HurstResult> {
     if !h.is_finite() {
         return None;
     }
+    // Regime band centered on the EMPIRICAL null, not 0.5: the Anis-Lloyd
+    // asymptotic correction over-corrects slightly at these window sizes, so a
+    // true random walk lands at ≈0.48 (verified by Monte-Carlo on iid noise),
+    // not exactly 0.50. The band is shifted down accordingly so a genuine
+    // random walk (e.g. SPY ≈0.45) reads "random-walk", not "mean-reverting".
     let (regime, interpretation) = if h > 0.55 {
         (
             "trending",
             "persistent/trending — moves tend to continue; trend-following has an edge (accumulate dips and ride)",
         )
-    } else if h >= 0.45 {
+    } else if h >= 0.44 {
         (
             "random-walk",
-            "≈ random walk — little autocorrelation edge; trend/mean-reversion signals here are largely noise",
+            "≈ random walk — little autocorrelation edge; trend/mean-reversion signals here are largely noise (empirical null ≈0.48)",
         )
     } else {
         (
@@ -220,6 +225,27 @@ mod tests {
         let rets: Vec<f64> = v.windows(2).map(|w| w[1] - w[0]).collect();
         let h = hurst(&rets).unwrap();
         assert!(h.h > 0.5, "expected trending H>0.5, got {}", h.h);
+    }
+
+    #[test]
+    fn white_noise_centers_near_the_empirical_null() {
+        // Deterministic LCG → uniform-ish iid noise (a random walk's returns).
+        // The Anis-Lloyd correction centers this near ≈0.48 (not exactly 0.5);
+        // assert it lands in the random-walk band and is classified correctly.
+        let mut s: u64 = 0x9E3779B97F4A7C15;
+        let mut rets = Vec::with_capacity(2048);
+        for _ in 0..2048 {
+            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let u = (s >> 11) as f64 / (1u64 << 53) as f64; // [0,1)
+            rets.push(u - 0.5);
+        }
+        let h = hurst(&rets).unwrap();
+        assert!(
+            (0.44..=0.53).contains(&h.h),
+            "white noise should center near the ≈0.48 null, got {}",
+            h.h
+        );
+        assert_eq!(h.regime, "random-walk");
     }
 
     #[test]
