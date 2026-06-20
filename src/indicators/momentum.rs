@@ -193,7 +193,10 @@ mod tests {
         let lows: Vec<f64> = (0..40).map(|i| 90.0 + i as f64).collect();
         let f = compute_fisher(&highs, &lows, 10);
         let last = f.last().unwrap().unwrap();
-        assert!(last > 1.0, "rising-to-high Fisher should be strongly positive, got {last}");
+        // raw is pinned at +1 every bar, so the recursive Fisher accumulates
+        // well past the weak >1.0 floor (≈7.6 here) — assert a discriminating
+        // threshold so a broken EMA/normalization can't sneak past.
+        assert!(last > 4.0, "rising-to-high Fisher should be strongly positive, got {last}");
         // Flat series → undefined range → Fisher stays at 0 (no signal).
         let flat = vec![100.0; 40];
         let ff = compute_fisher(&flat, &flat, 10);

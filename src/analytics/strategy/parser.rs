@@ -137,6 +137,10 @@ pub enum OhlcKind {
     BbMid,
     /// Bollinger %b — `bb_pct(period, mult)`: (close − lower)/(upper − lower).
     BbPct,
+    /// Supertrend trailing-stop line — `supertrend(period, mult)`.
+    Supertrend,
+    /// Supertrend regime — `supertrend_dir(period, mult)`: +1 up / −1 down.
+    SupertrendDir,
 }
 
 impl OhlcKind {
@@ -158,7 +162,9 @@ impl OhlcKind {
             | OhlcKind::BbUpper
             | OhlcKind::BbLower
             | OhlcKind::BbMid
-            | OhlcKind::BbPct => 2,
+            | OhlcKind::BbPct
+            | OhlcKind::Supertrend
+            | OhlcKind::SupertrendDir => 2,
             OhlcKind::MacdLine | OhlcKind::MacdSignal | OhlcKind::MacdHist => 3,
         }
     }
@@ -184,6 +190,8 @@ impl OhlcKind {
             "bb_lower" => OhlcKind::BbLower,
             "bb_mid" => OhlcKind::BbMid,
             "bb_pct" | "bb_percent" => OhlcKind::BbPct,
+            "supertrend" | "st" => OhlcKind::Supertrend,
+            "supertrend_dir" | "st_dir" => OhlcKind::SupertrendDir,
             _ => return None,
         })
     }
@@ -619,7 +627,12 @@ impl Parser {
             for (i, p) in params.iter().enumerate() {
                 let is_mult = matches!(
                     okind,
-                    OhlcKind::BbUpper | OhlcKind::BbLower | OhlcKind::BbMid | OhlcKind::BbPct
+                    OhlcKind::BbUpper
+                        | OhlcKind::BbLower
+                        | OhlcKind::BbMid
+                        | OhlcKind::BbPct
+                        | OhlcKind::Supertrend
+                        | OhlcKind::SupertrendDir
                 ) && i == 1;
                 if is_mult {
                     if *p <= 0.0 {
