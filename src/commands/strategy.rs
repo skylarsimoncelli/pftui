@@ -648,15 +648,30 @@ pub fn run_walkforward(
         fold_rows.push(Fold { train, test, best_value, is_sharpe, is_n, oos_sharpe, oos_mean_pct: oos_mean, oos_n });
     }
 
-    // Aggregate: avg IS-best Sharpe vs avg OOS Sharpe, and WFE = their ratio.
-    let is_sharpes: Vec<f64> = fold_rows.iter().filter_map(|f| f.is_sharpe).collect();
-    let oos_sharpes: Vec<f64> = fold_rows.iter().filter_map(|f| f.oos_sharpe).collect();
-    let avg_is = (!is_sharpes.is_empty()).then(|| is_sharpes.iter().sum::<f64>() / is_sharpes.len() as f64);
-    let avg_oos = (!oos_sharpes.is_empty()).then(|| oos_sharpes.iter().sum::<f64>() / oos_sharpes.len() as f64);
+    // Aggregate the WFE only over folds with enough OOS trades to be non-noise
+    // (a 1–2 trade OOS Sharpe is pure luck and must not dominate). WFE is a
+    // ratio-of-averages, only meaningful when the in-sample edge is POSITIVE.
+    const MIN_OOS: usize = 5;
+    let qual: Vec<&Fold> = fold_rows
+        .iter()
+        .filter(|f| f.oos_n >= MIN_OOS && f.is_sharpe.is_some() && f.oos_sharpe.is_some())
+        .collect();
+    let avg_is = (!qual.is_empty()).then(|| qual.iter().filter_map(|f| f.is_sharpe).sum::<f64>() / qual.len() as f64);
+    let avg_oos = (!qual.is_empty()).then(|| qual.iter().filter_map(|f| f.oos_sharpe).sum::<f64>() / qual.len() as f64);
+    // Only define WFE when the in-sample edge is positive — otherwise the
+    // ratio is incoherent (a negative/near-zero denominator flips the sign or
+    // inflates it into a meaningless >1 "OOS beats IS" artifact).
     let wfe = match (avg_is, avg_oos) {
-        (Some(i), Some(o)) if i.abs() > 1e-9 => Some(o / i),
+        (Some(i), Some(o)) if i > 1e-6 => Some(o / i),
         _ => None,
     };
+    let all_same_param = fold_rows
+        .iter()
+        .filter_map(|f| f.best_value.as_ref())
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+        == 1
+        && fold_rows.iter().filter(|f| f.best_value.is_some()).count() > 1;
 
     if json_output {
         let folds_json: Vec<_> = fold_rows
@@ -699,34 +714,51 @@ pub fn run_walkforward(
     println!("{:<22} {:>8} {:>22} {:>9} {:>8}", "test window", "best $P", "IS Sh (n)", "OOS Sh", "OOS n");
     println!("{}", "─".repeat(74));
     for f in &fold_rows {
+        // Flag OOS Sharpes on too few trades — they're noise, excluded from WFE.
+        let thin = if f.oos_n > 0 && f.oos_n < MIN_OOS { " *" } else { "" };
         println!(
-            "{:<22} {:>8} {:>14} ({:>3}) {:>9} {:>8}",
+            "{:<22} {:>8} {:>14} ({:>3}) {:>9} {:>6}{}",
             format!("{}→{}", f.test.0, f.test.1),
             f.best_value.clone().unwrap_or_else(|| "—".into()),
             r(f.is_sharpe),
             f.is_n,
             r(f.oos_sharpe),
             f.oos_n,
+            thin,
         );
+    }
+    if fold_rows.iter().any(|f| f.oos_n > 0 && f.oos_n < MIN_OOS) {
+        println!("  (* OOS Sharpe on <{MIN_OOS} trades — noise, excluded from the WFE)");
     }
     println!();
     match wfe {
         Some(w) => {
-            let verdict = if w >= 0.5 {
+            let verdict = if w > 1.15 {
+                "INCONCLUSIVE — OOS ostensibly beats the in-sample-OPTIMIZED edge, an averaging/small-sample artifact, not a real result"
+            } else if w >= 0.5 {
                 "ROBUST — OOS retains ≥half the in-sample edge; the optimization generalizes"
-            } else if w > 0.0 {
-                "FRAGILE — OOS keeps only a fraction of the in-sample edge; partly curve-fit"
             } else {
-                "FAILS OOS — the in-sample-best param has no (or negative) edge out of sample; overfit"
+                "FRAGILE — OOS keeps only a fraction of the in-sample edge; the parameter choice is partly curve-fit"
             };
             println!(
-                "Walk-forward efficiency: avg IS Sharpe {} → avg OOS Sharpe {} → WFE {:.2} → {}",
-                r(avg_is), r(avg_oos), w, verdict
+                "Walk-forward efficiency ({} qualifying folds): avg IS Sharpe {} → avg OOS Sharpe {} → WFE {:.2} → {}",
+                qual.len(), r(avg_is), r(avg_oos), w, verdict
             );
         }
-        None => println!("Walk-forward efficiency: not enough train/test trades across folds — inconclusive."),
+        None if qual.is_empty() => {
+            println!("Walk-forward efficiency: no fold had ≥{MIN_OOS} OOS trades — inconclusive (too thin to judge).");
+        }
+        None => {
+            println!(
+                "Walk-forward efficiency: avg in-sample edge ≤0 across the qualifying folds → WFE undefined — the optimizer found no positive in-sample edge to generalize (avg OOS Sharpe {}).",
+                r(avg_oos)
+            );
+        }
     }
-    println!("(OOS = held-out forward segment never seen during $P selection — the honest forward read.)");
+    if all_same_param {
+        println!("Note: every fold selected the same $P — a stable parameter landscape (or the grid is too coarse to discriminate).");
+    }
+    println!("(OOS = held-out forward segment never seen during $P selection — the honest forward read. Per-trade Sharpe mixes holding periods — not annualized.)");
     Ok(())
 }
 
