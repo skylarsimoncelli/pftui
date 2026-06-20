@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-06-20 — fix(analytics): FLD "% achieved" reads cleanly past target (smoke-test polish)
+
+- What: a smoke test flagged `cycles analyze` printing absurd FLD target progress like "845% achieved" — the `(extreme − cross)/(target − cross)` ratio balloons once the post-cross move reaches then runs well past the (often modest) 2× measured-move target, which reads like a bug. The math is per-spec; only the DISPLAY was confusing. Now once achieved ≥ 100% the line reads "target {t} (REACHED, +N% past)" instead of "{big}% achieved" — clearly an overshoot, not a glitch. Under-target FLDs (e.g. "26% achieved") are unchanged, and the raw `achieved_pct` stays in `--json` for anyone who wants the number.
+- Tests: cycle_engine tests (27) green; clippy clean.
+- Files: `src/commands/cycle_engine_cmd.rs`, `CHANGELOG.md`.
+
 ### 2026-06-20 — fix(analytics): correlations alias dedup + positioning-supplementary date-pairing/label (fresh-agent QA)
 
 - What: two polish fixes from fresh-agent findings. **(1) `correlations breaks` duplicate alias rows:** an asset held under an alias (`BTC`) and the same asset as a correlation anchor (`BTC-USD`) were distinct strings in the candidate set, so the pairing emitted duplicate rows for the same underlying pair (`BTC-PSLV` AND `BTC-USD-PSLV`). Now the held + anchor symbols are canonicalized via `resolve_alias` before pairing, collapsing aliases to one canonical symbol — the break list shows one `BTC-USD-*` row per pair. **(2) positioning `supplementary_measurements`:** the QA confirmed exact parity with the standalone commands and that the block is provably "not in the blend," but found (a) a latent date-misalignment — returns and dates were built independently then re-paired by trailing slice, which would shift change-point dates if a mid-series close were ≤0/missing (masked on clean data); now each return is paired with its `w[1].date` in one guarded pass like the standalone; and (b) the AVWAP line hardcoded "cycle-low VWAP" even for assets anchored to the trailing-2y low (us10y/SPY) — now labeled by the actual anchor source (`cycle-low` vs `trailing-2y-low`).

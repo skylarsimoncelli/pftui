@@ -199,6 +199,13 @@ fn print_degree(d: &DegreeStatus) {
             .as_ref()
             .map(|c| {
                 let target = match (c.target, c.achieved_pct) {
+                    // Once the post-cross extreme reaches/exceeds the 2× measured
+                    // move, "% achieved" balloons (a target hit then run past
+                    // can read 800%+), which looks like a bug. Cap the display at
+                    // "target reached" and show the overshoot as a clean +N%.
+                    (Some(t), Some(a)) if a >= 100.0 => {
+                        format!(" → target {} (REACHED, +{:.0}% past)", t.round_dp(2), a - 100.0)
+                    }
                     (Some(t), Some(a)) => {
                         format!(" → target {} ({a:.0}% achieved)", t.round_dp(2))
                     }
