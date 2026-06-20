@@ -46,7 +46,9 @@ const MIN_POINTS: usize = 20;
 
 /// Compute the drawdown-path metrics for an equity curve (oldest→newest, each
 /// value > 0). `annualized_return_pct` feeds the Martin ratio (pass `None` to
-/// skip it). `risk_free_pct` is subtracted from the annualized return there.
+/// skip it). `risk_free_pct` is subtracted from the annualized return there —
+/// callers currently pass `0.0`, so the Martin ratio is an *excess-of-zero*
+/// UPI, not comparable to published T-bill-relative figures.
 /// Returns `None` if the curve has fewer than [`MIN_POINTS`] points.
 pub fn compute(
     equity: &[f64],
@@ -111,7 +113,13 @@ fn cdar(drawdowns: &[f64], beta: f64) -> (f64, f64) {
     let mut sorted = drawdowns.to_vec();
     // Descending.
     sorted.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    let k = (((1.0 - beta) * n as f64).ceil() as usize).clamp(1, n);
+    // Worst-k count = ceil((1−β)·n). Compute it as `n − floor(β·n)` rather than
+    // `ceil((1−β)·n)`: `1.0 − 0.95` is NOT representable (= 0.05000…0444), so
+    // `(1.0−β)·n` for n divisible by 20 lands just above the integer and `ceil`
+    // rounds up by one — silently widening the 95% tail (an extra, milder
+    // drawdown dilutes CDaR-95 downward). `β·n` lands just ABOVE its integer for
+    // β∈{0.90,0.95}, so `floor` truncates back to the correct value.
+    let k = (n - (beta * n as f64).floor() as usize).clamp(1, n);
     let tail = &sorted[..k];
     let cdar = tail.iter().sum::<f64>() / k as f64;
     let dar = tail[k - 1]; // smallest of the worst-k = the tail threshold
@@ -223,6 +231,27 @@ mod tests {
     fn too_few_points_is_none() {
         let equity = vec![100.0; 15];
         assert!(compute(&equity, None, 0.0).is_none());
+    }
+
+    #[test]
+    fn cdar95_k_count_robust_when_n_divisible_by_20() {
+        // Regression for the IEEE-754 ceil((1−0.95)·n) off-by-one: for n a
+        // multiple of 20 the worst-5% tail must hold exactly k = n/20 items,
+        // NOT n/20 + 1. Construct n=20 with one dominant drawdown so that the
+        // buggy k=2 (mean of top-2) is clearly distinguishable from the correct
+        // k=1 (the single worst). drawdowns: nineteen tiny + one large.
+        let mut dd = vec![0.01_f64; 19];
+        dd.push(0.50);
+        let (dar95, cdar95) = cdar(&dd, 0.95);
+        // Correct: k=1 → CDaR-95 = DaR-95 = the single worst drawdown.
+        assert!((cdar95 - 0.50).abs() < 1e-12, "n=20 CDaR-95 should be the single worst, got {cdar95}");
+        assert!((dar95 - 0.50).abs() < 1e-12);
+        // n=40 → k=2.
+        let mut dd40 = vec![0.01_f64; 38];
+        dd40.push(0.40);
+        dd40.push(0.50);
+        let (_, cdar95_40) = cdar(&dd40, 0.95);
+        assert!((cdar95_40 - 0.45).abs() < 1e-12, "n=40 CDaR-95 should be mean(top-2), got {cdar95_40}");
     }
 
     #[test]

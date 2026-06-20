@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-06-20 — fix(analytics): CDaR-95 IEEE-754 off-by-one for n divisible by 20 (fresh-agent QA)
+
+- What: a fresh QA agent verified the drawdown-metrics math (exact parity to an independent recompute on all four metrics; monotonicity and DaR≤CDaR proven) and caught one HIGH bug: the CDaR worst-k count used `ceil((1−β)·n)`, but `1.0 − 0.95` is not representable (= 0.05000…0444), so for any n divisible by 20 the product lands just above the integer and `ceil` rounds up by one — silently widening the 95% tail (an extra, milder drawdown dilutes CDaR-95 downward; worst case at n=20 it returned mean(top-2) instead of the single max drawdown). Fixed by computing `k = n − floor(β·n)` (β·n lands just ABOVE its integer for β∈{0.90,0.95}, so floor truncates correctly). Added a regression test pinning n=20→k=1 and n=40→k=2. Also documented that the Martin ratio uses a 0% risk-free (excess-of-zero UPI, not T-bill-relative).
+- Tests: full `cargo test` green (7 drawdown_metrics tests); clippy clean.
+- Files: `src/analytics/drawdown_metrics.rs`, `CHANGELOG.md`.
+
 ### 2026-06-20 — feat(analytics): drawdown-path risk metrics (CDaR / Ulcer / Omega) on the tearsheet + risk-dashboard
 
 - What: added the one risk dimension the toolkit was missing — the tail of the DRAWDOWN distribution. New `src/analytics/drawdown_metrics.rs` (pure f64, zero deps, zero tables): **CDaR** (Conditional Drawdown at Risk, β=0.90/0.95) = mean depth of the worst-decile/worst-5% drawdown observations via the coherent discrete estimator (mean of the worst ceil((1−β)·n), monotone in β by construction) — the path-coherent complement to Calmar, which collapses the whole drawdown experience into one worst point; **Ulcer Index + Martin ratio** (RMS of percentage drawdowns from the running peak, penalizing the DURATION of underwater periods); **Omega ratio** (probability-weighted gains/losses about τ=0, full distribution shape, no Gaussian assumption). Wired into the `strategy backtest` tearsheet (`drawdown_metrics` JSON field + a "Drawdown:" text line, computed on the per-trade equity curve, n≥20) and the `analytics risk-dashboard` capstone (`drawdown_path` field, computed on the price series as a long-hold equity curve — the buy-and-hold drawdown the operator actually sits through accumulating). Complements the existing EVT left-tail of RETURNS (a different axis).
