@@ -4985,10 +4985,11 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// Technical indicators for one or all assets (RSI, MACD, SMA, Bollinger, ATR)
+    #[command(after_help = "The --symbol/--timeframe/--limit/--include options below apply to the BARE form\n(`technicals` with no subcommand — the legacy RSI/MACD/SMA/BB/ATR panel).\nThe `indicators`, `structure`, and `cyber` SUBCOMMANDS instead take a POSITIONAL\nsymbol — e.g. `analytics technicals indicators BTC` (NOT `--symbol BTC`).\n\nExamples:\n  pftui analytics technicals --symbol BTC,GC=F          # bare panel, flag form\n  pftui analytics technicals indicators BTC             # subcommand, positional\n  pftui analytics technicals structure GC=F --timeframe weekly")]
     Technicals {
         #[command(subcommand)]
         command: Option<AnalyticsTechnicalsCommand>,
-        /// Filter to a single symbol or a comma-separated symbol list (e.g. BTC,GC=F)
+        /// Filter to a single symbol or a comma-separated symbol list (e.g. BTC,GC=F) — BARE form only (subcommands take a positional SYMBOL)
         #[arg(long, visible_alias = "symbols")]
         symbol: Option<String>,
         #[arg(long, default_value = "1d")]
