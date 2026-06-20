@@ -6505,7 +6505,9 @@ mod assembler_tests {
             .iter()
             .all(|s| matches!(s.visibility, SectionVisibility::Public)));
         assert!(plan.iter().any(|s| s.name == "public_executive_summary"));
-        assert!(plan.iter().any(|s| s.name == "public_methodology"));
+        assert!(plan.iter().any(|s| s.name == "public_allocation_framework"));
+        assert!(plan.iter().all(|s| s.name != "public_methodology"));
+        assert!(plan.iter().all(|s| s.name != "public_how_we_analyse"));
     }
 
     #[test]
@@ -6546,9 +6548,7 @@ mod assembler_tests {
             "public_equities",
             "public_news_catalysts",
             "public_scenario_dashboard",
-            "public_how_we_analyse",
             "public_allocation_framework",
-            "public_methodology",
         ];
         let expected_private: Vec<&str> = vec![
             "private_overview",
@@ -6683,7 +6683,8 @@ mod assembler_tests {
         let ctx = BuildContext::for_date("2026-06-02");
         let body = assemble_public(&ctx).expect("public assembly should succeed");
         assert!(body.contains("## Executive Summary"));
-        assert!(body.contains("## Methodology"));
+        assert!(body.contains("## Allocation Framework"));
+        assert!(!body.contains("## Methodology"));
     }
 
     #[test]

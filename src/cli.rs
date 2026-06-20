@@ -1247,9 +1247,8 @@ pub enum DataPredictionsCommand {
         #[arg(long)]
         symbol: Option<String>,
 
-        /// Conviction level: high, medium, low
         /// Conviction band: low, medium, or high.
-        #[arg(long, value_name = "low|medium|high")]
+        #[arg(long)]
         conviction: Option<String>,
 
         /// Analytics timeframe: low, medium, high, macro, macro-checkpoint (aliases: short=low, long=high)
@@ -2503,7 +2502,7 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         symbol: Option<String>,
         /// Conviction band for calibration lookup: low, medium, or high.
-        #[arg(long, value_name = "low|medium|high")]
+        #[arg(long)]
         conviction: Option<String>,
         /// Analytics timeframe: low, medium, high, macro (aliases: short=low, long=high). Preferred over positional.
         #[arg(long)]
@@ -2609,7 +2608,7 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         timeframe: Option<String>,
         /// Conviction band: low, medium, or high.
-        #[arg(long, value_name = "low|medium|high")]
+        #[arg(long)]
         conviction: Option<String>,
         /// Analyst layer for symmetry with `preflight`. Carried through to
         /// the persisted adversary view but does not change the composition
@@ -2638,7 +2637,7 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         timeframe: Option<String>,
         /// Conviction band for calibration lookup: low, medium, or high.
-        #[arg(long, value_name = "low|medium|high")]
+        #[arg(long)]
         conviction: Option<String>,
         /// Analyst layer for the calibration_adjustments lookup
         /// ("low" | "medium" | "high" | "macro"). Defaults to --timeframe.
