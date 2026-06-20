@@ -61,7 +61,7 @@ pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: us
     }
     if common.len() < 21 {
         bail!(
-            "only {} common dates across the basket — need ≥21 for a covariance estimate (assets may not overlap in time)",
+            "only {} common dates across the basket — need ≥21 common dates (≥20 aligned returns) for a covariance estimate (assets may not overlap in time)",
             common.len()
         );
     }

@@ -272,15 +272,19 @@ mod tests {
     }
 
     #[test]
-    fn risk_parity_equals_inverse_vol_when_uncorrelated() {
-        // With zero correlation ERC collapses to inverse-variance... actually to
-        // inverse-vol only in the 2-asset uncorrelated case: w_i ∝ 1/σ_i.
-        let series = two_assets(0.01, 0.02, 0.0, 600);
-        let cov = covariance_matrix(&series);
-        let w_rp = risk_parity_weights(&cov);
-        let vols: Vec<f64> = (0..2).map(|i| cov[i][i].sqrt()).collect();
-        let w_iv = inverse_vol_weights(&vols);
-        assert!((w_rp[0] - w_iv[0]).abs() < 1e-3, "rp {w_rp:?} vs iv {w_iv:?}");
+    fn risk_parity_equals_inverse_vol_for_two_assets_any_correlation() {
+        // For k=2 the ERC condition RC₁=RC₂ reduces to w₁/w₂ = σ₂/σ₁ for ANY
+        // correlation (the off-diagonal term cancels), so ERC == inverse-vol
+        // exactly — not just in the uncorrelated case. Tight tolerance: the
+        // k=2 solver reaches the inverse-vol seed's answer essentially exactly.
+        for rho in [-0.5, 0.0, 0.4, 0.7] {
+            let series = two_assets(0.01, 0.02, rho, 600);
+            let cov = covariance_matrix(&series);
+            let w_rp = risk_parity_weights(&cov);
+            let vols: Vec<f64> = (0..2).map(|i| cov[i][i].sqrt()).collect();
+            let w_iv = inverse_vol_weights(&vols);
+            assert!((w_rp[0] - w_iv[0]).abs() < 1e-10, "rho={rho}: rp {w_rp:?} vs iv {w_iv:?}");
+        }
     }
 
     #[test]
