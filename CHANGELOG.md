@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-20 — feat(report): wire native risk/survival analytics into the private report (Drawdown Survival & Tail Risk section)
+
+- What: the private report now carries a **Drawdown Survival & Tail Risk** section — a per-held-asset table of the native risk analytics (annualized vol, EVT 1-day 99% VaR + tail class, CDaR-95, Hurst regime, risk-of-ruin vs a 25% drawdown budget, total time-under-water) plus a one-line most/least-survivable read. This surfaces the depth+time risk picture inside the document the operator actually reads, instead of running `analytics survival`/`risk-dashboard` per asset. Closes the long-standing "wire the measurement loop into the report BuildContext" gap (the 3rd integration leg).
+- How (minimal, additive — collision-safe vs concurrent report work): a self-contained `src/report/sections/private_analytics_risk.rs` owns the row struct, the `compute_rows()` helper (reads each held symbol's price history, composes the verified primitives, skips thin/degenerate assets), and the renderer (self-suppresses when no held asset has enough history; μ≤0 assets show ruin `n/a` with a cycle-low footnote). `daily.rs` gains only a BuildContext field (treated as a build-time-derived META slot like `staleness`), a one-call load block over de-duped held symbols, a registry entry, and a dispatch arm. Private visibility only — the **public golden is unaffected** (verified).
+- Tests: 3 section unit tests (table + survivability read, suppression, μ≤0 footnote); section-ordering fixture + slot-conformance updated; full `cargo test` (incl. 129 report tests) green; clippy clean.
+- Files: `src/report/sections/private_analytics_risk.rs` (new), `src/report/sections/mod.rs`, `src/report/build/daily.rs`.
+
+
 ### 2026-06-20 — feat(analytics): structured `--json` error envelopes for the analytics risk/measurement commands (CLI reliability)
 
 - What: when an `analytics` risk/measurement command (`survival`, `risk-dashboard`, `tail-risk`, `tail-dependence`, `hurst`, `regime-break`, `avwap`, `basket weights`) is invoked with `--json` and fails, it previously printed a plain-text `Error: …` to STDERR and left STDOUT EMPTY (0 bytes) — so an agent/script consuming `--json` got nothing parseable, only a bare exit-1. Now a structured envelope is emitted on STDOUT: `{"error": {"command": "...", "message": "..."}}` (the anyhow context chain is included via `{:#}`), while the exit code stays 1 and the human-readable line still goes to stderr. Same class of gap the codex investigation flagged for the report-chart commands (#16); fixed here for the analytics surface I own.
