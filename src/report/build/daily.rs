@@ -203,8 +203,7 @@ pub struct BuildContext {
 /// If you add a data-bearing field to `BuildContext`, add a matching
 /// `vec_slot!`/`opt_slot!` line in [`data_availability`]; if you add a
 /// metadata field, list it here. Do NOT weaken the conformance test.
-pub const BUILD_CONTEXT_META_FIELDS: &[&str] =
-    &["report_date", "slot_issues", "staleness", "private_analytics_risk"];
+pub const BUILD_CONTEXT_META_FIELDS: &[&str] = &["report_date", "slot_issues", "staleness"];
 
 /// Why a data slot is unpopulated. Recorded by loaders into
 /// [`BuildContext::slot_issues`]; consumed by [`data_availability`].
@@ -4664,6 +4663,7 @@ pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
     vec_slot!(private_conviction_trajectories);
     vec_slot!(private_outlooks);
     vec_slot!(private_risk_factor_mappings);
+    vec_slot!(private_analytics_risk);
     vec_slot!(private_journal_views);
     vec_slot!(private_news_events);
     vec_slot!(private_news_silence);

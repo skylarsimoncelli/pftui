@@ -119,15 +119,21 @@ pub fn render_private_analytics_risk(ctx: &BuildContext) -> Result<String> {
     let reliable: Vec<&AnalyticsRiskRow> =
         rows.iter().filter(|r| r.ruin_reliable && r.ruin_prob.is_some()).collect();
     if reliable.len() >= 2 {
-        let safest = reliable.iter().min_by(|a, b| a.ruin_prob.partial_cmp(&b.ruin_prob).unwrap()).unwrap();
-        let riskiest = reliable.iter().max_by(|a, b| a.ruin_prob.partial_cmp(&b.ruin_prob).unwrap()).unwrap();
-        out.push_str(&format!(
-            "\nMost survivable: **{}** ({:.0}% ruin) · least: **{}** ({:.0}% ruin).\n",
-            safest.symbol,
-            safest.ruin_prob.unwrap() * 100.0,
-            riskiest.symbol,
-            riskiest.ruin_prob.unwrap() * 100.0,
-        ));
+        // `unwrap_or(Equal)` keeps this NaN-safe per the no-unwrap rule (ruin is
+        // a clamped [0,1] probability so NaN can't actually arise); `if let`
+        // avoids unwrapping the min/max Option.
+        let ord = |a: f64, b: f64| a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal);
+        let safest = reliable.iter().min_by(|a, b| ord(a.ruin_prob.unwrap_or(0.0), b.ruin_prob.unwrap_or(0.0)));
+        let riskiest = reliable.iter().max_by(|a, b| ord(a.ruin_prob.unwrap_or(0.0), b.ruin_prob.unwrap_or(0.0)));
+        if let (Some(safest), Some(riskiest)) = (safest, riskiest) {
+            out.push_str(&format!(
+                "\nMost survivable: **{}** ({:.0}% ruin) · least: **{}** ({:.0}% ruin).\n",
+                safest.symbol,
+                safest.ruin_prob.unwrap_or(0.0) * 100.0,
+                riskiest.symbol,
+                riskiest.ruin_prob.unwrap_or(0.0) * 100.0,
+            ));
+        }
     }
     if rows.iter().any(|r| !r.ruin_reliable) {
         out.push_str("\n\\* ruin n/a = no positive drift in the window (an asset at a cycle low); recovery is unbounded in expectation — hold only with cycle conviction.\n");
