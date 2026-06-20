@@ -4,8 +4,6 @@
 //! auditable view + a plain-language risk read. Each line is the same
 //! computation as its dedicated command.
 
-use std::collections::HashMap;
-
 use anyhow::{bail, Result};
 use rust_decimal::prelude::ToPrimitive;
 use serde_json::json;
@@ -28,22 +26,6 @@ fn default_partner(resolved: &str) -> &'static str {
     }
 }
 
-fn dated_returns(backend: &BackendConnection, resolved: &str) -> HashMap<String, f64> {
-    let hist = match price_history::get_history(backend.sqlite(), resolved, u32::MAX) {
-        Ok(h) => h,
-        Err(_) => return HashMap::new(),
-    };
-    let mut out = HashMap::new();
-    for w in hist.windows(2) {
-        if let (Some(p0), Some(p1)) = (w[0].close.to_f64(), w[1].close.to_f64()) {
-            if p0 > 0.0 {
-                out.insert(w[1].date.clone(), p1 / p0 - 1.0);
-            }
-        }
-    }
-    out
-}
-
 pub fn run(
     backend: &BackendConnection,
     symbol: &str,
@@ -58,12 +40,23 @@ pub fn run(
     let as_of = hist.last().map(|h| h.date.clone()).unwrap_or_default();
     let closes_dec: Vec<rust_decimal::Decimal> = hist.iter().map(|b| b.close).collect();
     let closes: Vec<f64> = hist.iter().filter_map(|b| b.close.to_f64()).collect();
-    let returns = risk::daily_returns(&closes_dec);
-    let log_rets: Vec<f64> = closes
-        .windows(2)
-        .filter(|w| w[0] > 0.0 && w[1] > 0.0)
-        .map(|w| (w[1] / w[0]).ln())
-        .collect();
+    // Pair each daily return with its date in one pass (so regime-break dates
+    // align even if a mid-series close is missing/non-positive — a tail slice
+    // would mis-assign change-point dates).
+    let mut returns: Vec<f64> = Vec::with_capacity(hist.len());
+    let mut ret_dates: Vec<String> = Vec::with_capacity(hist.len());
+    let mut log_rets: Vec<f64> = Vec::with_capacity(hist.len());
+    for w in hist.windows(2) {
+        if let (Some(p0), Some(p1)) = (w[0].close.to_f64(), w[1].close.to_f64()) {
+            if p0 > 0.0 {
+                returns.push(p1 / p0 - 1.0);
+                ret_dates.push(w[1].date.clone());
+                if p1 > 0.0 {
+                    log_rets.push((p1 / p0).ln());
+                }
+            }
+        }
+    }
 
     // --- measured risk primitives ---
     let vol = risk::annualized_volatility_pct(&returns).and_then(|d| d.to_f64());
@@ -73,25 +66,15 @@ pub fn run(
     let dd_from_ath = if ath > 0.0 { (price / ath - 1.0) * 100.0 } else { 0.0 };
     let evt = fit_evt_tail_risk(&returns, 0.95);
     let hurst_res = hurst(&log_rets);
-    let regime = {
-        let dates: Vec<String> = hist[hist.len() - returns.len()..].iter().map(|b| b.date.clone()).collect();
-        detect_regime_breaks(&dates, &returns, 0.5, 5.0)
-    };
+    let regime = detect_regime_breaks(&ret_dates, &returns, 0.5, 5.0);
 
-    // Co-crash partner (tail dependence on common dates).
+    // Co-crash partner — reuse the SHARED aligned-returns helper that
+    // `tail-dependence` uses (intersect dates first, difference over consecutive
+    // common dates) so the two commands produce identical λ_L.
     let partner = vs.map(resolve_alias).unwrap_or_else(|| default_partner(&resolved).to_string());
     let td = if partner != resolved {
-        let a = dated_returns(backend, &resolved);
-        let b = dated_returns(backend, &partner);
-        let mut common: Vec<&String> = a.keys().filter(|d| b.contains_key(*d)).collect();
-        common.sort();
-        if common.len() >= 100 {
-            let x: Vec<f64> = common.iter().map(|d| a[*d]).collect();
-            let y: Vec<f64> = common.iter().map(|d| b[*d]).collect();
-            tail_dependence(&x, &y, 0.05)
-        } else {
-            None
-        }
+        crate::commands::tail_dependence::aligned_common_returns(backend, &resolved, &partner)
+            .and_then(|(x, y)| tail_dependence(&x, &y, 0.05))
     } else {
         None
     };
