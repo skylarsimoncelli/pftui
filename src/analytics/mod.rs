@@ -1,4 +1,5 @@
 pub mod analog;
+pub mod basket;
 pub mod calibration_scorer;
 pub mod catalysts;
 pub mod changepoint;
