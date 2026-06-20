@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-06-20 — fix(analytics): risk-dashboard co-crash parity + regime-break date alignment (fresh-agent QA)
+
+- What: a fresh agent verified 4 of the 5 risk-dashboard primitives are byte-exact to their dedicated commands (EVT, Hurst/DFA, regime-break values, vol/drawdown/ATH all hand-checked) but found the co-crash line broke parity: the dashboard's local `dated_returns` differenced each asset on its OWN prior close THEN intersected — exactly the calendar-mismatch construction the standalone `tail-dependence` was fixed (#942) to avoid — dampening BTC↔gold λ_L from the correct 0.047 to 0.034 (and able to flip the composite verdict near a threshold). Fixed by extracting a SHARED `aligned_common_returns` helper (intersect price dates first, difference over consecutive common dates) that BOTH `tail-dependence` and the risk-dashboard now call, so they can't drift again — `tail-dependence::run` was refactored onto it too. Co-crash λ_L now matches the standalone to the digit (0.047). Also fixed a latent regime-break date-misalignment (BUG 2): the dashboard built regime dates via a `hist[len−returns.len()..]` tail slice that mis-assigns change-point dates if a mid-series close is missing/non-positive — now each return is paired with its `w[1].date` in one pass (matching the standalone).
+- Tests: full `cargo test` green; clippy clean; co-crash parity (standalone vs dashboard) verified live (both 0.047).
+- Files: `src/commands/tail_dependence.rs`, `src/commands/risk_dashboard.rs`, `CHANGELOG.md`.
+
 ### 2026-06-20 — feat(analytics): Ehlers Fisher Transform in the strategy DSL
 
 - What: rounds out the OHLC indicator set with the Ehlers Fisher Transform — a sharp turning-point oscillator that normalizes the median price `(high+low)/2` over a window to [−1,1], smooths it (0.33/0.67), then applies `0.5·ln((1+x)/(1−x))` with a 0.5 EMA, producing near-Gaussian peaks/troughs that mark reversals far more crisply than RSI/Stochastic. Added `compute_fisher` to `indicators/momentum.rs` and wired `fisher(p)` into the strategy DSL as an OHLC-family indicator (optional leading symbol, weekly/monthly bucketing, coverage-gated like the others), so it's backtestable: `fisher(10) crosses_above -1.5` (buy the oversold turn), `fisher($P) > 0`, etc. Live: `fisher(10) crosses_above -1.5` on BTC → 108 trades; `fisher(10) > 0` resolves over 4277 bars.
