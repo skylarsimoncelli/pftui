@@ -36,9 +36,12 @@ pub struct KellySizing {
     /// One-standard-error lower bound on the edge (`μ − σ/√n`), percent — the
     /// conservative edge the uncertainty-adjusted Kelly is computed on.
     pub edge_lower_1se_pct: f64,
-    /// Full continuous Kelly leverage `μ/σ²` on the point-estimate edge.
+    /// Full continuous Kelly leverage `μ/σ²` on the point-estimate edge,
+    /// floored at 0 (a negative-edge `μ/σ²` would mean "go short" — out of
+    /// scope for this long-only sizer; see `binding_constraint = no-edge`).
     pub full_kelly_leverage: f64,
-    /// Half-Kelly on the point-estimate edge (the classic robustness fraction).
+    /// Half-Kelly on the point-estimate edge (the classic robustness fraction),
+    /// likewise floored at 0.
     pub half_kelly_leverage: f64,
     /// Full Kelly on the uncertainty-adjusted (lower-1SE) edge — 0 if that edge
     /// is non-positive (a track record indistinguishable from no edge).
@@ -97,7 +100,8 @@ pub fn compute(
     let (recommended, binding) = if unc_adj <= 0.0 {
         (0.0, "no-edge")
     } else if let Some(cap) = cdar_cap {
-        if cap < half_unc {
+        // `<=` so an exact tie labels the cap as binding (it is, equally).
+        if cap <= half_unc {
             (cap.max(0.0), "drawdown-cap")
         } else {
             (half_unc, "edge")
@@ -109,8 +113,12 @@ pub fn compute(
     Some(KellySizing {
         edge_per_trade_pct: mean * 100.0,
         edge_lower_1se_pct: edge_lcb * 100.0,
-        full_kelly_leverage: full_kelly,
-        half_kelly_leverage: half_kelly,
+        // Floor the headline Kelly leverages at 0: a negative-edge strategy has
+        // a negative μ/σ² (= "go short"), but this is a long-only sizing tool,
+        // so every reported leverage is a non-negative LONG multiple. The
+        // negative edge is already signalled by `binding_constraint = no-edge`.
+        full_kelly_leverage: full_kelly.max(0.0),
+        half_kelly_leverage: half_kelly.max(0.0),
         uncertainty_adjusted_leverage: unc_adj,
         drawdown_budget_pct,
         cdar_cap_leverage: cdar_cap,
@@ -178,6 +186,11 @@ mod tests {
         assert_eq!(k.uncertainty_adjusted_leverage, 0.0);
         assert_eq!(k.binding_constraint, "no-edge");
         assert_eq!(k.recommended_leverage, 0.0);
+        // Every reported leverage is a non-negative LONG multiple, even though
+        // the raw μ/σ² is negative for a losing edge (QA #971: no negative
+        // leverage should leak to JSON consumers).
+        assert_eq!(k.full_kelly_leverage, 0.0);
+        assert_eq!(k.half_kelly_leverage, 0.0);
     }
 
     #[test]
