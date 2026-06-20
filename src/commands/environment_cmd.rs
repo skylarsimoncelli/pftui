@@ -9,12 +9,16 @@ use anyhow::{bail, Result};
 use rusqlite::Connection;
 use serde_json::json;
 
+use crate::analytics::changepoint::detect_regime_breaks;
 use crate::analytics::environment::{self, ENV_SYMBOLS};
+use crate::analytics::hurst_rs::hurst;
 use crate::analytics::regime_quad::Quad;
 use crate::analytics::strategy::resolver::resolve_alias;
 use crate::analytics::{analog, cycle_clock, positioning};
 use crate::db::backend::BackendConnection;
 use crate::db::price_history;
+use crate::indicators::anchored_vwap::anchored_vwap;
+use rust_decimal::prelude::ToPrimitive;
 
 /// Load a symbol's full oldest-first `(date, close)` series from price_history.
 fn load_series(conn: &Connection, symbol: &str) -> Result<Vec<(String, f64)>> {
@@ -212,6 +216,92 @@ fn cycle_lean(conn: &Connection, resolved: &str) -> Option<(f64, String)> {
     }
 }
 
+/// Standalone measured signals surfaced alongside the positioning blend as
+/// CONTEXT (they are NOT in the weighted score — the blend stays disciplined).
+/// Each is the same computation as its dedicated `analytics` command.
+#[derive(Default, serde::Serialize)]
+struct Supplementary {
+    /// Hurst regime: "H 0.52 (random-walk)".
+    hurst: Option<String>,
+    /// CUSUM regime-break: "last break 134 bars ago (2026-01-28): down-shift".
+    regime_break: Option<String>,
+    /// Anchored-VWAP basis read: "price -19.6% vs cycle-low VWAP (78022)".
+    avwap: Option<String>,
+    /// BTC accumulation-clock stance: "ACCUMULATE (score +4)".
+    accumulation: Option<String>,
+}
+
+fn build_supplementary(conn: &Connection, resolved: &str) -> Supplementary {
+    let mut s = Supplementary::default();
+    let hist = match price_history::get_history(conn, resolved, u32::MAX) {
+        Ok(h) if h.len() >= 64 => h,
+        _ => return s,
+    };
+    let closes: Vec<f64> = hist.iter().filter_map(|b| b.close.to_f64()).collect();
+    let dates: Vec<String> = hist.iter().map(|b| b.date.clone()).collect();
+    let log_rets: Vec<f64> = closes
+        .windows(2)
+        .filter(|w| w[0] > 0.0 && w[1] > 0.0)
+        .map(|w| (w[1] / w[0]).ln())
+        .collect();
+    let simple_rets: Vec<f64> = closes
+        .windows(2)
+        .filter(|w| w[0] > 0.0)
+        .map(|w| w[1] / w[0] - 1.0)
+        .collect();
+
+    if let Some(h) = hurst(&log_rets) {
+        s.hurst = Some(format!("H {:.2} ({})", h.h, h.regime));
+    }
+    // Regime-break dates align to returns (one shorter than dates).
+    let ret_dates = &dates[dates.len() - simple_rets.len()..];
+    if let Some(rb) = detect_regime_breaks(ret_dates, &simple_rets, 0.5, 5.0) {
+        s.regime_break = Some(match &rb.last_change {
+            Some(cp) => format!("last break {} bars ago ({}): {}", cp.bars_ago, cp.date, cp.direction),
+            None => "no structural drift break in-window".to_string(),
+        });
+    }
+    // Anchored VWAP from the verified cycle low (BTC/gold) or trailing-2y low.
+    let anchor_date = if resolved == "BTC-USD" {
+        cycle_clock::btc_cycle_clock(resolved, &hist).and_then(|c| c.cycle_low_anchor.verified_date)
+    } else if resolved == "GC=F" {
+        cycle_clock::gold_cycle_clock(resolved, &hist).and_then(|c| c.last_cycle_low_date)
+    } else {
+        None
+    };
+    let anchor_idx = anchor_date
+        .and_then(|d| hist.iter().position(|b| b.date >= d))
+        .or_else(|| {
+            // trailing-2y lowest close
+            let start = hist.len().saturating_sub(730);
+            (start..hist.len()).min_by(|&a, &b| hist[a].close.cmp(&hist[b].close))
+        });
+    if let Some(idx) = anchor_idx {
+        if let Ok(av) = anchored_vwap(&hist, idx) {
+            if let (Some(price), Some(vwap)) = (closes.last(), av.current.to_f64()) {
+                if vwap > 0.0 {
+                    let pct = (price / vwap - 1.0) * 100.0;
+                    s.avwap = Some(format!(
+                        "price {pct:+.1}% vs cycle-low VWAP ({:.0}, {})",
+                        vwap, av.anchor_date
+                    ));
+                }
+            }
+        }
+    }
+    // BTC accumulation-clock stance.
+    if resolved == "BTC-USD" {
+        if let Some(c) = cycle_clock::btc_cycle_clock(resolved, &hist) {
+            s.accumulation = Some(format!(
+                "{} (score {:+})",
+                c.accumulation.stance.to_uppercase(),
+                c.accumulation.score
+            ));
+        }
+    }
+    s
+}
+
 pub fn run_positioning(
     backend: &BackendConnection,
     asset: &str,
@@ -231,6 +321,7 @@ pub fn run_positioning(
     let quad = Quad::from_short(&analog_rep.query_regime);
     let cycle = cycle_lean(conn, &resolved);
     let card = positioning::synthesize(asset, &analog_rep.query_date, &analog_rep, quad, cycle);
+    let supp = build_supplementary(conn, &resolved);
 
     if json_output {
         println!(
@@ -238,6 +329,7 @@ pub fn run_positioning(
             serde_json::to_string_pretty(&json!({
                 "command": "positioning",
                 "card": card,
+                "supplementary_measurements": supp,
             }))?
         );
         return Ok(());
@@ -274,6 +366,21 @@ pub fn run_positioning(
         );
     }
     println!("Honesty: {}", card.honesty_note);
+    // Supplementary measured signals — context, NOT part of the weighted blend.
+    let supp_lines: Vec<(&str, &Option<String>)> = vec![
+        ("Hurst regime", &supp.hurst),
+        ("Regime-break", &supp.regime_break),
+        ("Anchored VWAP", &supp.avwap),
+        ("Accumulation", &supp.accumulation),
+    ];
+    if supp_lines.iter().any(|(_, v)| v.is_some()) {
+        println!("\nSupplementary measurements (context, not in the blend):");
+        for (label, val) in supp_lines {
+            if let Some(v) = val {
+                println!("  {label:<14} {v}");
+            }
+        }
+    }
     Ok(())
 }
 
