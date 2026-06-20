@@ -23,9 +23,89 @@ pub struct HurstResult {
     pub h_uncorrected: f64,
     /// Anis-Lloyd/Peters-corrected Hurst exponent — the one to read.
     pub h: f64,
+    /// DFA-1 scaling exponent α (≈H) — an INDEPENDENT persistence estimate that
+    /// tolerates non-stationarity/trends far better than R/S. When R/S and DFA
+    /// agree the regime read is much stronger; when they diverge, treat with
+    /// caution (likely a trend contaminating R/S).
+    pub dfa_alpha: Option<f64>,
+    /// Agreement between the two estimators.
+    pub agreement: String,
     /// "trending" | "random-walk" | "mean-reverting".
     pub regime: String,
     pub interpretation: String,
+}
+
+/// DFA-1 (Detrended Fluctuation Analysis) scaling exponent over a (stationary)
+/// series. Integrates the mean-subtracted series, then for each window size
+/// measures the RMS of the linearly-detrended fluctuation; `F(n) ~ n^α` and the
+/// log-log slope is α (≈ the Hurst exponent, centered on 0.5 for white noise).
+pub fn dfa_alpha(series: &[f64]) -> Option<f64> {
+    let n = series.len();
+    if n < 64 {
+        return None;
+    }
+    // Integrate the mean-subtracted series (the DFA "profile").
+    let mean = series.iter().sum::<f64>() / n as f64;
+    let mut y = vec![0.0f64; n];
+    let mut acc = 0.0;
+    for (i, &x) in series.iter().enumerate() {
+        acc += x - mean;
+        y[i] = acc;
+    }
+    let candidate = [8usize, 16, 32, 64, 128, 256];
+    let mut pts = Vec::new();
+    for &w in &candidate {
+        if w > n / 4 {
+            break; // want at least ~4 segments for a stable fluctuation
+        }
+        let f = dfa_fluctuation(&y, w);
+        if f > 0.0 {
+            pts.push(((w as f64).ln(), f.ln()));
+        }
+    }
+    if pts.len() < 3 {
+        return None;
+    }
+    let a = ols_slope(&pts);
+    a.is_finite().then_some(a)
+}
+
+/// RMS of the linearly-detrended fluctuation over non-overlapping length-`w`
+/// segments of the integrated profile `y`.
+fn dfa_fluctuation(y: &[f64], w: usize) -> f64 {
+    let segs = y.len() / w;
+    if segs == 0 {
+        return 0.0;
+    }
+    let mut sumsq = 0.0;
+    let mut cnt = 0usize;
+    for s in 0..segs {
+        let seg = &y[s * w..(s + 1) * w];
+        let (a, b) = linfit(seg);
+        for (i, &v) in seg.iter().enumerate() {
+            let resid = v - (a + b * i as f64);
+            sumsq += resid * resid;
+            cnt += 1;
+        }
+    }
+    if cnt == 0 {
+        0.0
+    } else {
+        (sumsq / cnt as f64).sqrt()
+    }
+}
+
+/// Least-squares line `y = a + b·x` over `seg` at x = 0..len. Returns (a, b).
+fn linfit(seg: &[f64]) -> (f64, f64) {
+    let n = seg.len() as f64;
+    let sx: f64 = (0..seg.len()).map(|i| i as f64).sum();
+    let sy: f64 = seg.iter().sum();
+    let sxx: f64 = (0..seg.len()).map(|i| (i * i) as f64).sum();
+    let sxy: f64 = seg.iter().enumerate().map(|(i, &v)| i as f64 * v).sum();
+    let denom = n * sxx - sx * sx;
+    let b = if denom.abs() < 1e-12 { 0.0 } else { (n * sxy - sx * sy) / denom };
+    let a = (sy - b * sx) / n;
+    (a, b)
 }
 
 /// Lanczos approximation of ln Γ(x) (g=7), hand-rolled, zero deps.
@@ -172,11 +252,27 @@ pub fn hurst(returns: &[f64]) -> Option<HurstResult> {
             "anti-persistent/mean-reverting — moves tend to reverse; fade extremes rather than chase",
         )
     };
+    // Cross-validate with DFA (independent estimator, both center ≈0.5).
+    let dfa = dfa_alpha(returns);
+    let agreement = match dfa {
+        Some(a) => {
+            let d = (a - h).abs();
+            if d < 0.07 {
+                format!("R/S and DFA agree (|Δ|={d:.2}) — robust regime read")
+            } else {
+                format!("R/S and DFA DIVERGE (|Δ|={d:.2}) — treat with caution (a trend may be biasing R/S; DFA is more trend-robust)")
+            }
+        }
+        None => "DFA not computed (insufficient data)".to_string(),
+    };
+
     Some(HurstResult {
         n_obs,
         windows,
         h_uncorrected,
         h,
+        dfa_alpha: dfa,
+        agreement,
         regime: regime.to_string(),
         interpretation: interpretation.to_string(),
     })
@@ -246,6 +342,28 @@ mod tests {
             h.h
         );
         assert_eq!(h.regime, "random-walk");
+    }
+
+    #[test]
+    fn dfa_centers_white_noise_near_half() {
+        // Deterministic LCG iid noise → DFA α ≈ 0.5 (random walk null).
+        let mut s: u64 = 0xDEADBEEFCAFEBABE;
+        let rets: Vec<f64> = (0..2048)
+            .map(|_| {
+                s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                ((s >> 11) as f64 / (1u64 << 53) as f64) - 0.5
+            })
+            .collect();
+        let a = dfa_alpha(&rets).unwrap();
+        assert!((0.40..=0.60).contains(&a), "white-noise DFA α should be ~0.5, got {a}");
+    }
+
+    #[test]
+    fn dfa_higher_for_persistent_series() {
+        // A trending (persistent) increment series → DFA α > 0.5.
+        let rets: Vec<f64> = (0..600).map(|i| if (i / 25) % 2 == 0 { 0.02 } else { -0.005 }).collect();
+        let a = dfa_alpha(&rets).unwrap();
+        assert!(a > 0.55, "persistent series DFA α should exceed 0.5, got {a}");
     }
 
     #[test]
