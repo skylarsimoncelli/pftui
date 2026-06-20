@@ -4473,7 +4473,10 @@ fn store_real_yields_result(
     let mut all_obs: Vec<real_yields_data::RealYieldObservation> = Vec::new();
     let mut series_with_data = 0usize;
     for sid in &series_ids {
-        match rt.block_on(real_yields_data::fetch_series_history(&api_key, sid, 90)) {
+        // 400-day window: the G10 OECD long-rate series are MONTHLY, so a short
+        // window can return zero recent prints; a wider one guarantees several
+        // monthly observations are present for the as-of forward-fill join.
+        match rt.block_on(real_yields_data::fetch_series_history(&api_key, sid, 400)) {
             Ok(obs) if !obs.is_empty() => {
                 series_with_data += 1;
                 all_obs.extend(obs);

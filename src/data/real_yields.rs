@@ -192,8 +192,20 @@ where
         by_date.entry(date).or_default().insert(series, value);
     }
 
+    // As-of carry of the most recent value per partner series. The G10 OECD
+    // series are MONTHLY (dated the 1st) while the US series are DAILY, so an
+    // exact same-date join almost never matches — forward-fill the latest prior
+    // monthly G10 value onto each US daily date instead.
+    let mut carry_partner: BTreeMap<&str, f64> = BTreeMap::new();
+
     let mut snapshots = Vec::new();
     for (date, series_map) in by_date {
+        // Fold any G10 prints on THIS date into the carry before using it.
+        for (_country, partner_series) in G10_SOVEREIGN_10Y {
+            if let Some(v) = series_map.get(*partner_series).copied() {
+                carry_partner.insert(*partner_series, v);
+            }
+        }
         let us_nominal = series_map.get(US_NOMINAL_10Y).copied();
         let us_tips = series_map.get("DFII10").copied();
         let us_be = series_map.get("T10YIE").copied();
@@ -202,7 +214,7 @@ where
         let mut partners_for_avg: Vec<f64> = Vec::new();
         if let Some(us_val) = us_nominal {
             for (country, partner_series) in G10_SOVEREIGN_10Y {
-                if let Some(partner_val) = series_map.get(*partner_series).copied() {
+                if let Some(partner_val) = carry_partner.get(*partner_series).copied() {
                     let spread_bp = (us_val - partner_val) * 100.0;
                     pairs.push(PairDifferential {
                         country: (*country).to_string(),
@@ -288,7 +300,9 @@ mod tests {
             ("2026-04-03".into(), "IRLTLT01DEM156N".into(), 2.25),
         ];
         let snaps = compute_differentials(rows);
-        assert_eq!(snaps.len(), 2);
+        // Forward-fill: Day 2 (US-only) now CARRIES Day 1's monthly G10 values
+        // rather than being skipped — all three days emit with 4 pairs.
+        assert_eq!(snaps.len(), 3);
 
         let day1 = &snaps[0];
         assert_eq!(day1.date, "2026-04-01");
@@ -300,20 +314,21 @@ mod tests {
         // Diff bp = (4.20 - 2.625) * 100 = 157.5
         let avg = day1.us_minus_g10_avg_bp.expect("avg present");
         assert!((avg - 157.5).abs() < 1e-6, "got {}", avg);
-
-        // Pair DE = (4.20 - 2.20) * 100 = 200 bp
-        let de = day1
-            .pairs
-            .iter()
-            .find(|p| p.country == "DE")
-            .expect("DE pair");
+        let de = day1.pairs.iter().find(|p| p.country == "DE").expect("DE pair");
         assert!((de.spread_bp - 200.0).abs() < 1e-6);
 
-        let day3 = &snaps[1];
+        // Day 2: US 4.25, G10 forward-filled from Day 1 → 4 pairs, avg still 2.625.
+        let day2 = &snaps[1];
+        assert_eq!(day2.date, "2026-04-02");
+        assert_eq!(day2.pairs.len(), 4);
+        let avg2 = day2.us_minus_g10_avg_bp.expect("avg present");
+        assert!((avg2 - 162.5).abs() < 1e-6, "got {}", avg2); // (4.25 − 2.625)·100
+
+        // Day 3: DE updated to 2.25; JP/GB/CA carried → still 4 pairs.
+        let day3 = &snaps[2];
         assert_eq!(day3.date, "2026-04-03");
-        assert_eq!(day3.pairs.len(), 1);
-        let de = &day3.pairs[0];
-        assert_eq!(de.country, "DE");
-        assert!((de.spread_bp - 205.0).abs() < 1e-6);
+        assert_eq!(day3.pairs.len(), 4);
+        let de3 = day3.pairs.iter().find(|p| p.country == "DE").expect("DE pair");
+        assert!((de3.spread_bp - 205.0).abs() < 1e-6); // (4.30 − 2.25)·100
     }
 }

@@ -199,12 +199,24 @@ impl From<DifferentialSnapshot> for DifferentialSnapshotJson {
 /// the cached series and emit them as a per-day snapshot list.
 pub fn differentials(backend: &BackendConnection, since: Option<&str>, json: bool) -> Result<()> {
     let since_date = since.map(parse_since_to_date).transpose()?;
-    let rows = fetch_history_backend(backend, None, since_date.as_deref())?;
+    // The G10 OECD series are MONTHLY and can lag a month or two, so load ~90
+    // days BEFORE the display window to seed the forward-fill carry — otherwise
+    // a narrow recent window contains no monthly G10 print and every pair is
+    // empty. Snapshots are filtered back to the requested window after.
+    let load_from = since_date.as_deref().and_then(|d| {
+        chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+            .ok()
+            .map(|nd| (nd - chrono::Duration::days(90)).format("%Y-%m-%d").to_string())
+    });
+    let rows = fetch_history_backend(backend, None, load_from.as_deref().or(since_date.as_deref()))?;
     let tuples = rows
         .into_iter()
         .map(|r| (r.date, r.series, r.value))
         .collect::<Vec<_>>();
-    let snapshots = compute_differentials(tuples);
+    let snapshots: Vec<_> = compute_differentials(tuples)
+        .into_iter()
+        .filter(|s| since_date.as_deref().is_none_or(|d| s.date.as_str() >= d))
+        .collect();
 
     if json {
         let resp = DifferentialsResponse {
