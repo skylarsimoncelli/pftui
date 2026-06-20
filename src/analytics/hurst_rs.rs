@@ -23,10 +23,13 @@ pub struct HurstResult {
     pub h_uncorrected: f64,
     /// Anis-Lloyd/Peters-corrected Hurst exponent — the one to read.
     pub h: f64,
-    /// DFA-1 scaling exponent α (≈H) — an INDEPENDENT persistence estimate that
-    /// tolerates non-stationarity/trends far better than R/S. When R/S and DFA
-    /// agree the regime read is much stronger; when they diverge, treat with
-    /// caution (likely a trend contaminating R/S).
+    /// DFA-1 scaling exponent α (≈H) — an INDEPENDENT persistence estimate with
+    /// a different bias structure than R/S (R/S is biased ~0.48 under the null,
+    /// DFA-1 ~0.51). Two independent estimators agreeing is a stronger regime
+    /// read than either alone; a genuine divergence (beyond their joint sampling
+    /// noise) flags an unstable estimate. (Note: since the input is already
+    /// log-returns, neither faces a raw-price trend — DFA-1 is a second view,
+    /// not a trend filter.)
     pub dfa_alpha: Option<f64>,
     /// Agreement between the two estimators.
     pub agreement: String,
@@ -256,11 +259,15 @@ pub fn hurst(returns: &[f64]) -> Option<HurstResult> {
     let dfa = dfa_alpha(returns);
     let agreement = match dfa {
         Some(a) => {
+            // Threshold ≈1.5× the joint sampling SE of the two estimators
+            // (each ~0.06–0.07), so same-regime series aren't false-flagged as
+            // divergent from estimator noise alone. Δ is also offset by the
+            // ~0.03 systematic R/S(~0.48)-vs-DFA(~0.51) null gap.
             let d = (a - h).abs();
-            if d < 0.07 {
-                format!("R/S and DFA agree (|Δ|={d:.2}) — robust regime read")
+            if d < 0.13 {
+                format!("R/S and DFA agree (|Δ|={d:.3}) — two independent estimators confirm the regime")
             } else {
-                format!("R/S and DFA DIVERGE (|Δ|={d:.2}) — treat with caution (a trend may be biasing R/S; DFA is more trend-robust)")
+                format!("R/S and DFA DIVERGE (|Δ|={d:.3}, beyond joint sampling noise) — the persistence estimate is unstable; treat the regime read with caution")
             }
         }
         None => "DFA not computed (insufficient data)".to_string(),
