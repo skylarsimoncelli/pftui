@@ -2,6 +2,12 @@
 //! break? Distinguishes a healthy dip inside an intact trend from "the drift
 //! just flipped" (the single most decision-relevant call for a dip-accumulator).
 //!
+//! Input: daily returns. All callers (`risk-dashboard`, `regime-break`,
+//! `environment`) pass SIMPLE returns (`p₁/p₀−1`); the test is σ-normalised
+//! (`k`/`h` scaled by the running σ) so the log↔simple choice only shifts the
+//! baseline marginally, and SIMPLE is the pinned convention. (Hurst, by
+//! contrast, requires LOG returns for range additivity — a different contract.)
+//!
 //! Page's two-sided cumulative-sum test on daily returns: with reference mean
 //! `μ₀`, slack `k` (half the shift to detect) and decision threshold `h`,
 //!   S⁺ₜ = max(0, S⁺ₜ₋₁ + (xₜ − μ₀) − k),   alarm when S⁺ > h (drift up-shift)
