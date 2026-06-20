@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-06-20 — feat(analytics): fractional-Kelly position sizing (uncertainty-haircut + CDaR-capped)
+
+- What: new `src/analytics/kelly.rs` (pure f64, zero deps/tables) — growth-optimal leverage from a strategy's realized per-trade edge, with two honesty discounts naive Kelly omits: (1) an **estimation-uncertainty haircut** (re-run Kelly on the lower-1SE edge `μ − σ/√n`, so a thin/noisy track record sizes smaller), and (2) a **drawdown-budget cap via CDaR** (leverage·CDaR-95 ≤ a 25% budget — the coherent risk denominator the previous PR built). Reports `full_kelly_leverage` (μ/σ²), `half_kelly_leverage`, `uncertainty_adjusted_leverage`, `cdar_cap_leverage`, and the headline `recommended_leverage` = half-Kelly on the uncertainty-adjusted edge capped by the CDaR budget, with `binding_constraint` (edge / drawdown-cap / no-edge). Wired into the `strategy backtest` tearsheet (`kelly` JSON field + a "Kelly:" text line, n≥20). This consumes #969's CDaR — the runner-up the research scout sequenced *after* the risk-budget primitive existed.
+- Why: Kelly is the log-growth-optimal sizer but is over-levered for real tolerance and over-trusts a noisy edge estimate; the two discounts make it deployable. A negative-edge record correctly recommends 0×.
+- Loop-mechanism note: caught a real robustness gap during build — a (near-)constant return series leaves `var ≈ 1e-36` from FP summation (not exactly 0), slipping past a `var <= 0.0` guard and exploding μ/σ² into a meaningless leverage; guard tightened to `var <= 1e-12`.
+- Tests: 5 known-answer unit tests (hand-checked full Kelly = 23.75× on a synthetic edge, uncertainty-shrink, CDaR-cap binding, no-edge→0, thin/degenerate guards); full `cargo test` green; clippy clean. Live: BTC RSI recommends 0.10× (noisy edge, hard haircut); SPY Supertrend 0.84× (edge-bound, CDaR cap 0.97× slack).
+- Files: `src/analytics/kelly.rs` (new), `src/analytics/mod.rs`, `src/analytics/strategy/engine.rs`, `src/commands/strategy.rs`, `AGENTS.md`.
+
+
 ### 2026-06-20 — fix(analytics): CDaR-95 IEEE-754 off-by-one for n divisible by 20 (fresh-agent QA)
 
 - What: a fresh QA agent verified the drawdown-metrics math (exact parity to an independent recompute on all four metrics; monotonicity and DaR≤CDaR proven) and caught one HIGH bug: the CDaR worst-k count used `ceil((1−β)·n)`, but `1.0 − 0.95` is not representable (= 0.05000…0444), so for any n divisible by 20 the product lands just above the integer and `ceil` rounds up by one — silently widening the 95% tail (an extra, milder drawdown dilutes CDaR-95 downward; worst case at n=20 it returned mean(top-2) instead of the single max drawdown). Fixed by computing `k = n − floor(β·n)` (β·n lands just ABOVE its integer for β∈{0.90,0.95}, so floor truncates correctly). Added a regression test pinning n=20→k=1 and n=40→k=2. Also documented that the Martin ratio uses a 0% risk-free (excess-of-zero UPI, not T-bill-relative).

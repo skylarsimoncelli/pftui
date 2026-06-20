@@ -278,6 +278,20 @@ pub fn run_backtest(
             fmt_ratio(d.omega_ratio),
         );
     }
+    if let Some(k) = &report.kelly {
+        // Growth-optimal leverage from the realized edge: full/half Kelly, then
+        // the uncertainty-haircut + CDaR-capped RECOMMENDATION (bound by `edge`,
+        // `drawdown-cap`, or `no-edge`).
+        println!(
+            "Kelly:     full {:.2}× | half {:.2}× | unc-adj {:.2}× | recommend {:.2}× (budget {:.0}% → {})",
+            k.full_kelly_leverage,
+            k.half_kelly_leverage,
+            k.uncertainty_adjusted_leverage,
+            k.recommended_leverage,
+            k.drawdown_budget_pct,
+            k.binding_constraint,
+        );
+    }
     if !report.exit_reason_counts.is_empty()
         && report.exit_reason_counts.keys().any(|k| k != "rule")
     {
