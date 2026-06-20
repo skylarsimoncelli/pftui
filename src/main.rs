@@ -5555,6 +5555,24 @@ fn run_cli(cli: Cli) -> Result<()> {
                 cli::AnalyticsStrategyCommand::Explain { asset, entry, json } => {
                     commands::strategy::run_explain(&backend, &asset, &entry, json)
                 }
+                cli::AnalyticsStrategyCommand::Sweep {
+                    asset,
+                    entry,
+                    values,
+                    exit,
+                    from,
+                    to,
+                    json,
+                } => commands::strategy::run_sweep(
+                    &backend,
+                    &asset,
+                    &entry,
+                    &values,
+                    exit.as_deref(),
+                    from.as_deref(),
+                    to.as_deref(),
+                    json,
+                ),
             },
             cli::AnalyticsCommand::Sources { command } => match command {
                 cli::AnalyticsSourcesCommand::List { source_type, json } => {

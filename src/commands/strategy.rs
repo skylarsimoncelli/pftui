@@ -357,6 +357,160 @@ pub fn run_backtest(
     Ok(())
 }
 
+/// Parameter sweep: substitute each `--values` entry for the `$P` placeholder in
+/// the entry rule, backtest each, and apply the Deflated Sharpe Ratio across the
+/// grid — so the BEST config is judged AFTER accounting for selection over N
+/// trials (the overfitting guard that a single backtest can't give).
+#[allow(clippy::too_many_arguments)]
+pub fn run_sweep(
+    backend: &BackendConnection,
+    asset: &str,
+    entry: &str,
+    values: &str,
+    exit: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    use crate::research::validation as v;
+    if !entry.contains("$P") {
+        bail!("--entry must contain the sweep placeholder `$P` (e.g. \"rsi(14) < $P\")");
+    }
+    let vals: Vec<String> = values
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if vals.len() < 2 {
+        bail!("--values needs at least 2 comma-separated values to sweep");
+    }
+
+    let loader = PriceHistoryLoader { conn: backend.sqlite() };
+    let exit_spec = strategy::parse_exit(exit)?;
+    let (mut resolver, primary) = build_resolver(&loader, asset, from, to)?;
+
+    struct Cfg {
+        value: String,
+        n_trades: usize,
+        win_rate: Option<f64>,
+        mean_pct: Option<f64>,
+        profit_factor: Option<f64>,
+        sharpe: Option<f64>,
+        rets: Vec<f64>,
+    }
+    let mut cfgs: Vec<Cfg> = Vec::new();
+    for value in &vals {
+        let entry_str = entry.replace("$P", value);
+        let expr = parser::parse(&entry_str)
+            .map_err(|e| anyhow::anyhow!("value '{value}' → parse error: {e}"))?;
+        let report = strategy::run_backtest(
+            &mut resolver,
+            &expr,
+            &exit_spec,
+            strategy::RiskExits::default(),
+            strategy::Costs::default(),
+            None,
+        )?;
+        let rets: Vec<f64> = report.trades.iter().map(|t| t.return_pct / 100.0).collect();
+        let sharpe = v::sharpe(&rets);
+        cfgs.push(Cfg {
+            value: value.clone(),
+            n_trades: report.n_trades,
+            win_rate: report.win_rate_pct,
+            mean_pct: report.mean_return_pct,
+            profit_factor: report.profit_factor,
+            sharpe,
+            rets,
+        });
+    }
+    let missing = resolver.missing_symbols();
+    if !missing.is_empty() {
+        bail!(
+            "referenced symbol(s) resolved to NO price history: {} — likely a typo or a ticker needing its alias.",
+            missing.join(", ")
+        );
+    }
+
+    // Trial Sharpes (configs with a usable sample); best = max Sharpe with n≥10.
+    let trial_sharpes: Vec<f64> = cfgs.iter().filter_map(|c| c.sharpe).collect();
+    let best = cfgs
+        .iter()
+        .filter(|c| c.n_trades >= 10 && c.sharpe.is_some())
+        .max_by(|a, b| a.sharpe.partial_cmp(&b.sharpe).unwrap());
+    let deflated = best.and_then(|b| v::deflated_sharpe_ratio(&b.rets, &trial_sharpes));
+
+    if json_output {
+        let rows: Vec<_> = cfgs
+            .iter()
+            .map(|c| {
+                json!({
+                    "value": c.value,
+                    "n_trades": c.n_trades,
+                    "win_rate_pct": c.win_rate,
+                    "mean_return_pct": c.mean_pct,
+                    "profit_factor": c.profit_factor,
+                    "per_trade_sharpe": c.sharpe,
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "command": "strategy sweep",
+                "asset": asset,
+                "resolved_symbol": primary,
+                "entry": entry,
+                "exit": exit.unwrap_or("hold 90d (default)"),
+                "values": vals,
+                "configs": rows,
+                "best_value": best.map(|b| b.value.clone()),
+                "deflated_sharpe": deflated,
+            }))?
+        );
+        return Ok(());
+    }
+
+    println!("═══ Strategy Sweep: {} ({}) ═══", asset, primary);
+    println!("Entry: {entry}   (sweeping $P over {} values)", vals.len());
+    println!("Exit:  {}\n", exit.unwrap_or("hold 90d (default)"));
+    println!("{:<10} {:>7} {:>8} {:>9} {:>8} {:>9}", "$P", "trades", "win%", "mean%", "PF", "Sharpe");
+    println!("{}", "─".repeat(56));
+    for c in &cfgs {
+        let best_mark = if best.map(|b| b.value.as_str()) == Some(c.value.as_str()) { " ◀ best" } else { "" };
+        println!(
+            "{:<10} {:>7} {:>8} {:>9} {:>8} {:>9}{}",
+            c.value,
+            c.n_trades,
+            fmt_pct(c.win_rate),
+            fmt_pct(c.mean_pct),
+            c.profit_factor.map(|p| format!("{p:.2}")).unwrap_or_else(|| "—".into()),
+            c.sharpe.map(|s| format!("{s:.3}")).unwrap_or_else(|| "—".into()),
+            best_mark,
+        );
+    }
+    println!();
+    match deflated {
+        Some(d) => {
+            println!(
+                "Multiple-testing: best per-trade Sharpe {:.3} across {} trials → \
+                 expected-max-by-luck {:.3}, Deflated Sharpe (P real) {:.0}% → {}",
+                d.sharpe,
+                d.n_trials,
+                d.expected_max_sharpe,
+                d.dsr * 100.0,
+                if d.passes {
+                    "the best config's edge SURVIVES selection over the grid"
+                } else {
+                    "the best config does NOT survive selection — likely in-sample overfitting, not a real edge"
+                },
+            );
+        }
+        None => println!("Multiple-testing: no config had ≥10 trades with a usable return spread — sweep is anecdotal."),
+    }
+    println!("(In-sample best is optimistic by construction; the Deflated Sharpe is the honest read.)");
+    Ok(())
+}
+
 pub fn run_segment(
     backend: &BackendConnection,
     asset: &str,
