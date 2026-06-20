@@ -188,6 +188,13 @@ pub struct BuildContext {
     /// annotated inline (the assembler injects a `> ⚠ …` blockquote under
     /// the section heading). Stale data is annotated, never suppressed.
     pub staleness: Vec<StalenessWarning>,
+    /// Per-held-asset native risk/survival read (vol, EVT tail VaR, CDaR-95,
+    /// Hurst regime, risk-of-ruin, time-under-water) for the
+    /// `private_analytics_risk` section. Computed in [`Self::load`] from each
+    /// held symbol's price history; empty (section self-suppresses) when no
+    /// held asset has enough history.
+    pub private_analytics_risk:
+        Vec<crate::report::sections::private_analytics_risk::AnalyticsRiskRow>,
 }
 
 /// Fields on `BuildContext` that are NOT data slots (metadata / bookkeeping).
@@ -196,7 +203,8 @@ pub struct BuildContext {
 /// If you add a data-bearing field to `BuildContext`, add a matching
 /// `vec_slot!`/`opt_slot!` line in [`data_availability`]; if you add a
 /// metadata field, list it here. Do NOT weaken the conformance test.
-pub const BUILD_CONTEXT_META_FIELDS: &[&str] = &["report_date", "slot_issues", "staleness"];
+pub const BUILD_CONTEXT_META_FIELDS: &[&str] =
+    &["report_date", "slot_issues", "staleness", "private_analytics_risk"];
 
 /// Why a data slot is unpopulated. Recorded by loaders into
 /// [`BuildContext::slot_issues`]; consumed by [`data_availability`].
@@ -1143,6 +1151,13 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_risk_concentration",
             visibility: SectionVisibility::Private,
         },
+        // Drawdown Survival & Tail Risk — native per-held-asset risk read
+        // (vol/EVT/CDaR/ruin/time-under-water). Self-suppresses when no held
+        // asset has enough price history.
+        SectionSpec {
+            name: "private_analytics_risk",
+            visibility: SectionVisibility::Private,
+        },
         // Investor Panel Consensus (panel section is now consensus-only
         // by default; the persona-detail table is suppressed unless a
         // strong divergence warrants surfacing it).
@@ -1291,6 +1306,9 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         }
         "private_risk_concentration" => {
             sections::private_risk_concentration::render_private_risk_concentration(ctx)
+        }
+        "private_analytics_risk" => {
+            sections::private_analytics_risk::render_private_analytics_risk(ctx)
         }
         "private_mismatch_surface" => {
             sections::private_mismatch_surface::render_private_mismatch_surface(ctx)
@@ -2624,6 +2642,24 @@ impl BuildContext {
         // as current. Annotate, never suppress.
         let mut staleness = compute_staleness(backend, report_date, &all_views, &prices);
         ctx.staleness.append(&mut staleness);
+
+        // Native risk/survival read per held asset (vol/EVT/CDaR/Hurst/ruin/TuW)
+        // for the `private_analytics_risk` section. De-dup held symbols first;
+        // the helper skips any with too little history and reads price history
+        // directly, so this is a pure additive computation over already-loaded
+        // positions.
+        {
+            let mut held_syms: Vec<String> = Vec::new();
+            for p in &ctx.private_positions {
+                if !held_syms.iter().any(|s| s.eq_ignore_ascii_case(&p.symbol)) {
+                    held_syms.push(p.symbol.clone());
+                }
+            }
+            ctx.private_analytics_risk =
+                crate::report::sections::private_analytics_risk::compute_rows(
+                    backend, &held_syms, 25.0,
+                );
+        }
 
         Ok(ctx)
     }
@@ -6560,6 +6596,7 @@ mod assembler_tests {
             "private_conviction_trajectory",
             "private_outlook_by_horizon",
             "private_risk_concentration",
+            "private_analytics_risk",
             "private_investor_panel",
             "private_external_ta",
             "private_parallels",
