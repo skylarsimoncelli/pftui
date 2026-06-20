@@ -132,14 +132,22 @@ pub fn compute_pairs_backend(
     window: usize,
     limit: usize,
 ) -> Result<Vec<PairCorrelation>> {
-    let held = collect_held_symbols_backend(backend);
+    // Canonicalize via alias resolution so an asset held under an alias (e.g.
+    // "BTC") and the same asset as an anchor ("BTC-USD") collapse to ONE symbol
+    // — otherwise the pairing emits duplicate alias-collided rows
+    // (BTC-PSLV and BTC-USD-PSLV for the same underlying pair).
+    use crate::analytics::strategy::resolver::resolve_alias;
+    let held: HashSet<String> = collect_held_symbols_backend(backend)
+        .into_iter()
+        .map(|s| resolve_alias(&s))
+        .collect();
     if held.is_empty() {
         return Ok(Vec::new());
     }
 
     let mut candidates: HashSet<String> = held.clone();
     for anchor in ANCHORS {
-        candidates.insert(anchor.to_string());
+        candidates.insert(resolve_alias(anchor));
     }
 
     let history_limit = 180u32;
