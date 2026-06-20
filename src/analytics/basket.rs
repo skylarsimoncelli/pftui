@@ -46,6 +46,11 @@ pub struct BasketAllocation {
     /// downside method (co-downside only). `portfolio_vol`/`diversification`
     /// are always full-variance regardless.
     pub risk_basis: String,
+    /// A caveat about the result when set — e.g. a downside-RP basket that
+    /// contains an asset with no downside history (zero semivariance), which the
+    /// ERC then assigns 0% (its co-downside risk is zero at any weight). `None`
+    /// for a clean allocation.
+    pub note: Option<String>,
     /// Number of aligned observations the covariance was estimated on.
     pub n_obs: usize,
 }
@@ -90,11 +95,13 @@ impl Method {
     }
 }
 
-/// Estrada-style semicovariance matrix: `SC_ij = (1/n) Σ_t min(r_i,t, 0)·
-/// min(r_j,t, 0)` — the co-movement of LOSSES only (returns below the 0
-/// target). Symmetric and positive-semidefinite (a Gram matrix of the
+/// Zero-target (Hogan-Warren) semicovariance matrix: `SC_ij = (1/n) Σ_t
+/// min(r_i,t, 0)·min(r_j,t, 0)` — the co-movement of LOSSES only (returns below
+/// the 0 target; daily returns are near-zero-mean so this ≈ the demeaned
+/// Estrada form). Symmetric and positive-semidefinite (a Gram matrix of the
 /// downside-clipped return vectors), so the ERC solver applies unchanged. The
-/// diagonal is each asset's downside semivariance.
+/// diagonal is each asset's downside semivariance; an asset that NEVER loses
+/// has a zero diagonal (see `allocate`'s degeneracy note).
 pub fn semicovariance_matrix(series: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let k = series.len();
     let mut sc = vec![vec![0.0; k]; k];
@@ -261,6 +268,26 @@ pub fn allocate(symbols: &[String], series: &[Vec<f64>], method: Method) -> Opti
         Method::RiskParity | Method::DownsideRiskParity => risk_parity_weights(&risk_mat),
     };
     let rc = risk_contributions(&risk_mat, &w);
+
+    // Degeneracy note: under the downside method an asset with NO losing days
+    // has a zero semivariance diagonal, so ERC freezes it at 0% (its
+    // co-downside risk is zero at any weight — the equal-risk problem is
+    // ill-posed for it). Mathematically correct but worth flagging.
+    let note = if method.is_downside() {
+        let zero_downside: Vec<&str> = (0..k)
+            .filter(|&i| risk_mat[i][i] <= 1e-18)
+            .map(|i| symbols[i].as_str())
+            .collect();
+        (!zero_downside.is_empty()).then(|| {
+            format!(
+                "{} had no downside (losing) days in the window — downside-RP assigns them 0% (zero co-downside risk at any weight)",
+                zero_downside.join(", ")
+            )
+        })
+    } else {
+        None
+    };
+
     let port_var = portfolio_variance(&cov, &w);
     let port_vol_daily = port_var.max(0.0).sqrt();
     let port_vol_ann_pct = port_vol_daily * TRADING_DAYS.sqrt() * 100.0;
@@ -282,6 +309,7 @@ pub fn allocate(symbols: &[String], series: &[Vec<f64>], method: Method) -> Opti
         portfolio_vol_pct: port_vol_ann_pct,
         diversification_ratio: dr,
         risk_basis: if method.is_downside() { "semivariance" } else { "variance" }.to_string(),
+        note,
         n_obs: n,
     })
 }
@@ -397,6 +425,33 @@ mod tests {
         assert!((dw0 - rw0).abs() > 1e-3, "downside vs symmetric weights identical: {dw0} {rw0}");
         // portfolio_vol + diversification stay full-variance for both.
         assert_eq!(rp.risk_basis, "variance");
+    }
+
+    #[test]
+    fn downside_rp_flags_and_zeroes_a_never_losing_asset() {
+        // Asset B never has a down day (all returns ≥ 0) → zero semivariance.
+        // Downside-RP must assign it 0% (ill-posed ERC) AND set the note, not
+        // crash or emit NaN. Documents the known degenerate behavior (QA #973).
+        let symbols = vec!["RISKY".to_string(), "NEVERLOSE".to_string()];
+        let n = 200;
+        let risky: Vec<f64> = (0..n).map(|t| 0.02 * (t as f64 * 0.7).sin()).collect();
+        let neverlose: Vec<f64> = (0..n).map(|t| 0.01 * (t as f64 * 0.5).sin().abs()).collect();
+        let series = vec![risky, neverlose];
+        let a = allocate(&symbols, &series, Method::DownsideRiskParity).unwrap();
+        assert!(a.note.is_some(), "expected a degeneracy note");
+        assert!(a.note.as_ref().unwrap().contains("NEVERLOSE"));
+        let nl = a.weights.iter().find(|w| w.symbol == "NEVERLOSE").unwrap();
+        assert!(nl.weight < 1e-9, "never-losing asset should get ~0 weight, got {}", nl.weight);
+        assert!(a.weights.iter().all(|w| w.weight.is_finite()));
+        assert!((a.weights.iter().map(|w| w.weight).sum::<f64>() - 1.0).abs() < 1e-9);
+        // A clean (all-assets-have-downside) basket sets no note.
+        let clean = allocate(
+            &symbols,
+            &two_assets(0.01, 0.02, 0.3, 300),
+            Method::DownsideRiskParity,
+        )
+        .unwrap();
+        assert!(clean.note.is_none());
     }
 
     #[test]

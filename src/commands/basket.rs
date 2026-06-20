@@ -26,7 +26,9 @@ fn dated_closes(backend: &BackendConnection, resolved: &str) -> Result<HashMap<S
 
 pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: usize, json_output: bool) -> Result<()> {
     let method = Method::parse(method).ok_or_else(|| {
-        anyhow::anyhow!("unknown --method '{method}' (use: equal | inverse-vol | risk-parity)")
+        anyhow::anyhow!(
+            "unknown --method '{method}' (use: equal | inverse-vol | risk-parity | downside-risk-parity)"
+        )
     })?;
     // Resolve + de-dup the basket, preserving input order.
     let mut symbols: Vec<String> = Vec::new();
@@ -117,6 +119,9 @@ pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: us
     }
     if alloc.risk_basis == "semivariance" {
         println!("(risk contributions equalized on the SEMIcovariance — co-downside, not symmetric vol)");
+    }
+    if let Some(note) = &alloc.note {
+        println!("⚠ {note}");
     }
     println!(
         "\nPortfolio vol {:.1}%/yr · diversification ratio {:.2} (higher = more benefit captured)",
