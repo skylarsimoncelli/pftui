@@ -6428,6 +6428,27 @@ pub enum AnalyticsStrategyCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Walk-forward optimization: optimize $P on each train fold, measure on the next held-out test fold (OOS)
+    #[command(name = "walkforward", after_help = "Splits the timeline into folds, optimizes the `$P` parameter on each train\nsegment, then measures the chosen value on the NEXT (held-out, out-of-sample)\nsegment. The Walk-Forward Efficiency (avg OOS Sharpe / avg in-sample-best Sharpe)\nis the honest \"does the optimization generalize or is it curve-fit?\" read that\neven a deflated single sweep can't fully give. Warmup-correct (full-history\nindicators, trades partitioned by date).\n\nExamples:\n  pftui analytics strategy walkforward --asset BTC --entry \"rsi(14) < $P\" --values \"20,25,30,35,40\" --exit \"hold 10d\" --folds 4\n  pftui analytics strategy walkforward --asset BTC --entry \"rsi($P) < 35\" --values \"7,14,21,28\" --folds 5 --json")]
+    Walkforward {
+        /// Primary asset traded (alias or ticker)
+        #[arg(long)]
+        asset: String,
+        /// Entry rule containing the `$P` placeholder for the optimized value
+        #[arg(long)]
+        entry: String,
+        /// Comma-separated values to optimize `$P` over (e.g. "20,25,30,35,40")
+        #[arg(long)]
+        values: String,
+        /// Exit rule: "hold <N>d" (default "hold 90d") or a condition expression
+        #[arg(long)]
+        exit: Option<String>,
+        /// Number of train/test folds (default 4; needs ≥2)
+        #[arg(long, default_value_t = 4)]
+        folds: usize,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
