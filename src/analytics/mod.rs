@@ -25,5 +25,6 @@ pub mod scenarios;
 pub mod signals;
 pub mod situation;
 pub mod strategy;
+pub mod survival;
 pub mod synthesis;
 pub mod technicals;

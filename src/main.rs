@@ -5492,6 +5492,13 @@ fn run_cli(cli: Cli) -> Result<()> {
                     json,
                 } => commands::basket::run(&backend, &assets, &method, lookback, json),
             },
+            cli::AnalyticsCommand::Survival {
+                asset,
+                budget,
+                confidence,
+                lookback,
+                json,
+            } => commands::survival::run(&backend, &asset, budget, confidence, lookback, json),
             cli::AnalyticsCommand::Strategy { command } => match command {
                 cli::AnalyticsStrategyCommand::Backtest {
                     asset,
