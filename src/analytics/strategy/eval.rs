@@ -372,7 +372,7 @@ mod tests {
         let e = parse("atr(3) > 0").unwrap();
         let b = eval_condition(&e, &mut r).unwrap();
         // First few bars are None (warmup); a later bar must be Some(true).
-        assert!(b.iter().any(|x| *x == Some(true)));
+        assert!(b.contains(&Some(true)));
         assert!(b[0].is_none());
     }
 

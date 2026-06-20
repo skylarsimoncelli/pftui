@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn guards_thin_and_degenerate_samples() {
-        assert!(compute(&vec![0.01; 19], None, 25.0).is_none()); // < 20 trades
-        assert!(compute(&vec![0.01; 30], None, 25.0).is_none()); // zero variance
+        assert!(compute(&[0.01; 19], None, 25.0).is_none()); // < 20 trades
+        assert!(compute(&[0.01; 30], None, 25.0).is_none()); // zero variance
     }
 }

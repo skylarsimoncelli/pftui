@@ -225,6 +225,6 @@ mod tests {
     #[test]
     fn too_little_data_none() {
         let d = dates(10);
-        assert!(detect_regime_breaks(&d, &vec![0.01; 10], 0.5, 5.0).is_none());
+        assert!(detect_regime_breaks(&d, &[0.01; 10], 0.5, 5.0).is_none());
     }
 }

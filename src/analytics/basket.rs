@@ -473,7 +473,7 @@ mod tests {
     #[test]
     fn equal_weight_is_uniform() {
         let symbols = vec!["A".to_string(), "B".to_string(), "C".to_string()];
-        let series = vec![vec![0.01, -0.01].repeat(30), vec![0.02, -0.02].repeat(30), vec![0.015, -0.005].repeat(30)];
+        let series = vec![[0.01, -0.01].repeat(30), [0.02, -0.02].repeat(30), [0.015, -0.005].repeat(30)];
         let a = allocate(&symbols, &series, Method::Equal).unwrap();
         for aw in &a.weights {
             assert!((aw.weight - 1.0 / 3.0).abs() < 1e-12);
