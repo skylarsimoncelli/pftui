@@ -52,12 +52,17 @@ pub fn run(
         return Ok(());
     }
 
-    println!("═══ Hurst Exponent (R/S) — {symbol} ({resolved}) ═══");
+    println!("═══ Hurst Exponent — {symbol} ({resolved}) ═══");
     println!("As of {as_of} · {} log returns · windows {:?}\n", h.n_obs, h.windows);
     println!(
-        "H = {:.3} ({})   [uncorrected {:.3}]",
+        "H (R/S) = {:.3} ({})   [uncorrected {:.3}]",
         h.h, h.regime, h.h_uncorrected
     );
+    println!(
+        "α (DFA) = {}",
+        h.dfa_alpha.map(|a| format!("{a:.3}")).unwrap_or_else(|| "—".into())
+    );
+    println!("Cross-check: {}", h.agreement);
     println!("\n{}.", h.interpretation);
     Ok(())
 }
