@@ -238,24 +238,25 @@ fn build_supplementary(conn: &Connection, resolved: &str) -> Supplementary {
         _ => return s,
     };
     let closes: Vec<f64> = hist.iter().filter_map(|b| b.close.to_f64()).collect();
-    let dates: Vec<String> = hist.iter().map(|b| b.date.clone()).collect();
-    let log_rets: Vec<f64> = closes
-        .windows(2)
-        .filter(|w| w[0] > 0.0 && w[1] > 0.0)
-        .map(|w| (w[1] / w[0]).ln())
-        .collect();
-    let simple_rets: Vec<f64> = closes
-        .windows(2)
-        .filter(|w| w[0] > 0.0)
-        .map(|w| w[1] / w[0] - 1.0)
-        .collect();
+    // Pair each return WITH its date in one pass (matching the standalone
+    // commands) so a mid-series gap/non-positive close can't shift the dates.
+    let mut log_rets: Vec<f64> = Vec::with_capacity(hist.len());
+    let mut simple_rets: Vec<f64> = Vec::with_capacity(hist.len());
+    let mut ret_dates: Vec<String> = Vec::with_capacity(hist.len());
+    for w in hist.windows(2) {
+        if let (Some(p0), Some(p1)) = (w[0].close.to_f64(), w[1].close.to_f64()) {
+            if p0 > 0.0 && p1 > 0.0 {
+                log_rets.push((p1 / p0).ln());
+                simple_rets.push(p1 / p0 - 1.0);
+                ret_dates.push(w[1].date.clone());
+            }
+        }
+    }
 
     if let Some(h) = hurst(&log_rets) {
         s.hurst = Some(format!("H {:.2} ({})", h.h, h.regime));
     }
-    // Regime-break dates align to returns (one shorter than dates).
-    let ret_dates = &dates[dates.len() - simple_rets.len()..];
-    if let Some(rb) = detect_regime_breaks(ret_dates, &simple_rets, 0.5, 5.0) {
+    if let Some(rb) = detect_regime_breaks(&ret_dates, &simple_rets, 0.5, 5.0) {
         s.regime_break = Some(match &rb.last_change {
             Some(cp) => format!("last break {} bars ago ({}): {}", cp.bars_ago, cp.date, cp.direction),
             None => "no structural drift break in-window".to_string(),
@@ -269,20 +270,25 @@ fn build_supplementary(conn: &Connection, resolved: &str) -> Supplementary {
     } else {
         None
     };
-    let anchor_idx = anchor_date
-        .and_then(|d| hist.iter().position(|b| b.date >= d))
-        .or_else(|| {
-            // trailing-2y lowest close
+    // Label the anchor by its actual source: a verified cycle low (BTC/gold) vs
+    // the generic trailing-2y low fallback (everything else).
+    let (anchor_idx, anchor_label) = match anchor_date.and_then(|d| hist.iter().position(|b| b.date >= d)) {
+        Some(idx) => (Some(idx), "cycle-low"),
+        None => {
             let start = hist.len().saturating_sub(730);
-            (start..hist.len()).min_by(|&a, &b| hist[a].close.cmp(&hist[b].close))
-        });
+            (
+                (start..hist.len()).min_by(|&a, &b| hist[a].close.cmp(&hist[b].close)),
+                "trailing-2y-low",
+            )
+        }
+    };
     if let Some(idx) = anchor_idx {
         if let Ok(av) = anchored_vwap(&hist, idx) {
             if let (Some(price), Some(vwap)) = (closes.last(), av.current.to_f64()) {
                 if vwap > 0.0 {
                     let pct = (price / vwap - 1.0) * 100.0;
                     s.avwap = Some(format!(
-                        "price {pct:+.1}% vs cycle-low VWAP ({:.0}, {})",
+                        "price {pct:+.1}% vs {anchor_label} VWAP ({:.0}, {})",
                         vwap, av.anchor_date
                     ));
                 }
