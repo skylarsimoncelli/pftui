@@ -283,6 +283,9 @@ pub struct TradeReport {
     /// Vol-targeted sizing stats (None unless `--vol-target` was requested) —
     /// the risk-normalized equity curve + leverage actually used.
     pub sizing: Option<SizedStats>,
+    /// Drawdown-path-coherent risk metrics (CDaR / Ulcer / Omega) over the
+    /// per-trade equity curve. `None` below 20 trades (estimator unreliable).
+    pub drawdown_metrics: Option<crate::analytics::drawdown_metrics::DrawdownMetrics>,
     pub trades: Vec<Trade>,
 }
 
@@ -528,8 +531,11 @@ pub fn trade_report(
     let mut equity = 1.0f64;
     let mut peak = 1.0f64;
     let mut max_dd = 0.0f64;
+    let mut equity_curve: Vec<f64> = Vec::with_capacity(trades.len() + 1);
+    equity_curve.push(equity);
     for t in &trades {
         equity *= 1.0 + t.return_pct / 100.0;
+        equity_curve.push(equity);
         if equity > peak {
             peak = equity;
         }
@@ -621,6 +627,11 @@ pub fn trade_report(
         v::monte_carlo_trade_paths(&rets_frac, 5000, seed)
     };
 
+    // Drawdown-path risk over the per-trade equity curve (CDaR / Ulcer / Omega).
+    // Martin ratio uses the strategy CAGR as the annualized-return numerator.
+    let drawdown_metrics =
+        crate::analytics::drawdown_metrics::compute(&equity_curve, cagr_pct, 0.0);
+
     rets.clear();
     TradeReport {
         n_trades: n,
@@ -650,6 +661,7 @@ pub fn trade_report(
         validation: trade_validation(&trades),
         monte_carlo,
         sizing: None, // set by run_backtest when --vol-target is requested
+        drawdown_metrics,
         trades,
     }
 }

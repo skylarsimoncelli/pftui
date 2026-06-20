@@ -10,6 +10,7 @@ pub mod cyber;
 pub mod cycle_clock;
 pub mod cycle_engine;
 pub mod deltas;
+pub mod drawdown_metrics;
 pub mod drawdown;
 pub mod impact;
 pub mod levels;
