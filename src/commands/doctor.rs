@@ -376,7 +376,7 @@ async fn test_cot_api() -> DiagnosticCheck {
         .unwrap();
 
     let result = client
-        .get("https://www.cftc.gov/files/dea/cotarchives/2024/futures/deacot2024.zip")
+        .get("https://publicreporting.cftc.gov/resource/72hh-3qpy.json?cftc_contract_market_code=088691&$limit=1")
         .send()
         .await;
 

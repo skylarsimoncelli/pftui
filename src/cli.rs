@@ -1247,7 +1247,7 @@ pub enum DataPredictionsCommand {
         #[arg(long)]
         symbol: Option<String>,
 
-        /// Conviction level: high, medium, low
+        /// Conviction band: low, medium, or high.
         #[arg(long)]
         conviction: Option<String>,
 
@@ -2501,6 +2501,7 @@ pub enum JournalPredictionCommand {
         confidence_pos: Option<f64>,
         #[arg(long)]
         symbol: Option<String>,
+        /// Conviction band for calibration lookup: low, medium, or high.
         #[arg(long)]
         conviction: Option<String>,
         /// Analytics timeframe: low, medium, high, macro (aliases: short=low, long=high). Preferred over positional.
@@ -2606,6 +2607,7 @@ pub enum JournalPredictionCommand {
         symbol: Option<String>,
         #[arg(long)]
         timeframe: Option<String>,
+        /// Conviction band: low, medium, or high.
         #[arg(long)]
         conviction: Option<String>,
         /// Analyst layer for symmetry with `preflight`. Carried through to
@@ -2634,6 +2636,7 @@ pub enum JournalPredictionCommand {
         symbol: Option<String>,
         #[arg(long)]
         timeframe: Option<String>,
+        /// Conviction band for calibration lookup: low, medium, or high.
         #[arg(long)]
         conviction: Option<String>,
         /// Analyst layer for the calibration_adjustments lookup
@@ -4573,8 +4576,8 @@ pub enum AnalyticsViewsCommand {
         /// Asset symbol (e.g. BTC, GC=F)
         #[arg(long)]
         asset: String,
-        /// Lookback window for views (24h, 7d, 2w, 1m). Default: 24h.
-        #[arg(long, default_value = "24h")]
+        /// Lookback window for views (24h, 7d, 2w, 1m). Default: 7d.
+        #[arg(long, default_value = "7d")]
         since: String,
         #[arg(long)]
         json: bool,
@@ -4586,8 +4589,8 @@ pub enum AnalyticsViewsCommand {
     ///   pftui analytics views convergence-all --since 7d --json
     #[command(name = "convergence-all")]
     ConvergenceAll {
-        /// Lookback window for views (24h, 7d, 2w, 1m). Default: 24h.
-        #[arg(long, default_value = "24h")]
+        /// Lookback window for views (24h, 7d, 2w, 1m). Default: 7d.
+        #[arg(long, default_value = "7d")]
         since: String,
         #[arg(long)]
         json: bool,

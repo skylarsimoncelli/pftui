@@ -20,7 +20,7 @@ Typical loop:
 
 ```bash
 pftui data refresh
-pftui portfolio brief --agent --json
+pftui portfolio brief --json
 ```
 
 From there, agents can:

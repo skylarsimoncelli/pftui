@@ -32,6 +32,7 @@ struct BlsApiResponse {
 
 #[derive(Debug, Deserialize)]
 struct BlsResults {
+    #[serde(default)]
     series: Vec<BlsSeries>,
 }
 
@@ -219,5 +220,13 @@ mod tests {
         };
         let parsed = parse_bls_data_point(SERIES_NFP, &item).unwrap();
         assert_eq!(parsed.value, Decimal::from_str("278802").unwrap());
+    }
+
+    #[test]
+    fn parses_rate_limit_payload_before_status_handling() {
+        let raw = r#"{"status":"REQUEST_NOT_PROCESSED","message":["daily threshold reached"],"Results":{}}"#;
+        let parsed: BlsApiResponse = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.status, "REQUEST_NOT_PROCESSED");
+        assert_eq!(parsed.results.unwrap().series.len(), 0);
     }
 }

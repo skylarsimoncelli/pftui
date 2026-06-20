@@ -11,8 +11,8 @@ use crate::db::rss_feed_health::{self, RssFeedHealthView};
 use crate::db::{onchain_cache, predictions_cache, price_cache, sentiment_cache, worldbank_cache};
 
 /// Freshness thresholds in seconds
-const PRICE_FRESHNESS_SECS: i64 = 15 * 60; // 15 minutes
-const NEWS_FRESHNESS_SECS: i64 = 10 * 60; // 10 minutes
+const PRICE_FRESHNESS_SECS: i64 = 6 * 60 * 60; // 6 hours
+const NEWS_FRESHNESS_SECS: i64 = 6 * 60 * 60; // 6 hours
 const PREDICTIONS_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
 const SENTIMENT_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
 const CALENDAR_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours

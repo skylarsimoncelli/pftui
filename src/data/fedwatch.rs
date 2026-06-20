@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
+use chrono::Datelike;
 use scraper::{Html, Selector};
 use std::sync::OnceLock;
 
@@ -551,7 +552,8 @@ pub fn detect_no_change_conflict(
     markets: &[PredictionMarket],
     threshold_pct_points: f64,
 ) -> Option<ProbabilityConflict> {
-    let (alt_no_change, label, volume_24h) = infer_alt_no_change_probability(markets)?;
+    let (alt_no_change, label, volume_24h) =
+        infer_alt_no_change_probability(markets, &snapshot.meeting_info.meeting_date)?;
     let cme_no_change = snapshot.summary.no_change_pct;
     let delta = (cme_no_change - alt_no_change).abs();
     if delta < threshold_pct_points {
@@ -583,7 +585,8 @@ pub fn detect_no_change_conflict(
     })
 }
 
-fn infer_alt_no_change_probability(markets: &[PredictionMarket]) -> Option<(f64, String, f64)> {
+fn infer_alt_no_change_probability(markets: &[PredictionMarket], cme_meeting_date: &str) -> Option<(f64, String, f64)> {
+    let target_month = meeting_month_key(cme_meeting_date);
     let mut best: Option<(f64, String, f64)> = None;
 
     for market in markets {
@@ -593,6 +596,13 @@ fn infer_alt_no_change_probability(markets: &[PredictionMarket]) -> Option<(f64,
         let q = market.question.to_lowercase();
         if !(q.contains("fed") || q.contains("fomc") || q.contains("federal reserve")) {
             continue;
+        }
+        if let Some(target) = target_month.as_ref() {
+            if let Some(question_month) = question_month_key(&q) {
+                if &question_month != target {
+                    continue;
+                }
+            }
         }
 
         let no_change = if q.contains("no change")
@@ -620,6 +630,34 @@ fn infer_alt_no_change_probability(markets: &[PredictionMarket]) -> Option<(f64,
     }
 
     best
+}
+
+fn meeting_month_key(value: &str) -> Option<(i32, u32)> {
+    chrono::NaiveDate::parse_from_str(value.trim(), "%d %b %Y")
+        .ok()
+        .map(|date| (date.year(), date.month()))
+        .or_else(|| {
+            chrono::NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d")
+                .ok()
+                .map(|date| (date.year(), date.month()))
+        })
+}
+
+fn question_month_key(question_lower: &str) -> Option<(i32, u32)> {
+    let year = question_lower
+        .split(|ch: char| !ch.is_ascii_digit())
+        .find_map(|token| (token.len() == 4).then(|| token.parse::<i32>().ok()).flatten())?;
+    let month = [
+        ("january", 1), ("february", 2), ("march", 3), ("april", 4),
+        ("may", 5), ("june", 6), ("july", 7), ("august", 8),
+        ("september", 9), ("october", 10), ("november", 11), ("december", 12),
+        ("jan", 1), ("feb", 2), ("mar", 3), ("apr", 4), ("jun", 6),
+        ("jul", 7), ("aug", 8), ("sep", 9), ("sept", 9), ("oct", 10),
+        ("nov", 11), ("dec", 12),
+    ]
+    .iter()
+    .find_map(|(name, month)| question_lower.contains(name).then_some(*month))?;
+    Some((year, month))
 }
 
 #[cfg(test)]
@@ -696,6 +734,35 @@ mod tests {
             detect_no_change_conflict(&snapshot, &markets, 5.0).expect("should detect conflict");
         assert!(conflict.delta_pct_points > 5.0);
         assert_eq!(conflict.metric, "next_fomc_no_change_probability");
+    }
+
+    #[test]
+    fn ignores_stale_alt_meeting_months_when_comparing_fedwatch() {
+        let snapshot = FedWatchSnapshot {
+            source_url: "cme".to_string(),
+            fetched_at: "2026-06-20T00:00:00Z".to_string(),
+            meetings: vec!["29 Jul26".to_string()],
+            meeting_info: MeetingInfo {
+                meeting_date: "29 Jul 2026".to_string(),
+                contract: "ZQN6".to_string(),
+                expires: "31 Jul 2026".to_string(),
+                mid_price: 96.0,
+                prior_volume: 1,
+                prior_open_interest: 1,
+            },
+            summary: SummaryProbabilities { ease_pct: 35.0, no_change_pct: 61.5, hike_pct: 3.5 },
+            target_probabilities: vec![],
+        };
+        let markets = vec![PredictionMarket {
+            id: "april".to_string(),
+            question: "Will there be no change in Fed interest rates after the April 2026 meeting?".to_string(),
+            probability: 0.999,
+            volume_24h: 1_000_000.0,
+            category: MarketCategory::Economics,
+            updated_at: 0,
+        }];
+
+        assert!(detect_no_change_conflict(&snapshot, &markets, 5.0).is_none());
     }
 
     #[test]

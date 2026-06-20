@@ -123,7 +123,17 @@ fn normalize_direction(direction: &str) -> &'static str {
 }
 
 fn normalize_conviction(conviction: &str) -> &'static str {
-    match conviction.trim().to_ascii_lowercase().as_str() {
+    let normalized = conviction.trim().to_ascii_lowercase();
+    if let Ok(score) = normalized.parse::<i64>() {
+        return match score.abs() {
+            0 => "low",
+            1 | 2 => "low",
+            3 | 4 => "medium",
+            _ => "high",
+        };
+    }
+
+    match normalized.as_str() {
         "high" | "strong" => "high",
         "medium" | "med" | "moderate" => "medium",
         "low" | "weak" => "low",
@@ -216,6 +226,14 @@ mod tests {
             !rendered.contains("{outlook_arrows"),
             "must not leak token placeholder"
         );
+    }
+
+    #[test]
+    fn numeric_conviction_scores_map_to_strength_bands() {
+        assert_eq!(normalize_conviction("-5"), "high");
+        assert_eq!(normalize_conviction("-3"), "medium");
+        assert_eq!(normalize_conviction("2"), "low");
+        assert_eq!(normalize_conviction("0"), "low");
     }
 
     #[test]
