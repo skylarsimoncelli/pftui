@@ -41,7 +41,10 @@ pub struct TailDependence {
 }
 
 /// Compute tail dependence between two ALIGNED return series (same dates, same
-/// length). `q` is the tail quantile for the empirical estimate (0.01–0.20).
+/// length). Input: daily SIMPLE returns (`p₁/p₀−1`). Kendall τ / rank structure
+/// is invariant under the monotone log↔simple map, but the empirical
+/// tail-quantile cut is taken on the series as given, so pass the SAME space for
+/// both legs. `q` is the tail quantile for the empirical estimate (0.01–0.20).
 pub fn tail_dependence(x: &[f64], y: &[f64], q: f64) -> Option<TailDependence> {
     let n = x.len().min(y.len());
     if n < 100 {

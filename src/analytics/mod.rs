@@ -1,6 +1,8 @@
 pub mod analog;
 pub mod basket;
 pub mod calibration_scorer;
+#[cfg(test)]
+mod contract_tests;
 pub mod catalysts;
 pub mod changepoint;
 pub mod copula;

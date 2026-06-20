@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-20 — test(analytics): input-space contract tests + pinned module input conventions (reliability hardening)
+
+- What: a numerical-correctness hardening pass over the analytics suite's return-SPACE boundaries — the class of interface bug QA has caught twice (the survival log-vs-arithmetic confusion #974, the CDaR `n%20` FP off-by-one #970). Each module assumes a specific input space (EVT/copula want SIMPLE returns, Hurst/survival want LOG returns, drawdown-metrics wants a PRICE/equity curve) and every caller currently respects it — but nothing guarded those contracts, so a future caller passing the wrong space would slip past every test. New `src/analytics/contract_tests.rs` (in-crate `#[cfg(test)]`, synthetic data, no DB): EVT VaR monotonicity (99.9%≥99%≥95%) under BTC-scale shocks + a log-vs-simple sensitivity tripwire; Hurst unit-range + DFA thin-series guard; a drawdown-metrics "takes PRICES not returns" tripwire + CDaR-95≥CDaR-90 monotonicity; an n=20 CDaR k-count FP regression (CDaR-95 must be ~2× CDaR-90 — fails if the off-by-one returns); the survival μ≤0 reliable:false + arithmetic-max-DD-in-[0,1) contract; Kelly losing-edge→0 floor; single-asset basket→None-not-panic.
+- Also pinned the two under-documented input conventions: `copula::tail_dependence` and `changepoint` (CUSUM) now state they take SIMPLE returns (all 3 CUSUM callers verified consistent), noting Hurst's different LOG contract. Zero behaviour change.
+- Tests: 8 new contract tests; full `cargo test` green; clippy clean.
+- Files: `src/analytics/contract_tests.rs` (new), `src/analytics/mod.rs`, `src/analytics/copula.rs`, `src/analytics/changepoint.rs`, `CHANGELOG.md`.
+
+
 ### 2026-06-20 — feat(analytics): wire survival into the risk-dashboard capstone
 
 - What: the `risk-dashboard` now carries a **Survival** line + `survival` JSON field — risk-of-ruin vs the 25% Kelly budget, Triple-Penance arithmetic max-DD, and time-under-water (i.i.d. + AR(1)), computed by `analytics::survival::compute` on the same price series + CDaR-95 the dashboard already measures. The composite risk verdict now also fires on **HIGH ruin** (≥50% to breach budget), **survivable** (<15%), and **no-positive-drift** (recovery unbounded → hold only with cycle conviction). This makes the risk capstone complete: depth (EVT/CDaR) AND time/solvency (survival) in one auditable view, the way `positioning` is the direction capstone.
