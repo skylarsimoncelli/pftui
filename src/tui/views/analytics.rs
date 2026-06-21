@@ -82,8 +82,10 @@ fn render_risk_panel(frame: &mut Frame, area: Rect, app: &App, metrics: &risk::R
     let survival_line = match focus_symbol_closes(app) {
         Some((sym, closes)) => match survival_summary_text(&closes, &sym) {
             Some(text) => Line::from(Span::styled(text, Style::default().fg(app.theme.text_secondary))),
+            // We're in the ≥31-closes arm, so a None here means a degenerate
+            // (flat / zero-variance) return series, NOT insufficient history.
             None => Line::from(Span::styled(
-                "Survival: focused asset has too little history (<31 closes).",
+                format!("Survival ({sym}): not computable (flat/degenerate return series)."),
                 Style::default().fg(app.theme.text_muted),
             )),
         },
