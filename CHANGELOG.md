@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-21 — feat(tui): Diversification sub-tab — pairwise correlation + co-crash in the Risk Dashboard
+
+- What: the Risk Dashboard view (key `9`) gains a 4th sub-tab, **Diversification** (h/l now cycles Risk → Basket → Cycle → Diversification). For the held basket it shows, per asset pair, the **Pearson correlation** and the **co-crash λ_L** (empirical lower-tail dependence — the chance both crash together in the worst 5% of days), with a WEAK/MODERATE/STRONG verdict, sorted most-co-crashing first. The direct TUI visualization of the operator's core thesis — *does my book actually diversify, including in a crash?* (e.g. BTC↔gold). Surfaces the copula/tail-dependence work (previously CLI-only).
+- How: computed inline from the in-memory `price_history` over the most-recent ~1y (252-day) window of common history — this bounds the O(n²) Kendall-τ inside `copula::tail_dependence` (≤63k ops/pair) and is more decision-relevant than full history; held assets capped at 8 (≤28 pairs) so the per-frame cost stays sub-millisecond, and it only renders while this sub-tab is active. The pairing/windowing/sort core is a pure `pair_diversification` fn, unit-tested. Reuses the verified `tail_dependence` + the in-memory `align_common` aligner. `SUBTAB_COUNT` 3→4.
+- Tests: pure `pair_diversification` test (3 assets → 3 pairs, sorted by λ_L desc, thin pairs <100 windowed pts dropped) + the existing view tests; full `cargo test` green; clippy clean. No new panic paths (Option-based; hints for <2 assets / insufficient overlap). NOTE: live layout best eyeballed in a running TUI.
+- Files: `src/tui/views/risk_dashboard.rs`, `src/tui/widgets/status_bar.rs`.
+
+
 ### 2026-06-21 — feat(tui): Cycle Clock sub-tab in the Risk Dashboard (h/l → 3rd tab)
 
 - What: the Risk Dashboard view (key `9`) gains a 3rd sub-tab, **Cycle (BTC/gold)** — the asset's market-cycle clock (BTC 4-year halving cycle / gold ~6.9-year cycle): accumulation stance + score, weeks-since-halving / Olson-bottom countdown, Mayer/200w-MA extension, the Loukas/Mayer/Olson factor reads, and the one-line verdict (BTC); cycle-position %, years-since-low, past-half-cycle, 200d-MA extension + verdict (gold). The accumulation/distribution timing read — directly on the operator's cycle-accumulation thesis — now browsable in the TUI. Third power-user view. h/l now cycles Risk → Basket → Cycle.
