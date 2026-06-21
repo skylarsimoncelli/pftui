@@ -72,6 +72,10 @@ fn context_hints(app: &App) -> Vec<(&'static str, &'static str)> {
             ("j/k", "Navigate"),
             (":", "Cmd"),
         ],
+        // Read-only dashboard that follows the selected asset; the only
+        // view-specific affordance is switching to a view where you pick the
+        // asset. (No `r`/refresh handler exists for this view — don't promise one.)
+        ViewMode::RiskDashboard => vec![("1/3", "Positions/Markets"), (":", "Cmd")],
     };
 
     if app.portfolio_mode == PortfolioMode::Full {
