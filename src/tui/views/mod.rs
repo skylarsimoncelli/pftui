@@ -11,6 +11,7 @@ pub mod journal_entry_popup;
 pub mod markets;
 pub mod news;
 pub mod onboarding;
+pub mod risk_dashboard;
 pub mod position_detail;
 pub mod position_detail_pane;
 pub mod positions;

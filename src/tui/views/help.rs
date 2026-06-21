@@ -72,8 +72,8 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("W + 1/2/3", "Switch watchlist group", kc, tc));
     lines.push(key_line("6", "Analytics", kc, tc));
     lines.push(key_line("7", "News feed", kc, tc));
-    lines.push(key_line("8", "Chart grid", kc, tc));
-    lines.push(key_line("9", "Journal", kc, tc));
+    lines.push(key_line("8", "Journal", kc, tc));
+    lines.push(key_line("9", "Risk dashboard (focused asset)", kc, tc));
     lines.push(key_line(
         "Tab / ← / →",
         "Toggle Portfolio/Watchlist",

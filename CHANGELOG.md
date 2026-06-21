@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-21 — feat(tui): new Risk Dashboard view (key 9) — per-asset risk analytics in the TUI
+
+- What: a dedicated **Risk Dashboard** TUI view (press `9`, or the "Risk" header tab) — the TUI analogue of `pftui analytics risk-dashboard`. For the focused asset (the selected symbol, else the first held position with ≥31 closes of in-memory history) it shows a 2×2 panel grid: **Volatility & Tail** (ann. vol, max-DD, %-from-ATH, EVT ξ/tail-class, 1d VaR 99/99.9, ES99), **Drawdown Path** (CDaR-90/95, Ulcer, Omega), **Regime** (Hurst H, DFA α, agreement), and **Survival** (risk-of-ruin vs a 25% budget, Triple-Penance max-DD, time-under-water, recovery cliff). First time the full risk/survival family is browsable in the TUI; previously CLI/report-only. First of the "power-user analytics views" series.
+- How (safe pattern): everything computed INLINE from the in-memory `app.price_history` (pure CPU — never blocking I/O, per the TUI event-loop rule), reusing the verified analytics primitives (evt/drawdown_metrics/hurst_rs/survival/risk) and the shared `analytics::focus_symbol_closes`. New `src/tui/views/risk_dashboard.rs`; the new `ViewMode::RiskDashboard` is wired through every exhaustive match (ui.rs dispatch, status-bar hints, header tab, breadcrumb, from/to-config strings, help screen, and 8 navigation handlers as no-ops — it's a read-only dashboard). Also corrected stale help-screen key labels (8=Journal, 9=Risk; previously mislabeled).
+- Tests: panel-label render test (vol/CDaR/Hurst/ruin labels present for a synthetic series); full `cargo test` green; clippy clean. No new panic paths (Option-based, no unwraps; suppresses to a hint when no focused asset). NOTE: live visual layout (2×2 grid spacing on real terminal sizes) is best eyeballed in a running TUI.
+- Files: `src/tui/views/risk_dashboard.rs` (new), `src/tui/views/mod.rs`, `src/tui/ui.rs`, `src/tui/widgets/status_bar.rs`, `src/tui/views/help.rs`, `src/tui/views/analytics.rs` (shared focus helper), `src/app.rs`.
+
+
 ### 2026-06-21 — feat(tui): surface the native survival analytics in the Analytics view Risk Panel
 
 - What: the TUI Analytics view's Risk Panel now shows a one-line **survival headline** for the focused asset — `Survival (BTC): ruin 58% · max-DD 51% · CDaR95 78% · underwater 6.9y` (or `… no positive drift (recovery unbounded)` when μ≤0). First surfacing of the new risk/survival analytics (#974/#979) in the TUI, where a terminal-primary operator actually works — previously they were CLI/report-only. The focused asset is the selected symbol if it has in-memory history, else the first held position that does.

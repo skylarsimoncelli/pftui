@@ -406,10 +406,11 @@ fn fmt_num_opt(v: Option<Decimal>) -> String {
     }
 }
 
-/// The asset to show the survival headline for: the selected symbol if it has
-/// enough in-memory history, else the first held position that does. Returns
-/// `(symbol, positive closes)`. Pure read of `app` state — no I/O.
-fn focus_symbol_closes(app: &App) -> Option<(String, Vec<f64>)> {
+/// The asset to focus risk analytics on: the selected symbol if it has enough
+/// in-memory history, else the first held position that does. Returns
+/// `(symbol, positive closes)`. Pure read of `app` state — no I/O. Shared with
+/// the Risk-Dashboard view.
+pub(crate) fn focus_symbol_closes(app: &App) -> Option<(String, Vec<f64>)> {
     let closes_for = |sym: &str| -> Option<Vec<f64>> {
         let v: Vec<f64> = app
             .price_history

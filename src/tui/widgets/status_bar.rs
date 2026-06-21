@@ -72,6 +72,11 @@ fn context_hints(app: &App) -> Vec<(&'static str, &'static str)> {
             ("j/k", "Navigate"),
             (":", "Cmd"),
         ],
+        ViewMode::RiskDashboard => vec![
+            ("1/3", "Select asset"),
+            ("r", "Refresh"),
+            (":", "Cmd"),
+        ],
     };
 
     if app.portfolio_mode == PortfolioMode::Full {

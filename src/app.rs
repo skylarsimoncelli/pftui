@@ -40,6 +40,7 @@ pub enum ViewMode {
     Analytics,
     News,
     Journal,
+    RiskDashboard,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChartRenderMode {
@@ -810,6 +811,7 @@ impl App {
             "analytics" => ViewMode::Analytics,
             "news" => ViewMode::News,
             "journal" => ViewMode::Journal,
+            "risk" => ViewMode::RiskDashboard,
             _ => ViewMode::Positions,
         }
     }
@@ -824,6 +826,7 @@ impl App {
             ViewMode::Analytics => "analytics",
             ViewMode::News => "news",
             ViewMode::Journal => "journal",
+            ViewMode::RiskDashboard => "risk",
         }
     }
 
@@ -2199,6 +2202,7 @@ impl App {
             ViewMode::Analytics => "Analytics",
             ViewMode::News => "News",
             ViewMode::Journal => "Journal",
+            ViewMode::RiskDashboard => "Risk",
         };
 
         // Only positions view has deeper navigation context
@@ -2576,7 +2580,8 @@ impl App {
             | ViewMode::Economy
             | ViewMode::Analytics
             | ViewMode::News
-            | ViewMode::Journal => self.view_mode,
+            | ViewMode::Journal
+            | ViewMode::RiskDashboard => self.view_mode,
         };
 
         if desired == self.last_saved_home_tab {
@@ -2960,6 +2965,11 @@ impl App {
                 self.detail_open = false;
                 self.detail_popup_open = false;
                 self.load_journal();
+            }
+            KeyCode::Char('9') => {
+                self.view_mode = ViewMode::RiskDashboard;
+                self.detail_open = false;
+                self.detail_popup_open = false;
             }
 
             // Alerts overlay toggle (Ctrl+A)
@@ -3629,6 +3639,7 @@ impl App {
             );
             push(if compact { "N" } else { "News" }, ViewMode::News);
             push(if compact { "J" } else { "Journal" }, ViewMode::Journal);
+            push(if compact { "Rk" } else { "Risk" }, ViewMode::RiskDashboard);
         }
         let hitboxes = if self.header_tab_hitboxes.is_empty() {
             &fallback_hitboxes
@@ -3781,6 +3792,7 @@ impl App {
                     if relative_row >= 2 {
                         let clicked_row = (relative_row - 2) as usize;
                         match self.view_mode {
+                            ViewMode::RiskDashboard => {}
                             ViewMode::Watchlist => {
                                 if clicked_row < self.watchlist_entries.len() {
                                     self.watchlist_selected_index = clicked_row;
@@ -3861,6 +3873,7 @@ impl App {
         let old_pos_idx = self.selected_index;
 
         match self.view_mode {
+            ViewMode::RiskDashboard => {}
             ViewMode::Positions => {
                 if clicked_row < self.display_positions.len() {
                     self.selected_index = clicked_row;
@@ -4102,6 +4115,7 @@ impl App {
     fn move_down(&mut self) {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
+            ViewMode::RiskDashboard => {}
             ViewMode::Positions => {
                 if !self.display_positions.is_empty() {
                     self.selected_index =
@@ -4160,6 +4174,7 @@ impl App {
     fn move_up(&mut self) {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
+            ViewMode::RiskDashboard => {}
             ViewMode::Positions => {
                 self.selected_index = self.selected_index.saturating_sub(1);
             }
@@ -4193,6 +4208,7 @@ impl App {
     fn jump_to_top(&mut self) {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
+            ViewMode::RiskDashboard => {}
             ViewMode::Positions => {
                 self.selected_index = 0;
             }
@@ -4226,6 +4242,7 @@ impl App {
     fn jump_to_bottom(&mut self) {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
+            ViewMode::RiskDashboard => {}
             ViewMode::Positions => {
                 if !self.display_positions.is_empty() {
                     self.selected_index = self.display_positions.len() - 1;
@@ -4294,6 +4311,7 @@ impl App {
         let old_pos_idx = self.selected_index;
         let step = self.half_page();
         match self.view_mode {
+            ViewMode::RiskDashboard => {}
             ViewMode::Positions => {
                 if !self.display_positions.is_empty() {
                     self.selected_index =
@@ -4355,6 +4373,7 @@ impl App {
         let old_pos_idx = self.selected_index;
         let step = self.half_page();
         match self.view_mode {
+            ViewMode::RiskDashboard => {}
             ViewMode::Positions => {
                 self.selected_index = self.selected_index.saturating_sub(step);
             }
