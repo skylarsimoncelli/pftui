@@ -14,9 +14,9 @@ use crate::app::App;
 
 use super::analytics::focus_symbol_closes;
 
-/// Number of sub-tabs (Risk grid, Basket allocation). Cycled with h/l.
-pub const SUBTAB_COUNT: u8 = 2;
-const SUBTAB_NAMES: [&str; 2] = ["Risk (asset)", "Basket (allocation)"];
+/// Number of sub-tabs (Risk grid, Basket allocation, Cycle clock). Cycled h/l.
+pub const SUBTAB_COUNT: u8 = 3;
+const SUBTAB_NAMES: [&str; 3] = ["Risk (asset)", "Basket (allocation)", "Cycle (BTC/gold)"];
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let active = (app.risk_subtab % SUBTAB_COUNT) as usize;
@@ -51,8 +51,107 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 
     match active {
         1 => render_basket(frame, rows[1], app),
+        2 => render_cycle(frame, rows[1], app),
         _ => render_risk_grid(frame, rows[1], app),
     }
+}
+
+/// Cycle sub-tab: the asset's market-cycle clock (BTC 4-year halving cycle /
+/// gold ~6.9-year cycle) — accumulation/distribution timing for the focused
+/// asset. Defined only for BTC and gold (the cycle-accumulation pair). Computed
+/// inline from the in-memory `price_history` (pure; no I/O).
+fn render_cycle(frame: &mut Frame, area: Rect, app: &App) {
+    use crate::analytics::cycle_clock::{btc_cycle_clock, gold_cycle_clock};
+    use crate::analytics::strategy::resolver::resolve_alias;
+
+    let sym = match focus_symbol_closes(app) {
+        Some((s, _)) => s,
+        None => {
+            frame.render_widget(
+                Paragraph::new("Select BTC or gold to see its market-cycle clock.")
+                    .style(Style::default().fg(app.theme.text_muted)),
+                area,
+            );
+            return;
+        }
+    };
+    let resolved = resolve_alias(&sym);
+    let hist = app.price_history.get(&sym);
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    match (resolved.as_str(), hist) {
+        ("BTC-USD", Some(h)) if h.len() >= 100 => match btc_cycle_clock(&resolved, h) {
+            Some(c) => {
+                lines.push(Line::from(Span::styled(
+                    format!("BTC cycle · {} · {:.0}", c.as_of, c.last_close),
+                    Style::default().fg(app.theme.text_secondary),
+                )));
+                lines.push(Line::from(format!(
+                    "Stance: {} (score {:+})",
+                    c.accumulation.stance, c.accumulation.score
+                )));
+                lines.push(Line::from(format!(
+                    "Halving +{}w · Olson bottom in {}d",
+                    c.weeks_since_halving, c.olson_days_remaining
+                )));
+                if let Some(p) = c.pct_vs_200wma {
+                    lines.push(Line::from(format!("vs 200w-MA: {p:+.0}%")));
+                }
+                lines.push(Line::from(""));
+                for fac in c.accumulation.factors.iter().take(4) {
+                    lines.push(Line::from(format!("· {fac}")));
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    c.verdict.clone(),
+                    Style::default().fg(app.theme.text_accent),
+                )));
+            }
+            None => lines.push(Line::from("BTC cycle clock unavailable (insufficient history).")),
+        },
+        ("GC=F", Some(h)) if h.len() >= 100 => match gold_cycle_clock(&resolved, h) {
+            Some(c) => {
+                lines.push(Line::from(Span::styled(
+                    format!("Gold cycle · {} · {:.0}", c.as_of, c.last_close),
+                    Style::default().fg(app.theme.text_secondary),
+                )));
+                if let Some(pos) = c.cycle_position_pct {
+                    lines.push(Line::from(format!("Cycle position: {pos:.0}% through")));
+                }
+                if let Some(y) = c.years_since_cycle_low {
+                    lines.push(Line::from(format!("Years since cycle low: {y:.1}")));
+                }
+                if let Some(half) = c.past_half_cycle {
+                    lines.push(Line::from(format!(
+                        "Past half-cycle: {}",
+                        if half { "yes (2nd half)" } else { "no (1st half)" }
+                    )));
+                }
+                if let Some(ext) = c.extension_pct_vs_200dma {
+                    lines.push(Line::from(format!("vs 200d-MA: {ext:+.0}%")));
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    c.verdict.clone(),
+                    Style::default().fg(app.theme.text_accent),
+                )));
+            }
+            None => lines.push(Line::from("Gold cycle clock unavailable (insufficient history).")),
+        },
+        _ => {
+            lines.push(Line::from(Span::styled(
+                "The market-cycle clock is defined for BTC and gold — the cycle-accumulation pair.",
+                Style::default().fg(app.theme.text_muted),
+            )));
+            lines.push(Line::from(Span::styled(
+                "Select BTC or gold (Positions/Markets) to see accumulation/distribution timing.",
+                Style::default().fg(app.theme.text_muted),
+            )));
+        }
+    }
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().fg(app.theme.text_primary)),
+        area,
+    );
 }
 
 fn render_risk_grid(frame: &mut Frame, inner: Rect, app: &App) {

@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-21 — feat(tui): Cycle Clock sub-tab in the Risk Dashboard (h/l → 3rd tab)
+
+- What: the Risk Dashboard view (key `9`) gains a 3rd sub-tab, **Cycle (BTC/gold)** — the asset's market-cycle clock (BTC 4-year halving cycle / gold ~6.9-year cycle): accumulation stance + score, weeks-since-halving / Olson-bottom countdown, Mayer/200w-MA extension, the Loukas/Mayer/Olson factor reads, and the one-line verdict (BTC); cycle-position %, years-since-low, past-half-cycle, 200d-MA extension + verdict (gold). The accumulation/distribution timing read — directly on the operator's cycle-accumulation thesis — now browsable in the TUI. Third power-user view. h/l now cycles Risk → Basket → Cycle.
+- How: display-only over the already-verified `cycle_clock::btc_cycle_clock`/`gold_cycle_clock` (both take `&[HistoryRecord]` → pure, no I/O), fed the focused asset's in-memory `price_history`. Defined for BTC/gold only (the cycle pair); other assets show a hint to select BTC or gold. `SUBTAB_COUNT` 2→3 (reuses the verified wrap logic). No new analytics math; defensive rendering (Option-based, no unwraps).
+- Tests: existing view tests green; full `cargo test` green; clippy clean. Shipped directly (no separate QA — display-only over verified clock fns + the sub-tab mechanism was QA'd in #984). NOTE: live layout best eyeballed in a running TUI.
+- Files: `src/tui/views/risk_dashboard.rs`, `src/tui/widgets/status_bar.rs`.
+
+
 ### 2026-06-21 — feat(tui): Risk Dashboard sub-tabs — add a Basket Allocation view (h/l to switch)
 
 - What: the Risk Dashboard view (key `9`) now has **sub-tabs**, cycled with `h`/`l`: **Risk (asset)** — the per-asset 2×2 grid from #983 — and a new **Basket (allocation)** tab showing the held basket's CURRENT weights vs the risk-equalized weights (risk-parity ERC on full covariance, downside-RP ERC on the co-crash semicovariance), with the per-asset **gap** (current − risk-parity, pp) sorted most-overweight-risk first. The TUI answer to "am I overweight crash risk?" without leaving the dashboard. Second power-user view, added as a sub-tab so the (now full) number keys aren't crowded.
