@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-21 — feat(tui): Risk Dashboard sub-tabs — add a Basket Allocation view (h/l to switch)
+
+- What: the Risk Dashboard view (key `9`) now has **sub-tabs**, cycled with `h`/`l`: **Risk (asset)** — the per-asset 2×2 grid from #983 — and a new **Basket (allocation)** tab showing the held basket's CURRENT weights vs the risk-equalized weights (risk-parity ERC on full covariance, downside-RP ERC on the co-crash semicovariance), with the per-asset **gap** (current − risk-parity, pp) sorted most-overweight-risk first. The TUI answer to "am I overweight crash risk?" without leaving the dashboard. Second power-user view, added as a sub-tab so the (now full) number keys aren't crowded.
+- How: new `App.risk_subtab` state + `h`/`l` keybindings (guarded to the Risk view); a tab strip header; `render_basket` computes everything INLINE from the in-memory `app.price_history` (current weights from position values, an in-memory date-intersection aligner, then `basket::allocate` for both methods) — no blocking I/O. The date-intersection core is a pure `align_common` fn, unit-tested. Self-suppresses to a hint with <2 priceable held assets.
+- Tests: 2 view unit tests (panel labels; `align_common` intersects dates → N−1 returns, single-asset → None); full `cargo test` green; clippy clean. No new panic paths (Option-based, no unwraps). NOTE: the Basket tab needs ≥2 held assets with cached history; live layout best eyeballed in a running TUI.
+- Files: `src/tui/views/risk_dashboard.rs`, `src/app.rs`, `src/tui/widgets/status_bar.rs`.
+
+
 ### 2026-06-21 — feat(tui): new Risk Dashboard view (key 9) — per-asset risk analytics in the TUI
 
 - What: a dedicated **Risk Dashboard** TUI view (press `9`, or the "Risk" header tab) — the TUI analogue of `pftui analytics risk-dashboard`. For the focused asset (the selected symbol, else the first held position with ≥31 closes of in-memory history) it shows a 2×2 panel grid: **Volatility & Tail** (ann. vol, max-DD, %-from-ATH, EVT ξ/tail-class, 1d VaR 99/99.9, ES99), **Drawdown Path** (CDaR-90/95, Ulcer, Omega), **Regime** (Hurst H, DFA α, agreement), and **Survival** (risk-of-ruin vs a 25% budget, Triple-Penance max-DD, time-under-water, recovery cliff). First time the full risk/survival family is browsable in the TUI; previously CLI/report-only. First of the "power-user analytics views" series.

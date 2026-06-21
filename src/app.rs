@@ -536,6 +536,9 @@ pub struct App {
     pub news_preview_expanded: bool,
     pub analytics_selected_index: usize,
     pub analytics_shock_scale_pct: i32,
+    /// Active sub-tab of the Risk Dashboard view: 0 = per-asset Risk grid,
+    /// 1 = Basket allocation (risk-parity vs current). Cycled with h/l.
+    pub risk_subtab: u8,
     pub g_pending: bool,
     pub terminal_height: u16,
     pub terminal_width: u16,
@@ -885,6 +888,7 @@ impl App {
             news_preview_expanded: false,
             analytics_selected_index: 0,
             analytics_shock_scale_pct: 100,
+            risk_subtab: 0,
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             terminal_width: 120, // sensible default, updated on resize
@@ -3182,6 +3186,19 @@ impl App {
             }
             KeyCode::Char('0') if matches!(self.view_mode, ViewMode::Analytics) => {
                 self.analytics_shock_scale_pct = 100;
+            }
+
+            // Risk Dashboard sub-tab cycling (Risk grid ↔ Basket allocation).
+            KeyCode::Char('l') | KeyCode::Char('L')
+                if matches!(self.view_mode, ViewMode::RiskDashboard) =>
+            {
+                self.risk_subtab = (self.risk_subtab + 1) % crate::tui::views::risk_dashboard::SUBTAB_COUNT;
+            }
+            KeyCode::Char('h') | KeyCode::Char('H')
+                if matches!(self.view_mode, ViewMode::RiskDashboard) =>
+            {
+                self.risk_subtab = (self.risk_subtab + crate::tui::views::risk_dashboard::SUBTAB_COUNT - 1)
+                    % crate::tui::views::risk_dashboard::SUBTAB_COUNT;
             }
 
             // Navigation
