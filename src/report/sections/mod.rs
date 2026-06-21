@@ -21,6 +21,7 @@ pub mod private_open_predictions;
 pub mod private_outlook_by_horizon;
 pub mod private_per_asset_convergence;
 pub mod private_analytics_risk;
+pub mod private_basket_allocation;
 pub mod private_portfolio_snapshot;
 pub mod private_risk_concentration;
 pub mod private_self_retrospective_calibration;

@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-21 — feat(report): risk-parity allocation-check section in the private report
+
+- What: the private report now carries a **Risk-Parity Allocation Check** — for the held basket, a table of CURRENT book weight vs the risk-equalized weights (risk-parity ERC on the full covariance, and downside-risk-parity ERC on the co-crash semicovariance), with the per-asset gap in *risk* (current − risk-parity, percentage points) and a one-line most-over/under-weight read. The single most actionable analytics for accumulation sizing: surfaces "you're 60% BTC; equal-risk wants 11%" inside the report. Second report-integration piece (after #979's survival section), same proven template.
+- How: refactored the alignment+allocate core out of `commands/basket.rs::run` into a reusable `commands::basket::compute(backend, requested, method, lookback) -> (BasketAllocation, as_of)` so the CLI command and the report section share one covariance-construction path (no duplication). New self-contained `src/report/sections/private_basket_allocation.rs` (row struct + `compute_rows` filtering held assets to those with ≥21-bar history + renderer self-suppressing under 2 priceable assets). `daily.rs` additive wiring (field + `vec_slot!` in data_availability + load block + registry + dispatch + ordering fixture). Private-only — public golden unaffected.
+- Tests: 2 section unit tests (table + over/under-weight read, suppression); `basket::` 9 unit tests still green after the refactor; full `cargo test` (incl. 129 report tests + public golden) green; clippy clean. Did NOT render the real private report (would print held-position weights — data-security rule); rows are unit-tested with synthetic data and `compute` reuses the verified ERC path.
+- Files: `src/commands/basket.rs` (refactor), `src/report/sections/private_basket_allocation.rs` (new), `src/report/sections/mod.rs`, `src/report/build/daily.rs`.
+
+
 ### 2026-06-20 — feat(report): wire native risk/survival analytics into the private report (Drawdown Survival & Tail Risk section)
 
 - What: the private report now carries a **Drawdown Survival & Tail Risk** section — a per-held-asset table of the native risk analytics (annualized vol, EVT 1-day 99% VaR + tail class, CDaR-95, Hurst regime, risk-of-ruin vs a 25% drawdown budget, total time-under-water) plus a one-line most/least-survivable read. This surfaces the depth+time risk picture inside the document the operator actually reads, instead of running `analytics survival`/`risk-dashboard` per asset. Closes the long-standing "wire the measurement loop into the report BuildContext" gap (the 3rd integration leg).

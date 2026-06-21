@@ -24,15 +24,20 @@ fn dated_closes(backend: &BackendConnection, resolved: &str) -> Result<HashMap<S
         .collect())
 }
 
-pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: usize, json_output: bool) -> Result<()> {
-    let method = Method::parse(method).ok_or_else(|| {
-        anyhow::anyhow!(
-            "unknown --method '{method}' (use: equal | inverse-vol | risk-parity | downside-risk-parity)"
-        )
-    })?;
+/// Resolve + de-dup `requested`, align the basket on its common date axis
+/// (honoring `lookback`), and allocate by `method`. Returns the allocation and
+/// the last common date (`as_of`). Shared by the `basket weights` CLI command
+/// and the private-report basket-allocation section so the alignment+covariance
+/// construction lives in exactly one place.
+pub fn compute(
+    backend: &BackendConnection,
+    requested: &[String],
+    method: Method,
+    lookback: usize,
+) -> Result<(crate::analytics::basket::BasketAllocation, Option<String>)> {
     // Resolve + de-dup the basket, preserving input order.
     let mut symbols: Vec<String> = Vec::new();
-    for raw in assets.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+    for raw in requested.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
         let r = resolve_alias(raw);
         if !symbols.contains(&r) {
             symbols.push(r);
@@ -81,6 +86,17 @@ pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: us
 
     let alloc = allocate(&symbols, &series, method)
         .ok_or_else(|| anyhow::anyhow!("not enough aligned data to allocate"))?;
+    Ok((alloc, common.last().cloned()))
+}
+
+pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: usize, json_output: bool) -> Result<()> {
+    let method = Method::parse(method).ok_or_else(|| {
+        anyhow::anyhow!(
+            "unknown --method '{method}' (use: equal | inverse-vol | risk-parity | downside-risk-parity)"
+        )
+    })?;
+    let requested: Vec<String> = assets.split(',').map(|s| s.to_string()).collect();
+    let (alloc, as_of) = compute(backend, &requested, method, lookback)?;
 
     if json_output {
         println!(
@@ -88,7 +104,7 @@ pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: us
             serde_json::to_string_pretty(&json!({
                 "command": "basket weights",
                 "requested": assets,
-                "as_of": common.last(),
+                "as_of": as_of,
                 "lookback_obs": alloc.n_obs,
                 "allocation": alloc,
             }))?
@@ -96,11 +112,12 @@ pub fn run(backend: &BackendConnection, assets: &str, method: &str, lookback: us
         return Ok(());
     }
 
-    println!("═══ Basket Allocation — {} ({}) ═══", alloc.method, symbols.join(", "));
+    let symbols_disp = alloc.weights.iter().map(|w| w.symbol.as_str()).collect::<Vec<_>>().join(", ");
+    println!("═══ Basket Allocation — {} ({}) ═══", alloc.method, symbols_disp);
     println!(
         "{} common daily returns · as of {}\n",
         alloc.n_obs,
-        common.last().map(|s| s.as_str()).unwrap_or("—")
+        as_of.as_deref().unwrap_or("—")
     );
     let rc_label = if alloc.risk_basis == "semivariance" {
         "Downside-RC"

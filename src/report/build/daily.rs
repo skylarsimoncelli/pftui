@@ -195,6 +195,12 @@ pub struct BuildContext {
     /// held asset has enough history.
     pub private_analytics_risk:
         Vec<crate::report::sections::private_analytics_risk::AnalyticsRiskRow>,
+    /// Current-vs-risk-parity allocation rows for the `private_basket_allocation`
+    /// section. Computed in [`Self::load`] from held positions + their price
+    /// history; empty (section self-suppresses) when <2 held assets are
+    /// priceable with common history.
+    pub private_basket_allocation:
+        Vec<crate::report::sections::private_basket_allocation::BasketAllocRow>,
 }
 
 /// Fields on `BuildContext` that are NOT data slots (metadata / bookkeeping).
@@ -1157,6 +1163,13 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_analytics_risk",
             visibility: SectionVisibility::Private,
         },
+        // Risk-Parity Allocation Check — current book weight vs equal-risk
+        // (risk-parity / downside-RP) weights. Self-suppresses with <2 priceable
+        // held assets.
+        SectionSpec {
+            name: "private_basket_allocation",
+            visibility: SectionVisibility::Private,
+        },
         // Investor Panel Consensus (panel section is now consensus-only
         // by default; the persona-detail table is suppressed unless a
         // strong divergence warrants surfacing it).
@@ -1308,6 +1321,9 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         }
         "private_analytics_risk" => {
             sections::private_analytics_risk::render_private_analytics_risk(ctx)
+        }
+        "private_basket_allocation" => {
+            sections::private_basket_allocation::render_private_basket_allocation(ctx)
         }
         "private_mismatch_surface" => {
             sections::private_mismatch_surface::render_private_mismatch_surface(ctx)
@@ -2658,6 +2674,16 @@ impl BuildContext {
                 crate::report::sections::private_analytics_risk::compute_rows(
                     backend, &held_syms, 25.0,
                 );
+
+            // Current-vs-risk-parity allocation check over the held basket.
+            let held_pairs: Vec<(String, f64)> = ctx
+                .private_positions
+                .iter()
+                .map(|p| (p.symbol.clone(), p.allocation_pct))
+                .collect();
+            ctx.private_basket_allocation =
+                crate::report::sections::private_basket_allocation::compute_rows(backend, &held_pairs)
+                    .unwrap_or_default();
         }
 
         Ok(ctx)
@@ -4664,6 +4690,7 @@ pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
     vec_slot!(private_outlooks);
     vec_slot!(private_risk_factor_mappings);
     vec_slot!(private_analytics_risk);
+    vec_slot!(private_basket_allocation);
     vec_slot!(private_journal_views);
     vec_slot!(private_news_events);
     vec_slot!(private_news_silence);
@@ -6597,6 +6624,7 @@ mod assembler_tests {
             "private_outlook_by_horizon",
             "private_risk_concentration",
             "private_analytics_risk",
+            "private_basket_allocation",
             "private_investor_panel",
             "private_external_ta",
             "private_parallels",
