@@ -80,7 +80,7 @@ fn render_correlation(frame: &mut Frame, area: Rect, app: &App) {
         Some(s) => s,
         None => {
             frame.render_widget(
-                Paragraph::new("Held assets don't share ≥100 common trading days yet.")
+                Paragraph::new("Held assets don't share ≥21 common trading days yet.")
                     .style(Style::default().fg(app.theme.text_muted)),
                 area,
             );
