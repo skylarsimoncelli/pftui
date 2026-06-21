@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-21 — feat(analytics): extend structured `--json` error envelopes to the strategy commands
+
+- What: the 6 `analytics strategy` commands (`backtest`, `segment`, `compare`, `explain`, `sweep`, `walkforward`) now emit the same `{"error": {"command", "message"}}` envelope on STDOUT (exit 1) when they fail under `--json`, instead of plain-text stderr + empty stdout. Finishes the `--json` error contract started in #978 (risk/measurement family) across the agent-consumed analytics surface — a backtest against a bad symbol/expression now hands an agent a parseable error, not an empty buffer.
+- How: wrapped the strategy dispatch arms in `main.rs` with the existing reusable `commands::cli_json::or_json_error` shim (already QA-verified in #978). No new logic.
+- Tests: full `cargo test` green; clippy clean. Verified live: all 6 strategy commands emit a single valid JSON envelope on failure (parsed by `json.load`, proving no partial-stdout-then-envelope), exit 1; success paths still emit clean JSON with no envelope leak; non-`--json` still plain-text on stderr.
+- Files: `src/main.rs`, `AGENTS.md`.
+
+
 ### 2026-06-21 — feat(report): risk-parity allocation-check section in the private report
 
 - What: the private report now carries a **Risk-Parity Allocation Check** — for the held basket, a table of CURRENT book weight vs the risk-equalized weights (risk-parity ERC on the full covariance, and downside-risk-parity ERC on the co-crash semicovariance), with the per-asset gap in *risk* (current − risk-parity, percentage points) and a one-line most-over/under-weight read. The single most actionable analytics for accumulation sizing: surfaces "you're 60% BTC; equal-risk wants 11%" inside the report. Second report-integration piece (after #979's survival section), same proven template.
