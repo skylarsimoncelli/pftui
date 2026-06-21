@@ -76,6 +76,24 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn render_risk_panel(frame: &mut Frame, area: Rect, app: &App, metrics: &risk::RiskMetrics) {
+    // Survival headline for the focused asset (the native survival/CDaR
+    // analytics, surfaced in the TUI). Computed inline from the in-memory
+    // `price_history` — pure CPU, never blocking I/O (TUI event-loop rule).
+    let survival_line = match focus_symbol_closes(app) {
+        Some((sym, closes)) => match survival_summary_text(&closes, &sym) {
+            Some(text) => Line::from(Span::styled(text, Style::default().fg(app.theme.text_secondary))),
+            // We're in the ≥31-closes arm, so a None here means a degenerate
+            // (flat / zero-variance) return series, NOT insufficient history.
+            None => Line::from(Span::styled(
+                format!("Survival ({sym}): not computable (flat/degenerate return series)."),
+                Style::default().fg(app.theme.text_muted),
+            )),
+        },
+        None => Line::from(Span::styled(
+            "Survival: select an asset with price history for a ruin/time-underwater read.",
+            Style::default().fg(app.theme.text_muted),
+        )),
+    };
     let lines = vec![
         Line::from(format!(
             "Vol (ann): {}    Sharpe: {}",
@@ -91,10 +109,7 @@ fn render_risk_panel(frame: &mut Frame, area: Rect, app: &App, metrics: &risk::R
             "Concentration (HHI): {}",
             fmt_num_opt(metrics.herfindahl_index)
         )),
-        Line::from(Span::styled(
-            "Sharpe currently uses RF=0% unless Fed Funds cache is wired in.",
-            Style::default().fg(app.theme.text_muted),
-        )),
+        survival_line,
     ];
     let p = Paragraph::new(lines)
         .block(
@@ -388,5 +403,97 @@ fn fmt_num_opt(v: Option<Decimal>) -> String {
     match v {
         Some(x) => format!("{:.3}", x),
         None => "N/A".to_string(),
+    }
+}
+
+/// The asset to show the survival headline for: the selected symbol if it has
+/// enough in-memory history, else the first held position that does. Returns
+/// `(symbol, positive closes)`. Pure read of `app` state — no I/O.
+fn focus_symbol_closes(app: &App) -> Option<(String, Vec<f64>)> {
+    let closes_for = |sym: &str| -> Option<Vec<f64>> {
+        let v: Vec<f64> = app
+            .price_history
+            .get(sym)?
+            .iter()
+            .filter_map(|r| r.close.to_f64())
+            .filter(|c| *c > 0.0)
+            .collect();
+        (v.len() >= 31).then_some(v)
+    };
+    if let Some(sel) = &app.selected_symbol {
+        if let Some(v) = closes_for(sel) {
+            return Some((sel.clone(), v));
+        }
+    }
+    for p in &app.positions {
+        if let Some(v) = closes_for(&p.symbol) {
+            return Some((p.symbol.clone(), v));
+        }
+    }
+    None
+}
+
+/// Pure one-line survival headline for a symbol's close series (ruin vs a 25%
+/// budget, arithmetic max-DD, CDaR-95, total time-under-water), or `None` with
+/// <31 closes. Testable without the TUI/App.
+fn survival_summary_text(closes: &[f64], symbol: &str) -> Option<String> {
+    if closes.len() < 31 {
+        return None;
+    }
+    let log_rets: Vec<f64> = closes
+        .windows(2)
+        .filter(|w| w[0] > 0.0 && w[1] > 0.0)
+        .map(|w| (w[1] / w[0]).ln())
+        .collect();
+    let cdar = crate::analytics::drawdown_metrics::compute(closes, None, 0.0).map(|d| d.cdar_95);
+    let s = crate::analytics::survival::compute(&log_rets, cdar, 25.0, 0.95)?;
+    let cdar_s = cdar.map(|v| format!("{:.0}%", v * 100.0)).unwrap_or_else(|| "—".into());
+    Some(if s.reliable {
+        format!(
+            "Survival ({symbol}): ruin {:.0}% · max-DD {} · CDaR95 {cdar_s} · underwater {}",
+            s.ruin_prob * 100.0,
+            s.max_dd_iid.map(|v| format!("{:.0}%", v * 100.0)).unwrap_or_else(|| "—".into()),
+            s.max_tuw_iid_days.map(|d| format!("{:.1}y", d / 365.25)).unwrap_or_else(|| "—".into()),
+        )
+    } else {
+        format!(
+            "Survival ({symbol}): ruin {:.0}% · no positive drift (recovery unbounded)",
+            s.ruin_prob * 100.0
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::survival_summary_text;
+
+    #[test]
+    fn survival_summary_none_below_31_closes() {
+        let closes: Vec<f64> = (0..20).map(|i| 100.0 + i as f64).collect();
+        assert!(survival_summary_text(&closes, "X").is_none());
+    }
+
+    #[test]
+    fn survival_summary_text_for_a_drifting_series() {
+        // Upward drift with wobble → reliable read with all fields present.
+        let closes: Vec<f64> = (0..400)
+            .map(|i| {
+                let t = i as f64;
+                100.0 * (1.0 + 0.0008 * t).max(0.1) + 5.0 * (t / 9.0).sin()
+            })
+            .collect();
+        let s = survival_summary_text(&closes, "BTC").expect("reliable read");
+        assert!(s.starts_with("Survival (BTC):"));
+        assert!(s.contains("ruin"));
+        // Positive-drift series → the reliable branch (has max-DD/underwater).
+        assert!(s.contains("max-DD") && s.contains("underwater"));
+    }
+
+    #[test]
+    fn survival_summary_flags_non_positive_drift() {
+        // Downward drift → μ≤0 → the unbounded-recovery branch.
+        let closes: Vec<f64> = (0..300).map(|i| 200.0 - 0.3 * i as f64).collect();
+        let s = survival_summary_text(&closes, "DOWN").expect("computes");
+        assert!(s.contains("no positive drift"));
     }
 }
