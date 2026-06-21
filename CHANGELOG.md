@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-21 — feat(tui): surface the native survival analytics in the Analytics view Risk Panel
+
+- What: the TUI Analytics view's Risk Panel now shows a one-line **survival headline** for the focused asset — `Survival (BTC): ruin 58% · max-DD 51% · CDaR95 78% · underwater 6.9y` (or `… no positive drift (recovery unbounded)` when μ≤0). First surfacing of the new risk/survival analytics (#974/#979) in the TUI, where a terminal-primary operator actually works — previously they were CLI/report-only. The focused asset is the selected symbol if it has in-memory history, else the first held position that does.
+- How (deliberately minimal/safe): computed INLINE from the already-in-memory `app.price_history` (pure CPU — never blocking I/O, per the TUI event-loop rule), consistent with the panel's existing inline RiskMetrics computation. Content-only change — the survival line replaces a low-value muted Sharpe-disclaimer line, so line count and layout are unchanged (no new view/tab/keybinding). The headline core is a pure `survival_summary_text(closes, symbol)` function, unit-tested without constructing the TUI/App.
+- Tests: 3 unit tests on the pure headline (None below 31 closes; reliable read has ruin/max-DD/underwater; μ≤0 → unbounded-recovery branch); full `cargo test` green; clippy clean. No new panic paths (all `Option`-based, no unwraps). NOTE: the live visual layout is best eyeballed in a running TUI — but this is a content-only swap within an existing panel, so layout risk is minimal.
+- Files: `src/tui/views/analytics.rs`.
+
+
 ### 2026-06-21 — feat(analytics): extend structured `--json` error envelopes to the strategy commands
 
 - What: the 6 `analytics strategy` commands (`backtest`, `segment`, `compare`, `explain`, `sweep`, `walkforward`) now emit the same `{"error": {"command", "message"}}` envelope on STDOUT (exit 1) when they fail under `--json`, instead of plain-text stderr + empty stdout. Finishes the `--json` error contract started in #978 (risk/measurement family) across the agent-consumed analytics surface — a backtest against a bad symbol/expression now hands an agent a parseable error, not an empty buffer.
