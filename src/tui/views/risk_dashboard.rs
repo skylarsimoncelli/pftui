@@ -14,9 +14,14 @@ use crate::app::App;
 
 use super::analytics::focus_symbol_closes;
 
+/// Number of sub-tabs (Risk grid, Basket allocation). Cycled with h/l.
+pub const SUBTAB_COUNT: u8 = 2;
+const SUBTAB_NAMES: [&str; 2] = ["Risk (asset)", "Basket (allocation)"];
+
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
+    let active = (app.risk_subtab % SUBTAB_COUNT) as usize;
     let outer = Block::default()
-        .title("Risk Dashboard")
+        .title(format!("Risk Dashboard — {}", SUBTAB_NAMES[active]))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(app.theme.border_subtle))
         .style(Style::default().bg(app.theme.surface_0));
@@ -25,7 +30,32 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     if inner.height < 6 {
         return;
     }
+    // Sub-tab strip (h/l to switch) + content area.
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(4)])
+        .split(inner);
+    let mut spans = vec![Span::styled("h/l ", Style::default().fg(app.theme.text_muted))];
+    for (i, name) in SUBTAB_NAMES.iter().enumerate() {
+        let style = if i == active {
+            Style::default().fg(app.theme.text_accent).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.text_muted)
+        };
+        spans.push(Span::styled(format!(" {name} "), style));
+        if i + 1 < SUBTAB_NAMES.len() {
+            spans.push(Span::styled("│", Style::default().fg(app.theme.border_subtle)));
+        }
+    }
+    frame.render_widget(Paragraph::new(Line::from(spans)), rows[0]);
 
+    match active {
+        1 => render_basket(frame, rows[1], app),
+        _ => render_risk_grid(frame, rows[1], app),
+    }
+}
+
+fn render_risk_grid(frame: &mut Frame, inner: Rect, app: &App) {
     let (symbol, closes) = match focus_symbol_closes(app) {
         Some(x) => x,
         None => {
@@ -86,6 +116,137 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     panel(frame, top[1], app, "Drawdown Path", drawdown_lines(dd.as_ref()));
     panel(frame, bot[0], app, "Regime", regime_lines(h.as_ref()));
     panel(frame, bot[1], app, "Survival", survival_lines(s.as_ref()));
+}
+
+/// Basket sub-tab: current portfolio weights vs the risk-equalized (risk-parity
+/// & downside-risk-parity) weights across the held basket — all computed inline
+/// from the in-memory `price_history` (no blocking I/O).
+fn render_basket(frame: &mut Frame, area: Rect, app: &App) {
+    use rust_decimal::prelude::ToPrimitive;
+    // Held assets with a current value → current weights.
+    let held: Vec<(String, f64)> = app
+        .positions
+        .iter()
+        .filter_map(|p| p.current_value.and_then(|v| v.to_f64()).map(|v| (p.symbol.clone(), v)))
+        .filter(|(_, v)| *v > 0.0)
+        .collect();
+    let total: f64 = held.iter().map(|(_, v)| v).sum();
+    // Keep only held assets that have enough in-memory history.
+    let symbols: Vec<String> = held
+        .iter()
+        .filter(|(s, _)| {
+            app.price_history
+                .get(s)
+                .map(|h| h.iter().filter(|r| r.close > rust_decimal::Decimal::ZERO).count() >= 21)
+                .unwrap_or(false)
+        })
+        .map(|(s, _)| s.clone())
+        .collect();
+    if symbols.len() < 2 || total <= 0.0 {
+        let hint = Paragraph::new(
+            "Need at least 2 held assets with cached price history for a risk-parity allocation check.\n\nShows your current weight vs the equal-risk (risk-parity / downside-RP) weights.",
+        )
+        .style(Style::default().fg(app.theme.text_muted));
+        frame.render_widget(hint, area);
+        return;
+    }
+    let series = match aligned_returns(app, &symbols) {
+        Some(s) => s,
+        None => {
+            let hint = Paragraph::new("Held assets don't share ≥21 common trading days yet.")
+                .style(Style::default().fg(app.theme.text_muted));
+            frame.render_widget(hint, area);
+            return;
+        }
+    };
+    use crate::analytics::basket::{allocate, Method};
+    let rp = allocate(&symbols, &series, Method::RiskParity);
+    let drp = allocate(&symbols, &series, Method::DownsideRiskParity);
+    let (rp, drp) = match (rp, drp) {
+        (Some(a), Some(b)) => (a, b),
+        _ => {
+            let hint = Paragraph::new("Could not compute allocation (degenerate covariance).")
+                .style(Style::default().fg(app.theme.text_muted));
+            frame.render_widget(hint, area);
+            return;
+        }
+    };
+    let cur_pct = |sym: &str| {
+        held.iter().find(|(s, _)| s == sym).map(|(_, v)| v / total * 100.0).unwrap_or(0.0)
+    };
+    let rp_pct = |sym: &str| rp.weights.iter().find(|w| w.symbol == sym).map(|w| w.weight * 100.0).unwrap_or(0.0);
+    let drp_pct = |sym: &str| drp.weights.iter().find(|w| w.symbol == sym).map(|w| w.weight * 100.0).unwrap_or(0.0);
+
+    let mut lines = vec![
+        Line::from(Span::styled(
+            format!("{:<10}{:>8}{:>10}{:>11}{:>9}", "Asset", "Current", "Risk-par", "Downside", "Gap"),
+            Style::default().fg(app.theme.text_secondary),
+        )),
+    ];
+    // Sort most-overweight-risk first.
+    let mut order: Vec<&String> = symbols.iter().collect();
+    order.sort_by(|a, b| {
+        (cur_pct(b) - rp_pct(b))
+            .partial_cmp(&(cur_pct(a) - rp_pct(a)))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for sym in order {
+        let (c, r, d) = (cur_pct(sym), rp_pct(sym), drp_pct(sym));
+        lines.push(Line::from(format!(
+            "{:<10}{:>7.0}%{:>9.0}%{:>10.0}%{:>+8.0}",
+            sym, c, r, d, c - r
+        )));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Gap = current − risk-parity (pp). Positive = you carry more of the portfolio's RISK than equal-risk.",
+        Style::default().fg(app.theme.text_muted),
+    )));
+    let p = Paragraph::new(lines).style(Style::default().fg(app.theme.text_primary));
+    frame.render_widget(p, area);
+}
+
+/// Align held symbols' in-memory closes on their COMMON dates → per-asset simple
+/// returns (same order as `symbols`). Pure read of `price_history`; `None` if
+/// any symbol is missing or fewer than 21 common dates exist.
+fn aligned_returns(app: &App, symbols: &[String]) -> Option<Vec<Vec<f64>>> {
+    use rust_decimal::prelude::ToPrimitive;
+    use std::collections::BTreeMap;
+    let maps: Vec<BTreeMap<String, f64>> = symbols
+        .iter()
+        .map(|s| {
+            app.price_history
+                .get(s)
+                .map(|recs| {
+                    recs.iter()
+                        .filter_map(|r| r.close.to_f64().map(|c| (r.date.clone(), c)))
+                        .filter(|(_, c)| *c > 0.0)
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .collect();
+    align_common(&maps)
+}
+
+/// Pure core of [`aligned_returns`]: intersect the per-asset date→close maps on
+/// their common dates and difference into simple returns. `None` if any map is
+/// empty or fewer than 21 common dates. Testable without an `App`.
+fn align_common(maps: &[std::collections::BTreeMap<String, f64>]) -> Option<Vec<Vec<f64>>> {
+    if maps.len() < 2 || maps.iter().any(|m| m.is_empty()) {
+        return None;
+    }
+    let mut common: Vec<&String> = maps[0].keys().collect();
+    common.retain(|d| maps[1..].iter().all(|m| m.contains_key(*d)));
+    common.sort();
+    if common.len() < 21 {
+        return None;
+    }
+    Some(
+        maps.iter()
+            .map(|m| common.windows(2).map(|w| m[w[1]] / m[w[0]] - 1.0).collect())
+            .collect(),
+    )
 }
 
 fn rd_to_f64(d: rust_decimal::Decimal) -> Option<f64> {
@@ -228,5 +389,34 @@ mod tests {
         assert!(text(regime_lines(h.as_ref())).contains("Hurst"));
         let surv = text(survival_lines(s.as_ref()));
         assert!(surv.contains("Ruin"), "survival panel should show ruin: {surv}");
+    }
+
+    #[test]
+    fn align_common_intersects_dates_and_differences_returns() {
+        use std::collections::BTreeMap;
+        // Two assets, 30 shared dates + a few non-shared → 30 common, 29 returns.
+        let mk = |offset: f64, extra: &[&str]| -> BTreeMap<String, f64> {
+            let mut m = BTreeMap::new();
+            for i in 0..30 {
+                m.insert(format!("2026-01-{:02}", i + 1), 100.0 + offset + i as f64);
+            }
+            for d in extra {
+                m.insert(d.to_string(), 999.0);
+            }
+            m
+        };
+        let a = mk(0.0, &["2025-12-31"]); // a-only date
+        let b = mk(50.0, &["2026-03-01"]); // b-only date
+        let series = align_common(&[a, b]).expect("≥21 common dates");
+        assert_eq!(series.len(), 2);
+        assert_eq!(series[0].len(), 29, "30 common dates → 29 returns");
+        assert_eq!(series[1].len(), 29);
+        // Non-overlapping baskets / single asset → None.
+        let lonely = {
+            let mut m = BTreeMap::new();
+            m.insert("2026-01-01".into(), 1.0);
+            m
+        };
+        assert!(align_common(std::slice::from_ref(&lonely)).is_none());
     }
 }
