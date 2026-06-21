@@ -14,9 +14,14 @@ use crate::app::App;
 
 use super::analytics::focus_symbol_closes;
 
-/// Number of sub-tabs (Risk grid, Basket allocation, Cycle clock). Cycled h/l.
-pub const SUBTAB_COUNT: u8 = 3;
-const SUBTAB_NAMES: [&str; 3] = ["Risk (asset)", "Basket (allocation)", "Cycle (BTC/gold)"];
+/// Number of sub-tabs (Risk grid, Basket, Cycle clock, Diversification). h/l.
+pub const SUBTAB_COUNT: u8 = 4;
+const SUBTAB_NAMES: [&str; 4] = [
+    "Risk (asset)",
+    "Basket (allocation)",
+    "Cycle (BTC/gold)",
+    "Diversification",
+];
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let active = (app.risk_subtab % SUBTAB_COUNT) as usize;
@@ -52,8 +57,119 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     match active {
         1 => render_basket(frame, rows[1], app),
         2 => render_cycle(frame, rows[1], app),
+        3 => render_correlation(frame, rows[1], app),
         _ => render_risk_grid(frame, rows[1], app),
     }
+}
+
+/// Diversification sub-tab: pairwise correlation + co-crash tail-dependence
+/// (empirical lower-tail λ_L) across the held basket — "does my book actually
+/// diversify, including in a crash?". Computed inline over the most-recent ~1y
+/// of common history (bounds the O(n²) Kendall-τ so it's cheap per frame).
+fn render_correlation(frame: &mut Frame, area: Rect, app: &App) {
+    let symbols = priceable_held_symbols(app, 8);
+    if symbols.len() < 2 {
+        frame.render_widget(
+            Paragraph::new("Need ≥2 held assets with cached history to assess pairwise diversification.")
+                .style(Style::default().fg(app.theme.text_muted)),
+            area,
+        );
+        return;
+    }
+    let series = match aligned_returns(app, &symbols) {
+        Some(s) => s,
+        None => {
+            frame.render_widget(
+                Paragraph::new("Held assets don't share ≥100 common trading days yet.")
+                    .style(Style::default().fg(app.theme.text_muted)),
+                area,
+            );
+            return;
+        }
+    };
+    let pairs = pair_diversification(&series, &symbols, 252);
+    if pairs.is_empty() {
+        frame.render_widget(
+            Paragraph::new("Not enough common history (need ≥100 shared days) for any pair.")
+                .style(Style::default().fg(app.theme.text_muted)),
+            area,
+        );
+        return;
+    }
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "Pairwise correlation & co-crash λ_L over the last ~1y (most co-crashing first)",
+            Style::default().fg(app.theme.text_secondary),
+        )),
+        Line::from(""),
+    ];
+    for (a, b, pearson, lambda) in &pairs {
+        let verdict = if *lambda >= 0.40 {
+            "STRONG — diversification fails in a crash"
+        } else if *lambda >= 0.20 {
+            "MODERATE co-crash"
+        } else {
+            "WEAK — diversification holds"
+        };
+        lines.push(Line::from(format!(
+            "{a}↔{b}:  corr {pearson:+.2}  ·  co-crash λ_L {lambda:.2}  ({verdict})"
+        )));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "λ_L = chance both crash together in the worst 5% of days. Low = the pair truly diversifies.",
+        Style::default().fg(app.theme.text_muted),
+    )));
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().fg(app.theme.text_primary)),
+        area,
+    );
+}
+
+/// Held symbols (input order) with ≥21 positive in-memory closes, capped at
+/// `max` for a bounded display/compute. Pure read of `app`.
+fn priceable_held_symbols(app: &App, max: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    for p in &app.positions {
+        if out.len() >= max {
+            break;
+        }
+        if out.iter().any(|s| s == &p.symbol) {
+            continue;
+        }
+        let ok = app
+            .price_history
+            .get(&p.symbol)
+            .map(|h| h.iter().filter(|r| r.close > rust_decimal::Decimal::ZERO).count() >= 21)
+            .unwrap_or(false);
+        if ok {
+            out.push(p.symbol.clone());
+        }
+    }
+    out
+}
+
+/// Pure pairwise (Pearson, co-crash λ_L) for every asset pair, each computed on
+/// the most-recent `window` returns (bounds the O(n²) Kendall-τ). Sorted by λ_L
+/// descending (most-co-crashing first). Pairs with <100 windowed points are
+/// dropped (`tail_dependence` needs ≥100). Testable without an `App`.
+fn pair_diversification(
+    series: &[Vec<f64>],
+    symbols: &[String],
+    window: usize,
+) -> Vec<(String, String, f64, f64)> {
+    let mut out = Vec::new();
+    for i in 0..symbols.len() {
+        let wi = &series[i][series[i].len().saturating_sub(window)..];
+        for j in (i + 1)..symbols.len() {
+            let wj = &series[j][series[j].len().saturating_sub(window)..];
+            if let Some(td) = crate::analytics::copula::tail_dependence(wi, wj, 0.05) {
+                out.push((symbols[i].clone(), symbols[j].clone(), td.pearson, td.emp_lower_tail_dep));
+            }
+        }
+    }
+    out.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+    out
 }
 
 /// Cycle sub-tab: the asset's market-cycle clock (BTC 4-year halving cycle /
@@ -517,5 +633,25 @@ mod tests {
             m
         };
         assert!(align_common(std::slice::from_ref(&lonely)).is_none());
+    }
+
+    #[test]
+    fn pair_diversification_windows_sorts_and_drops_thin_pairs() {
+        // 3 assets, 150 returns each. A & B nearly identical (high λ_L), C is an
+        // independent-ish sawtooth. Expect 3 pairs, sorted by λ_L desc; the most
+        // co-crashing pair (A↔B) first. Window=120 bounds the input (≥100 ok).
+        let n = 150;
+        let a: Vec<f64> = (0..n).map(|t| ((t as f64) * 0.5).sin() * 0.03).collect();
+        let b: Vec<f64> = a.iter().map(|x| x + 0.0001).collect(); // ~identical → co-crash
+        let c: Vec<f64> = (0..n).map(|t| if t % 2 == 0 { 0.01 } else { -0.012 }).collect();
+        let syms = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let pairs = pair_diversification(&[a, b, c], &syms, 120);
+        assert_eq!(pairs.len(), 3, "3 assets → 3 pairs");
+        // Sorted by λ_L desc → first pair is the most co-crashing.
+        assert!(pairs[0].3 >= pairs[1].3 && pairs[1].3 >= pairs[2].3, "λ_L not sorted desc");
+        assert!(pairs.iter().any(|(x, y, _, _)| (x == "A" && y == "B") || (x == "B" && y == "A")));
+        // A pair with <100 windowed points is dropped.
+        let short: Vec<Vec<f64>> = vec![vec![0.01; 50], vec![0.02; 50]];
+        assert!(pair_diversification(&short, &["X".into(), "Y".into()], 252).is_empty());
     }
 }
