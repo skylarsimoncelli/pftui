@@ -346,8 +346,107 @@ const DEMO_WATCHLIST: &[(&str, &str)] = &[
     ("^VIX", "equity"),
 ];
 
+/// Synthetic daily-OHLC series spec: (symbol, start_price, daily_drift, daily_vol).
+/// Seeds ~1.5y of deterministic price history so analytics/chart/risk views
+/// render with real-looking data offline. Values are illustrative, NOT real.
+const DEMO_HISTORY: &[(&str, f64, f64, f64)] = &[
+    ("BTC", 28_000.0, 0.0017, 0.035),
+    ("ETH", 1_800.0, 0.0014, 0.040),
+    ("SOL", 22.0, 0.0030, 0.055),
+    ("GC=F", 1_820.0, 0.0008, 0.010),
+    ("SI=F", 23.5, 0.0009, 0.018),
+    ("SPY", 420.0, 0.0005, 0.009),
+    ("QQQ", 365.0, 0.0007, 0.012),
+    ("AAPL", 178.5, 0.0004, 0.015),
+    ("NVDA", 480.0, 0.0020, 0.028),
+    ("TLT", 98.5, -0.0003, 0.011),
+];
+
+/// Number of daily bars to synthesize per symbol.
+const DEMO_HISTORY_DAYS: i64 = 540;
+/// Fixed end date for the synthetic series (kept constant so renders are
+/// reproducible regardless of the wall clock).
+const DEMO_HISTORY_END: &str = "2026-06-15";
+
+/// Deterministic 64-bit LCG seeded from the symbol — no RNG dependency, so the
+/// demo series is byte-identical on every run (reproducible snapshots).
+fn symbol_seed(symbol: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325; // FNV-1a offset basis
+    for b in symbol.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h | 1
+}
+
+/// Build a deterministic synthetic OHLC series for one symbol.
+fn synth_series(symbol: &str, start: f64, drift: f64, vol: f64) -> Vec<crate::models::price::HistoryRecord> {
+    use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
+
+    let end = chrono::NaiveDate::parse_from_str(DEMO_HISTORY_END, "%Y-%m-%d")
+        .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap());
+    let start_date = end - chrono::Duration::days(DEMO_HISTORY_DAYS - 1);
+
+    let dec = |x: f64| Decimal::from_f64(x).unwrap_or_default().round_dp(4);
+
+    let mut state = symbol_seed(symbol);
+    // Uniform noise in [-1, 1] from the LCG.
+    let mut next_noise = move || {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((state >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0
+    };
+
+    let mut out = Vec::with_capacity(DEMO_HISTORY_DAYS as usize);
+    let mut close = start;
+    for i in 0..DEMO_HISTORY_DAYS {
+        let date = (start_date + chrono::Duration::days(i))
+            .format("%Y-%m-%d")
+            .to_string();
+        let open = close;
+        // Geometric step with drift + symmetric noise; floored to stay positive.
+        close = (close * (1.0 + drift + vol * next_noise())).max(start * 0.05);
+        let hi = open.max(close) * (1.0 + vol * 0.5 * next_noise().abs());
+        let lo = open.min(close) * (1.0 - vol * 0.5 * next_noise().abs());
+        let volume = 1_000_000.0 * (1.0 + 0.4 * next_noise().abs());
+        out.push(crate::models::price::HistoryRecord {
+            date,
+            close: dec(close),
+            volume: Some(volume as u64),
+            open: Some(dec(open)),
+            high: Some(dec(hi)),
+            low: Some(dec(lo)),
+        });
+    }
+    out
+}
+
+/// Seed synthetic price history + latest-close cache for the demo symbols.
+fn seed_price_history(conn: &rusqlite::Connection) -> Result<()> {
+    for &(symbol, start, drift, vol) in DEMO_HISTORY {
+        let series = synth_series(symbol, start, drift, vol);
+        db::price_history::upsert_history(conn, symbol, "demo", &series)?;
+        if let Some(last) = series.last() {
+            conn.execute(
+                "INSERT OR REPLACE INTO price_cache
+                   (symbol, price, currency, fetched_at, source, previous_close)
+                 VALUES (?1, ?2, 'USD', ?3, 'demo', ?4)",
+                rusqlite::params![
+                    symbol,
+                    last.close.to_string(),
+                    format!("{DEMO_HISTORY_END}T00:00:00Z"),
+                    series
+                        .get(series.len().saturating_sub(2))
+                        .map(|r| r.close.to_string()),
+                ],
+            )?;
+        }
+    }
+    Ok(())
+}
+
 /// Build a demo database at the given path and populate it with realistic data.
-fn build_demo_db(path: &std::path::Path) -> Result<()> {
+pub(crate) fn build_demo_db(path: &std::path::Path) -> Result<()> {
     let conn = db::open_db(path)?;
 
     for &(symbol, category, tx_type, quantity, price, currency, date, notes) in DEMO_TRANSACTIONS {
@@ -365,14 +464,26 @@ fn build_demo_db(path: &std::path::Path) -> Result<()> {
         )?;
     }
 
+    seed_price_history(&conn)?;
+
     Ok(())
 }
 
-/// Run the demo: create a temp DB, populate it, launch the TUI.
-pub fn run(config: &Config) -> Result<()> {
+/// Create a fresh temporary demo database and return its path. Shared by the
+/// interactive `demo` command and the offline `snapshot --demo` renderer so both
+/// render identical synthetic data and never touch the real portfolio DB.
+///
+/// The filename is unique per invocation (pid + atomic counter) so concurrent
+/// callers — e.g. two `snapshot --demo` processes, or parallel test threads —
+/// never race on the same file.
+pub(crate) fn build_temp_demo_db() -> Result<PathBuf> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
     let demo_dir = std::env::temp_dir().join("pftui-demo");
     std::fs::create_dir_all(&demo_dir)?;
-    let db_path: PathBuf = demo_dir.join("demo.db");
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let db_path: PathBuf = demo_dir.join(format!("demo-{}-{}.db", std::process::id(), n));
 
     // Always rebuild fresh so the demo is clean
     if db_path.exists() {
@@ -380,6 +491,12 @@ pub fn run(config: &Config) -> Result<()> {
     }
 
     build_demo_db(&db_path)?;
+    Ok(db_path)
+}
+
+/// Run the demo: create a temp DB, populate it, launch the TUI.
+pub fn run(config: &Config) -> Result<()> {
+    let db_path = build_temp_demo_db()?;
 
     eprintln!(
         "🎮 pftui demo mode — using temporary portfolio at {}",
@@ -479,6 +596,61 @@ mod tests {
             assert!(!symbol.is_empty(), "Empty watchlist symbol");
             assert!(valid.contains(&cat), "Invalid watchlist category: {cat}");
         }
+    }
+
+    #[test]
+    fn synth_series_is_deterministic_and_well_formed() {
+        let a = synth_series("BTC", 28_000.0, 0.0017, 0.035);
+        let b = synth_series("BTC", 28_000.0, 0.0017, 0.035);
+        assert_eq!(a.len(), DEMO_HISTORY_DAYS as usize);
+        // Deterministic: same symbol/params -> byte-identical series.
+        assert_eq!(
+            a.iter().map(|r| r.close.to_string()).collect::<Vec<_>>(),
+            b.iter().map(|r| r.close.to_string()).collect::<Vec<_>>()
+        );
+        // All closes positive; dates strictly ascending; OHLC bounds sane.
+        for w in a.windows(2) {
+            assert!(w[0].date < w[1].date, "dates must be ascending");
+        }
+        for r in &a {
+            assert!(r.close > rust_decimal::Decimal::ZERO, "close must be positive");
+            let (o, h, l) = (r.open.unwrap(), r.high.unwrap(), r.low.unwrap());
+            assert!(h >= o && h >= r.close, "high must bound open/close");
+            assert!(l <= o && l <= r.close, "low must bound open/close");
+            assert!(h >= l, "high must be >= low");
+            assert!(l > rust_decimal::Decimal::ZERO, "low must stay positive");
+        }
+        // The series must actually move (not a flat line) — at least 100 distinct
+        // closes over the window, so analytics/charts have real variation to show.
+        let distinct: std::collections::HashSet<String> =
+            a.iter().map(|r| r.close.to_string()).collect();
+        assert!(distinct.len() > 100, "series should vary, got {} distinct closes", distinct.len());
+        // Different symbols diverge (independent seeds).
+        let c = synth_series("ETH", 28_000.0, 0.0017, 0.035);
+        assert_ne!(a[10].close, c[10].close);
+    }
+
+    #[test]
+    fn build_demo_db_seeds_price_history() {
+        let dir = std::env::temp_dir().join("pftui-test-demo-hist");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("hist.db");
+        let _ = std::fs::remove_file(&path);
+
+        build_demo_db(&path).unwrap();
+
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM price_history", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows as usize, DEMO_HISTORY.len() * DEMO_HISTORY_DAYS as usize);
+        let cache: i64 = conn
+            .query_row("SELECT COUNT(*) FROM price_cache", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cache as usize, DEMO_HISTORY.len());
+
+        std::fs::remove_file(&path).unwrap();
+        let _ = std::fs::remove_dir(&dir);
     }
 
     #[test]
