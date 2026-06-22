@@ -20,6 +20,7 @@ unavailable renders to an empty string, so a report never breaks.
 | `theme.py` | Brand palette (synced with `gen-report.py` CSS), SVG helpers, and `pftui_json()` — the Rust data boundary. |
 | `cycle_viz.py` | Cycle charts: `map`, `dial`, `ledger`. CLI + `expand()` token handler. |
 | `risk_viz.py` | Risk/regime charts: `cocrash` (co-crash matrix). CLI + `expand()` token handler. |
+| `portfolio_viz.py` | Risk-sizing charts: `drawdown` (drawdown-survival composite), `riskbars` (risk fingerprint). CLI + `expand()` token handler. |
 | `render.py` | Aggregator. `expand_tokens(md)` runs every module's token expander. `gen-report.py` imports this once. |
 
 ## How it's wired
@@ -65,6 +66,11 @@ Curated by value, not volume (quality over quantity). Each maps to existing
   upper triangle = Pearson correlation, lower triangle = co-crash λ_L from
   `analytics tail-dependence`. Shows whether a pair (e.g. BTC↔gold) actually
   holds up in a crash. Token `<!--RISK_VIZ:cocrash:BTC,gold,SPY-->`.
+- Risk **drawdown** (drawdown-survival composite — depth bars, recovery cliff,
+  time-under-water i.i.d/AR(1), risk-of-ruin gauge; `analytics survival` /
+  `analytics risk-dashboard`) + **riskbars** (risk fingerprint — CDaR/Ulcer/maxDD/
+  vol bars with EVT tail class; `analytics risk-dashboard`). Single-asset only,
+  read price-history not holdings — no portfolio weights surfaced.
 
 **High value, next**
 - **Regime quad (Growth×Inflation)** — a 2×2 with the current regime dot + a short
@@ -75,9 +81,11 @@ Curated by value, not volume (quality over quantity). Each maps to existing
 
 **Useful (private/portfolio reports)**
 - **Allocation vs risk-parity** — current book weights vs ERC/downside-RP suggested
-  (`analytics basket`); per-asset over/under-weight bars.
-- **Drawdown underwater + survival** — drawdown path with CDaR/ruin annotations
-  (`analytics survival` / drawdown-path metrics).
+  (`analytics basket`); per-asset over/under-weight bars. *Blocked:* `basket
+  weights --json` emits only the SUGGESTED weights — it carries no current book
+  weights, and reading the operator's real allocation is forbidden in this domain.
+  Needs a Rust CLI that pairs suggested-vs-current behind the same privacy
+  boundary before this chart can be built.
 
 **Lower priority**
 - Equity curve / cumulative return, monthly-returns calendar heatmap, sentiment /
