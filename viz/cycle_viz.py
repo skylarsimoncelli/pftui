@@ -52,7 +52,7 @@ def _clock_for(asset, pftui=None):
 
 
 # ---------------------------------------------------------------- VIZ 1: MAP
-def cycle_map(report, degree_name, ttl, asset_clock=None, avwap=None):
+def cycle_map(report, degree_name, ttl, asset_clock=None, avwap=None, max_lows=2):
     deg = next((x for x in report["degrees"] if x["degree"] == degree_name), None)
     if deg is None or not deg.get("lows") or not deg.get("next_low_window"):
         return ""
@@ -60,7 +60,15 @@ def cycle_map(report, degree_name, ttl, asset_clock=None, avwap=None):
     # and window date labels each get their own space at the crowded right edge.
     W, H, ml, mr, mt, mb = 720, 228, 14, 64, 58, 40
     plot_w, axis_y = W - ml - mr, H - mb
-    lows, nlw = deg["lows"], deg["next_low_window"]
+    all_lows, nlw = deg["lows"], deg["next_low_window"]
+    # HEADLINE COMPRESSION: anchoring the time axis at the oldest low jams the
+    # live cycle (last low -> now -> next-low window) into the right ~25% and
+    # wastes the left ~60% on dead history. For the headline view keep only the
+    # most recent `max_lows` lows (the current cycle's start + the prior one for
+    # context) so the live window gets most of the width. Dropped earlier lows
+    # are surfaced honestly as a "+N earlier" tag at the left edge.
+    dropped = max(0, len(all_lows) - max_lows) if max_lows else 0
+    lows = all_lows[-max_lows:] if max_lows and len(all_lows) > max_lows else all_lows
     last_low = deg.get("last_confirmed_low") or lows[-1]
     cur_top = deg.get("current_top")
     t0, t1 = d2o(lows[0]["date"]), d2o(nlw["end_date"])
@@ -93,8 +101,16 @@ def cycle_map(report, degree_name, ttl, asset_clock=None, avwap=None):
         s.append(f'<circle cx="{x:.1f}" cy="{axis_y}" r="4.5" fill="{BLUE}" stroke="{BG}" stroke-width="1"/>')
         s.append(f'<text x="{x:.1f}" y="{axis_y+15}" text-anchor="middle" fill="{MUTED}" font-size="7.5" font-family={MONO!r}>{esc(lo["date"][:7])}</text>')
     # Single shared "confirmed lows" key above the first dot (balanced: one key,
-    # not one tag on only the first of several identical dots).
-    s.append(f'<text x="{X(lows[0]["date"]):.1f}" y="{axis_y-8}" text-anchor="middle" fill="{BLUE}" font-size="8" font-family={MONO!r}>lows</text>')
+    # not one tag on only the first of several identical dots). When the leftmost
+    # low hugs the margin and the "(+N earlier)" suffix would clip, left-anchor it
+    # at the margin instead of centering.
+    lows_key = "lows" + (f" (+{dropped} earlier)" if dropped else "")
+    kx = X(lows[0]["date"])
+    half_w = len(lows_key) * 2.6   # ~mono char half-width at 8px
+    if kx - half_w < ml:
+        s.append(f'<text x="{ml}" y="{axis_y-8}" fill="{BLUE}" font-size="8" font-family={MONO!r}>{esc(lows_key)}</text>')
+    else:
+        s.append(f'<text x="{kx:.1f}" y="{axis_y-8}" text-anchor="middle" fill="{BLUE}" font-size="8" font-family={MONO!r}>{esc(lows_key)}</text>')
     llx = X(last_low["date"])
     tx = ml + (today - t0) / span * plot_w
     cy = mt + 30

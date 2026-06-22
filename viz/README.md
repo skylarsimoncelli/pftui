@@ -23,6 +23,9 @@ unavailable renders to an empty string, so a report never breaks.
 | `portfolio_viz.py` | Risk-sizing charts: `drawdown` (drawdown-survival composite), `riskbars` (risk fingerprint). CLI + `expand()` token handler. |
 | `analog_viz.py` | Analog-engine chart: `dist` (forward-return distribution box/whisker). CLI + `expand()` token handler. |
 | `backtest_viz.py` | Strategy backtest chart: `tearsheet` (equity curve + underwater strip + stat line + Monte-Carlo terminal cone). CLI + `expand()` token handler. |
+| `scenario_viz.py` | Macro scenario chart: `dashboard` (ranked active-scenario probability bars + normalized-set fill / residual). CLI + `expand()` token handler. |
+| `macro_viz.py` | Macro env + catalyst charts: `environment` (z-scored feature strip) and `catalysts` (date-grouped event timeline). CLI + `expand()` token handler. |
+| `rates_viz.py` | Real-rates chart: `realrates` (US 10Y nominal = real (TIPS) + breakeven decomposition + US-minus-G10 differential bars). CLI + `expand()` token handler. |
 | `render.py` | Aggregator. `expand_tokens(md)` runs every module's token expander. `gen-report.py` imports this once. |
 
 ## How it's wired
@@ -34,6 +37,9 @@ just before markdown→HTML. A report's markdown embeds tokens:
 <!--CYCLE_VIZ:map:BTC-->
 <!--CYCLE_VIZ:dial:BTC-->  <!--CYCLE_VIZ:dial:GC=F-->
 <!--CYCLE_VIZ:ledger:BTC-->
+<!--SCENARIO_VIZ:dashboard:-->
+<!--MACRO_VIZ:environment:-->  <!--MACRO_VIZ:catalysts:-->
+<!--RATES_VIZ:realrates:-->
 ```
 
 Each is replaced with the rendered SVG. Run standalone too:
@@ -54,7 +60,7 @@ so a token can *silently* yield nothing. This matrix says where that happens:
 
 | Chart | Token | Renders for | Notes |
 |---|---|---|---|
-| Cycle **map** | `CYCLE_VIZ:map:SYM` | any asset with a `cycles analyze` degree | needs `lows` + `next_low_window`; headline degree is 4-year for BTC, major for gold/silver, else longest-first |
+| Cycle **map** | `CYCLE_VIZ:map:SYM` | any asset with a `cycles analyze` degree | needs `lows` + `next_low_window`; headline degree is 4-year for BTC, major for gold/silver, else longest-first. **Headline compression:** the time axis keeps only the most recent `max_lows` (default 2) lows so the *live* cycle gets most of the width; dropped older lows are surfaced as a `(+N earlier)` tag. `max_lows=None` restores the full-history axis. |
 | Cycle **dial** | `CYCLE_VIZ:dial:SYM` | **BTC + gold-family ONLY** | dial is driven by `cycles clock`, which only emits a `btc` clock (BTC/BTC-USD) or a `gold` clock (GC=F/GOLD/SI=F/SILVER). **Tokenizing a dial for SPY/QQQ/etc. silently renders nothing.** |
 | Cycle **ledger** | `CYCLE_VIZ:ledger:SYM` | any asset with a `cycles analyze` degree | needs a `ledger` + `band` on the degree |
 | **cocrash** | `RISK_VIZ:cocrash:A,B,…` | any 2–6 assets with `tail-dependence` history | each pair needs Pearson and/or λ_L; missing pairs draw a `--` cell |
@@ -62,6 +68,10 @@ so a token can *silently* yield nothing. This matrix says where that happens:
 | **drawdown** | `PORTFOLIO_VIZ:drawdown:SYM` | any asset with a `survival` block | falls back to the `survival` block embedded in `risk-dashboard` |
 | **riskbars** | `PORTFOLIO_VIZ:riskbars:SYM` | any asset with a `risk-dashboard` | renders whatever risk primitives are present |
 | Backtest **tearsheet** | `BACKTEST_VIZ:tearsheet:SYM?entry=…` | any asset the backtester accepts | `entry` is REQUIRED; needs ≥1 completed trade beyond the anchor |
+| Scenario **dashboard** | `SCENARIO_VIZ:dashboard:` | portfolio-wide (no per-asset arg) | needs ≥1 `status:active` scenario with a `probability`; appends the normalized-set residual ("Other / Unmodelled") as a final cool bar |
+| Macro **environment** | `MACRO_VIZ:environment:` | portfolio-wide | needs `analytics environment current` `features_zscored`; tolerates the Rust feature set growing (unknown keys append) |
+| Macro **catalysts** | `MACRO_VIZ:catalysts:` | portfolio-wide | needs ≥1 `analytics catalysts` event with a parseable `time`; events are grouped into per-date columns, capped at 18 (top by `score`) with `+N more` overflow |
+| Real-rates **realrates** | `RATES_VIZ:realrates:` | portfolio-wide (US 10Y + G10) | needs a snapshot with `us_nominal_10y` OR ≥1 G10 `pairs[].spread_bp`; skips trailing breakeven-only snapshots to show the freshest complete reading |
 
 **cocrash accepted alias set** (display relabeling in `risk_viz.NICE`; resolution
 to a real series is done by the Rust `tail-dependence` CLI, which accepts more):
@@ -121,6 +131,33 @@ Curated by value, not volume (quality over quantity). Each maps to existing
   bands, so the cone is anchored at the curve's end rather than tracking every bar
   — a full per-bar percentile cone would need the Rust backtester to emit the path
   envelope.
+- **Scenario probability dashboard** (`scenario_viz.py` `dashboard`) — the
+  newsletter's named "scenario dashboard": active macro scenarios ranked by
+  probability % as horizontal bars (color ramps green→amber→red with conviction),
+  each carrying its key-signal lead clause, plus the normalized-set fill state
+  (modeled-sum / over-or-under-filled) in the header and the residual "Other /
+  Unmodelled" mass as a final dashed bar so unaccounted probability is visible.
+  `analytics scenario list`. Token `<!--SCENARIO_VIZ:dashboard:-->`.
+- **Macro environment z-score strip** (`macro_viz.py` `environment`) — the
+  z-scored macro feature vector (DXY/yields/curve/gold/oil/S&P returns+vols, VIX)
+  as diverging horizontal bars from a center 0, ±σ gridlines, magnitude-driven
+  diverging color. Reads "what's stretched vs its own history" at a glance.
+  `analytics environment current` (expanding-window z, no look-ahead). Token
+  `<!--MACRO_VIZ:environment:-->`.
+- **Catalyst timeline** (`macro_viz.py` `catalysts`) — upcoming events grouped
+  into per-DATE columns (so same-day events stack vertically by event-pressure
+  `score` instead of overprinting), pill length+color = pressure / significance,
+  a NOW anchor, top-18 cap with `+N more` / `+N not shown` overflow. The "what to
+  watch". `analytics catalysts`. Token `<!--MACRO_VIZ:catalysts:-->`.
+- **Real-rates / yield strip** (`rates_viz.py` `realrates`) — US 10Y nominal
+  decomposed as real (TIPS) + breakeven in a stacked bar (the real-rate share is
+  the gold cross-read), beside the US-minus-G10 long-rate differential as diverging
+  per-country bars with the average marked (the dollar pull). `analytics real-rates
+  differentials`. Token `<!--RATES_VIZ:realrates:-->`. *Data note:* the latest
+  snapshot can carry only a breakeven (null nominal/TIPS, empty pairs); the chart
+  falls back to the freshest snapshot with a nominal yield or a G10 pair. A Rust
+  follow-up could backfill nominal/TIPS on the trailing snapshot so the headline
+  is always the literal newest date.
 
 **High value, next**
 - **Regime quad (Growth×Inflation)** — a 2×2 with the current regime dot + a short
