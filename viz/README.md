@@ -44,12 +44,14 @@ has `markdown` + `weasyprint`.
 
 ## Adding a new chart family
 
-1. New module `foo_viz.py` with render functions + `TOKEN_RE` + `expand(md, pftui)`.
+1. New module `foo_viz.py` (the `*_viz.py` suffix matters — `render.py`
+   auto-discovers it) with render functions + `TOKEN_RE` + `expand(md, pftui)`.
 2. Pull data ONLY via `theme.pftui_json([...])` — never reach into the DB or
    recompute. If the needed number isn't in any `--json` output, add it to the
    Rust CLI first (that keeps the compute in Rust and tested).
-3. Append `foo_viz.expand` to `EXPANDERS` in `render.py`.
-4. Token convention: `<!--FOO_VIZ:type:arg-->`.
+3. Token convention: `<!--FOO_VIZ:type:arg-->`. No wiring needed — `render.py`
+   finds your module's `expand()` automatically.
+4. Add a `test_foo_viz.py` smoke test (binary-independent, synthetic data).
 
 ## Roadmap — other high-value report visualizations
 
