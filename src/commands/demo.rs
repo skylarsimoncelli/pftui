@@ -472,10 +472,18 @@ pub(crate) fn build_demo_db(path: &std::path::Path) -> Result<()> {
 /// Create a fresh temporary demo database and return its path. Shared by the
 /// interactive `demo` command and the offline `snapshot --demo` renderer so both
 /// render identical synthetic data and never touch the real portfolio DB.
+///
+/// The filename is unique per invocation (pid + atomic counter) so concurrent
+/// callers — e.g. two `snapshot --demo` processes, or parallel test threads —
+/// never race on the same file.
 pub(crate) fn build_temp_demo_db() -> Result<PathBuf> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
     let demo_dir = std::env::temp_dir().join("pftui-demo");
     std::fs::create_dir_all(&demo_dir)?;
-    let db_path: PathBuf = demo_dir.join("demo.db");
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let db_path: PathBuf = demo_dir.join(format!("demo-{}-{}.db", std::process::id(), n));
 
     // Always rebuild fresh so the demo is clean
     if db_path.exists() {
@@ -609,7 +617,14 @@ mod tests {
             let (o, h, l) = (r.open.unwrap(), r.high.unwrap(), r.low.unwrap());
             assert!(h >= o && h >= r.close, "high must bound open/close");
             assert!(l <= o && l <= r.close, "low must bound open/close");
+            assert!(h >= l, "high must be >= low");
+            assert!(l > rust_decimal::Decimal::ZERO, "low must stay positive");
         }
+        // The series must actually move (not a flat line) — at least 100 distinct
+        // closes over the window, so analytics/charts have real variation to show.
+        let distinct: std::collections::HashSet<String> =
+            a.iter().map(|r| r.close.to_string()).collect();
+        assert!(distinct.len() > 100, "series should vary, got {} distinct closes", distinct.len());
         // Different symbols diverge (independent seeds).
         let c = synth_series("ETH", 28_000.0, 0.0017, 0.035);
         assert_ne!(a[10].close, c[10].close);

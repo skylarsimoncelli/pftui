@@ -120,6 +120,13 @@ pub fn compute_positions(
         });
     }
 
+    // Stable base order. The grouping above iterates a HashMap, whose order is
+    // randomized per process, so without this the position list (and anything
+    // rendered from it) would be non-deterministic across runs. Downstream views
+    // apply their own sort on top; this just guarantees a stable, reproducible
+    // base order and a deterministic tiebreak for equal sort keys.
+    positions.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+
     // Compute allocation percentages
     let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
 
@@ -186,6 +193,26 @@ mod tests {
             paired_tx_id: None,
             created_at: "2025-01-01T00:00:00".to_string(),
         }
+    }
+
+    #[test]
+    fn compute_positions_returns_stable_sorted_order() {
+        // Guards reproducibility: the grouping step iterates a HashMap (random
+        // per-process order), so the output must be explicitly sorted. We assert
+        // the result is symbol-ascending regardless of input order — a per-call
+        // invariant that guarantees identical order across processes.
+        let txs = vec![
+            make_tx("TSLA", TxType::Buy, dec!(1), dec!(100)),
+            make_tx("AAPL", TxType::Buy, dec!(1), dec!(100)),
+            make_tx("MSFT", TxType::Buy, dec!(1), dec!(100)),
+            make_tx("GOOG", TxType::Buy, dec!(1), dec!(100)),
+            make_tx("NVDA", TxType::Buy, dec!(1), dec!(100)),
+        ];
+        let prices = HashMap::new();
+        let fx_rates = HashMap::new();
+        let positions = compute_positions(&txs, &prices, &fx_rates);
+        let symbols: Vec<&str> = positions.iter().map(|p| p.symbol.as_str()).collect();
+        assert_eq!(symbols, vec!["AAPL", "GOOG", "MSFT", "NVDA", "TSLA"]);
     }
 
     #[test]
