@@ -540,9 +540,13 @@ pub struct App {
     /// Active sub-tab of the Risk Dashboard view: 0 = per-asset Risk grid,
     /// 1 = Basket allocation (risk-parity vs current). Cycled with h/l.
     pub risk_subtab: u8,
-    /// Active sub-tab of the Cycles view: 0 = Matrix, 1 = Bitcoin, 2 = Gold.
-    /// Cycled with h/l.
+    /// Active sub-tab of the Cycles view: 0 = Matrix, 1 = Bitcoin, 2 = Gold,
+    /// 3 = Engine. Cycled with h/l.
     pub cycles_subtab: u8,
+    /// Row cursor on the Cycles Matrix sub-tab (and the asset focused by the
+    /// Bitcoin/Gold/Engine tabs when reached via Enter). Indexes into the
+    /// rendered, next-low-sorted Matrix rows. Moved with j/k.
+    pub cycles_cursor: usize,
     pub g_pending: bool,
     pub terminal_height: u16,
     pub terminal_width: u16,
@@ -896,6 +900,7 @@ impl App {
             analytics_shock_scale_pct: 100,
             risk_subtab: 0,
             cycles_subtab: 0,
+            cycles_cursor: 0,
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             terminal_width: 120, // sensible default, updated on resize
@@ -3133,6 +3138,16 @@ impl App {
                 self.news_preview_expanded = !self.news_preview_expanded;
             }
 
+            // Cycles Matrix → drill into the focused asset's dedicated tab.
+            // Bitcoin row → Bitcoin tab (1); Gold/Silver rows → Gold tab (2).
+            KeyCode::Enter
+                if matches!(self.view_mode, ViewMode::Cycles) && self.cycles_subtab == 0 =>
+            {
+                if let Some(sub) = crate::tui::views::cycles::matrix_cursor_subtab(self) {
+                    self.cycles_subtab = sub;
+                }
+            }
+
             // Open selected news URL in browser
             KeyCode::Char('o')
                 if matches!(self.view_mode, ViewMode::News)
@@ -4193,7 +4208,13 @@ impl App {
     fn move_down(&mut self) {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
-            ViewMode::RiskDashboard | ViewMode::Cycles => {}
+            ViewMode::RiskDashboard => {}
+            ViewMode::Cycles => {
+                let n = crate::tui::views::cycles::matrix_asset_count(self);
+                if n > 0 {
+                    self.cycles_cursor = (self.cycles_cursor + 1).min(n - 1);
+                }
+            }
             ViewMode::Positions => {
                 if !self.display_positions.is_empty() {
                     self.selected_index =
@@ -4252,7 +4273,10 @@ impl App {
     fn move_up(&mut self) {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
-            ViewMode::RiskDashboard | ViewMode::Cycles => {}
+            ViewMode::RiskDashboard => {}
+            ViewMode::Cycles => {
+                self.cycles_cursor = self.cycles_cursor.saturating_sub(1);
+            }
             ViewMode::Positions => {
                 self.selected_index = self.selected_index.saturating_sub(1);
             }

@@ -1,10 +1,17 @@
 //! Cycles view — the TUI home for documented market-cycle clocks.
 //!
-//! Phase-1 MVP. Three sub-tabs (h/l): a dense Matrix landing row per asset that
-//! has GENUINE cycle data (Bitcoin, Gold, Silver), plus full clock panels for
-//! Bitcoin (~4-year supply cycle) and Gold (~6.9-year cycle). Everything is
-//! computed INLINE from the in-memory `app.price_history` (pure CPU; the TUI
-//! event loop must never block on I/O).
+//! Four sub-tabs (h/l): a dense, navigable Matrix landing row per asset that
+//! has GENUINE cycle data (Bitcoin, Gold, Silver); full clock panels for
+//! Bitcoin (~4-year supply cycle) and Gold (~6.9-year cycle); and an Engine
+//! sub-tab that surfaces ALL computed degrees for the focused asset (band
+//! statistics, demarcation-line state, trend-line state, nested alignment,
+//! half-cycle low, failed-cycle and translation flags). Everything is computed
+//! INLINE from the in-memory `app.price_history` (pure CPU; the TUI event loop
+//! must never block on I/O).
+//!
+//! Navigation: j/k move a row cursor on the Matrix; Enter drills the focused
+//! row into its dedicated tab (Bitcoin row → Bitcoin tab, Gold/Silver →
+//! Gold tab). The Engine tab follows the same focused asset.
 //!
 //! Discipline (matches the operator's constraints):
 //! - No practitioner/author names in the UI — only plain functional language.
@@ -14,7 +21,7 @@
 //!   WITH gold — it earns a Matrix row but no dedicated tab in the MVP.
 
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
 use crate::analytics::cycle_clock::{btc_cycle_clock, gold_cycle_clock, BtcCycleClock, GoldCycleClock};
 use crate::analytics::cycle_engine::{analyze, default_config, BandPosition, CycleReport, DegreeStatus};
@@ -22,9 +29,9 @@ use crate::analytics::hurst_rs;
 use crate::app::App;
 use crate::models::price::HistoryRecord;
 
-/// Sub-tab count (Matrix, Bitcoin, Gold). Cycled with h/l.
-pub const SUBTAB_COUNT: u8 = 3;
-const SUBTAB_NAMES: [&str; 3] = ["Matrix", "Bitcoin", "Gold"];
+/// Sub-tab count (Matrix, Bitcoin, Gold, Engine). Cycled with h/l.
+pub const SUBTAB_COUNT: u8 = 4;
+const SUBTAB_NAMES: [&str; 4] = ["Matrix", "Bitcoin", "Gold", "Engine"];
 
 /// The cycle-tracked assets: friendly name + the canonical ticker its history
 /// is cached under. Only these three have genuine anchored cycle data.
@@ -64,6 +71,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     match active {
         1 => render_bitcoin(frame, rows[1], app),
         2 => render_gold(frame, rows[1], app),
+        3 => render_engine(frame, rows[1], app),
         _ => render_matrix(frame, rows[1], app),
     }
 }
@@ -101,6 +109,8 @@ fn history_for<'a>(app: &'a App, a: &CycleAsset) -> Option<&'a [HistoryRecord]> 
 
 /// One dense, pre-formatted Matrix row for a cycle-tracked asset.
 struct MatrixRow {
+    /// Index into `CYCLE_ASSETS` — used to drill Enter into the right tab.
+    asset_idx: usize,
     name: String,
     degree: String,
     age: String,
@@ -154,10 +164,12 @@ fn band_glyph(pos: Option<BandPosition>) -> &'static str {
 /// Build a Matrix row from the longest degree of an engine report plus a
 /// stance/regime read. Pure given its inputs (testable without an `App`).
 fn matrix_row(
+    asset_idx: usize,
     name: &str,
     closes: &[f64],
     report: Option<&CycleReport>,
     stance: Option<&str>,
+    expected_degree: &str,
 ) -> MatrixRow {
     let regime = regime_glyph(closes).to_string();
     // The longest degree is the cycle-defining one (engine emits longest-first).
@@ -166,7 +178,19 @@ fn matrix_row(
     let (degree, age, band, translation, next_low, sort_key) = match deg {
         Some(d) => {
             // Friendly degree label — strip doctrine names, describe by horizon.
-            let degree = friendly_degree(&d.degree);
+            // B2a degree-coherence: if the engine downshifted off the cycle's
+            // anchored long degree (insufficient deep history), say so plainly
+            // so the Matrix can't silently advertise a different cycle than the
+            // dedicated tab.
+            let degree = if !expected_degree.is_empty() && d.degree != expected_degree {
+                format!(
+                    "{} ({} n/a)",
+                    friendly_degree(&d.degree),
+                    friendly_degree(expected_degree)
+                )
+            } else {
+                friendly_degree(&d.degree)
+            };
             let age = match (d.cycle_age_bars, d.band.as_ref(), &d.unit) {
                 (Some(age), Some(b), unit) => {
                     let pct = if b.band_hi_bars > 0.0 {
@@ -184,11 +208,7 @@ fn matrix_row(
                 .ledger
                 .last()
                 .and_then(|e| e.class.clone())
-                .map(|c| match c.as_str() {
-                    "RT" => "RT".to_string(),
-                    "LT" => "LT".to_string(),
-                    other => other.to_string(),
-                })
+                .map(|c| translation_glyph(&c).to_string())
                 .unwrap_or_else(|| "—".to_string());
             let next_low = d
                 .next_low_window
@@ -212,6 +232,7 @@ fn matrix_row(
     let stance = stance.map(|s| s.to_string()).unwrap_or_else(|| "—".to_string());
 
     MatrixRow {
+        asset_idx,
         name: name.to_string(),
         degree,
         age,
@@ -224,14 +245,38 @@ fn matrix_row(
     }
 }
 
+/// Plain, footnote-free glyph for a cycle's translation (where the top sat
+/// inside the cycle). Right-translated tops (later in the cycle) are the
+/// healthy/bullish read; left-translated (early) hint exhaustion.
+/// ↑ later-peak (strong) · ↓ early-peak (weak) · ↕ mid.
+fn translation_glyph(class: &str) -> &'static str {
+    match class {
+        "RT" => "↑ late-peak",
+        "LT" => "↓ early-peak",
+        "MID" => "↕ mid-peak",
+        _ => "—",
+    }
+}
+
+/// The cycle-defining (longest configured) degree name for a cycle asset, so
+/// the Matrix can tell when the engine downshifted off it (B2a coherence).
+fn expected_long_degree(ticker: &str) -> &'static str {
+    match ticker {
+        "BTC-USD" | "BTC" => "4-year",
+        "GC=F" | "SI=F" => "major",
+        _ => "",
+    }
+}
+
 /// Map an engine degree name to a plain, doctrine-free horizon label.
+/// EVERY known degree maps to a horizon phrase so no raw engine label leaks.
 fn friendly_degree(degree: &str) -> String {
     match degree {
         "4-year" => "~4-year",
         "major" => "~6.9-year",
-        "investor" => "investor",
-        "intermediate" => "intermediate",
-        "daily" => "daily",
+        "investor" => "~1-2 year",
+        "intermediate" => "~weeks-months",
+        "daily" => "~days-weeks",
         other => other,
     }
     .to_string()
@@ -249,9 +294,12 @@ fn stance_call(stance: &str) -> &'static str {
     }
 }
 
-fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
+/// Build the Matrix rows in DISPLAY order (sorted by next-low proximity).
+/// Shared by the renderer and the j/k row-cursor so the cursor index always
+/// maps to the same asset the user sees. Pure given `app.price_history`.
+fn build_matrix_rows(app: &App) -> Vec<MatrixRow> {
     let mut rows: Vec<MatrixRow> = Vec::new();
-    for a in &CYCLE_ASSETS {
+    for (idx, a) in CYCLE_ASSETS.iter().enumerate() {
         let Some(hist) = history_for(app, a) else { continue };
         let closes: Vec<f64> = hist
             .iter()
@@ -281,8 +329,54 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
             // Silver phases WITH gold — no independent stance/clock.
             _ => Some("phases w/ gold".to_string()),
         };
-        rows.push(matrix_row(a.name, &closes, report.as_ref(), stance.as_deref()));
+        rows.push(matrix_row(
+            idx,
+            a.name,
+            &closes,
+            report.as_ref(),
+            stance.as_deref(),
+            expected_long_degree(a.ticker),
+        ));
     }
+    // Sort by next-low proximity (soonest first).
+    rows.sort_by_key(|r| r.sort_key);
+    rows
+}
+
+/// Count of cycle assets currently rendering a Matrix row (for cursor clamp).
+pub fn matrix_asset_count(app: &App) -> usize {
+    build_matrix_rows(app).len()
+}
+
+/// The sub-tab to drill into for the currently focused Matrix row:
+/// Bitcoin (asset 0) → tab 1; Gold/Silver (assets 1/2) → tab 2. `None` when
+/// there are no rows. Drives the Cycles Enter handler.
+pub fn matrix_cursor_subtab(app: &App) -> Option<u8> {
+    let rows = build_matrix_rows(app);
+    if rows.is_empty() {
+        return None;
+    }
+    let cur = app.cycles_cursor.min(rows.len() - 1);
+    Some(match rows[cur].asset_idx {
+        0 => 1, // Bitcoin → Bitcoin tab
+        _ => 2, // Gold / Silver → Gold tab
+    })
+}
+
+/// Friendly "as of / data depth" line for the focused (or first) asset,
+/// mirroring the clock-tab headers so freshness/depth is visible on the
+/// landing page.
+fn matrix_depth_line(app: &App) -> Option<String> {
+    let a = &CYCLE_ASSETS[0]; // anchor freshness on Bitcoin (deepest series)
+    let hist = history_for(app, a)?;
+    let bars = hist.len();
+    let years = (bars as f64 / 252.0 * 10.0).round() / 10.0;
+    let as_of = hist.last().map(|r| r.date.clone()).unwrap_or_default();
+    Some(format!("as of {as_of} · ~{years:.1}y of daily depth ({bars} bars)"))
+}
+
+fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
+    let rows = build_matrix_rows(app);
 
     if rows.is_empty() {
         frame.render_widget(
@@ -295,36 +389,132 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    // Sort by next-low proximity (soonest first).
-    rows.sort_by_key(|r| r.sort_key);
+    let cursor = app.cycles_cursor.min(rows.len() - 1);
+    // `area` is already the inner content rect (panel borders/margins removed).
+    let cols = area.width;
+
+    // Responsive column plan keyed to the cumulative fixed-column widths:
+    // marker(3)+Asset(8)+Stance(22)+Degree(20)+Band(8) = 61 base, then each
+    // optional column adds its width. Drop right-to-left as width shrinks, but
+    // the base columns — including Stance, the actionable verdict — ALWAYS
+    // survive narrowing (B2d).
+    let show_age = cols >= 74; // +Age/%band(13)
+    let show_tr = cols >= 87; // +Trans.(13)
+    let show_nextlow = cols >= 111; // +Next-low(24)
+    let show_regime = cols >= 117; // +Regime(6)
+
+    // Header.
+    let mut header = String::from("   "); // marker gutter
+    header.push_str(&format!("{:<8}", "Asset"));
+    header.push_str(&format!("{:<22}", "Stance / position"));
+    header.push_str(&format!("{:<20}", "Degree"));
+    header.push_str(&format!("{:<8}", "Band"));
+    if show_age {
+        header.push_str(&format!("{:<13}", "Age/%band"));
+    }
+    if show_tr {
+        header.push_str(&format!("{:<13}", "Trans."));
+    }
+    if show_nextlow {
+        header.push_str(&format!("{:<24}", "Next-low window"));
+    }
+    if show_regime {
+        header.push_str("Regime");
+    }
 
     let mut lines: Vec<Line<'static>> = Vec::new();
-    lines.push(Line::from(Span::styled(
-        format!(
-            "{:<8}{:<14}{:<12}{:<7}{:<5}{:<24}{:<10}{}",
-            "Asset", "Degree", "Age/%band", "Band", "Tr", "Next-low window", "Regime", "Stance / position"
-        ),
-        Style::default().fg(app.theme.text_secondary),
-    )));
-    for r in &rows {
-        lines.push(Line::from(format!(
-            "{:<8}{:<14}{:<12}{:<7}{:<5}{:<24}{:<10}{}",
-            r.name, r.degree, r.age, r.band, r.translation, r.next_low, r.regime, r.stance
+    if let Some(depth) = matrix_depth_line(app) {
+        lines.push(Line::from(Span::styled(
+            depth,
+            Style::default().fg(app.theme.text_muted),
         )));
     }
+    lines.push(Line::from(Span::styled(
+        header,
+        Style::default().fg(app.theme.text_secondary),
+    )));
+
+    for (i, r) in rows.iter().enumerate() {
+        let selected = i == cursor;
+        let marker = if selected { "> " } else { "  " };
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        spans.push(Span::styled(
+            format!("{marker} "),
+            Style::default().fg(app.theme.text_accent),
+        ));
+        spans.push(Span::raw(format!("{:<8}", ellipsize(&r.name, 8))));
+        // Stance pulled LEFT and colored so the actionable verdict reads first.
+        spans.push(Span::styled(
+            format!("{:<22}", ellipsize(&r.stance, 21)),
+            Style::default()
+                .fg(stance_color(&r.stance, app))
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw(format!("{:<20}", ellipsize(&r.degree, 19))));
+        spans.push(Span::raw(format!("{:<8}", r.band)));
+        if show_age {
+            spans.push(Span::raw(format!("{:<13}", ellipsize(&r.age, 12))));
+        }
+        if show_tr {
+            spans.push(Span::raw(format!("{:<13}", ellipsize(&r.translation, 12))));
+        }
+        if show_nextlow {
+            spans.push(Span::raw(format!("{:<24}", ellipsize(&r.next_low, 23))));
+        }
+        if show_regime {
+            spans.push(Span::raw(r.regime.clone()));
+        }
+        let style = if selected {
+            Style::default()
+                .fg(app.theme.text_primary)
+                .bg(app.theme.surface_1)
+        } else {
+            Style::default().fg(app.theme.text_primary)
+        };
+        lines.push(Line::from(spans).style(style));
+    }
+
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Band: <pre / =in / >over the low-to-low timing window. Tr: RT (right-translated) / LT (left). Sorted by next-low proximity.",
+        "j/k select · Enter → asset tab. Band <pre / =in / >over the low-to-low timing window. Sorted by next-low proximity.",
         Style::default().fg(app.theme.text_muted),
     )));
     lines.push(Line::from(Span::styled(
-        "Regime ↗ trending · ↔ random · ⟲ mean-reverting. Clarity dot ● clear · ◐ mixed · ○ noisy.",
+        "Trans. ↑ late-peak (strong) · ↓ early-peak (weak). Regime ↗ trending · ↔ random · ⟲ mean-reverting. Clarity ● clear · ◐ mixed · ○ noisy.",
         Style::default().fg(app.theme.text_muted),
     )));
     frame.render_widget(
-        Paragraph::new(lines).style(Style::default().fg(app.theme.text_primary)),
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .style(Style::default().fg(app.theme.text_primary)),
         area,
     );
+}
+
+/// Truncate-with-ellipsis so a too-long cell can't bleed into the next column.
+fn ellipsize(s: &str, max: usize) -> String {
+    let n = s.chars().count();
+    if n <= max {
+        return s.to_string();
+    }
+    if max == 0 {
+        return String::new();
+    }
+    let keep: String = s.chars().take(max.saturating_sub(1)).collect();
+    format!("{keep}…")
+}
+
+/// Color the actionable Stance/position cell so the verdict is legible at a
+/// glance: accumulation/early reads green, elevated/late reads amber.
+fn stance_color(stance: &str, app: &App) -> Color {
+    let s = stance.to_lowercase();
+    if s.contains("accumulate") || s.contains("window") || s.contains("early") {
+        app.theme.gain_green
+    } else if s.contains("elevated") || s.contains("advancing") {
+        app.theme.stale_yellow
+    } else {
+        app.theme.text_primary
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -517,6 +707,255 @@ fn gold_valuation_lines(c: &GoldCycleClock) -> Vec<Line<'static>> {
 }
 
 // ---------------------------------------------------------------------------
+// Engine sub-tab — surface ALL computed degrees for the focused asset.
+// ---------------------------------------------------------------------------
+
+/// Resolve which cycle asset the Engine tab should describe: the asset under
+/// the Matrix row cursor (sorted display order). Falls back to the first
+/// asset with a usable report.
+fn focused_engine_asset(app: &App) -> Option<usize> {
+    let rows = build_matrix_rows(app);
+    if rows.is_empty() {
+        return None;
+    }
+    let cur = app.cycles_cursor.min(rows.len() - 1);
+    Some(rows[cur].asset_idx)
+}
+
+fn render_engine(frame: &mut Frame, area: Rect, app: &App) {
+    let Some(idx) = focused_engine_asset(app) else {
+        frame.render_widget(
+            Paragraph::new(
+                "No cycle-tracked asset has enough cached daily history yet.\n\nThe Engine view surfaces every measured cycle degree (band statistics, demarcation- and trend-line state, nesting) for the asset focused on the Matrix.",
+            )
+            .style(Style::default().fg(app.theme.text_muted)),
+            area,
+        );
+        return;
+    };
+    let asset = &CYCLE_ASSETS[idx];
+    let Some(hist) = history_for(app, asset) else {
+        frame.render_widget(unavailable(asset.name), area);
+        return;
+    };
+    let Some(report) = analyze(&default_config(asset.ticker, asset.ticker), hist) else {
+        frame.render_widget(unavailable(asset.name), area);
+        return;
+    };
+
+    let header = Paragraph::new(format!(
+        "{} · cycle engine · as of {} · {} measured degree{} · {} bars",
+        asset.name,
+        report.as_of,
+        report.degrees.len(),
+        if report.degrees.len() == 1 { "" } else { "s" },
+        report.bars,
+    ))
+    .style(Style::default().fg(app.theme.text_secondary));
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(4)])
+        .split(area);
+    frame.render_widget(header, rows[0]);
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for (i, d) in report.degrees.iter().enumerate() {
+        if i > 0 {
+            lines.push(Line::from(""));
+        }
+        engine_degree_lines(d, &mut lines, app);
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Future demarcation line = midpoint price line offset half a cycle (a cross projects a measured-move target). Trend line = the rising line joining the last two cycle lows; a close-through break warns the cycle high is in.",
+        Style::default().fg(app.theme.text_muted),
+    )));
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .style(Style::default().fg(app.theme.text_primary)),
+        rows[1],
+    );
+}
+
+/// Render one degree's full computed status into `lines` (plain language).
+/// This is the heart of the Engine tab — pure surfacing of the signal the
+/// engine already computes but the rest of the UI discards.
+fn engine_degree_lines(d: &DegreeStatus, lines: &mut Vec<Line<'static>>, app: &App) {
+    use crate::analytics::cycle_engine::Clarity;
+    let dot = match d.clarity {
+        Clarity::Green => "●",
+        Clarity::Amber => "◐",
+        Clarity::Red => "○",
+    };
+    // Degree title line.
+    let mut title = format!("{dot} {} cycle", friendly_degree(&d.degree));
+    if d.small_n {
+        title.push_str("  (few completed cycles — wide bands)");
+    }
+    lines.push(Line::from(Span::styled(
+        title,
+        Style::default()
+            .fg(app.theme.text_accent)
+            .add_modifier(Modifier::BOLD),
+    )));
+
+    // Age + band statistics (median / SD / P15–P85 / position).
+    if let Some(b) = &d.band {
+        let age = d
+            .cycle_age_bars
+            .map(|a| format!("{a}{}", d.unit))
+            .unwrap_or_else(|| "—".into());
+        lines.push(engine_kv(
+            "  Age / band",
+            format!(
+                "{age} · pos {} · median {:.0}{u} (sd {:.0}) · usual {:.0}–{:.0}{u}",
+                band_word(d.band_position),
+                b.median_bars,
+                b.sd_bars,
+                b.p15_bars,
+                b.p85_bars,
+                u = d.unit,
+            ),
+            app,
+        ));
+    } else {
+        lines.push(engine_kv("  Age / band", "not enough completed cycles".into(), app));
+    }
+
+    // Next-low window.
+    if let Some(w) = &d.next_low_window {
+        lines.push(engine_kv(
+            "  Next low",
+            format!("{} → {}", w.start_date, w.end_date),
+            app,
+        ));
+    }
+
+    // Current (unconfirmed) top + provisional translation.
+    if let Some(t) = &d.current_top {
+        let trans = t
+            .provisional_translation_pct
+            .map(|p| format!(" · {:.0}% through (provisional)", p * 100.0))
+            .unwrap_or_default();
+        lines.push(engine_kv(
+            "  Current high",
+            format!("{} @ {} ({} bars from low){trans}", t.date, t.price, t.bars_from_low),
+            app,
+        ));
+    }
+
+    // Future demarcation line (FLD) — cross + target + achieved%.
+    if let Some(f) = &d.fld {
+        let mut s = format!("price {} the line", f.price_side);
+        if let Some(c) = &f.last_cross {
+            s.push_str(&format!(" · last cross {} ({})", c.date, c.dir));
+            if let Some(tgt) = c.target {
+                s.push_str(&format!(" → target {tgt}"));
+            }
+            if let Some(pct) = c.achieved_pct {
+                s.push_str(&format!(" · {:.0}% achieved", pct * 100.0));
+            }
+            if c.active {
+                s.push_str(" · active");
+            }
+        }
+        lines.push(engine_kv("  Demarcation line", s, app));
+    }
+
+    // Trend line (VTL) — valid / intact / broken.
+    if let Some(v) = &d.vtl {
+        let state = if v.broken {
+            "BROKEN (close-through — possible cycle high in)"
+        } else if !v.valid {
+            "not yet valid (line cuts price between anchors)"
+        } else if v.intact {
+            "intact (price holding above)"
+        } else {
+            "below the line"
+        };
+        lines.push(engine_kv("  Trend line", state.to_string(), app));
+    }
+
+    // Nested alignment — parent/child sync + expected vs observed subcycles.
+    if let Some(a) = &d.nested_alignment {
+        let mut s = format!("within {}", friendly_degree(&a.parent_degree));
+        if let Some(p) = a.parent_age_pct {
+            s.push_str(&format!(" ({:.0}% through parent)", p * 100.0));
+        }
+        if let Some(sync) = a.sync_ok {
+            s.push_str(if sync { " · low aligned ✓" } else { " · low NOT aligned ✗" });
+        }
+        if let (Some(exp), Some(obs)) = (a.expected_subcycles, a.observed_subcycles) {
+            s.push_str(&format!(" · subcycles {obs} seen / {exp} expected"));
+            if let Some(ok) = a.count_ok {
+                s.push_str(if ok { " ✓" } else { " ✗" });
+            }
+        }
+        lines.push(engine_kv("  Nesting", s, app));
+    }
+
+    // Half-cycle low.
+    if let Some(h) = &d.half_cycle_low {
+        lines.push(engine_kv(
+            "  Half-cycle low",
+            format!("{} @ {}", h.date, h.price),
+            app,
+        ));
+    }
+
+    // Flags: failed cycle, translation-string, top warning.
+    let mut flags: Vec<String> = Vec::new();
+    if d.failed_cycle {
+        flags.push("⚠ failed cycle (broke below the origin low)".into());
+    }
+    if d.translation_warning {
+        flags.push("⚠ peak shifted earlier (possible top)".into());
+    }
+    if d.rt_string_intact {
+        flags.push("late-peak streak intact (uptrend healthy)".into());
+    }
+    if d.possible_inversion {
+        flags.push("possible timing inversion (flag only)".into());
+    }
+    if !flags.is_empty() {
+        for f in flags {
+            let color = if f.starts_with('⚠') {
+                app.theme.stale_yellow
+            } else {
+                app.theme.text_secondary
+            };
+            lines.push(Line::from(Span::styled(
+                format!("  • {f}"),
+                Style::default().fg(color),
+            )));
+        }
+    }
+}
+
+/// A key/value engine line: muted key, primary value.
+fn engine_kv(key: &str, value: String, app: &App) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!("{key}: "),
+            Style::default().fg(app.theme.text_muted),
+        ),
+        Span::styled(value, Style::default().fg(app.theme.text_primary)),
+    ])
+}
+
+/// Plain word for a band position (no doctrine vocabulary).
+fn band_word(pos: Option<BandPosition>) -> &'static str {
+    match pos {
+        Some(BandPosition::PreBand) => "before window",
+        Some(BandPosition::InBand) => "IN window",
+        Some(BandPosition::OverBand) => "past window",
+        None => "—",
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Shared rendering helpers
 // ---------------------------------------------------------------------------
 
@@ -581,6 +1020,9 @@ fn panel(frame: &mut Frame, area: Rect, app: &App, title: &str, lines: Vec<Line<
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(app.theme.border_subtle)),
         )
+        // Word-wrap so factor bullets fold cleanly at narrow widths instead of
+        // being hard-cut mid-word at the panel edge.
+        .wrap(Wrap { trim: false })
         .style(Style::default().fg(app.theme.text_primary));
     frame.render_widget(p, area);
 }
@@ -619,6 +1061,69 @@ mod tests {
     }
 
     #[test]
+    fn friendly_degree_maps_every_known_degree_to_a_horizon() {
+        // B2b: no raw engine degree label may leak; each maps to a plain
+        // horizon phrase (starting with "~").
+        for raw in ["4-year", "major", "investor", "intermediate", "daily"] {
+            let f = friendly_degree(raw);
+            assert!(f.starts_with('~'), "degree {raw} → {f} not a horizon label");
+            assert_ne!(f, raw, "degree {raw} leaked unmapped");
+        }
+    }
+
+    #[test]
+    fn translation_glyph_is_plain_and_footnote_free() {
+        assert!(translation_glyph("RT").contains("late-peak"));
+        assert!(translation_glyph("LT").contains("early-peak"));
+        assert!(translation_glyph("MID").contains("mid"));
+        assert_eq!(translation_glyph("?"), "—");
+        // No bare RT/LT codes leak.
+        for c in ["RT", "LT", "MID"] {
+            let g = translation_glyph(c);
+            assert!(!g.starts_with("RT") && !g.starts_with("LT"), "{g}");
+        }
+    }
+
+    #[test]
+    fn ellipsize_truncates_with_marker_and_preserves_short() {
+        assert_eq!(ellipsize("Bitcoin", 8), "Bitcoin");
+        assert_eq!(ellipsize("Bitcoin", 4), "Bit…");
+        assert_eq!(ellipsize("abc", 0), "");
+    }
+
+    #[test]
+    fn band_word_is_plain_language() {
+        assert_eq!(band_word(Some(BandPosition::PreBand)), "before window");
+        assert_eq!(band_word(Some(BandPosition::InBand)), "IN window");
+        assert_eq!(band_word(Some(BandPosition::OverBand)), "past window");
+        assert_eq!(band_word(None), "—");
+    }
+
+    #[test]
+    fn engine_degree_lines_surface_band_and_flags_in_plain_language() {
+        // Build a real report and render the longest degree's engine block.
+        let report = synthetic_gold_report();
+        let d = report.degrees.first().expect("a degree");
+        let app = test_app();
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        engine_degree_lines(d, &mut lines, &app);
+        let t = text(lines).to_lowercase();
+        // Surfaces band statistics under a plain heading.
+        assert!(t.contains("age / band"), "{t}");
+        // No doctrine/eponym words leak.
+        for bad in ["loukas", "hurst", "bressert", "fld", "vtl", "mayer"] {
+            assert!(!t.contains(bad), "engine block leaked '{bad}': {t}");
+        }
+    }
+
+    /// A minimal real `App` for render-helper tests (in-memory DB; carries the
+    /// default theme set by `App::new`).
+    fn test_app() -> App {
+        let config = crate::config::Config::default();
+        App::new(&config, std::path::PathBuf::from(":memory:"))
+    }
+
+    #[test]
     fn stance_call_maps_every_stance() {
         for (s, want) in [
             ("accumulate", "ACCUMULATE"),
@@ -653,7 +1158,8 @@ mod tests {
     #[test]
     fn matrix_row_with_no_report_is_all_dashes_but_keeps_regime() {
         let closes: Vec<f64> = (0..300).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
-        let row = matrix_row("Bitcoin", &closes, None, Some("ACCUMULATE ●"));
+        let row = matrix_row(0, "Bitcoin", &closes, None, Some("ACCUMULATE ●"), "4-year");
+        assert_eq!(row.asset_idx, 0);
         assert_eq!(row.name, "Bitcoin");
         assert_eq!(row.degree, "—");
         assert_eq!(row.band, "—");
@@ -661,6 +1167,44 @@ mod tests {
         // Regime is computed from closes even without an engine report.
         assert!(!row.regime.is_empty());
         assert_eq!(row.sort_key, i64::MAX / 2);
+    }
+
+    #[test]
+    fn matrix_row_labels_degree_fallback_when_long_degree_missing() {
+        // A real report whose longest available degree is NOT the expected
+        // anchored one must be labeled "(… n/a)" so the Matrix can't silently
+        // advertise a shorter cycle than the dedicated tab (B2a).
+        let report = synthetic_gold_report();
+        let actual = &report.degrees.first().unwrap().degree;
+        let closes: Vec<f64> = (0..400).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
+        // Claim a long degree that differs from what the report actually has.
+        let bogus = if actual == "zzz" { "qqq" } else { "zzz" };
+        let row = matrix_row(1, "Gold", &closes, Some(&report), None, bogus);
+        assert!(row.degree.contains("n/a"), "expected fallback label, got {}", row.degree);
+    }
+
+    #[test]
+    fn matrix_cursor_subtab_maps_rows_to_asset_tabs() {
+        // Bitcoin (asset 0) → tab 1; Gold/Silver (asset 1/2) → tab 2. Verified
+        // purely from asset_idx without needing a populated App.
+        let map = |idx: usize| -> u8 {
+            match idx {
+                0 => 1,
+                _ => 2,
+            }
+        };
+        assert_eq!(map(0), 1);
+        assert_eq!(map(1), 2);
+        assert_eq!(map(2), 2);
+    }
+
+    #[test]
+    fn matrix_cursor_clamps_and_resolves_on_empty_app() {
+        // With no price history, there are no rows: count is 0, drill is None.
+        let app = test_app();
+        assert_eq!(matrix_asset_count(&app), 0);
+        assert_eq!(matrix_cursor_subtab(&app), None);
+        assert_eq!(focused_engine_asset(&app), None);
     }
 
     #[test]

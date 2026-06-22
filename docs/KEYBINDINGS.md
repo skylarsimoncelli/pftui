@@ -33,7 +33,7 @@ Full keybinding reference for pftui. Press `?` in the TUI for an interactive ver
 | `7` | News — headlines and catalysts |
 | `8` | Journal |
 | `9` | Risk Dashboard — tail risk, allocation, cycle clock, diversification (h/l sub-tabs) |
-| `C` | Cycles — market-cycle clocks for Bitcoin / Gold / Silver (Matrix, Bitcoin, Gold; h/l sub-tabs). Opens from every view. |
+| `C` | Cycles — market-cycle clocks for Bitcoin / Gold / Silver (Matrix, Bitcoin, Gold, Engine; `h/l` sub-tabs). On the Matrix: `j/k` move a row cursor, `Enter` drills the focused row into its asset tab (Bitcoin → Bitcoin, Gold/Silver → Gold). The Engine sub-tab surfaces every measured cycle degree for the focused asset. Opens from every view. |
 
 ## Charts
 
