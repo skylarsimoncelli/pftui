@@ -48,17 +48,24 @@ def _lerp(c0, c1, t):
     return "#" + "".join(f"{round(a[i] + (b[i] - a[i]) * t):02x}" for i in range(3))
 
 
-def _ramp(v):
-    """Map a 0..1 dependence/correlation value to a calm->danger fill.
-
-    Anchored at the report palette: GREEN (diversifying/low) -> AMBER (moderate)
-    -> RED (concentrated/high). Values are clamped to [0,1]; negative
-    correlations are floored at 0 for the fill but printed signed.
+def _danger_ramp(v):
+    """Co-crash λ_L (0..1) on a calm->danger fill: GREEN (diversifies) -> AMBER
+    -> RED (co-crashes). This 'danger' language is reserved for λ_L ONLY — a high
+    λ_L genuinely means joint downside.
     """
     v = max(0.0, min(1.0, v))
     if v <= 0.5:
         return _lerp(GREEN, AMBER, v / 0.5)
     return _lerp(AMBER, RED, (v - 0.5) / 0.5)
+
+
+def _corr_fill(v):
+    """Pearson correlation on a NEUTRAL blue-intensity scale (PANEL -> BLUE by
+    |corr|). Correlation is NOT danger — a high benign correlation must not read
+    red. Sign is shown in the printed value AND in intensity (|corr|), so -0.30
+    and +0.00 no longer look identical.
+    """
+    return _lerp(PANEL, BLUE, max(0.0, min(1.0, abs(v))))
 
 
 def _fetch_pair(a, b, pftui=None):
@@ -86,7 +93,7 @@ def cocrash_matrix(assets, pairs, ttl):
         return ""
     cell = 78
     ml, mt = 96, 70          # left gutter for row labels, top for title+col labels
-    legend_h = 58
+    legend_h = 80
     grid = n * cell
     # Width is the larger of the grid footprint and the header/legend text runs,
     # so the title and captions never clip past the panel edge.
@@ -112,21 +119,22 @@ def cocrash_matrix(assets, pairs, ttl):
                  f'fill="{CYAN}" font-size="11" font-weight="600" font-family={MONO!r}>{esc(lab)}</text>')
 
     def draw_cell(i, j, val, kind):
+        # Correlation cells: neutral blue intensity + light text (the chip can be
+        # dark). λ_L cells: danger ramp + dark text on the bright fill.
         if val is None:
-            fill, txt, sub = PANEL, "--", ""
+            fill, txt, sub, tcol = PANEL, "--", "", MUTED
+        elif kind == "corr":
+            fill, txt, sub, tcol = _corr_fill(val), f"{val:+.2f}", "corr", TEXT
         else:
-            fill = _ramp(val)
-            txt = f"{val:+.2f}" if kind == "corr" else f"{val:.2f}"
-            sub = "corr" if kind == "corr" else "&#955;_L"
+            fill, txt, sub, tcol = _danger_ramp(val), f"{val:.2f}", "&#955;_L", BG
         x, y = cx(j), cy(i)
         out = [f'<rect x="{x+2:.1f}" y="{y+2:.1f}" width="{cell-4}" height="{cell-4}" '
                f'rx="6" fill="{fill}" fill-opacity="0.88" stroke="{BORDER}"/>']
-        # dark legible text on the colored chip
         out.append(f'<text x="{x+cell/2:.1f}" y="{y+cell/2-1:.1f}" text-anchor="middle" '
-                   f'fill="{BG}" font-size="17" font-weight="700" font-family={MONO!r}>{esc(txt)}</text>')
+                   f'fill="{tcol}" font-size="17" font-weight="700" font-family={MONO!r}>{esc(txt)}</text>')
         if sub:
             out.append(f'<text x="{x+cell/2:.1f}" y="{y+cell/2+16:.1f}" text-anchor="middle" '
-                       f'fill="{BG}" fill-opacity="0.8" font-size="8" font-family={MONO!r}>{sub}</text>')
+                       f'fill="{tcol}" fill-opacity="0.8" font-size="8" font-family={MONO!r}>{sub}</text>')
         return "".join(out)
 
     for i in range(n):
@@ -148,17 +156,27 @@ def cocrash_matrix(assets, pairs, ttl):
     # Legend: color ramp + the diversification read.
     ly = gy0 + grid + 22
     lx = 16
-    s.append(f'<text x="{lx}" y="{ly}" fill="{MUTED}" font-size="9" font-family={MONO!r}>diversifies in a crash</text>')
-    bar_x, bar_w = lx + 168, 150
-    steps = 24
+    bar_w, steps = 150, 24
+    # λ_L (lower triangle) danger ramp: diversifies -> co-crashes.
+    s.append(f'<text x="{lx}" y="{ly}" fill="{MUTED}" font-size="9" font-family={MONO!r}>&#955;_L diversifies</text>')
+    lam_x = lx + 110
     for k in range(steps):
         t = k / (steps - 1)
-        s.append(f'<rect x="{bar_x + k*(bar_w/steps):.1f}" y="{ly-9}" '
-                 f'width="{bar_w/steps + 0.6:.1f}" height="10" fill="{_ramp(t)}"/>')
-    s.append(f'<rect x="{bar_x}" y="{ly-9}" width="{bar_w}" height="10" fill="none" stroke="{BORDER}"/>')
-    s.append(f'<text x="{bar_x+bar_w+8}" y="{ly}" fill="{MUTED}" font-size="9" font-family={MONO!r}>co-crashes</text>')
-    s.append(f'<text x="{lx}" y="{ly+20}" fill="{MUTED}" font-size="8" font-family={MONO!r}>'
-             f'low &#955;_L (lower triangle) = the pair holds up when it&#8217;s needed; high &#955;_L = joint downside.</text>')
+        s.append(f'<rect x="{lam_x + k*(bar_w/steps):.1f}" y="{ly-9}" '
+                 f'width="{bar_w/steps + 0.6:.1f}" height="10" fill="{_danger_ramp(t)}"/>')
+    s.append(f'<rect x="{lam_x}" y="{ly-9}" width="{bar_w}" height="10" fill="none" stroke="{BORDER}"/>')
+    s.append(f'<text x="{lam_x+bar_w+8}" y="{ly}" fill="{MUTED}" font-size="9" font-family={MONO!r}>co-crashes</text>')
+    # corr (upper triangle) neutral blue-intensity ramp: |corr| weak -> strong.
+    cy2 = ly + 18
+    s.append(f'<text x="{lx}" y="{cy2}" fill="{MUTED}" font-size="9" font-family={MONO!r}>|corr| weak</text>')
+    for k in range(steps):
+        t = k / (steps - 1)
+        s.append(f'<rect x="{lam_x + k*(bar_w/steps):.1f}" y="{cy2-9}" '
+                 f'width="{bar_w/steps + 0.6:.1f}" height="10" fill="{_corr_fill(t)}"/>')
+    s.append(f'<rect x="{lam_x}" y="{cy2-9}" width="{bar_w}" height="10" fill="none" stroke="{BORDER}"/>')
+    s.append(f'<text x="{lam_x+bar_w+8}" y="{cy2}" fill="{MUTED}" font-size="9" font-family={MONO!r}>strong</text>')
+    s.append(f'<text x="{lx}" y="{cy2+18}" fill="{MUTED}" font-size="8" font-family={MONO!r}>'
+             f'low &#955;_L = the pair holds up when it&#8217;s needed; high correlation alone is NOT crash-coupling.</text>')
     return "\n".join(s) + "\n</svg>"
 
 
