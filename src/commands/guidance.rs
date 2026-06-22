@@ -632,11 +632,7 @@ fn data_health_status_rank(status: &str) -> u8 {
 }
 
 fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..max_len])
-    }
+    crate::text_util::truncate_ellipsis(s, max_len)
 }
 
 fn parse_date_prefix(s: &str) -> Option<NaiveDate> {

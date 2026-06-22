@@ -343,12 +343,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let age = app.tick_count.saturating_sub(app.last_price_error_tick);
         if age < 300 {
             spans.push(Span::styled(" ⚠ ", Style::default().fg(t.stale_yellow)));
-            // Truncate long error messages for the status bar
-            let display_err = if err.len() > 50 {
-                &err[..50]
-            } else {
-                err.as_str()
-            };
+            // Truncate long error messages for the status bar (char-safe: an
+            // error string may contain multi-byte chars).
+            let display_err = crate::text_util::truncate_ellipsis(err, 50);
             spans.push(Span::styled(
                 display_err,
                 Style::default().fg(t.stale_yellow),

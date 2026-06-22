@@ -2809,11 +2809,7 @@ fn run_situation(backend: &BackendConnection, json_output: bool) -> Result<()> {
                     .unwrap_or_else(|| "---".to_string());
                 println!(
                     "\n  {} (Δ{:+.2}) — {}",
-                    if pair.len() > 22 {
-                        format!("{}...", &pair[..19])
-                    } else {
-                        pair
-                    },
+                    crate::text_util::truncate_ellipsis(&pair, 19),
                     cb.break_delta,
                     cb.severity,
                 );

@@ -97,13 +97,7 @@ pub fn run_history(
             let notes_truncated = entry
                 .notes
                 .as_deref()
-                .map(|n| {
-                    if n.len() > 50 {
-                        format!("{}...", &n[..47])
-                    } else {
-                        n.to_string()
-                    }
-                })
+                .map(|n| crate::text_util::truncate_ellipsis(n, 47))
                 .unwrap_or_else(|| "—".to_string());
 
             println!(

@@ -87,11 +87,9 @@ fn render_table(
                 marker,
                 Span::raw(format!(" {}", format_relative_time(entry.published_at))),
             ]);
-            let headline = if entry.title.len() > 80 {
-                format!("{}...", &entry.title[..77])
-            } else {
-                entry.title.clone()
-            };
+            // Char-safe: news titles routinely contain em dashes / smart quotes;
+            // byte slicing would panic mid-character.
+            let headline = crate::text_util::truncate_ellipsis(&entry.title, 77);
 
             Row::new(vec![
                 Cell::from(time_line),

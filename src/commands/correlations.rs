@@ -1570,13 +1570,9 @@ fn severity_badge(severity: &str) -> &'static str {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else if max > 3 {
-        format!("{}...", &s[..max - 3])
-    } else {
-        s[..max].to_string()
-    }
+    // Char-safe (correlation pair labels can contain multi-byte chars like ↔):
+    // byte slicing would panic mid-character.
+    crate::text_util::truncate_ellipsis(s, max.saturating_sub(1))
 }
 
 #[cfg(test)]

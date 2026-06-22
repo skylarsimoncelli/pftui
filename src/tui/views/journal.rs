@@ -90,11 +90,9 @@ fn render_table(
                 "invalidated" => t.loss_red,
                 _ => t.text_primary,
             };
-            let content = if entry.content.len() > 60 {
-                format!("{}...", &entry.content[..57])
-            } else {
-                entry.content.clone()
-            };
+            // Char-safe truncation: byte slicing (`&content[..57]`) panics when
+            // the cut lands inside a multi-byte char (e.g. the em dash `—`).
+            let content = crate::text_util::truncate_ellipsis(&entry.content, 57);
 
             Row::new(vec![
                 Cell::from(Line::from(vec![marker, Span::raw(format!(" {}", date))])),

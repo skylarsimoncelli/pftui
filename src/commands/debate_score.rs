@@ -117,11 +117,7 @@ pub fn list(
                 _ => "⚖️",
             };
             let scored_short = d.score.scored_at.get(..16).unwrap_or(&d.score.scored_at);
-            let topic_display = if d.topic.len() > 35 {
-                format!("{}…", &d.topic[..34])
-            } else {
-                d.topic.clone()
-            };
+            let topic_display = crate::text_util::truncate_ellipsis(&d.topic, 34);
             println!(
                 "{:<4} {} {:<6} {:<10} {:<20} {}",
                 d.debate_id, icon, d.score.winner, d.score.margin, scored_short, topic_display,
@@ -197,11 +193,7 @@ pub fn unscored(
                 .as_deref()
                 .and_then(|s| s.get(..16))
                 .unwrap_or("—");
-            let topic_display = if d.topic.len() > 40 {
-                format!("{}…", &d.topic[..39])
-            } else {
-                d.topic.clone()
-            };
+            let topic_display = crate::text_util::truncate_ellipsis(&d.topic, 39);
             println!("{:<4} {:<20} {}", d.id, resolved_short, topic_display);
         }
         println!("\n{} unscored debate(s)", items.len());

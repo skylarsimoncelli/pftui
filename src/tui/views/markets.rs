@@ -815,11 +815,9 @@ fn build_prediction_sparkline<'a>(
 
 /// Truncate a prediction question to fit in the table.
 fn truncate_question(question: &str, max_len: usize) -> String {
-    if question.len() <= max_len {
-        question.to_string()
-    } else {
-        format!("{}...", &question[..max_len - 3])
-    }
+    // Char-safe (prediction-market questions can contain multi-byte chars):
+    // byte slicing `&question[..max_len-3]` would panic mid-character.
+    crate::text_util::truncate_ellipsis(question, max_len.saturating_sub(1))
 }
 
 #[cfg(test)]
