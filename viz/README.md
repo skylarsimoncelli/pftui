@@ -22,6 +22,7 @@ unavailable renders to an empty string, so a report never breaks.
 | `risk_viz.py` | Risk/regime charts: `cocrash` (co-crash matrix). CLI + `expand()` token handler. |
 | `portfolio_viz.py` | Risk-sizing charts: `drawdown` (drawdown-survival composite), `riskbars` (risk fingerprint). CLI + `expand()` token handler. |
 | `analog_viz.py` | Analog-engine chart: `dist` (forward-return distribution box/whisker). CLI + `expand()` token handler. |
+| `backtest_viz.py` | Strategy backtest chart: `tearsheet` (equity curve + underwater strip + stat line + Monte-Carlo terminal cone). CLI + `expand()` token handler. |
 | `render.py` | Aggregator. `expand_tokens(md)` runs every module's token expander. `gen-report.py` imports this once. |
 
 ## How it's wired
@@ -80,6 +81,22 @@ Curated by value, not volume (quality over quantity). Each maps to existing
   `k_effective`, `n_distinct_episodes`, up-rate). Answers "when the world looked
   like today, what did this asset do next, and how dispersed was it?" — nothing
   else in the report shows it. Token `<!--ANALOG_VIZ:dist:BTC-->`.
+- **Strategy backtest tearsheet** (`backtest_viz.py` `tearsheet`) — the equity
+  curve (log, stepped at trade exits) over an underwater/drawdown strip, with a
+  header stat line (CAGR / Sortino / max-DD / win-rate / #trades / profit-factor)
+  and a validation sub-line (PSR, per-trade expectancy, time-in-market). The
+  buy-and-hold benchmark is a faint dashed line; the Monte-Carlo *terminal*-return
+  spread (p5/p50/p95) is a faint blue cone fanning off the curve's end (the
+  luck-vs-skill spread), and the footer carries the MC drawdown/loss honesty.
+  Equity is reconstructed by compounding the CLI's per-trade `return_pct` (verified
+  to reproduce `total_return_pct` + `max_drawdown_pct` exactly) — no new math in
+  Python. Token `<!--BACKTEST_VIZ:tearsheet:BTC?entry=rsi(14)<30&exit=rsi(14)>70-->`
+  (payload = `ASSET[?entry=..&exit=..&stop_loss=..&take_profit=..&from=..&to=..]`,
+  `entry` required; `<`/`>` allowed verbatim or percent-encoded). *Data gap:* the
+  CLI exposes only MC **terminal + drawdown percentiles**, not per-bar MC path
+  bands, so the cone is anchored at the curve's end rather than tracking every bar
+  — a full per-bar percentile cone would need the Rust backtester to emit the path
+  envelope.
 
 **High value, next**
 - **Regime quad (Growth×Inflation)** — a 2×2 with the current regime dot + a short
@@ -97,5 +114,5 @@ Curated by value, not volume (quality over quantity). Each maps to existing
   boundary before this chart can be built.
 
 **Lower priority**
-- Equity curve / cumulative return, monthly-returns calendar heatmap, sentiment /
-  fear-greed gauge. Standard; build only if a report section needs them.
+- Monthly-returns calendar heatmap, sentiment / fear-greed gauge. Standard; build
+  only if a report section needs them.
