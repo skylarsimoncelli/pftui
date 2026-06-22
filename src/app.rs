@@ -2998,9 +2998,10 @@ impl App {
                 self.detail_open = false;
                 self.detail_popup_open = false;
             }
-            // Cycles page (C). In Positions, C keeps its pre-existing chart-mode
-            // toggle (handled below), so this opens Cycles from any other view.
-            KeyCode::Char('C') if !matches!(self.view_mode, ViewMode::Positions) => {
+            // Cycles page — `C` opens it from EVERY view (consistent flagship nav
+            // key). The Positions chart-render-mode toggle that used to own `C`
+            // moved to `m` (see below) so this is unconditional.
+            KeyCode::Char('C') => {
                 self.view_mode = ViewMode::Cycles;
                 self.detail_open = false;
                 self.detail_popup_open = false;
@@ -3169,7 +3170,9 @@ impl App {
                 }
             }
             // Chart render mode toggle with C (Positions view only)
-            KeyCode::Char('C') if matches!(self.view_mode, ViewMode::Positions) => {
+            // Chart render-mode toggle (line/candlestick) — moved from `C` to `m`
+            // so `C` can be the consistent Cycles key across all views.
+            KeyCode::Char('m') if matches!(self.view_mode, ViewMode::Positions) => {
                 self.chart_render_mode = self.chart_render_mode.toggle();
             }
             // Crosshair toggle with x (Positions view only)
@@ -3714,6 +3717,7 @@ impl App {
             push(if compact { "N" } else { "News" }, ViewMode::News);
             push(if compact { "J" } else { "Journal" }, ViewMode::Journal);
             push(if compact { "Rk" } else { "Risk" }, ViewMode::RiskDashboard);
+            push(if compact { "Cy" } else { "Cycles" }, ViewMode::Cycles);
         }
         let hitboxes = if self.header_tab_hitboxes.is_empty() {
             &fallback_hitboxes

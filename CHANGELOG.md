@@ -8,8 +8,10 @@
   - **Gold** — the full ~6.9-year cycle clock, same 2×2 treatment.
 - Discipline: no practitioner/author names in the UI (functional language only — "low-band", "price/200d-avg", "projected cycle bottom", "supply event"); friendly asset names only (never tickers); only Bitcoin/Gold/Silver are tracked (no invented clocks for other assets). All metrics computed inline from in-memory `price_history` (no blocking I/O).
 - Tests: pure builder/helper unit tests in `cycles.rs` (band glyph, friendly degree, stance call, plainify-strips-names, regime glyph, matrix row, real-report clarity/engine lines); `parse_view("cycles")` + every Cycles sub-tab renders without panic via the demo snapshot path (synthetic data only). `cargo test`/`clippy` green.
+- Keybinding: `C` opens Cycles from **every** view (consistent flagship nav key). The Positions chart render-mode toggle that previously owned `C` moved to **`m`**. The `[C]Cycles` header tab is clickable everywhere (added to the fallback hitbox path too).
+- QA fast-follows folded in: a regression test asserts the rendered Cycles UI is **free of practitioner names and tickers** at two sizes (guards the no-jargon constraint against future field additions), via a new `render_view_buffer` test helper.
 - Files: `src/tui/views/cycles.rs` (new), `src/tui/views/mod.rs`, `src/tui/ui.rs`, `src/tui/widgets/header.rs`, `src/tui/widgets/status_bar.rs`, `src/tui/views/help.rs`, `src/app.rs`, `src/commands/snapshot.rs`, `docs/KEYBINDINGS.md`.
-- Note: in Positions, `C` keeps its pre-existing chart-mode toggle; `C` opens Cycles from any other view (the `[C]` tab is reachable everywhere). Engine/Business/Macro sub-tabs are out of MVP scope (Phase 2+).
+- Note: Engine/Business/Macro sub-tabs are out of MVP scope (Phase 2+). Demo-only honesty caveat (real deep series unaffected): with <2y synthetic data no documented low is in-window, so the Gold tab shows `0/3 verified anchors` but still prints headline cycle figures — a fast-follow can caveat those.
 
 ### 2026-06-22 — feat(cli): agent-grade cycle commands — uniform JSON errors + `--asset` parity + help examples
 

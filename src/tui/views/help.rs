@@ -94,7 +94,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("J / K", "Cycle chart variant", kc, tc));
     lines.push(key_line("h / l", "Cycle chart timeframe (1W–5Y)", kc, tc));
     lines.push(key_line(
-        "C",
+        "m",
         "Toggle chart mode (Line / Candlestick)",
         kc,
         tc,
