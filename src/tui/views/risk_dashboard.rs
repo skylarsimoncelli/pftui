@@ -236,20 +236,25 @@ fn render_cycle(frame: &mut Frame, area: Rect, app: &App) {
                 if let Some(y) = c.years_since_cycle_low {
                     lines.push(Line::from(format!("Years since cycle low: {y:.1}")));
                 }
+                if let Some(ref low) = c.last_cycle_low_date {
+                    lines.push(Line::from(format!("Last cycle low: {low}")));
+                }
                 if let Some(half) = c.past_half_cycle {
                     lines.push(Line::from(format!(
                         "Past half-cycle: {}",
                         if half { "yes (2nd half)" } else { "no (1st half)" }
                     )));
                 }
+                // 1 decimal so this agrees with the rest of the clock (the prose
+                // verdict used to show +7.5% here while this row showed +7%).
                 if let Some(ext) = c.extension_pct_vs_200dma {
-                    lines.push(Line::from(format!("vs 200d-MA: {ext:+.0}%")));
+                    lines.push(Line::from(format!("vs 200d-MA: {ext:+.1}%")));
                 }
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    c.verdict.clone(),
-                    Style::default().fg(app.theme.text_accent),
-                )));
+                if let Some(ext40) = c.extension_pct_vs_40wma {
+                    lines.push(Line::from(format!("vs 40wk-MA: {ext40:+.1}%")));
+                }
+                // No prose verdict line: it just restated the structured rows
+                // above (and disagreed on rounding). The rows ARE the readout.
             }
             None => lines.push(Line::from("Gold cycle clock unavailable (insufficient history).")),
         },
@@ -499,11 +504,14 @@ fn vol_tail_lines(
     match e {
         Some(e) => {
             lines.push(Line::from(format!("EVT ξ:      {:+.2} ({})", e.xi, e.tail_class)));
+            // 2 decimals: daily VaR/ES are small (~0.9% for low-vol assets) and at
+            // 1dp VaR99/VaR99.9/ES99 collapse to the same number, hiding the
+            // ES99 >= VaR99.9 >= VaR99 ordering and looking broken.
             lines.push(Line::from(format!(
-                "VaR 99/99.9: {:.1}% / {:.1}%",
+                "VaR 99/99.9: {:.2}% / {:.2}%",
                 e.var_99_pct, e.var_999_pct
             )));
-            lines.push(Line::from(format!("ES99:       {:.1}%", e.es_99_pct)));
+            lines.push(Line::from(format!("ES99:       {:.2}%", e.es_99_pct)));
         }
         None => lines.push(Line::from("EVT: insufficient data")),
     }
@@ -604,6 +612,36 @@ mod tests {
         assert!(text(regime_lines(h.as_ref())).contains("Hurst"));
         let surv = text(survival_lines(s.as_ref()));
         assert!(surv.contains("Ruin"), "survival panel should show ruin: {surv}");
+    }
+
+    #[test]
+    fn tail_var_es_render_at_two_decimals() {
+        // Regression: daily VaR/ES are small; at 1dp 0.88/0.91/0.95 collapse to
+        // "0.9" and look broken. Assert 2dp so the distinct values are visible.
+        let e = Some(evt::EvtTailRisk {
+            n_obs: 400,
+            threshold_pct: 1.0,
+            n_exceedances: 20,
+            xi: -0.05,
+            sigma_pct: 0.5,
+            var_95_pct: 0.60,
+            var_99_pct: 0.88,
+            var_999_pct: 0.95,
+            es_99_pct: 0.91,
+            hist_var_99_pct: 0.87,
+            hist_es_99_pct: 0.90,
+            tail_class: "thin (bounded)".into(),
+            reliable: true,
+            note: String::new(),
+        });
+        let text = vol_tail_lines(Some(20.0), Some(-30.0), -5.0, &e)
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|sp| sp.content.to_string()))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(text.contains("0.88%"), "VaR99 should show 2dp: {text}");
+        assert!(text.contains("0.95%"), "VaR99.9 should show 2dp: {text}");
+        assert!(text.contains("0.91%"), "ES99 should show 2dp: {text}");
     }
 
     #[test]

@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-06-22 — fix(tui): Risk Dashboard precision + cycle-tab dedup (UX-panel findings #3/#4)
+
+- What: two readability fixes in the Risk Dashboard from the 6-lens UX review.
+  1. **Tail-risk precision** (Risk grid): VaR 99 / 99.9 / ES99 were printed at 1 decimal, so for low-vol assets they all collapsed to `0.9%` and looked broken. Now 2 decimals (e.g. `0.88% / 0.95%`, ES99 `0.91%`) so the distinct values — and the VaR99 ≤ VaR99.9 ordering — are visible.
+  2. **Cycle tab dedup + reconcile**: the gold Cycle sub-tab restated its structured rows as a prose verdict line, and the two **disagreed** (`vs 200d-MA: +7%` in the rows vs `+7.5%` in the prose — a `{:.0}` vs `{:.1}` rounding artifact, undermining trust). Dropped the duplicative prose verdict; folded its two unique facts into structured rows (`Last cycle low: <date>`, `vs 40wk-MA: +X.X%`); and set the 200d-MA row to 1 decimal so the readout is internally consistent.
+- Why: a risk panel that shows three identical-looking tail numbers, or a cycle panel that contradicts itself on the same figure, reads as broken and erodes trust in the analytics.
+- How: display-only changes in `render_cycle` / `vol_tail_lines`; `analytics/cycle_clock.rs` and the EVT math are untouched. Regression test asserts VaR/ES render at 2dp without collapsing.
+- Files: `src/tui/views/risk_dashboard.rs`.
+
 ### 2026-06-22 — fix(tui): honest + discoverable navigation surface (UX-panel findings)
 
 - What: three corrections to the TUI nav surface surfaced by a 6-lens UX review (run against synthetic `snapshot --demo` renders):
