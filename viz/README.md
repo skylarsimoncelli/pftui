@@ -49,6 +49,25 @@ python viz/cycle_viz.py map --asset BTC          # one SVG to stdout
 echo "$MD" | python viz/render.py                 # expand all tokens in markdown
 ```
 
+**Auto-insertion (the `/pftui-report` pipeline).** You don't have to place tokens
+by hand for the standard newsletter — `viz/report_charts.py` scans assembled
+report markdown for known section headings and inserts the matching public-safe
+token after each (`## Macro` → environment + real-rates; `## Bitcoin`/`## Gold` →
+cycle map + dial; `## News & Catalysts` → catalysts; `## Scenario Dashboard` →
+scenario dashboard). It's additive + idempotent. The `/pftui-report` skill runs
+it right before `gen-report.py` on each report's `.md`:
+
+```
+python viz/report_charts.py REPORT.md            # insert tokens in place
+python viz/report_charts.py REPORT.md --dry-run  # preview
+python viz/report_charts.py --self-test          # smoke test (no file)
+```
+
+For deep-dives / themed issues, hand-insert any token from the catalog below
+(`ANALOG_VIZ:dist`, `BACKTEST_VIZ:tearsheet`, `RISK_VIZ:cocrash`, …). Every chart
+here is market/macro analysis (**public-safe**); portfolio/calibration/conviction
+charts are the separate **Rust** `report chart` set and are never auto-inserted.
+
 Use the report venv python (`~/.local/share/pftui-report-venv/bin/python`) — it
 has `markdown` + `weasyprint`.
 
