@@ -296,6 +296,18 @@ def md_to_pdf(md_path, pdf_path, title, date, subtitle=None, author="Skylar Simo
         return f'![{alt}]({src})'
     md_content = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', resolve_img, md_content)
 
+    # Expand pftui visualization tokens (e.g. <!--CYCLE_VIZ:map:BTC-->) into inline
+    # SVG via the Python viz library (repo: viz/). Rust computes the data via the
+    # `--json` CLI; Python renders it. Any unavailable chart expands to nothing, so
+    # this never breaks a report. Best-effort: if the viz lib is missing, skip.
+    try:
+        _repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        sys.path.insert(0, os.path.join(_repo_root, 'viz'))
+        import render as _viz_render
+        md_content = _viz_render.expand_tokens(md_content)
+    except Exception as _e:
+        sys.stderr.write(f'[gen-report] cycle viz expansion skipped: {_e}\n')
+
     html_body = markdown.markdown(md_content, extensions=['tables', 'fenced_code'])
 
     sub_html = f'<div style="font-size: 10pt; color: #8b949e; margin-top: 0.2cm;">{subtitle}</div>' if subtitle else ''
