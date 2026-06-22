@@ -4967,6 +4967,7 @@ pub enum AnalyticsTechnicalsCommand {
 pub enum AnalyticsCyclesCommand {
     /// Cycle-position read (BTC halving/4yr cycle, gold ~6.9yr cycle (8yr is folklore)).
     /// Position only — never a price prediction.
+    #[command(after_help = "Examples:\n  pftui analytics cycles clock\n  pftui analytics cycles clock --asset BTC --json\n  pftui analytics cycles clock --asset GC=F\n\nDefault (no --asset) prints both BTC and gold clocks. --json emits a\n{btc, gold, note} envelope with snake_case fields.")]
     Clock {
         /// Restrict to one asset: BTC or GC=F (default: both)
         #[arg(long)]
@@ -4980,8 +4981,12 @@ pub enum AnalyticsCyclesCommand {
     /// clarity. Timing only — a window, never a date, never a price
     /// prediction. Doctrine: docs/CYCLE-THEORY.md
     Analyze {
-        /// Symbol to analyze (BTC falls back to the deep BTC-USD series)
-        symbol: String,
+        /// Symbol/asset to analyze, positional (BTC falls back to deep BTC-USD).
+        /// May also be given as --asset for consistency with hurst/avwap/regime-break.
+        symbol: Option<String>,
+        /// Asset (alias for the positional symbol; e.g. BTC, gold, GC=F)
+        #[arg(long)]
+        asset: Option<String>,
         /// Restrict output to one degree (e.g. daily, investor, 4-year,
         /// intermediate, major)
         #[arg(long)]
@@ -4991,9 +4996,13 @@ pub enum AnalyticsCyclesCommand {
     },
     /// Translation ledger for one degree: per completed cycle the length,
     /// top position, LT/MID/RT class, and failed flag
+    #[command(after_help = "Examples:\n  pftui analytics cycles ledger BTC --degree 4-year\n  pftui analytics cycles ledger --asset GC=F --degree major --json\n\nDegrees come from `cycles analyze` (daily, investor, 4-year, intermediate,\nmajor). Each row: cycle length, top position, LT/MID/RT translation class,\nfailed flag.")]
     Ledger {
-        /// Symbol to analyze
-        symbol: String,
+        /// Symbol/asset, positional. May also be given as --asset.
+        symbol: Option<String>,
+        /// Asset (alias for the positional symbol; e.g. BTC, gold, GC=F)
+        #[arg(long)]
+        asset: Option<String>,
         /// Degree name (e.g. daily, investor, 4-year, intermediate, major)
         #[arg(long)]
         degree: String,
@@ -7109,6 +7118,38 @@ mod tests {
             );
         }
         Ok(())
+    }
+
+    #[test]
+    fn cycles_analyze_accepts_positional_and_asset_flag() {
+        // Agent-ergonomics: the symbol may be given positionally (back-compat)
+        // OR via --asset (parity with hurst/avwap/regime-break).
+        let pos = Cli::parse_from(["pftui", "analytics", "cycles", "analyze", "BTC"]);
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Cycles { command },
+        }) = pos.command
+        else {
+            panic!("expected cycles");
+        };
+        let AnalyticsCyclesCommand::Analyze { symbol, asset, .. } = command else {
+            panic!("expected analyze");
+        };
+        assert_eq!(symbol.as_deref(), Some("BTC"));
+        assert_eq!(asset, None);
+
+        let flag =
+            Cli::parse_from(["pftui", "analytics", "cycles", "analyze", "--asset", "gold"]);
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Cycles { command },
+        }) = flag.command
+        else {
+            panic!("expected cycles");
+        };
+        let AnalyticsCyclesCommand::Analyze { symbol, asset, .. } = command else {
+            panic!("expected analyze");
+        };
+        assert_eq!(symbol, None);
+        assert_eq!(asset.as_deref(), Some("gold"));
     }
 
     #[test]
@@ -10885,6 +10926,7 @@ mod tests {
                     command:
                         AnalyticsCyclesCommand::Analyze {
                             symbol,
+                            asset: _,
                             degree,
                             json,
                         },
@@ -10894,7 +10936,7 @@ mod tests {
             panic!("expected analytics cycles analyze command");
         };
 
-        assert_eq!(symbol, "GC=F");
+        assert_eq!(symbol.as_deref(), Some("GC=F"));
         assert_eq!(degree.as_deref(), Some("major"));
         assert!(json);
     }
@@ -10910,6 +10952,7 @@ mod tests {
                     command:
                         AnalyticsCyclesCommand::Analyze {
                             symbol,
+                            asset: _,
                             degree,
                             json,
                         },
@@ -10919,7 +10962,7 @@ mod tests {
             panic!("expected analytics cycles analyze command");
         };
 
-        assert_eq!(symbol, "BTC");
+        assert_eq!(symbol.as_deref(), Some("BTC"));
         assert!(degree.is_none());
         assert!(!json);
     }
@@ -10944,6 +10987,7 @@ mod tests {
                     command:
                         AnalyticsCyclesCommand::Ledger {
                             symbol,
+                            asset: _,
                             degree,
                             json,
                         },
@@ -10953,7 +10997,7 @@ mod tests {
             panic!("expected analytics cycles ledger command");
         };
 
-        assert_eq!(symbol, "BTC");
+        assert_eq!(symbol.as_deref(), Some("BTC"));
         assert_eq!(degree, "investor");
         assert!(json);
     }
