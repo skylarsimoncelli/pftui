@@ -21,6 +21,7 @@ unavailable renders to an empty string, so a report never breaks.
 | `cycle_viz.py` | Cycle charts: `map`, `dial`, `ledger`. CLI + `expand()` token handler. |
 | `risk_viz.py` | Risk/regime charts: `cocrash` (co-crash matrix). CLI + `expand()` token handler. |
 | `portfolio_viz.py` | Risk-sizing charts: `drawdown` (drawdown-survival composite), `riskbars` (risk fingerprint). CLI + `expand()` token handler. |
+| `analog_viz.py` | Analog-engine chart: `dist` (forward-return distribution box/whisker). CLI + `expand()` token handler. |
 | `render.py` | Aggregator. `expand_tokens(md)` runs every module's token expander. `gen-report.py` imports this once. |
 
 ## How it's wired
@@ -71,6 +72,14 @@ Curated by value, not volume (quality over quantity). Each maps to existing
   `analytics risk-dashboard`) + **riskbars** (risk fingerprint — CDaR/Ulcer/maxDD/
   vol bars with EVT tail class; `analytics risk-dashboard`). Single-asset only,
   read price-history not holdings — no portfolio weights surfaced.
+- **Analog forward-return distribution** (`analog_viz.py` `dist`) — horizontal
+  box/whisker of the target asset's realized forward returns over `horizon_days`
+  after its closest historic macro-environment analogs (`analytics analog`):
+  p25–median–p75 IQR box, mean + CI diamond, every analog episode as a colored
+  tick, a hard zero line, and a header carrying the honesty stats (regime,
+  `k_effective`, `n_distinct_episodes`, up-rate). Answers "when the world looked
+  like today, what did this asset do next, and how dispersed was it?" — nothing
+  else in the report shows it. Token `<!--ANALOG_VIZ:dist:BTC-->`.
 
 **High value, next**
 - **Regime quad (Growth×Inflation)** — a 2×2 with the current regime dot + a short
