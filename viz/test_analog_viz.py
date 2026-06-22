@@ -60,8 +60,12 @@ def main():
     check("dist shows episodes", "25 episodes" in svg)
     check("dist shows median", "median +41.2%" in svg)
     check("dist shows mean", "mean +22.5%" in svg)
-    check("dist shows p25/p75", "p25 -19%" in svg and "p75 +49%" in svg)
+    # IQR endpoints + median share ONE precision (.1f) so the figures compare.
+    check("dist shows p25/p75 (1-decimal, matches median)",
+          "p25 -19.0%" in svg and "p75 +49.4%" in svg)
     check("dist draws a zero/flat marker", ">flat<" in svg and ">0%<" in svg)
+    # mean (+22.5%) << median (+41.2%) -> left-skew cue fires.
+    check("dist flags left-skew when mean << median", "left-skew" in svg)
     # 5 analogs have a forward value (one is None) -> 5 tick dots.
     check("dist draws one tick per forward analog", svg.count("<circle") == 5)
 

@@ -67,7 +67,12 @@ def forward_dist(report, ttl):
     if not fwds and (p25 is None or p75 is None):
         return ""
 
-    W, H = 720, 266
+    # Reserve a dedicated note row at the bottom (note_h) so the small-sample
+    # caveat sits on its own line below the axis and never collides with the
+    # +100% axis label or the tick caption.
+    note = report.get("note")
+    note_h = 18 if note else 0
+    W, H = 720, 266 + note_h
     ml, mr = 56, 24
     plot_w = W - ml - mr
     track_y = 132          # vertical centre of the box/whisker track
@@ -121,11 +126,17 @@ def forward_dist(report, ttl):
         honesty.append(f"{nfwd} w/ forward")
     if up is not None:
         honesty.append(f"up-rate {up:.0f}%")
+    # Skew cue folded into the honesty row: when the mean sits well below the
+    # median, a few deep losers drag the average — flag it so the reader doesn't
+    # over-trust the median alone.
+    if mean is not None and p50 is not None and (p50 - mean) > 5.0:
+        honesty.append("left-skew (mean < median)")
     s.append(f'<text x="{ml}" y="42" fill="{MUTED}" font-size="9" '
              f'font-family={MONO!r}>{esc("  ·  ".join(honesty))}</text>')
 
-    # X axis with gridline ticks (round-ish %).
-    axis_y = H - 30
+    # X axis with gridline ticks (round-ish %). Anchored above any reserved note
+    # row so the note never crowds the axis labels.
+    axis_y = H - 30 - note_h
     s.append(f'<line x1="{ml}" y1="{axis_y}" x2="{W-mr}" y2="{axis_y}" '
              f'stroke="{BORDER}" stroke-width="1"/>')
     rng = hi - lo
@@ -169,10 +180,12 @@ def forward_dist(report, ttl):
                  f'width="{max(1.0, bx1-bx0):.1f}" height="{box_h}" rx="5" '
                  f'fill="{med_col}" fill-opacity="0.14" stroke="{med_col}" '
                  f'stroke-opacity="0.7"/>')
+        # IQR endpoints + median share ONE precision (.1f) so the box reads as a
+        # set of comparable figures.
         s.append(f'<text x="{bx0:.1f}" y="{track_y-box_h/2-5}" text-anchor="middle" '
-                 f'fill="{MUTED}" font-size="8" font-family={MONO!r}>p25 {p25:+.0f}%</text>')
+                 f'fill="{MUTED}" font-size="8" font-family={MONO!r}>p25 {p25:+.1f}%</text>')
         s.append(f'<text x="{bx1:.1f}" y="{track_y-box_h/2-5}" text-anchor="middle" '
-                 f'fill="{MUTED}" font-size="8" font-family={MONO!r}>p75 {p75:+.0f}%</text>')
+                 f'fill="{MUTED}" font-size="8" font-family={MONO!r}>p75 {p75:+.1f}%</text>')
         # Median spine.
         if p50 is not None:
             mx = X(p50)
@@ -216,14 +229,14 @@ def forward_dist(report, ttl):
                  f'font-size="8" font-family={MONO!r}>'
                  f'{esc("each tick = one analog episode’s realized forward return")}</text>')
 
-    # Note (the young-series / small-sample caveat), trimmed, on its own line
-    # under the axis so it never collides with the tick caption or labels.
-    note = report.get("note")
+    # Note (the young-series / small-sample caveat) on its OWN reserved row below
+    # the axis (full-width, left-anchored) so it never collides with the +100%
+    # axis label or the tick caption.
     if note:
         nt = str(note)
-        if len(nt) > 116:
-            nt = nt[:113] + "..."
-        s.append(f'<text x="{W-mr}" y="{H-4}" text-anchor="end" '
+        if len(nt) > 132:
+            nt = nt[:129] + "..."
+        s.append(f'<text x="{ml}" y="{H-5}" '
                  f'fill="{AMBER}" font-size="7.5" font-family={MONO!r}>{esc(nt)}</text>')
 
     return "\n".join(s) + "\n</svg>"

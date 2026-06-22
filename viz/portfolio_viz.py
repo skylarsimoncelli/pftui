@@ -36,7 +36,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from theme import (  # noqa: E402
     AMBER, BG, BLUE, BORDER, CYAN, GREEN, MONO, MUTED, PANEL, RED, TEXT,
-    esc, pftui_json, svg_open, title,
+    RUIN_OK, RUIN_WATCH, caption, esc, good_bad, pftui_json, svg_open, title,
 )
 
 
@@ -86,6 +86,11 @@ def drawdown_survival(surv, ttl):
     s.append(f'<text x="{W - mr}" y="24" text-anchor="end" fill="{bc}" font-size="9" '
              f'font-family={MONO!r}>{esc(btxt)}</text>')
 
+    # Shared bar grid: BOTH panels start their bars at the same label-offset and
+    # use the same bar length, so the left depth-bars and right TUW-bars align to
+    # one column rhythm.
+    LABEL_W, BAR_LEN = 118, 170
+
     # ---- LEFT PANEL: depth bars (CDaR-95, expected max-DD i.i.d / AR(1)) ----
     lx, lw = ml, 300
     s.append(f'<text x="{lx}" y="48" fill="{MUTED}" font-size="9" font-family={MONO!r}>'
@@ -97,7 +102,7 @@ def drawdown_survival(surv, ttl):
     ]
     present = [b for b in bars if b[1] is not None]
     scale = max([b[1] for b in present] + [0.01]) if present else 1.0
-    barx, barw = lx + 118, lw - 118
+    barx, barw = lx + LABEL_W, BAR_LEN
     by = 60
     for label, val, col in bars:
         s.append(f'<text x="{lx}" y="{by + 11}" fill="{TEXT}" font-size="9" '
@@ -120,11 +125,15 @@ def drawdown_survival(surv, ttl):
     s.append(f'<text x="{lx}" y="{cy}" fill="{MUTED}" font-size="9" '
              f'font-family={MONO!r}>RECOVERY CLIFF &#8212; gain to erase CDaR-95</text>')
     if cdar is not None and recov is not None:
-        s.append(f'<text x="{lx}" y="{cy + 26}" fill="{TEXT}" font-size="11" '
-                 f'font-family={MONO!r}>a <tspan fill="{RED}" font-weight="600">{_pct(cdar)}</tspan> '
-                 f'drop needs <tspan fill="{AMBER}" font-weight="700">+{recov * 100:.0f}%</tspan> back</text>')
-        s.append(f'<text x="{lx}" y="{cy + 42}" fill="{MUTED}" font-size="8" '
-                 f'font-family={MONO!r}>D/(1&#8722;D) cliff &#183; asymmetry compounds with depth</text>')
+        # The recovery figure is the punchline — give it real visual hierarchy:
+        # a large AMBER number, with the framing text small beside/under it.
+        s.append(f'<text x="{lx}" y="{cy + 34}" fill="{AMBER}" font-size="26" '
+                 f'font-weight="700" font-family={MONO!r}>+{recov * 100:.0f}%</text>')
+        s.append(f'<text x="{lx + 118}" y="{cy + 26}" fill="{TEXT}" font-size="9.5" '
+                 f'font-family={MONO!r}>to erase a <tspan fill="{RED}" font-weight="600">'
+                 f'{_pct(cdar)}</tspan> drop</text>')
+        s.append(f'<text x="{lx + 118}" y="{cy + 40}" fill="{MUTED}" font-size="8" '
+                 f'font-family={MONO!r}>D/(1&#8722;D) cliff &#183; asymmetry compounds</text>')
     else:
         s.append(f'<text x="{lx}" y="{cy + 26}" fill="{MUTED}" font-size="10" '
                  f'font-family={MONO!r}>(no CDaR-95 recovery figure)</text>')
@@ -137,7 +146,7 @@ def drawdown_survival(surv, ttl):
              f'HOW LONG &#8212; time under water</text>')
     tw_iidw, tw_ar1w = 0.0, 0.0
     tscale = max([d for d in (tuw_iid, tuw_ar1) if d is not None] + [1.0])
-    rtbx, rtbw = rx + 70, 150
+    rtbx, rtbw = rx + LABEL_W, BAR_LEN   # same grid as the left depth-bars
     ty = 60
     for label, val, col in (("i.i.d.", tuw_iid, AMBER), ("AR(1)", tuw_ar1, BLUE)):
         s.append(f'<text x="{rx}" y="{ty + 11}" fill="{TEXT}" font-size="9" '
@@ -165,22 +174,23 @@ def drawdown_survival(surv, ttl):
     s.append(f'<rect x="{gbx}" y="{gby}" width="{gbw}" height="{gbh}" rx="3" '
              f'fill="{BORDER}" fill-opacity="0.35"/>')
     ruin = max(0.0, min(1.0, float(ruin)))
-    gcol = GREEN if ruin < 0.15 else (AMBER if ruin < 0.50 else RED)
+    # Shared semantic thresholds (RUIN_OK / RUIN_WATCH) -> GREEN/AMBER/RED, so the
+    # ruin gauge reads on the same 'green = good' scale as every other chart.
+    gcol = good_bad(ruin, RUIN_OK, RUIN_WATCH)
     s.append(f'<rect x="{gbx}" y="{gby}" width="{max(2.0, ruin * gbw):.1f}" height="{gbh}" rx="3" '
              f'fill="{gcol}" fill-opacity="0.85"/>')
     s.append(f'<text x="{gbx + gbw + 8}" y="{gby + 13}" fill="{gcol}" font-size="13" '
              f'font-weight="700" font-family={MONO!r}>{ruin * 100:.0f}%</text>')
-    verdict = ("survivable" if ruin < 0.15
-               else ("watch" if ruin < 0.50 else "HIGH ruin risk"))
+    verdict = ("survivable" if ruin < RUIN_OK
+               else ("watch" if ruin < RUIN_WATCH else "HIGH ruin risk"))
     if not reliable:
         verdict = "no positive drift &#8212; hold only with cycle conviction"
     s.append(f'<text x="{gbx}" y="{gby + gbh + 16}" fill="{gcol}" font-size="9" '
              f'font-weight="600" font-family={MONO!r}>{verdict}</text>')
 
-    # footer regime read
+    # footer regime read (shared caption slot)
     if regime:
-        s.append(f'<text x="{ml}" y="{H - 8}" fill="{MUTED}" font-size="8" '
-                 f'font-family={MONO!r}>{esc(regime)}</text>')
+        s.append(caption(ml, H - 8, regime))
     return "\n".join(s) + "\n</svg>"
 
 
@@ -216,7 +226,7 @@ def risk_fingerprint(dash, ttl):
 
     n = len(rows)
     W, ml, mr, rowh = 720, 16, 16, 26
-    H = 58 + n * rowh
+    H = 58 + n * rowh + 16   # +16 reserves the relative-scale note row
     scale = max(r[1] for r in rows) or 1.0
     barx, barw = ml + 96, W - 96 - 150 - ml - mr
     s = [svg_open(W, H), title(ml, 24, ttl)]
@@ -244,6 +254,13 @@ def risk_fingerprint(dash, ttl):
         s.append(f'<text x="{W - mr}" y="{y + 14}" text-anchor="end" fill="{MUTED}" '
                  f'font-size="8" font-family={MONO!r}>{esc(note)}</text>')
         y += rowh
+    # Faint 100% reference tick + a one-line note that the bar length is
+    # normalized to the worst metric (the printed %s are the absolute figures).
+    s.append(f'<line x1="{barx + barw:.1f}" y1="44" x2="{barx + barw:.1f}" '
+             f'y2="{y - rowh + 19}" stroke="{MUTED}" stroke-width="0.6" '
+             f'stroke-dasharray="2 3" stroke-opacity="0.5"/>')
+    s.append(caption(ml, H - 7,
+                     "bar length = relative to the worst metric (100%); printed % = absolute figure"))
     return "\n".join(s) + "\n</svg>"
 
 

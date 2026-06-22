@@ -60,6 +60,14 @@ def main():
     check("dial renders svg", d.startswith("<svg"))
     check("dial shows pct", ">91%<" in d)
     check("dial shows stance", "ACCUMULATE" in d)
+    # Shared semantic stance colors: accumulate=GREEN, distribute=RED, else AMBER.
+    check("dial accumulate stance is GREEN", f'fill="{cycle_viz.GREEN}"' in d
+          and "ACCUMULATE" in d)
+    dd = cycle_viz.cycle_dial("X", 20, "distribute", "sub", cycle_viz.AMBER)
+    check("dial distribute stance is RED", "DISTRIBUTE" in dd
+          and f'fill="{cycle_viz.RED}"' in dd)
+    # The 85% accumulation-zone edge tick is drawn (a GREEN line, not just arc).
+    check("dial draws 85%-zone edge tick", d.count("<line") >= 1)
 
     t = cycle_viz.translation_strip(REPORT, "4-year", "BTC — Translation Ledger")
     check("ledger renders svg", t.startswith("<svg"))

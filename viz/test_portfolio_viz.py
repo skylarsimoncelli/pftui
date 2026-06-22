@@ -79,6 +79,18 @@ def main():
     check("riskbars shows CDaR-95", "CDaR-95" in r)
     check("riskbars shows vol", "Vol/yr" in r)
     check("riskbars shows EVT tail class", "tail fat" in r)
+    check("riskbars notes relative-to-worst scale", "relative to the worst metric" in r)
+
+    # Recovery cliff is the punchline -> rendered as a large standalone figure.
+    check("drawdown emphasizes recovery cliff figure",
+          'font-size="26"' in d and "+135%" in d)
+
+    # Shared semantic helpers: green/amber/red by named thresholds + 0..1 ramp.
+    from theme import good_bad, ramp, GREEN, AMBER, RED, RUIN_OK, RUIN_WATCH
+    check("good_bad maps below ok -> GREEN", good_bad(0.05, RUIN_OK, RUIN_WATCH) == GREEN)
+    check("good_bad maps mid -> AMBER", good_bad(0.30, RUIN_OK, RUIN_WATCH) == AMBER)
+    check("good_bad maps high -> RED", good_bad(0.80, RUIN_OK, RUIN_WATCH) == RED)
+    check("ramp endpoints GREEN..RED", ramp(0.0) == GREEN and ramp(1.0) == RED)
 
     # Graceful degradation: empty/missing -> '' (never an exception).
     check("drawdown empty on None", portfolio_viz.drawdown_survival(None, "t") == "")

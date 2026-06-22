@@ -46,6 +46,30 @@ echo "$MD" | python viz/render.py                 # expand all tokens in markdow
 Use the report venv python (`~/.local/share/pftui-report-venv/bin/python`) — it
 has `markdown` + `weasyprint`.
 
+## Per-chart asset support
+
+Not every chart renders for every symbol. A chart whose engine has no data for
+the requested asset expands to an empty string (additive, never load-bearing) —
+so a token can *silently* yield nothing. This matrix says where that happens:
+
+| Chart | Token | Renders for | Notes |
+|---|---|---|---|
+| Cycle **map** | `CYCLE_VIZ:map:SYM` | any asset with a `cycles analyze` degree | needs `lows` + `next_low_window`; headline degree is 4-year for BTC, major for gold/silver, else longest-first |
+| Cycle **dial** | `CYCLE_VIZ:dial:SYM` | **BTC + gold-family ONLY** | dial is driven by `cycles clock`, which only emits a `btc` clock (BTC/BTC-USD) or a `gold` clock (GC=F/GOLD/SI=F/SILVER). **Tokenizing a dial for SPY/QQQ/etc. silently renders nothing.** |
+| Cycle **ledger** | `CYCLE_VIZ:ledger:SYM` | any asset with a `cycles analyze` degree | needs a `ledger` + `band` on the degree |
+| **cocrash** | `RISK_VIZ:cocrash:A,B,…` | any 2–6 assets with `tail-dependence` history | each pair needs Pearson and/or λ_L; missing pairs draw a `--` cell |
+| Analog **dist** | `ANALOG_VIZ:dist:SYM` | any asset with an `analytics analog` report | needs the summary quantiles OR ≥1 per-analog forward return |
+| **drawdown** | `PORTFOLIO_VIZ:drawdown:SYM` | any asset with a `survival` block | falls back to the `survival` block embedded in `risk-dashboard` |
+| **riskbars** | `PORTFOLIO_VIZ:riskbars:SYM` | any asset with a `risk-dashboard` | renders whatever risk primitives are present |
+| Backtest **tearsheet** | `BACKTEST_VIZ:tearsheet:SYM?entry=…` | any asset the backtester accepts | `entry` is REQUIRED; needs ≥1 completed trade beyond the anchor |
+
+**cocrash accepted alias set** (display relabeling in `risk_viz.NICE`; resolution
+to a real series is done by the Rust `tail-dependence` CLI, which accepts more):
+`GC=F`/`GOLD` → GOLD, `SI=F`/`SILVER` → SILVER, `BTC-USD`/`BTC` → BTC,
+`ETH-USD`/`ETH` → ETH, `^GSPC` → SPX, `SPY` → SPY, `QQQ` → QQQ. Any other ticker
+is shown verbatim (uppercased). The cycle/analog/backtest modules share the same
+`NICE` alias table.
+
 ## Adding a new chart family
 
 1. New module `foo_viz.py` (the `*_viz.py` suffix matters — `render.py`

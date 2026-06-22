@@ -22,8 +22,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from theme import (  # noqa: E402
-    AMBER, BG, BLUE, BORDER, CYAN, GREEN, MONO, MUTED, PANEL, RED, SANS, TEXT,
-    d2o, esc, pftui_json, svg_open, title,
+    AMBER, BG, BLUE, BORDER, CAPTION_SIZE, CYAN, GREEN, MONO, MUTED, PANEL, RED,
+    SANS, TEXT, caption, d2o, esc, pftui_json, svg_open, title, title_centered,
 )
 from datetime import date  # noqa: E402
 
@@ -56,7 +56,9 @@ def cycle_map(report, degree_name, ttl, asset_clock=None, avwap=None):
     deg = next((x for x in report["degrees"] if x["degree"] == degree_name), None)
     if deg is None or not deg.get("lows") or not deg.get("next_low_window"):
         return ""
-    W, H, ml, mr, mt, mb = 720, 220, 14, 14, 46, 40
+    # Wider right margin + a taller top lane so the NOW marker, window title,
+    # and window date labels each get their own space at the crowded right edge.
+    W, H, ml, mr, mt, mb = 720, 228, 14, 64, 58, 40
     plot_w, axis_y = W - ml - mr, H - mb
     lows, nlw = deg["lows"], deg["next_low_window"]
     last_low = deg.get("last_confirmed_low") or lows[-1]
@@ -77,14 +79,22 @@ def cycle_map(report, degree_name, ttl, asset_clock=None, avwap=None):
     s.append(f'<rect x="{bx0:.1f}" y="{mt}" width="{(bx1-bx0):.1f}" height="{axis_y-mt}" fill="{GREEN}" fill-opacity="0.10"/>')
     for bx in (bx0, bx1):
         s.append(f'<line x1="{bx:.1f}" y1="{mt}" x2="{bx:.1f}" y2="{axis_y}" stroke="{GREEN}" stroke-width="1" stroke-dasharray="3 2"/>')
-    s.append(f'<text x="{(bx0+bx1)/2:.1f}" y="{mt-6}" text-anchor="middle" fill="{GREEN}" font-size="9" font-family={MONO!r}>NEXT-LOW WINDOW P15-P85</text>')
-    s.append(f'<text x="{bx0:.1f}" y="{axis_y+24}" text-anchor="middle" fill="{GREEN}" font-size="8" font-family={MONO!r}>{esc(nlw["start_date"])}</text>')
-    s.append(f'<text x="{bx1:.1f}" y="{axis_y+34}" text-anchor="middle" fill="{GREEN}" font-size="8" font-family={MONO!r}>{esc(nlw["end_date"])}</text>')
+    # Window title in the UPPER lane (above the NOW label's lane). Clamp its
+    # centre so it can't run off the (now wider) right margin.
+    wtx = min(max((bx0 + bx1) / 2, ml + 80), W - mr)
+    s.append(f'<text x="{wtx:.1f}" y="{mt-22}" text-anchor="middle" fill="{GREEN}" font-size="9" font-family={MONO!r}>NEXT-LOW WINDOW P15-P85</text>')
+    # Window date labels: both on ONE baseline just under the axis; start-date
+    # left-anchored at its edge, end-date right-anchored at its edge so they
+    # fan outward and never stack/clip.
+    s.append(f'<text x="{bx0:.1f}" y="{axis_y+26}" text-anchor="middle" fill="{GREEN}" font-size="8" font-family={MONO!r}>{esc(nlw["start_date"])}</text>')
+    s.append(f'<text x="{min(bx1, W-mr+24):.1f}" y="{axis_y+26}" text-anchor="middle" fill="{GREEN}" font-size="8" font-family={MONO!r}>{esc(nlw["end_date"])}</text>')
     for lo in lows:
         x = X(lo["date"])
         s.append(f'<circle cx="{x:.1f}" cy="{axis_y}" r="4.5" fill="{BLUE}" stroke="{BG}" stroke-width="1"/>')
         s.append(f'<text x="{x:.1f}" y="{axis_y+15}" text-anchor="middle" fill="{MUTED}" font-size="7.5" font-family={MONO!r}>{esc(lo["date"][:7])}</text>')
-    s.append(f'<text x="{X(lows[0]["date"]):.1f}" y="{axis_y-8}" text-anchor="middle" fill="{BLUE}" font-size="8" font-family={MONO!r}>low</text>')
+    # Single shared "confirmed lows" key above the first dot (balanced: one key,
+    # not one tag on only the first of several identical dots).
+    s.append(f'<text x="{X(lows[0]["date"]):.1f}" y="{axis_y-8}" text-anchor="middle" fill="{BLUE}" font-size="8" font-family={MONO!r}>lows</text>')
     llx = X(last_low["date"])
     tx = ml + (today - t0) / span * plot_w
     cy = mt + 30
@@ -94,16 +104,22 @@ def cycle_map(report, degree_name, ttl, asset_clock=None, avwap=None):
         ctx = X(cur_top["date"])
         s.append(f'<line x1="{ctx:.1f}" y1="{cy-8}" x2="{ctx:.1f}" y2="{cy+18}" stroke="{AMBER}" stroke-width="1.2"/>')
         tp = cur_top.get("provisional_translation_pct")
-        s.append(f'<text x="{ctx:.1f}" y="{cy-12}" text-anchor="middle" fill="{AMBER}" font-size="8" font-family={MONO!r}>{esc("top RT %d%%" % round(tp*100) if tp is not None else "top")}</text>')
+        lab = "top RT %d%%" % round(tp * 100) if tp is not None else "top"
+        # If the top sits near the NOW marker, anchor the label to the LEFT of
+        # the amber line so it can't overprint NOW.
+        near_now = abs(ctx - tx) < 60
+        anc, lx = ("end", ctx - 5) if near_now else ("middle", ctx)
+        s.append(f'<text x="{lx:.1f}" y="{cy-12}" text-anchor="{anc}" fill="{AMBER}" font-size="8" font-family={MONO!r}>{esc(lab)}</text>')
     s.append(f'<line x1="{tx:.1f}" y1="{mt}" x2="{tx:.1f}" y2="{axis_y}" stroke="{RED}" stroke-width="1.4"/>')
     s.append(f'<polygon points="{tx-4:.1f},{mt} {tx+4:.1f},{mt} {tx:.1f},{mt+6}" fill="{RED}"/>')
-    s.append(f'<text x="{tx:.1f}" y="{mt-2}" text-anchor="middle" fill="{RED}" font-size="8" font-weight="600" font-family={MONO!r}>NOW</text>')
+    # NOW label in its OWN lane just below the window title.
+    s.append(f'<text x="{tx:.1f}" y="{mt-7}" text-anchor="middle" fill="{RED}" font-size="8" font-weight="600" font-family={MONO!r}>NOW</text>')
     bits = [f'age {deg.get("cycle_age_bars")}/{deg.get("expected_len_bars")} bars  band:{(deg.get("band_position") or "").replace("_","-")}']
     if avwap and avwap.get("pct_vs_avwap") is not None:
         bits.append(f'AVWAP {avwap["pct_vs_avwap"]}% ({"above" if avwap.get("above") else "below"})')
     if asset_clock and asset_clock.get("accumulation"):
         bits.append(f'stance:{asset_clock["accumulation"]["stance"].upper()}')
-    s.append(f'<text x="{ml}" y="{H-8}" fill="{MUTED}" font-size="8.5" font-family={MONO!r}>{esc("   |   ".join(bits))}</text>')
+    s.append(caption(ml, H-8, "   |   ".join(bits)))
     return "\n".join(s) + "\n</svg>"
 
 
@@ -123,16 +139,27 @@ def cycle_dial(label, pct, stance, sub, accent):
                 f'fill="none" stroke="{color}" stroke-width="{wdt}" stroke-linecap="round"/>')
 
     s = [svg_open(W, H)]
-    s.append(f'<text x="{cx}" y="22" text-anchor="middle" fill="{CYAN}" font-size="12" font-weight="600" font-family={MONO!r}>{esc(label)}</text>')
+    s.append(title_centered(cx, 22, label))
     s.append(arc(0, 100, BORDER, 9))
     s.append(arc(85, 100, GREEN, 9))
     s.append(arc(0, pct, accent, 9))
+    # Thin tick at the 85% accumulation-zone edge so the zone boundary (and where
+    # the pointer sits relative to it) is legible.
+    ea = math.pi * (1 - 85 / 100.0)
+    ex0, ey0 = cx + (r - 8) * math.cos(ea), cy - (r - 8) * math.sin(ea)
+    ex1, ey1 = cx + (r + 8) * math.cos(ea), cy - (r + 8) * math.sin(ea)
+    s.append(f'<line x1="{ex0:.1f}" y1="{ey0:.1f}" x2="{ex1:.1f}" y2="{ey1:.1f}" '
+             f'stroke="{GREEN}" stroke-width="1.4" stroke-opacity="0.8"/>')
     s.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="6" fill="{accent}" stroke="{BG}" stroke-width="2"/>')
     s.append(f'<text x="{cx}" y="{cy-14}" text-anchor="middle" fill="{TEXT}" font-size="30" font-weight="700" font-family={MONO!r}>{pct:.0f}%</text>')
     s.append(f'<text x="{cx}" y="{cy+4}" text-anchor="middle" fill="{MUTED}" font-size="8" font-family={MONO!r}>through cycle</text>')
-    sc = {"accumulate": GREEN}.get(str(stance).lower(), AMBER)
-    s.append(f'<text x="{cx}" y="{H-22}" text-anchor="middle" fill="{sc}" font-size="11" font-weight="600" font-family={MONO!r}>{esc(str(stance).upper())}</text>')
-    s.append(f'<text x="{cx}" y="{H-8}" text-anchor="middle" fill="{MUTED}" font-size="7.5" font-family={MONO!r}>{esc(sub)}</text>')
+    # Stance color via the shared semantic rule: accumulate=green, distribute=red,
+    # everything else (mid-cycle / neutral) amber.
+    st = str(stance).lower()
+    sc = GREEN if st == "accumulate" else (RED if st == "distribute" else AMBER)
+    s.append(f'<text x="{cx}" y="{H-24}" text-anchor="middle" fill="{sc}" font-size="11" font-weight="600" font-family={MONO!r}>{esc(str(stance).upper())}</text>')
+    # Sub-line raised ~6px and bumped to 8.5px so it isn't clipped at page height.
+    s.append(caption(cx, H-9, sub, anchor="middle"))
     return "\n".join(s) + "\n</svg>"
 
 
@@ -154,7 +181,11 @@ def translation_strip(report, degree_name, ttl):
     n, rowh, W, ml, barx = len(rows), 34, 720, 14, 150
     H, barw = 56 + n * rowh, W - 150 - 90
     s = [svg_open(W, H), title(ml, 22, ttl)]
-    s.append(f'<text x="{W-14}" y="22" text-anchor="end" fill="{MUTED}" font-size="8.5" font-family={MONO!r}>bar = translation; tick = cycle midpoint (RT&#8594;bull)</text>')
+    # Caption slot (entity-bearing arrow, so emitted directly with the shared
+    # CAPTION_SIZE/MUTED tokens rather than through caption()'s escaper).
+    s.append(f'<text x="{W-14}" y="22" text-anchor="end" fill="{MUTED}" '
+             f'font-size="{CAPTION_SIZE}" font-family={MONO!r}>'
+             f'bar = translation; tick = cycle midpoint (RT&#8594;bull)</text>')
     lo_b, hi_b = band["band_lo_bars"], band["band_hi_bars"]
     maxlen = max(hi_b * 1.1, max((r["len_bars"] or 0) for r in rows))
     y = 44
