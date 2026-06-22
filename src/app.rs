@@ -3235,6 +3235,17 @@ impl App {
             KeyCode::Char('r') if matches!(self.view_mode, ViewMode::Watchlist) => {
                 self.watchlist_inline_remove();
             }
+            // Manual refresh on the views whose status bar advertises [r]Refresh.
+            // Previously `r` was unbound here, so the hint was a false affordance;
+            // now it triggers the same force_refresh as the `:refresh` command.
+            KeyCode::Char('r')
+                if matches!(
+                    self.view_mode,
+                    ViewMode::Positions | ViewMode::Markets | ViewMode::Economy
+                ) =>
+            {
+                self.force_refresh();
+            }
             KeyCode::Char('x') if matches!(self.view_mode, ViewMode::Transactions) => {
                 self.delete_selected_transaction();
             }

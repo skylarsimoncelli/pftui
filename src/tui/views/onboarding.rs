@@ -12,7 +12,7 @@ const STEPS: [(&str, &str); 5] = [
     ),
     (
         "Core Views",
-        "1 Portfolio, 5 Watchlist, 3 Markets, 4 Economy, 8 Journal. Press ? for full keybindings.",
+        "1 Portfolio, 3 Markets, 4 Economy, 6 Analytics, 8 Journal, 9 Risk. Press ? for full keybindings.",
     ),
     (
         "Command Palette",
