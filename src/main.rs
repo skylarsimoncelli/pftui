@@ -15,6 +15,7 @@ mod price;
 mod regime;
 mod report;
 mod research;
+mod text_util;
 mod tui;
 mod web;
 

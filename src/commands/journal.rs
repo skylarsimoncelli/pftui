@@ -151,11 +151,8 @@ pub fn run_list(
         println!("{}", "─".repeat(110));
 
         for entry in entries {
-            let truncated_content = if entry.content.len() > 47 {
-                format!("{}...", &entry.content[..47])
-            } else {
-                entry.content.clone()
-            };
+            let truncated_content =
+                crate::text_util::truncate_ellipsis(&entry.content, 47);
 
             println!(
                 "{:<5} {:<20} {:<50} {:<12} {:<10} {:<10}",
@@ -206,11 +203,8 @@ pub fn run_search(
         println!("{}", "─".repeat(90));
 
         for entry in entries {
-            let truncated_content = if entry.content.len() > 47 {
-                format!("{}...", &entry.content[..47])
-            } else {
-                entry.content.clone()
-            };
+            let truncated_content =
+                crate::text_util::truncate_ellipsis(&entry.content, 47);
 
             println!(
                 "{:<5} {:<20} {:<50} {:<12}",

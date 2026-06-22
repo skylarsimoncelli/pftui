@@ -133,11 +133,8 @@ fn render_news_section(frame: &mut Frame, area: Rect, app: &App, symbol: &str) {
         let date_str = chrono::DateTime::from_timestamp(entry.published_at, 0)
             .map(|dt| dt.format("%m-%d").to_string())
             .unwrap_or_else(|| "??-??".to_string());
-        let title = if entry.title.len() > 30 {
-            format!("{}...", &entry.title[..27])
-        } else {
-            entry.title.clone()
-        };
+        // Char-safe: byte slicing a news title would panic on multi-byte chars.
+        let title = crate::text_util::truncate_ellipsis(&entry.title, 27);
         let line = format!("{} {}", date_str, title);
         lines.push(Line::from(line).style(Style::default().fg(app.theme.text_primary)));
     }

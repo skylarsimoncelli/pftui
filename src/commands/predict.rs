@@ -940,11 +940,7 @@ fn lesson_add_command(prediction_id: i64) -> String {
 }
 
 fn truncate_claim(value: &str, max_len: usize) -> String {
-    if value.len() <= max_len {
-        value.to_string()
-    } else {
-        format!("{}...", &value[..max_len])
-    }
+    crate::text_util::truncate_ellipsis(value, max_len)
 }
 
 /// Score multiple predictions at once. Each entry is `id:outcome` (e.g. `3:correct 7:wrong 12:partial`).
@@ -1531,11 +1527,7 @@ pub fn run_auto_score(
                 "  #{} [{}] {} -> {} (observed: {}, threshold: {}, series: {})",
                 r.id,
                 r.rule_type,
-                if r.claim.len() > 50 {
-                    format!("{}...", &r.claim[..47])
-                } else {
-                    r.claim.clone()
-                },
+                crate::text_util::truncate_ellipsis(&r.claim, 47),
                 r.outcome,
                 r.observed,
                 r.threshold,

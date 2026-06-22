@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-06-22 — fix: UTF-8 truncation panic — Journal view (and others) crashed on multi-byte content (P0)
+
+- What: pressing `8` to open the Journal could crash the whole TUI with `byte index N is not a char boundary` when an entry contained a multi-byte character (em dash `—`, smart quotes, accents) near the truncation point. Root cause: truncating strings by **byte** index (`&s[..57]`) panics when the cut lands inside a multi-byte UTF-8 char. The same footgun existed at ~12 sites across the TUI and CLI (news titles, position-detail news, status-bar errors, prediction-market questions, journal/conviction/predict/debate/correlations CLI output).
+- How: added `src/text_util.rs::truncate_ellipsis(s, max)` — char-safe truncation (counts/takes Unicode scalar values, appends `…`) that can never panic on a multi-byte boundary — and replaced every unsafe byte-slice truncation of free-form/user content with it. Date/timestamp slices (ASCII `[..10]`/`[..16]`) and `find`-derived boundary splits were left as-is (already safe).
+- Tests: `text_util` unit tests cover the exact crash class (em dash straddling the cut, char-vs-byte counting, every cut length 0..n+2 never panics). Seeded a demo Journal entry containing an em dash + smart quotes so `snapshot --demo --view journal` (and the `demo_snapshot_renders_every_view_without_panic` test) now exercises the real render path end-to-end. `cargo build --release` + `clippy` clean; full suite green.
+- Files: `src/text_util.rs` (new), `src/main.rs`, `src/tui/views/{journal,news,position_detail_pane,markets}.rs`, `src/tui/widgets/status_bar.rs`, `src/commands/{journal,conviction,predict,analytics,debate_score,correlations,guidance}.rs`, `src/commands/demo.rs`.
+
 ### 2026-06-22 — fix(tui): Risk Dashboard precision + cycle-tab dedup (UX-panel findings #3/#4)
 
 - What: two readability fixes in the Risk Dashboard from the 6-lens UX review.

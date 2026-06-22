@@ -465,7 +465,37 @@ pub(crate) fn build_demo_db(path: &std::path::Path) -> Result<()> {
     }
 
     seed_price_history(&conn)?;
+    seed_journal(&conn)?;
 
+    Ok(())
+}
+
+/// Seed a couple of demo journal entries. One deliberately contains multi-byte
+/// characters (em dash `—`, smart quotes) long enough to be truncated, so the
+/// snapshot render path exercises char-safe truncation (regression guard for the
+/// byte-slice panic that used to crash the Journal view on such content).
+fn seed_journal(conn: &rusqlite::Connection) -> Result<()> {
+    let entries: &[(&str, &str, &str, &str)] = &[
+        (
+            "2026-06-10T09:00:00",
+            "Trimmed a little equity beta — rotated the proceeds toward the \u{201c}barbell\u{201d} (cash + hard assets) while the cycle clock says we\u{2019}re mid-to-late. Keeping powder dry for the next cycle low.",
+            "decisions",
+            "active",
+        ),
+        (
+            "2026-06-12T14:30:00",
+            "Gold extension vs 200d-MA is stretching; watching for a pullback to add.",
+            "market",
+            "active",
+        ),
+    ];
+    for (ts, content, tag, status) in entries {
+        conn.execute(
+            "INSERT INTO journal (timestamp, content, tag, symbol, conviction, status, author)
+             VALUES (?1, ?2, ?3, NULL, NULL, ?4, 'demo')",
+            rusqlite::params![ts, content, tag, status],
+        )?;
+    }
     Ok(())
 }
 
