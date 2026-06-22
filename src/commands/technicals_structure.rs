@@ -73,7 +73,13 @@ fn payload(read: &StructureRead, series: &str) -> serde_json::Value {
     if let Some(obj) = value.as_object_mut() {
         obj.insert("series_used".to_string(), json!(series));
     }
-    value
+    // Standard envelope (additive — keeps existing `symbol`/`series_used`/`verdict`).
+    crate::commands::cli_json::envelope(
+        value,
+        "technicals structure",
+        &read.last_bar_date,
+        Some(series),
+    )
 }
 
 fn print_text(read: &StructureRead, series: &str) {

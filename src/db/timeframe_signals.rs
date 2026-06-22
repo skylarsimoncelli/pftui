@@ -10,11 +10,32 @@ use crate::db::query;
 pub struct TimeframeSignal {
     pub id: i64,
     pub signal_type: String,
+    /// Stored as a JSON-encoded array string (e.g. `["low","high"]`). Serialized
+    /// OUT as a real JSON array so `--json` consumers get `["low","high"]`, not
+    /// the escaped string `"[\"low\",\"high\"]"`. Falls back to the raw string
+    /// if it is not valid JSON.
+    #[serde(serialize_with = "serialize_json_array_field")]
     pub layers: String,
+    /// Same JSON-array-string treatment as `layers` — fixes the `assets` field
+    /// emitting an escaped string instead of an array.
+    #[serde(serialize_with = "serialize_json_array_field")]
     pub assets: String,
     pub description: String,
     pub severity: String,
     pub detected_at: String,
+}
+
+/// Serialize a DB column that holds a JSON-encoded array string as a real JSON
+/// value (array). If the stored text does not parse as JSON, emit it verbatim
+/// as a string so the field is never lost.
+fn serialize_json_array_field<S>(raw: &str, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(v) => v.serialize(serializer),
+        Err(_) => serializer.serialize_str(raw),
+    }
 }
 
 impl TimeframeSignal {
@@ -249,4 +270,40 @@ fn latest_signal_postgres(pool: &PgPool) -> Result<Option<TimeframeSignal>> {
         .await
     })?;
     Ok(row.map(to_signal))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> TimeframeSignal {
+        TimeframeSignal {
+            id: 7,
+            signal_type: "mtf-rsi".to_string(),
+            layers: r#"["low","high"]"#.to_string(),
+            assets: r#"["SPY","QQQ"]"#.to_string(),
+            description: "demo".to_string(),
+            severity: "info".to_string(),
+            detected_at: "2026-06-22".to_string(),
+        }
+    }
+
+    #[test]
+    fn assets_and_layers_serialize_as_real_arrays() {
+        let v = serde_json::to_value(sample()).unwrap();
+        // A2: assets must be a JSON array, not an escaped string.
+        assert!(v["assets"].is_array(), "assets should be an array, got {}", v["assets"]);
+        assert_eq!(v["assets"][0], serde_json::json!("SPY"));
+        assert_eq!(v["assets"][1], serde_json::json!("QQQ"));
+        assert!(v["layers"].is_array());
+        assert_eq!(v["layers"][0], serde_json::json!("low"));
+    }
+
+    #[test]
+    fn non_json_assets_fall_back_to_string() {
+        let mut s = sample();
+        s.assets = "not json".to_string();
+        let v = serde_json::to_value(s).unwrap();
+        assert_eq!(v["assets"], serde_json::json!("not json"));
+    }
 }

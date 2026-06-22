@@ -32,14 +32,24 @@ pub fn run(backend: &BackendConnection, asset: Option<&str>, json_output: bool) 
     }
 
     if json_output {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
+        // `as_of` from whichever clock we computed (BTC preferred, else gold).
+        let as_of = btc
+            .as_ref()
+            .map(|b| b.as_of.clone())
+            .or_else(|| gold.as_ref().map(|g| g.as_of.clone()))
+            .unwrap_or_default();
+        // No single resolved symbol — the default read covers BTC + gold.
+        let payload = crate::commands::cli_json::envelope(
+            json!({
                 "btc": btc,
                 "gold": gold,
                 "note": "cycle POSITION only — the checklist confirms, the calendar does not; no price predictions",
-            }))?
+            }),
+            "cycles clock",
+            &as_of,
+            None,
         );
+        println!("{}", serde_json::to_string_pretty(&payload)?);
         return Ok(());
     }
 

@@ -9,7 +9,32 @@
 //! still sees the stderr line.
 
 use anyhow::Result;
-use serde_json::json;
+use serde_json::{json, Value};
+
+/// Merge the standard top-level envelope keys into a `--json` payload object,
+/// ADDITIVELY: existing keys are NEVER overwritten, so a command that already
+/// emits `command`/`as_of`/`resolved_symbol` keeps its own values. This gives
+/// every cycles/backtest/TA `--json` shape a uniform spine (`command`, `as_of`,
+/// and — where an asset applies — `resolved_symbol`) without restructuring any
+/// existing payload field.
+///
+/// `resolved_symbol` is only inserted when `resolved` is `Some` (commands with
+/// no single asset, e.g. the BTC+gold cycle clock, pass `None`).
+pub fn envelope(
+    mut payload: Value,
+    command: &str,
+    as_of: &str,
+    resolved: Option<&str>,
+) -> Value {
+    if let Some(obj) = payload.as_object_mut() {
+        obj.entry("command").or_insert_with(|| json!(command));
+        obj.entry("as_of").or_insert_with(|| json!(as_of));
+        if let Some(sym) = resolved {
+            obj.entry("resolved_symbol").or_insert_with(|| json!(sym));
+        }
+    }
+    payload
+}
 
 /// Wrap a command's `Result` so that, under `--json`, a failure also emits a
 /// `{"error": {"command", "message"}}` envelope on STDOUT. No-op on success or
@@ -40,6 +65,37 @@ pub fn or_json_error(command: &str, json: bool, result: Result<()>) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn envelope_adds_missing_keys_only() {
+        let out = envelope(json!({"foo": 1}), "cmd", "2026-06-22", Some("BTC-USD"));
+        assert_eq!(out["command"], json!("cmd"));
+        assert_eq!(out["as_of"], json!("2026-06-22"));
+        assert_eq!(out["resolved_symbol"], json!("BTC-USD"));
+        assert_eq!(out["foo"], json!(1));
+    }
+
+    #[test]
+    fn envelope_never_overwrites_existing() {
+        let out = envelope(
+            json!({"command": "mine", "as_of": "1999-01-01", "resolved_symbol": "GC=F"}),
+            "other",
+            "2026-06-22",
+            Some("BTC-USD"),
+        );
+        // Existing values win — additive, non-destructive.
+        assert_eq!(out["command"], json!("mine"));
+        assert_eq!(out["as_of"], json!("1999-01-01"));
+        assert_eq!(out["resolved_symbol"], json!("GC=F"));
+    }
+
+    #[test]
+    fn envelope_omits_resolved_when_none() {
+        let out = envelope(json!({"btc": null, "gold": null}), "cmd", "2026-06-22", None);
+        assert_eq!(out["command"], json!("cmd"));
+        assert_eq!(out["as_of"], json!("2026-06-22"));
+        assert!(out.get("resolved_symbol").is_none());
+    }
 
     #[test]
     fn passes_ok_through_untouched() {
