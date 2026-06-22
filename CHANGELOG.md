@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-06-22 — feat(system): `snapshot --demo --view --subtab` — reproducible offline TUI renders on synthetic data
+
+- What: `pftui system snapshot` can now render **any** view (not just the home tab) to text via the off-screen `TestBackend`, and a new `--demo` flag renders a **self-contained synthetic portfolio** built in a temp dir — it never touches the real DB. `--view <slug>` (positions/transactions/markets/economy/watchlist/analytics/news/journal/risk-dashboard, plus aliases) selects the view; `--subtab <n>` selects a sub-tab (Risk Dashboard: 0=Risk grid, 1=Basket, 2=Cycle, 3=Diversification). Unknown `--view` errors with the valid list. This makes TUI layouts reproducibly reviewable for docs/UX/CI without an interactive terminal and without exposing real financial data.
+- Why: the new analytics/risk TUI views could only be eyeballed by launching the live TUI against the real portfolio. A safe, scriptable, synthetic render path unblocks visual review (incl. agent-assisted UX review) and future visual-regression snapshots.
+- How: the demo DB seeder (`commands/demo.rs`) now also seeds ~1.5y of **deterministic** synthetic OHLC (FNV-seeded LCG per symbol — byte-identical every run, no RNG dep) for 10 symbols, plus a latest-close `price_cache` row each, so charts/analytics/risk/cycle panels render with real-looking data. `snapshot::run` gained `view`/`subtab`/`demo` params + a `parse_view` slug mapper; `build_temp_demo_db` is shared by the interactive `demo` command and the snapshot renderer. No new tables (reuses cataloged `price_history`/`price_cache`); no schema change.
+- Tests: `parse_view` canonical+alias+unknown; every slug parses; synthetic series is deterministic + well-formed (ascending dates, positive closes, OHLC bounds, independent seeds); demo DB seeds exactly `symbols×540` history rows + one cache row per symbol; **every view + every Risk Dashboard sub-tab renders without panic** through the full offline demo path. `cargo build --release` + `clippy` clean; `cli_help_smoke` green.
+- Files: `src/commands/snapshot.rs`, `src/commands/demo.rs`, `src/cli.rs`, `src/main.rs`.
+
 ### 2026-06-22 — fix(tui): panic hook — a background-thread panic no longer corrupts the live TUI
 
 - What: a panic on a background worker thread (data refresh or price service) previously printed `thread panicked at …` straight to stderr **over** the ratatui alt-screen buffer while raw mode was still on, leaving the terminal corrupted — no nav bar, garbled status line (the bug an operator hit during a refresh). The TUI had **no panic hook** at all. Now `tui::run` installs one before entering raw mode.

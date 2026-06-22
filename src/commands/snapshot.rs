@@ -1,9 +1,9 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use ratatui::backend::TestBackend;
 use ratatui::style::{Color, Modifier};
 use ratatui::Terminal;
 
-use crate::app::App;
+use crate::app::{App, ViewMode};
 use crate::config::Config;
 use crate::db::default_db_path;
 use crate::tui::ui;
@@ -12,15 +12,82 @@ use crate::tui::ui;
 const DEFAULT_WIDTH: u16 = 120;
 const DEFAULT_HEIGHT: u16 = 40;
 
+/// Map a `--view` slug to a `ViewMode`. Accepts the canonical lower-case name
+/// plus a few intuitive aliases. Returns `None` for an unknown slug so the
+/// caller can list the valid options.
+pub(crate) fn parse_view(slug: &str) -> Option<ViewMode> {
+    match slug.trim().to_ascii_lowercase().as_str() {
+        "positions" | "portfolio" => Some(ViewMode::Positions),
+        "transactions" | "tx" => Some(ViewMode::Transactions),
+        "markets" => Some(ViewMode::Markets),
+        "economy" => Some(ViewMode::Economy),
+        "watchlist" => Some(ViewMode::Watchlist),
+        "analytics" => Some(ViewMode::Analytics),
+        "news" => Some(ViewMode::News),
+        "journal" => Some(ViewMode::Journal),
+        "risk" | "risk-dashboard" | "riskdashboard" => Some(ViewMode::RiskDashboard),
+        _ => None,
+    }
+}
+
+/// All accepted `--view` slugs (canonical names), for help/error listing.
+const VIEW_SLUGS: &[&str] = &[
+    "positions",
+    "transactions",
+    "markets",
+    "economy",
+    "watchlist",
+    "analytics",
+    "news",
+    "journal",
+    "risk-dashboard",
+];
+
 /// Render the TUI to stdout as ANSI-colored text.
-pub fn run(config: &Config, width: Option<u16>, height: Option<u16>, plain: bool) -> Result<()> {
+///
+/// `--demo` renders against a fresh, self-contained synthetic portfolio (built
+/// in a temp dir, never the real DB) so renders are reproducible and safe to
+/// share. `--view` selects which view to render; `--subtab` selects a sub-tab
+/// within views that have them (currently the Risk Dashboard).
+pub fn run(
+    config: &Config,
+    width: Option<u16>,
+    height: Option<u16>,
+    plain: bool,
+    view: Option<&str>,
+    subtab: Option<u8>,
+    demo: bool,
+) -> Result<()> {
     let w = width.unwrap_or(DEFAULT_WIDTH);
     let h = height.unwrap_or(DEFAULT_HEIGHT);
 
-    let db_path = default_db_path();
+    let db_path = if demo {
+        crate::commands::demo::build_temp_demo_db()?
+    } else {
+        default_db_path()
+    };
     let mut app = App::new(config, db_path);
     app.set_terminal_size(w, h);
     app.init_offline();
+
+    // Optional view selection.
+    if let Some(slug) = view {
+        match parse_view(slug) {
+            Some(vm) => app.view_mode = vm,
+            None => bail!(
+                "unknown --view '{slug}'. Valid views: {}",
+                VIEW_SLUGS.join(", ")
+            ),
+        }
+    }
+    if let Some(st) = subtab {
+        app.risk_subtab = st;
+    }
+    // For demo renders, focus a held asset with rich history so analytics/risk
+    // panels render with data rather than an empty-selection hint.
+    if demo && app.selected_symbol.is_none() {
+        app.selected_symbol = Some("BTC".to_string());
+    }
 
     let backend = TestBackend::new(w, h);
     let mut terminal = Terminal::new(backend)?;
@@ -177,6 +244,43 @@ fn color_to_ansi_bg(color: Color) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_view_canonical_and_aliases() {
+        assert_eq!(parse_view("positions"), Some(ViewMode::Positions));
+        assert_eq!(parse_view("portfolio"), Some(ViewMode::Positions));
+        assert_eq!(parse_view("RISK-DASHBOARD"), Some(ViewMode::RiskDashboard));
+        assert_eq!(parse_view("risk"), Some(ViewMode::RiskDashboard));
+        assert_eq!(parse_view(" analytics "), Some(ViewMode::Analytics));
+        assert_eq!(parse_view("nope"), None);
+    }
+
+    #[test]
+    fn every_view_slug_parses() {
+        for slug in VIEW_SLUGS {
+            assert!(parse_view(slug).is_some(), "slug {slug} should parse");
+        }
+    }
+
+    #[test]
+    fn demo_snapshot_renders_every_view_without_panic() {
+        // Exercises the full offline demo path (build synthetic DB, init, render)
+        // for every view + every Risk Dashboard sub-tab. Asserts it returns Ok
+        // and never panics. Uses ONLY synthetic data — never the real DB.
+        let config = Config::default();
+        for slug in VIEW_SLUGS {
+            let subtab = if *slug == "risk-dashboard" { Some(3) } else { None };
+            let r = run(&config, Some(140), Some(44), true, Some(slug), subtab, true);
+            assert!(r.is_ok(), "rendering view {slug} failed: {r:?}");
+        }
+    }
+
+    #[test]
+    fn unknown_view_is_an_error() {
+        let config = Config::default();
+        let r = run(&config, Some(120), Some(40), true, Some("bogus"), None, true);
+        assert!(r.is_err());
+    }
 
     #[test]
     fn color_to_ansi_fg_rgb() {

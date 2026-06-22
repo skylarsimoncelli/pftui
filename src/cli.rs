@@ -2191,6 +2191,7 @@ pub enum SystemCommand {
         command: MirrorCommand,
     },
     /// Render the TUI as ANSI text to stdout (no interactive terminal required)
+    #[command(after_help = "Renders any view to text via an off-screen buffer — useful for docs,\nvisual review, and CI snapshots without an interactive terminal.\n\n--demo renders a self-contained SYNTHETIC portfolio (built in a temp dir,\nnever your real DB) so output is reproducible and safe to share.\n\nViews: positions, transactions, markets, economy, watchlist, analytics,\nnews, journal, risk-dashboard. --subtab selects a sub-tab (Risk Dashboard:\n0=Risk grid, 1=Basket, 2=Cycle, 3=Diversification).\n\nExamples:\n  pftui system snapshot --demo --view risk-dashboard --subtab 3 --plain\n  pftui system snapshot --demo --view positions --width 160 --height 50\n  pftui system snapshot --view analytics   # your real data, local only")]
     Snapshot {
         /// Terminal width in columns (default: 120)
         #[arg(long, default_value = "120")]
@@ -2203,6 +2204,18 @@ pub enum SystemCommand {
         /// Strip colors and output plain text only
         #[arg(long)]
         plain: bool,
+
+        /// View to render (positions, analytics, risk-dashboard, …; default: home tab)
+        #[arg(long)]
+        view: Option<String>,
+
+        /// Sub-tab index within the view (Risk Dashboard: 0–3)
+        #[arg(long)]
+        subtab: Option<u8>,
+
+        /// Render a self-contained synthetic demo portfolio (never touches your real DB)
+        #[arg(long)]
+        demo: bool,
     },
     /// Run the portfolio setup wizard
     Setup,
