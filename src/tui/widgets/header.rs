@@ -572,6 +572,21 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         ViewMode::RiskDashboard,
     );
 
+    // Cycles tab — market-cycle clocks (BTC / gold / silver). Reachable by `C`.
+    let cycles_style = if matches!(app.view_mode, ViewMode::Cycles) {
+        Style::default().fg(t.text_primary).bold().underlined()
+    } else {
+        Style::default().fg(t.text_muted)
+    };
+    push_tab(
+        &mut spans,
+        app,
+        "[C]",
+        if compact { "Cy" } else { "Cycles" },
+        cycles_style,
+        ViewMode::Cycles,
+    );
+
     if !compact {
         spans.push(Span::styled("  │  ", Style::default().fg(t.text_muted)));
         spans.push(Span::styled("Path ", Style::default().fg(t.text_muted)));

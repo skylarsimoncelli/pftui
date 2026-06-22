@@ -74,6 +74,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("7", "News feed", kc, tc));
     lines.push(key_line("8", "Journal", kc, tc));
     lines.push(key_line("9", "Risk dashboard (focused asset)", kc, tc));
+    lines.push(key_line("C", "Cycles page (Matrix/Bitcoin/Gold; h/l)", kc, tc));
     lines.push(key_line(
         "Tab / ← / →",
         "Toggle Portfolio/Watchlist",
@@ -93,7 +94,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("J / K", "Cycle chart variant", kc, tc));
     lines.push(key_line("h / l", "Cycle chart timeframe (1W–5Y)", kc, tc));
     lines.push(key_line(
-        "C",
+        "m",
         "Toggle chart mode (Line / Candlestick)",
         kc,
         tc,

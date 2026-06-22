@@ -78,6 +78,9 @@ fn context_hints(app: &App) -> Vec<(&'static str, &'static str)> {
         // view-specific affordance is switching to a view where you pick the
         // asset. (No `r`/refresh handler exists for this view — don't promise one.)
         ViewMode::RiskDashboard => vec![("h/l", "Risk/Basket/Cycle/Divers."), ("1/3", "Positions/Markets"), (":", "Cmd")],
+        // Read-only cycle clocks; h/l switches Matrix/Bitcoin/Gold. No refresh
+        // handler exists for this view — don't promise one.
+        ViewMode::Cycles => vec![("h/l", "Matrix/Bitcoin/Gold"), (":", "Cmd")],
     };
 
     if app.portfolio_mode == PortfolioMode::Full {

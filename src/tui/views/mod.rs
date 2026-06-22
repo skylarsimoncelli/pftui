@@ -4,6 +4,7 @@ pub mod asset_detail_popup;
 pub mod command_palette;
 pub mod context_menu;
 pub mod correlation_grid;
+pub mod cycles;
 pub mod economy;
 pub mod help;
 pub mod journal;

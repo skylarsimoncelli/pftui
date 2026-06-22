@@ -26,6 +26,7 @@ pub(crate) fn parse_view(slug: &str) -> Option<ViewMode> {
         "news" => Some(ViewMode::News),
         "journal" => Some(ViewMode::Journal),
         "risk" | "risk-dashboard" | "riskdashboard" => Some(ViewMode::RiskDashboard),
+        "cycles" => Some(ViewMode::Cycles),
         _ => None,
     }
 }
@@ -41,6 +42,7 @@ const VIEW_SLUGS: &[&str] = &[
     "news",
     "journal",
     "risk-dashboard",
+    "cycles",
 ];
 
 /// Render the TUI to stdout as ANSI-colored text.
@@ -60,7 +62,25 @@ pub fn run(
 ) -> Result<()> {
     let w = width.unwrap_or(DEFAULT_WIDTH);
     let h = height.unwrap_or(DEFAULT_HEIGHT);
+    let buffer = render_view_buffer(config, w, h, view, subtab, demo)?;
+    if plain {
+        print_plain(&buffer, w, h);
+    } else {
+        print_ansi(&buffer, w, h);
+    }
+    Ok(())
+}
 
+/// Build an App (demo or real DB), select the view/sub-tab, and render it once to
+/// an off-screen buffer. Extracted so tests can assert on rendered CONTENT.
+pub(crate) fn render_view_buffer(
+    config: &Config,
+    w: u16,
+    h: u16,
+    view: Option<&str>,
+    subtab: Option<u8>,
+    demo: bool,
+) -> Result<ratatui::buffer::Buffer> {
     let db_path = if demo {
         crate::commands::demo::build_temp_demo_db()?
     } else {
@@ -70,7 +90,6 @@ pub fn run(
     app.set_terminal_size(w, h);
     app.init_offline();
 
-    // Optional view selection.
     if let Some(slug) = view {
         match parse_view(slug) {
             Some(vm) => app.view_mode = vm,
@@ -82,29 +101,31 @@ pub fn run(
     }
     if let Some(st) = subtab {
         app.risk_subtab = st;
+        app.cycles_subtab = st;
     }
-    // For demo renders, focus a held asset with rich history so analytics/risk
-    // panels render with data rather than an empty-selection hint.
     if demo && app.selected_symbol.is_none() {
         app.selected_symbol = Some("BTC".to_string());
     }
 
     let backend = TestBackend::new(w, h);
     let mut terminal = Terminal::new(backend)?;
-
     terminal.draw(|frame| {
         ui::render(frame, &mut app);
     })?;
+    Ok(terminal.backend().buffer().clone())
+}
 
-    let buffer = terminal.backend().buffer().clone();
-
-    if plain {
-        print_plain(&buffer, w, h);
-    } else {
-        print_ansi(&buffer, w, h);
+/// Flatten an off-screen buffer to plain text (one string per row, joined).
+#[cfg(test)]
+pub(crate) fn buffer_to_plain_string(buffer: &ratatui::buffer::Buffer, w: u16, h: u16) -> String {
+    let mut out = String::new();
+    for y in 0..h {
+        for x in 0..w {
+            out.push_str(buffer[(x, y)].symbol());
+        }
+        out.push('\n');
     }
-
-    Ok(())
+    out
 }
 
 /// Print buffer as plain text (no colors).
@@ -251,6 +272,8 @@ mod tests {
         assert_eq!(parse_view("portfolio"), Some(ViewMode::Positions));
         assert_eq!(parse_view("RISK-DASHBOARD"), Some(ViewMode::RiskDashboard));
         assert_eq!(parse_view("risk"), Some(ViewMode::RiskDashboard));
+        assert_eq!(parse_view("cycles"), Some(ViewMode::Cycles));
+        assert_eq!(parse_view("CYCLES"), Some(ViewMode::Cycles));
         assert_eq!(parse_view(" analytics "), Some(ViewMode::Analytics));
         assert_eq!(parse_view("nope"), None);
     }
@@ -272,6 +295,42 @@ mod tests {
             let subtab = if *slug == "risk-dashboard" { Some(3) } else { None };
             let r = run(&config, Some(140), Some(44), true, Some(slug), subtab, true);
             assert!(r.is_ok(), "rendering view {slug} failed: {r:?}");
+        }
+    }
+
+    #[test]
+    fn demo_snapshot_renders_every_cycles_subtab_without_panic() {
+        // Each Cycles sub-tab (Matrix / Bitcoin / Gold) must render without panic
+        // over the synthetic demo portfolio. Synthetic data only — never the real DB.
+        let config = Config::default();
+        for st in 0..crate::tui::views::cycles::SUBTAB_COUNT {
+            let r = run(&config, Some(160), Some(48), true, Some("cycles"), Some(st), true);
+            assert!(r.is_ok(), "rendering cycles sub-tab {st} failed: {r:?}");
+        }
+    }
+
+    #[test]
+    fn cycles_render_is_free_of_jargon_and_tickers() {
+        // Guards the operator's #1 constraint: NO practitioner/author names and
+        // NO raw tickers may appear in the rendered Cycles UI. Renders every
+        // sub-tab at two sizes and scans the buffer text. Synthetic data only.
+        let config = Config::default();
+        let forbidden = [
+            "Loukas", "Olson", "Olsen", "Bressert", "Mayer", "Hurst", "Wyckoff",
+            "Gann", "Elliott", "halving", "GC=F", "SI=F", "BTC-USD",
+        ];
+        for (w, h) in [(160u16, 48u16), (100, 40)] {
+            for st in 0..crate::tui::views::cycles::SUBTAB_COUNT {
+                let buf = render_view_buffer(&config, w, h, Some("cycles"), Some(st), true)
+                    .expect("cycles render");
+                let text = buffer_to_plain_string(&buf, w, h).to_lowercase();
+                for term in forbidden {
+                    assert!(
+                        !text.contains(&term.to_lowercase()),
+                        "forbidden term '{term}' leaked into Cycles sub-tab {st} at {w}x{h}"
+                    );
+                }
+            }
         }
     }
 
