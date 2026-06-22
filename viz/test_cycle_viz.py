@@ -55,6 +55,15 @@ def main():
     check("map renders svg", m.startswith("<svg") and m.rstrip().endswith("</svg>"))
     check("map shows next-low window", "NEXT-LOW WINDOW" in m)
     check("map marks NOW", ">NOW<" in m)
+    # HEADLINE COMPRESSION: with 3 lows and the default max_lows=2 the oldest low
+    # (2015) is dropped from the time axis and surfaced as a "+1 earlier" tag, so
+    # the live cycle gets most of the chart width.
+    check("map compresses to recent lows (drops 2015)", "2015-01" not in m)
+    check("map surfaces dropped-lows tag", "+1 earlier" in m)
+    # max_lows=None keeps every low (the full-history fallback).
+    mfull = cycle_viz.cycle_map(REPORT, "4-year", "t", max_lows=None)
+    check("map full-history keeps oldest low",
+          "2015-01" in mfull and "earlier" not in mfull)
 
     d = cycle_viz.cycle_dial("BTC 4-YEAR", 91, "accumulate", "wk 187 of 187-229 band", cycle_viz.CYAN)
     check("dial renders svg", d.startswith("<svg"))
@@ -68,6 +77,11 @@ def main():
           and f'fill="{cycle_viz.RED}"' in dd)
     # The 85% accumulation-zone edge tick is drawn (a GREEN line, not just arc).
     check("dial draws 85%-zone edge tick", d.count("<line") >= 1)
+    # CONSISTENCY: the gold dial uses the SAME shared cycle_dial, so it carries
+    # the identical 85% accumulation-zone edge tick the BTC dial has.
+    g = cycle_viz.cycle_dial("GOLD ~6.9-YR", 64, "mid-cycle", "yr 4 of 6.9", cycle_viz.AMBER)
+    check("gold dial draws 85%-zone edge tick", g.count("<line") >= 1
+          and f'stroke="{cycle_viz.GREEN}"' in g)
 
     t = cycle_viz.translation_strip(REPORT, "4-year", "BTC — Translation Ledger")
     check("ledger renders svg", t.startswith("<svg"))
