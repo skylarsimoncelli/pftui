@@ -475,6 +475,23 @@ pub struct MonteCarloPaths {
     pub drawdown_p99_pct: f64,
     /// Share of paths ending below the starting equity.
     pub prob_loss_pct: f64,
+    /// Per-step equity percentile bands across all resampled paths — the cone
+    /// the single historical curve sits inside. Step 0 is the common start
+    /// (equity 1.0); step k is the cross-path equity distribution after k
+    /// compounded trades. Each band tracks {p5 ≤ p50 ≤ p95} growth multiples,
+    /// monotone within a step. Length is `n_trades + 1`. Deterministic via the
+    /// same seed as the terminal/drawdown distribution.
+    pub path_envelope: Vec<MonteCarloEnvelopePoint>,
+}
+
+/// One step of the Monte-Carlo equity cone: cross-path equity percentiles after
+/// `step` compounded trades. Equities are growth multiples (1.0 = breakeven).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MonteCarloEnvelopePoint {
+    pub step: usize,
+    pub p5: f64,
+    pub p50: f64,
+    pub p95: f64,
 }
 
 /// Monte-Carlo trade-path resampling. The realized equity curve is ONE ordering
@@ -495,13 +512,19 @@ pub fn monte_carlo_trade_paths(returns: &[f64], n_paths: usize, seed: u64) -> Op
     let mut rng = StdRng::seed_from_u64(seed);
     let mut terminals = Vec::with_capacity(n_paths);
     let mut drawdowns = Vec::with_capacity(n_paths);
+    // step_equities[step] = the cross-path equity multiples after `step`
+    // compounded trades. step 0 is the common start (all paths at 1.0); there
+    // are n+1 steps. Used to build the per-step percentile cone.
+    let mut step_equities: Vec<Vec<f64>> = vec![Vec::with_capacity(n_paths); n + 1];
     for _ in 0..n_paths {
         let mut equity = 1.0f64;
         let mut peak = 1.0f64;
         let mut max_dd = 0.0f64;
-        for _ in 0..n {
+        step_equities[0].push(equity);
+        for col in step_equities.iter_mut().take(n + 1).skip(1) {
             let r = returns[rng.gen_range(0..n)];
             equity *= 1.0 + r;
+            col.push(equity);
             if equity > peak {
                 peak = equity;
             }
@@ -515,6 +538,20 @@ pub fn monte_carlo_trade_paths(returns: &[f64], n_paths: usize, seed: u64) -> Op
         terminals.push((equity - 1.0) * 100.0);
         drawdowns.push(max_dd);
     }
+    // Per-step equity percentile cone (p5 ≤ p50 ≤ p95 within each step).
+    let path_envelope: Vec<MonteCarloEnvelopePoint> = step_equities
+        .iter_mut()
+        .enumerate()
+        .map(|(step, col)| {
+            col.sort_by(|a, b| a.total_cmp(b));
+            MonteCarloEnvelopePoint {
+                step,
+                p5: percentile(col, 0.05),
+                p50: percentile(col, 0.50),
+                p95: percentile(col, 0.95),
+            }
+        })
+        .collect();
     // total_cmp is a total order (no NaN-panic) — a stray non-finite value
     // sorts to an end rather than taking down the whole backtest.
     terminals.sort_by(|a, b| a.total_cmp(b));
@@ -532,6 +569,7 @@ pub fn monte_carlo_trade_paths(returns: &[f64], n_paths: usize, seed: u64) -> Op
         drawdown_p95_pct: percentile(&drawdowns, 0.05), // 95th-percentile severity
         drawdown_p99_pct: percentile(&drawdowns, 0.01), // 99th-percentile severity
         prob_loss_pct,
+        path_envelope,
     })
 }
 
@@ -591,6 +629,39 @@ mod tests {
         assert!(a.drawdown_p95_pct <= a.drawdown_median_pct);
         assert!(a.drawdown_median_pct <= 0.0);
         assert!((0.0..=100.0).contains(&a.prob_loss_pct));
+    }
+
+    #[test]
+    fn monte_carlo_path_envelope_is_monotone_and_anchored() {
+        let rets: Vec<f64> = (0..30)
+            .map(|i| if i % 5 == 0 { -0.08 } else { 0.04 })
+            .collect();
+        let a = monte_carlo_trade_paths(&rets, 3000, 999).unwrap();
+        let b = monte_carlo_trade_paths(&rets, 3000, 999).unwrap();
+        // Determinism on the envelope too.
+        assert_eq!(a.path_envelope.len(), b.path_envelope.len());
+        // Length is n_trades + 1.
+        assert_eq!(a.path_envelope.len(), rets.len() + 1);
+        // Step 0 anchors every percentile at the common start (1.0).
+        let first = &a.path_envelope[0];
+        assert_eq!(first.step, 0);
+        assert!((first.p5 - 1.0).abs() < 1e-12);
+        assert!((first.p50 - 1.0).abs() < 1e-12);
+        assert!((first.p95 - 1.0).abs() < 1e-12);
+        // Within each step: p5 ≤ p50 ≤ p95.
+        for (pa, pb) in a.path_envelope.iter().zip(b.path_envelope.iter()) {
+            assert_eq!(pa.step, pb.step);
+            assert_eq!(pa.p50, pb.p50, "envelope must be deterministic");
+            assert!(pa.p5 <= pa.p50, "p5 ≤ p50 at step {}", pa.step);
+            assert!(pa.p50 <= pa.p95, "p50 ≤ p95 at step {}", pa.step);
+            assert!(pa.p5 > 0.0, "equity multiples stay positive");
+        }
+        // The terminal-step median equity is consistent with the terminal-return
+        // median percentile (both derive from the same resampled paths).
+        let last = a.path_envelope.last().unwrap();
+        assert_eq!(last.step, rets.len());
+        let term_median_mult = 1.0 + a.terminal_return_p50_pct / 100.0;
+        assert!((last.p50 - term_median_mult).abs() < 1e-9);
     }
 
     #[test]

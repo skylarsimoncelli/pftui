@@ -214,6 +214,21 @@ pub struct CostModel {
     pub fill_delay_bars: usize,
 }
 
+/// One point on the strategy equity curve, anchored on a trade-exit date.
+/// `equity` is the compounded growth multiple (starts at 1.0 before any trade);
+/// `drawdown_pct` is the running peak-to-trough drawdown at that point (≤ 0).
+/// The trades engine marks-to-market at trade exits (not per calendar bar), so
+/// the series is per-trade-exit. The first point anchors the curve at 1.0 on
+/// the first trade's entry date; subsequent points sit on each exit date. The
+/// last point's `equity` reproduces `total_return_pct` and the minimum
+/// `drawdown_pct` reproduces `max_drawdown_pct` exactly.
+#[derive(Debug, Clone, Serialize)]
+pub struct EquityPoint {
+    pub date: String,
+    pub equity: f64,
+    pub drawdown_pct: f64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Trade {
     pub entry_date: String,
@@ -289,6 +304,12 @@ pub struct TradeReport {
     /// Fractional-Kelly sizing guidance from the realized per-trade edge,
     /// uncertainty-haircut + CDaR-capped. `None` below 20 trades.
     pub kelly: Option<crate::analytics::kelly::KellySizing>,
+    /// Native strategy equity curve, anchored on trade-exit dates (the engine
+    /// marks-to-market at exits, not per calendar bar). The first point anchors
+    /// at equity 1.0 on the first trade's entry date; the last point reproduces
+    /// `total_return_pct` (equity = 1 + total/100) and the minimum `drawdown_pct`
+    /// reproduces `max_drawdown_pct` exactly. Empty when there are no trades.
+    pub equity_curve: Vec<EquityPoint>,
     pub trades: Vec<Trade>,
 }
 
@@ -531,11 +552,23 @@ pub fn trade_report(
     let worst = sorted.first().copied();
 
     // Compounded equity across closed trades + drawdown of that curve.
+    // `equity_curve` is the bare value series (used by the drawdown-metrics
+    // estimator); `dated_curve` is the same series anchored on trade dates for
+    // the JSON `equity_curve` field consumed by the tearsheet.
     let mut equity = 1.0f64;
     let mut peak = 1.0f64;
     let mut max_dd = 0.0f64;
     let mut equity_curve: Vec<f64> = Vec::with_capacity(trades.len() + 1);
+    let mut dated_curve: Vec<EquityPoint> = Vec::with_capacity(trades.len() + 1);
     equity_curve.push(equity);
+    // Anchor the curve at 1.0 on the first trade's entry date (before any P&L).
+    if let Some(first) = trades.first() {
+        dated_curve.push(EquityPoint {
+            date: first.entry_date.clone(),
+            equity,
+            drawdown_pct: 0.0,
+        });
+    }
     for t in &trades {
         equity *= 1.0 + t.return_pct / 100.0;
         equity_curve.push(equity);
@@ -546,6 +579,11 @@ pub fn trade_report(
         if dd < max_dd {
             max_dd = dd;
         }
+        dated_curve.push(EquityPoint {
+            date: t.exit_date.clone(),
+            equity,
+            drawdown_pct: dd,
+        });
     }
     let total_return_pct = (equity - 1.0) * 100.0;
 
@@ -675,6 +713,7 @@ pub fn trade_report(
         sizing: None, // set by run_backtest when --vol-target is requested
         drawdown_metrics,
         kelly,
+        equity_curve: dated_curve,
         trades,
     }
 }
@@ -1026,6 +1065,89 @@ mod tests {
         assert_eq!(trades[0].entry_date, "2020-01-03");
         assert_eq!(trades[0].entry_price, 110.0);
         assert!((trades[0].return_pct - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn equity_curve_reproduces_totals_and_drawdown() {
+        // Three back-to-back trades via a hold-1d exit on a small zig-zag so the
+        // curve has a real interior drawdown to reproduce.
+        let d = vec![
+            "2020-01-01".to_string(),
+            "2020-01-02".to_string(),
+            "2020-01-03".to_string(),
+            "2020-01-04".to_string(),
+            "2020-01-05".to_string(),
+            "2020-01-06".to_string(),
+        ];
+        // entry fires every other bar; closes: +20%, then −10%, then +20%.
+        let closes = vec![
+            Some(100.0),
+            Some(120.0),
+            Some(108.0),
+            Some(108.0),
+            Some(129.6),
+            Some(129.6),
+        ];
+        let entry = vec![
+            Some(false),
+            Some(true),
+            Some(false),
+            Some(true),
+            Some(false),
+            Some(true),
+        ];
+        let exit = ExitConfig::new(ExitKind::HoldDays(1));
+        let hl = vec![None; closes.len()];
+        let (trades, open) =
+            simulate_trades(&d, &closes, &hl, &hl, &entry, &exit, &CostModel::default());
+        let report = trade_report(&d, &closes, trades, open);
+        assert!(report.n_trades >= 2, "need multiple trades, got {}", report.n_trades);
+        // The dated curve has one anchor point + one point per trade.
+        assert_eq!(report.equity_curve.len(), report.n_trades + 1);
+        // First point anchors at 1.0.
+        assert!((report.equity_curve[0].equity - 1.0).abs() < 1e-12);
+        assert!((report.equity_curve[0].drawdown_pct).abs() < 1e-12);
+        // Last point reproduces total_return_pct exactly.
+        let last = report.equity_curve.last().unwrap();
+        assert!(
+            (last.equity - (1.0 + report.total_return_pct / 100.0)).abs() < 1e-9,
+            "last equity {} vs total {}",
+            last.equity,
+            report.total_return_pct
+        );
+        // The minimum drawdown on the curve reproduces max_drawdown_pct exactly.
+        let min_dd = report
+            .equity_curve
+            .iter()
+            .map(|p| p.drawdown_pct)
+            .fold(0.0f64, f64::min);
+        assert!(
+            (min_dd - report.max_drawdown_pct).abs() < 1e-9,
+            "curve min-dd {} vs max_drawdown {}",
+            min_dd,
+            report.max_drawdown_pct
+        );
+        // Drawdown is monotone non-positive and dates are ascending.
+        for p in &report.equity_curve {
+            assert!(p.drawdown_pct <= 1e-12);
+        }
+        for w in report.equity_curve.windows(2) {
+            assert!(w[0].date <= w[1].date, "dates must be ascending");
+        }
+    }
+
+    #[test]
+    fn empty_equity_curve_when_no_trades() {
+        let d = dates(3);
+        let closes = vec![Some(100.0), Some(101.0), Some(102.0)];
+        let entry = vec![Some(false), Some(false), Some(false)];
+        let exit = ExitConfig::new(ExitKind::HoldDays(1));
+        let hl = vec![None; closes.len()];
+        let (trades, open) =
+            simulate_trades(&d, &closes, &hl, &hl, &entry, &exit, &CostModel::default());
+        let report = trade_report(&d, &closes, trades, open);
+        assert_eq!(report.n_trades, 0);
+        assert!(report.equity_curve.is_empty());
     }
 
     #[test]
