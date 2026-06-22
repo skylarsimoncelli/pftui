@@ -33,17 +33,21 @@ PAIRS = {
 def main():
     print("risk_viz smoke tests:")
 
-    # color ramp endpoints + midpoint are sane hex strings
-    g, a, r = risk_viz._ramp(0.0), risk_viz._ramp(0.5), risk_viz._ramp(1.0)
-    check("ramp returns hex", all(c.startswith("#") and len(c) == 7 for c in (g, a, r)))
-    check("ramp endpoints differ", g != r)
+    # λ_L danger ramp + neutral corr ramp endpoints are sane, distinct hex
+    g, a, r = risk_viz._danger_ramp(0.0), risk_viz._danger_ramp(0.5), risk_viz._danger_ramp(1.0)
+    check("danger ramp returns hex", all(c.startswith("#") and len(c) == 7 for c in (g, a, r)))
+    check("danger ramp endpoints differ", g != r)
+    # correlation uses a SEPARATE (non-danger) ramp; |corr| drives intensity so
+    # a strong negative reads stronger than a near-zero correlation.
+    check("corr ramp != danger ramp at high value", risk_viz._corr_fill(0.8) != risk_viz._danger_ramp(0.8))
+    check("corr ramp uses |corr|", risk_viz._corr_fill(-0.8) == risk_viz._corr_fill(0.8))
 
     m = risk_viz.cocrash_matrix(ASSETS, PAIRS, "Co-Crash Matrix")
     check("matrix renders svg", m.startswith("<svg") and m.rstrip().endswith("</svg>"))
     check("matrix shows asset labels", "BTC" in m and "GOLD" in m and "SPY" in m)
     check("matrix shows a correlation cell", "+0.22" in m)
     check("matrix shows a lambda cell", "0.20" in m)
-    check("matrix has legend", "co-crashes" in m and "diversifies in a crash" in m)
+    check("matrix has legend", "co-crashes" in m and "diversifies" in m and "|corr|" in m)
     check("matrix labels triangles", "correlation" in m and "co-crash" in m)
 
     # Missing pair -> '--' placeholder cell, still renders (graceful).
