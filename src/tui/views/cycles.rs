@@ -855,7 +855,13 @@ fn engine_degree_lines(d: &DegreeStatus, lines: &mut Vec<Line<'static>>, app: &A
                 s.push_str(&format!(" → target {tgt}"));
             }
             if let Some(pct) = c.achieved_pct {
-                s.push_str(&format!(" · {:.0}% achieved", pct * 100.0));
+                // Cap the readout: a cross sitting a hair from a degenerate/extreme
+                // target yields absurd figures (e.g. 3013%); show "exceeded" instead.
+                if pct > 3.0 {
+                    s.push_str(" · target exceeded");
+                } else {
+                    s.push_str(&format!(" · {:.0}% achieved", pct * 100.0));
+                }
             }
             if c.active {
                 s.push_str(" · active");
