@@ -272,6 +272,28 @@ enum Tok {
     At,
 }
 
+/// Human-readable rendering of a token for parse-error messages — the operator
+/// sees `'<'`, not the Rust-debug `Some(Lt)`.
+fn tok_display(t: &Tok) -> String {
+    match t {
+        Tok::Num(n) => format!("number '{n}'"),
+        Tok::Ident(s) => format!("identifier '{s}'"),
+        Tok::Gt => "'>'".to_string(),
+        Tok::Lt => "'<'".to_string(),
+        Tok::Ge => "'>='".to_string(),
+        Tok::Le => "'<='".to_string(),
+        Tok::EqEq => "'=='".to_string(),
+        Tok::Plus => "'+'".to_string(),
+        Tok::Minus => "'-'".to_string(),
+        Tok::Star => "'*'".to_string(),
+        Tok::Slash => "'/'".to_string(),
+        Tok::LParen => "'('".to_string(),
+        Tok::RParen => "')'".to_string(),
+        Tok::Comma => "','".to_string(),
+        Tok::At => "'@'".to_string(),
+    }
+}
+
 fn tokenize(src: &str) -> Result<Vec<Tok>> {
     let chars: Vec<char> = src.chars().collect();
     let mut i = 0;
@@ -557,7 +579,10 @@ impl Parser {
                     })
                 }
             }
-            other => bail!("unexpected token: {other:?}"),
+            other => bail!(
+                "unexpected token {}",
+                other.as_ref().map(tok_display).unwrap_or_else(|| "end of input".to_string())
+            ),
         }
     }
 
@@ -754,6 +779,28 @@ mod tests {
                 symbol: None
             }
         );
+    }
+
+    #[test]
+    fn parse_error_names_token_cleanly() {
+        // The Rust-debug leak (`Some(Lt)`) must be replaced by a clean name.
+        let err = parse("rsi(14) <<< 30").unwrap_err().to_string();
+        assert!(err.contains("'<'"), "want clean token name, got: {err}");
+        assert!(!err.contains("Some("), "must not leak the debug Option: {err}");
+        assert!(!err.contains("Lt"), "must not leak the debug variant: {err}");
+    }
+
+    #[test]
+    fn parse_error_names_end_of_input() {
+        let err = parse("rsi(14) <").unwrap_err().to_string();
+        assert!(err.contains("end of input"), "got: {err}");
+    }
+
+    #[test]
+    fn tok_display_renders_operators() {
+        assert_eq!(tok_display(&Tok::Lt), "'<'");
+        assert_eq!(tok_display(&Tok::Ge), "'>='");
+        assert_eq!(tok_display(&Tok::At), "'@'");
     }
 
     #[test]

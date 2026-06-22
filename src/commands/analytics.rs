@@ -2287,6 +2287,39 @@ fn fmt_opt(value: Option<f64>, precision: usize) -> String {
         .unwrap_or_else(|| "N/A".to_string())
 }
 
+/// Project a technical-level record into the analytical `--json` view: drop the
+/// raw DB internals (`id`, `computed_at`) an agent should never key on, and
+/// render `price` as a string-decimal to match the cycles/TA "decimal strings"
+/// discipline. Works for any serializable level record (`TechnicalLevelRecord`,
+/// `ActionableLevel`) since it operates on the serialized object generically.
+fn project_level<T: serde::Serialize>(level: &T) -> serde_json::Value {
+    let mut value = serde_json::to_value(level).unwrap_or_else(|_| json!({}));
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("id");
+        obj.remove("computed_at");
+        // Render price as a string-decimal (e.g. 64250.0 → "64250"); leave a
+        // non-numeric/absent price untouched. Round to a magnitude-appropriate
+        // precision (mirrors the human `format_level_price` tiers) so the f64
+        // storage noise — a stored 151.14 reconstructs as 151.1399…056 — does
+        // not leak into the string: ≥10k → 0dp, ≥1 → 2dp, else 6dp for cheap
+        // assets that need sub-cent resolution.
+        if let Some(p) = obj.get("price").and_then(|v| v.as_f64()) {
+            let dp = if p.abs() >= 10_000.0 {
+                0
+            } else if p.abs() >= 1.0 {
+                2
+            } else {
+                6
+            };
+            let dec = rust_decimal::Decimal::from_f64_retain(p)
+                .map(|d| d.round_dp(dp).normalize().to_string())
+                .unwrap_or_else(|| p.to_string());
+            obj.insert("price".to_string(), json!(dec));
+        }
+    }
+    value
+}
+
 fn run_levels(
     backend: &BackendConnection,
     symbol: Option<&str>,
@@ -2311,8 +2344,16 @@ fn run_levels(
     }
 
     if json_output {
+        // `as_of` = the most recent `computed_at` across the returned levels
+        // (captured before projection strips that raw DB column).
+        let as_of = rows
+            .iter()
+            .map(|r| r.computed_at.clone())
+            .max()
+            .unwrap_or_default();
+        let projected_rows: Vec<serde_json::Value> = rows.iter().map(project_level).collect();
         // Enrich with nearest-level context when filtering by symbol
-        let output = if let Some(sym) = symbol {
+        let mut output = if let Some(sym) = symbol {
             let spot = price_cache::get_cached_price_backend(backend, &sym.to_uppercase(), "USD")
                 .ok()
                 .flatten()
@@ -2323,17 +2364,23 @@ fn run_levels(
             json!({
                 "symbol": sym.to_uppercase(),
                 "spot_price": spot,
-                "nearest_support": nearest.as_ref().and_then(|n| n.support.as_ref()),
-                "nearest_resistance": nearest.as_ref().and_then(|n| n.resistance.as_ref()),
-                "levels": rows,
+                "nearest_support": nearest.as_ref().and_then(|n| n.support.as_ref()).map(project_level),
+                "nearest_resistance": nearest.as_ref().and_then(|n| n.resistance.as_ref()).map(project_level),
+                "levels": projected_rows,
                 "count": rows.len(),
             })
         } else {
             json!({
-                "levels": rows,
+                "levels": projected_rows,
                 "count": rows.len(),
             })
         };
+        output = crate::commands::cli_json::envelope(
+            output,
+            "levels",
+            &as_of,
+            symbol.map(|s| s.to_uppercase()).as_deref(),
+        );
 
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else if rows.is_empty() {
@@ -2401,13 +2448,22 @@ fn run_signals(
     }
 
     if json_output {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
+        // `as_of` = most recent detection across the returned signals.
+        let as_of = rows
+            .iter()
+            .map(|r| r.detected_at.clone())
+            .max()
+            .unwrap_or_default();
+        let payload = crate::commands::cli_json::envelope(
+            json!({
                 "signals": rows,
                 "count": rows.len()
-            }))?
+            }),
+            "signals",
+            &as_of,
+            symbol.map(|s| s.to_uppercase()).as_deref(),
         );
+        println!("{}", serde_json::to_string_pretty(&payload)?);
     } else if rows.is_empty() {
         println!("No cross-timeframe signals found.");
     } else {
@@ -5545,6 +5601,30 @@ mod tests {
 
     fn to_backend(conn: rusqlite::Connection) -> BackendConnection {
         BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn project_level_drops_internals_and_stringifies_price() {
+        use crate::db::technical_levels::TechnicalLevelRecord;
+        let rec = TechnicalLevelRecord {
+            id: Some(42),
+            symbol: "BTC-USD".to_string(),
+            level_type: "support".to_string(),
+            price: 64250.0,
+            strength: 0.8,
+            source_method: "swing".to_string(),
+            timeframe: "daily".to_string(),
+            notes: None,
+            computed_at: "2026-06-22T00:00:00Z".to_string(),
+        };
+        let v = project_level(&rec);
+        // A4: raw DB internals dropped.
+        assert!(v.get("id").is_none(), "id must be dropped");
+        assert!(v.get("computed_at").is_none(), "computed_at must be dropped");
+        // A4: price rendered as a string-decimal, analytical fields kept.
+        assert_eq!(v["price"], serde_json::json!("64250"));
+        assert_eq!(v["level_type"], serde_json::json!("support"));
+        assert_eq!(v["strength"], serde_json::json!(0.8));
     }
 
     #[test]

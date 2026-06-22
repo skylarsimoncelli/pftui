@@ -515,9 +515,15 @@ pub struct CycleReport {
     pub bars_per_week: u32,
     /// Longest degree first.
     pub degrees: Vec<DegreeStatus>,
+    // Asset-specific extras: present only for the matching asset, and dropped
+    // from the JSON entirely (not emitted as `null`) for any other symbol so an
+    // agent never sees an irrelevant `btc_clocks`/`gold_clock`/`silver_note` key.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub btc_clocks: Option<BtcClocks>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gold_clock: Option<GoldClockExtra>,
     /// §17.4: silver phases WITH gold; run its own counts, but cross-check.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub silver_note: Option<String>,
     pub composite_verdict: String,
 }

@@ -480,6 +480,17 @@ pub fn run_sweep(
         let rows: Vec<_> = cfgs
             .iter()
             .map(|c| {
+                // Per-config overfit-adjusted number: each config's OWN returns
+                // deflated against the SAME grid of trial Sharpes used for the
+                // best config. This lets an agent rank every config by an
+                // overfit-adjusted DSR, not just read the single best one.
+                // `None` for too-few-trades / degenerate distributions (matches
+                // the best-config gate of ≥10 trades + a usable spread).
+                let per_cfg_dsr = if c.n_trades >= 10 {
+                    v::deflated_sharpe_ratio(&c.rets, &trial_sharpes)
+                } else {
+                    None
+                };
                 json!({
                     "value": c.value,
                     "n_trades": c.n_trades,
@@ -487,23 +498,40 @@ pub fn run_sweep(
                     "mean_return_pct": c.mean_pct,
                     "profit_factor": c.profit_factor,
                     "per_trade_sharpe": c.sharpe,
+                    // Full struct (sharpe, n_trials, expected_max_sharpe, dsr, passes).
+                    "deflated_sharpe": per_cfg_dsr,
+                    // Flat convenience: P(this config's edge is real after the
+                    // search), 0..1, or null when not estimable.
+                    "dsr": per_cfg_dsr.map(|d| d.dsr),
                 })
             })
             .collect();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
-                "command": "strategy sweep",
-                "asset": asset,
-                "resolved_symbol": primary,
-                "entry": entry,
-                "exit": exit.unwrap_or("hold 90d (default)"),
-                "values": vals,
-                "configs": rows,
-                "best_value": best.map(|b| b.value.clone()),
-                "deflated_sharpe": deflated,
-            }))?
-        );
+        // Honest insufficiency signal: if NO config cleared the ≥10-trade bar,
+        // the sweep produced nothing rankable — say so structurally instead of
+        // returning silent all-null configs with rc=0.
+        let qualifying = cfgs.iter().filter(|c| c.n_trades >= 10).count();
+        let warning = (qualifying == 0).then(|| {
+            format!(
+                "insufficient trades: no config reached the 10-trade minimum across {} swept values (max {} trades) — widen the window or loosen the entry",
+                vals.len(),
+                cfgs.iter().map(|c| c.n_trades).max().unwrap_or(0)
+            )
+        });
+        let mut out = json!({
+            "command": "strategy sweep",
+            "asset": asset,
+            "resolved_symbol": primary,
+            "entry": entry,
+            "exit": exit.unwrap_or("hold 90d (default)"),
+            "values": vals,
+            "configs": rows,
+            "best_value": best.map(|b| b.value.clone()),
+            "deflated_sharpe": deflated,
+        });
+        if let (Some(w), Some(obj)) = (&warning, out.as_object_mut()) {
+            obj.insert("warning".to_string(), json!(w));
+        }
+        println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
 
@@ -715,21 +743,32 @@ pub fn run_walkforward(
                 })
             })
             .collect();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
-                "command": "strategy walkforward",
-                "asset": asset,
-                "resolved_symbol": primary,
-                "entry": entry,
-                "exit": exit.unwrap_or("hold 90d (default)"),
-                "values": vals,
-                "folds": folds_json,
-                "avg_is_sharpe": avg_is,
-                "avg_oos_sharpe": avg_oos,
-                "walk_forward_efficiency": wfe,
-            }))?
-        );
+        // Honest insufficiency signal: if NO fold could select a param (every
+        // train segment had <5 trades for every value), the folds are all-null
+        // — flag it structurally rather than returning silent nulls with rc=0.
+        let selected = fold_rows.iter().filter(|f| f.best_value.is_some()).count();
+        let warning = (selected == 0).then(|| {
+            format!(
+                "insufficient bars: no fold reached the 5-trade train minimum across {folds} folds (each ~{} bars) — fewer folds or more history needed",
+                master.len() / (folds + 1)
+            )
+        });
+        let mut out = json!({
+            "command": "strategy walkforward",
+            "asset": asset,
+            "resolved_symbol": primary,
+            "entry": entry,
+            "exit": exit.unwrap_or("hold 90d (default)"),
+            "values": vals,
+            "folds": folds_json,
+            "avg_is_sharpe": avg_is,
+            "avg_oos_sharpe": avg_oos,
+            "walk_forward_efficiency": wfe,
+        });
+        if let (Some(w), Some(obj)) = (&warning, out.as_object_mut()) {
+            obj.insert("warning".to_string(), json!(w));
+        }
+        println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
 

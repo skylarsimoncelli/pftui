@@ -84,16 +84,19 @@ pub fn run_analyze(
     if let Some(deg) = degree {
         let status = find_degree(&report, deg)?;
         if json_output {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json!({
+            let payload = crate::commands::cli_json::envelope(
+                json!({
                     "symbol": report.symbol,
                     "series": report.series,
                     "as_of": report.as_of,
                     "degree": status,
                     "note": "timing/position only — a window, never a date; never a price prediction",
-                }))?
+                }),
+                "cycles analyze",
+                &report.as_of,
+                Some(&report.series),
             );
+            println!("{}", serde_json::to_string_pretty(&payload)?);
         } else {
             println!("{}\n", report.composite_verdict);
             print_degree(status);
@@ -109,7 +112,9 @@ pub fn run_analyze(
                 json!("timing/position only — a window, never a date; never a price prediction"),
             );
         }
-        println!("{}", serde_json::to_string_pretty(&value)?);
+        let payload =
+            crate::commands::cli_json::envelope(value, "cycles analyze", &report.as_of, Some(&report.series));
+        println!("{}", serde_json::to_string_pretty(&payload)?);
         return Ok(());
     }
 
@@ -203,6 +208,13 @@ fn print_degree(d: &DegreeStatus) {
                     // move, "% achieved" balloons (a target hit then run past
                     // can read 800%+), which looks like a bug. Cap the display at
                     // "target reached" and show the overshoot as a clean +N%.
+                    // Beyond a sane overshoot the figure is degenerate (a target
+                    // set on a near-extreme can read +7000%), so relabel rather
+                    // than print an absurd percent. JSON `achieved_pct` is
+                    // untouched — this only governs the human string.
+                    (Some(t), Some(a)) if a >= 1000.0 => {
+                        format!(" → target {} (target exceeded)", t.round_dp(2))
+                    }
                     (Some(t), Some(a)) if a >= 100.0 => {
                         format!(" → target {} (REACHED, +{:.0}% past)", t.round_dp(2), a - 100.0)
                     }
@@ -296,9 +308,8 @@ pub fn run_ledger(
     let status = find_degree(&report, degree)?;
 
     if json_output {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
+        let payload = crate::commands::cli_json::envelope(
+            json!({
                 "symbol": report.symbol,
                 "series": report.series,
                 "as_of": report.as_of,
@@ -309,8 +320,12 @@ pub fn run_ledger(
                 "rt_string_intact": status.rt_string_intact,
                 "current_top": status.current_top,
                 "note": "translation: RT = top past midpoint (bull signature), LT = top before midpoint (bear signature), MID = 0.5±0.05",
-            }))?
+            }),
+            "cycles ledger",
+            &report.as_of,
+            Some(&report.series),
         );
+        println!("{}", serde_json::to_string_pretty(&payload)?);
         return Ok(());
     }
 

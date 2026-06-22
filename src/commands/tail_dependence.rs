@@ -47,6 +47,17 @@ pub fn aligned_common_returns(
     Some((x, y))
 }
 
+/// The most recent date present in BOTH price series, for the `as_of` envelope
+/// key. `None` if either lookup fails or they share no dates.
+fn latest_common_date(backend: &BackendConnection, ra: &str, rb: &str) -> Option<String> {
+    let a = dated_closes(backend, ra).ok()?;
+    let b = dated_closes(backend, rb).ok()?;
+    a.keys()
+        .filter(|d| b.contains_key(*d))
+        .max()
+        .cloned()
+}
+
 pub fn run(
     backend: &BackendConnection,
     asset: &str,
@@ -71,16 +82,25 @@ pub fn run(
         .ok_or_else(|| anyhow::anyhow!("not enough aligned data to estimate tail dependence"))?;
 
     if json_output {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
+        // `as_of` = most recent date common to both series (the last bar the
+        // co-movement estimate actually covers).
+        let as_of = latest_common_date(backend, &ra, &rb).unwrap_or_default();
+        // Standard envelope (additive — keeps `resolved:[ra,rb]` and `vs`).
+        // `resolved_symbol` is the primary asset (`--asset`); the counterpart
+        // stays in `resolved[1]`/`vs`.
+        let payload = crate::commands::cli_json::envelope(
+            json!({
                 "command": "tail-dependence",
                 "asset": asset,
                 "vs": vs,
-                "resolved": [ra, rb],
+                "resolved": [ra.clone(), rb.clone()],
                 "tail_dependence": td,
-            }))?
+            }),
+            "tail-dependence",
+            &as_of,
+            Some(&ra),
         );
+        println!("{}", serde_json::to_string_pretty(&payload)?);
         return Ok(());
     }
 

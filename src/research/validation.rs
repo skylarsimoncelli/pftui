@@ -649,6 +649,26 @@ mod tests {
     }
 
     #[test]
+    fn per_config_dsr_distinguishes_configs_on_one_grid() {
+        // A3: each swept config is deflated against the SAME trial-Sharpe grid,
+        // so a stronger config gets a higher overfit-adjusted DSR than a weaker
+        // one — letting an agent rank every row, not just read the best.
+        let strong: Vec<f64> = (0..250).map(|i| 0.03 + 0.01 * ((i % 5) as f64 - 2.0)).collect();
+        let weak: Vec<f64> = (0..250).map(|i| -0.005 + 0.02 * ((i % 7) as f64 - 3.0)).collect();
+        let grid: Vec<f64> = vec![
+            sharpe(&strong).unwrap(),
+            sharpe(&weak).unwrap(),
+            0.0,
+            0.1,
+        ];
+        let d_strong = deflated_sharpe_ratio(&strong, &grid).unwrap();
+        let d_weak = deflated_sharpe_ratio(&weak, &grid).unwrap();
+        // Same grid (same n_trials / benchmark) for both — only the candidate differs.
+        assert_eq!(d_strong.n_trials, d_weak.n_trials);
+        assert!(d_strong.dsr > d_weak.dsr, "stronger config should out-rank weaker one");
+    }
+
+    #[test]
     fn pbo_high_for_pure_noise() {
         // N configs of pure noise: the IS-best should be ~random OOS -> PBO ~0.5.
         // Seed deterministically so the test never flakes.
