@@ -1,5 +1,16 @@
 # Changelog
 
+### 2026-06-22 — feat(cli): agent-grade cycle commands — uniform JSON errors + `--asset` parity + help examples
+
+- What: an agent-consumer review of the cycle-analytics CLI (agents are the primary consumer) found three gaps that forced per-command special-casing. Fixed the high-leverage ones:
+  1. **Uniform JSON error contract** — `cycles analyze`/`ledger`/`clock` with `--json` previously printed nothing to stdout on failure (only plain text to stderr), unlike `hurst`/`avwap`/`regime-break`. They now emit the same `{"error":{command,message}}` envelope on **stdout** with a nonzero exit. An agent can now treat the whole `analytics` tree with one contract: parse stdout as JSON, check for an `error` key, check the exit code.
+  2. **`--asset` parity** — `cycles analyze`/`ledger` took the symbol positionally while every sibling (`clock`/`hurst`/`avwap`/`regime-break`) used `--asset`. They now accept **both** (`cycles analyze BTC` and `cycles analyze --asset BTC`), so agents can template one arg shape. Missing-symbol yields the structured error envelope.
+  3. **Help examples** — `cycles clock` and `cycles ledger` gained `after_help` with worked `--json` examples + field notes, matching the other cycle leaves.
+- Why: the cycle CLI is the surface the upcoming Cycles page and external agents script against; uniform errors + arg shape + docs make it self-serve and pipeline-safe.
+- Tests: new parse test (positional AND `--asset` both parse for `analyze`); existing cycle parse tests updated; verified end-to-end that bad/missing input returns the JSON error envelope on stdout (exit 1) and that the positional form still works. `cli_help_smoke` + `analyst_routine_commands` green; full suite green.
+- Files: `src/cli.rs`, `src/main.rs`.
+- Deferred (presented to operator, not yet done): number-typing consistency (cycle/avwap emit string decimals vs `hurst`/`macro` bare floats), a shared `--json` header envelope, and `macro regime` JSON leaking a double-encoded `drivers` string + Rust `Some(..)` debug in human output.
+
 ### 2026-06-22 — fix: UTF-8 truncation panic — Journal view (and others) crashed on multi-byte content (P0)
 
 - What: pressing `8` to open the Journal could crash the whole TUI with `byte index N is not a char boundary` when an entry contained a multi-byte character (em dash `—`, smart quotes, accents) near the truncation point. Root cause: truncating strings by **byte** index (`&s[..57]`) panics when the cut lands inside a multi-byte UTF-8 char. The same footgun existed at ~12 sites across the TUI and CLI (news titles, position-detail news, status-bar errors, prediction-market questions, journal/conviction/predict/debate/correlations CLI output).

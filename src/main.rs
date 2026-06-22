@@ -2715,24 +2715,53 @@ fn run_cli(cli: Cli) -> Result<()> {
                 ),
             },
             cli::AnalyticsCommand::Cycles { command } => match command {
+                // Wrap in or_json_error so a failure emits the same
+                // {"error":{command,message}} envelope on stdout (nonzero exit)
+                // as hurst/avwap/regime-break — uniform agent contract.
                 cli::AnalyticsCyclesCommand::Clock { asset, json } => {
-                    commands::cycle_clock_cmd::run(&backend, asset.as_deref(), json)
+                    commands::cli_json::or_json_error(
+                        "analytics cycles clock",
+                        json,
+                        commands::cycle_clock_cmd::run(&backend, asset.as_deref(), json),
+                    )
                 }
                 cli::AnalyticsCyclesCommand::Analyze {
                     symbol,
+                    asset,
                     degree,
                     json,
-                } => commands::cycle_engine_cmd::run_analyze(
-                    &backend,
-                    &symbol,
-                    degree.as_deref(),
+                } => commands::cli_json::or_json_error(
+                    "analytics cycles analyze",
                     json,
+                    match symbol.or(asset) {
+                        Some(sym) => commands::cycle_engine_cmd::run_analyze(
+                            &backend,
+                            &sym,
+                            degree.as_deref(),
+                            json,
+                        ),
+                        None => Err(anyhow::anyhow!(
+                            "provide a symbol (positional) or --asset, e.g. `cycles analyze BTC`"
+                        )),
+                    },
                 ),
                 cli::AnalyticsCyclesCommand::Ledger {
                     symbol,
+                    asset,
                     degree,
                     json,
-                } => commands::cycle_engine_cmd::run_ledger(&backend, &symbol, &degree, json),
+                } => commands::cli_json::or_json_error(
+                    "analytics cycles ledger",
+                    json,
+                    match symbol.or(asset) {
+                        Some(sym) => {
+                            commands::cycle_engine_cmd::run_ledger(&backend, &sym, &degree, json)
+                        }
+                        None => Err(anyhow::anyhow!(
+                            "provide a symbol (positional) or --asset, e.g. `cycles ledger BTC --degree 4-year`"
+                        )),
+                    },
+                ),
             },
             cli::AnalyticsCommand::Levels {
                 symbol,
