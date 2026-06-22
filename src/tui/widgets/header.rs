@@ -556,6 +556,22 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         ViewMode::Journal,
     );
 
+    // Risk Dashboard tab — always visible (was reachable by key `9` but missing
+    // from the strip, making it undiscoverable to anyone not reading source).
+    let risk_style = if matches!(app.view_mode, ViewMode::RiskDashboard) {
+        Style::default().fg(t.text_primary).bold().underlined()
+    } else {
+        Style::default().fg(t.text_muted)
+    };
+    push_tab(
+        &mut spans,
+        app,
+        "[9]",
+        if compact { "Rk" } else { "Risk" },
+        risk_style,
+        ViewMode::RiskDashboard,
+    );
+
     if !compact {
         spans.push(Span::styled("  │  ", Style::default().fg(t.text_muted)));
         spans.push(Span::styled("Path ", Style::default().fg(t.text_muted)));

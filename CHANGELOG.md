@@ -1,5 +1,15 @@
 # Changelog
 
+### 2026-06-22 — fix(tui): honest + discoverable navigation surface (UX-panel findings)
+
+- What: three corrections to the TUI nav surface surfaced by a 6-lens UX review (run against synthetic `snapshot --demo` renders):
+  1. **Safety — Watchlist `r` data-loss trap:** the status bar advertised `[r]Refresh`, but `r` in the Watchlist actually *removes* the selected entry (deletes the watchlist row). Relabeled to `[r]Remove` so the destructive action is honest. (The in-app `?` help already labeled it correctly; only the status bar lied.)
+  2. **False refresh affordance → real:** `[r]Refresh` was shown on Positions/Markets/Economy where `r` was unbound (a dead hint). `r` is now wired to the same `force_refresh()` as the `:refresh` command on those views, making the hint truthful and adding a useful manual-refresh key.
+  3. **Risk Dashboard discoverability:** view `9` (Risk Dashboard) was reachable by key but missing from the header tab strip (which stopped at `[8]Journal`), from `docs/KEYBINDINGS.md`, and from the onboarding tour — invisible to anyone not reading source. Added `[9]Risk` to the strip, the `6/7/9` rows to KEYBINDINGS.md, and Risk to the tour line.
+- Why: the nav surface must not lie (especially about destructive actions) and must not hide a flagship view. Affordance honesty + discoverability.
+- Tests: new regression tests assert Watchlist `r` is labeled `Remove` (never `Refresh`) and that Positions/Markets/Economy advertise `[r]Refresh` truthfully. `cargo build --release` + `clippy` clean; full suite green.
+- Files: `src/tui/widgets/status_bar.rs`, `src/tui/widgets/header.rs`, `src/app.rs`, `src/tui/views/onboarding.rs`, `docs/KEYBINDINGS.md`.
+
 ### 2026-06-22 — feat(system): `snapshot --demo --view --subtab` — reproducible offline TUI renders on synthetic data
 
 - What: `pftui system snapshot` can now render **any** view (not just the home tab) to text via the off-screen `TestBackend`, and a new `--demo` flag renders a **self-contained synthetic portfolio** built in a temp dir — it never touches the real DB. `--view <slug>` (positions/transactions/markets/economy/watchlist/analytics/news/journal/risk-dashboard, plus aliases) selects the view; `--subtab <n>` selects a sub-tab (Risk Dashboard: 0=Risk grid, 1=Basket, 2=Cycle, 3=Diversification). Unknown `--view` errors with the valid list. This makes TUI layouts reproducibly reviewable for docs/UX/CI without an interactive terminal and without exposing real financial data.

@@ -29,7 +29,10 @@ Full keybinding reference for pftui. Press `?` in the TUI for an interactive ver
 | `4` | Economy — treasury yields, currencies, macro indicators |
 | `5` | Watchlist — tracked assets you don't hold |
 | `W` then `1/2/3` | Switch watchlist group |
+| `6` | Analytics — scenarios, technicals, shock testing |
+| `7` | News — headlines and catalysts |
 | `8` | Journal |
+| `9` | Risk Dashboard — tail risk, allocation, cycle clock, diversification (h/l sub-tabs) |
 
 ## Charts
 

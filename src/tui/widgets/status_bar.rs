@@ -30,7 +30,9 @@ fn context_hints(app: &App) -> Vec<(&'static str, &'static str)> {
         ],
         ViewMode::Watchlist => vec![
             ("Enter", "Detail"),
-            ("r", "Refresh"),
+            // `r` REMOVES the selected entry (watchlist_inline_remove) — it is
+            // NOT refresh. Labeling it "Refresh" was a data-loss trap.
+            ("r", "Remove"),
             ("t", "Target"),
             ("a", "Alert"),
             ("c", "Chart"),
@@ -423,6 +425,40 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_app(view: ViewMode) -> App {
+        let config = crate::config::Config::default();
+        let mut app = App::new(&config, std::path::PathBuf::from(":memory:"));
+        app.view_mode = view;
+        app
+    }
+
+    #[test]
+    fn watchlist_r_hint_is_remove_not_refresh() {
+        // Safety regression: `r` in Watchlist REMOVES the selected entry, so the
+        // hint must never advertise it as "Refresh" (a data-loss trap).
+        let app = test_app(ViewMode::Watchlist);
+        let hints = context_hints(&app);
+        let r = hints.iter().find(|(k, _)| *k == "r");
+        assert_eq!(r, Some(&("r", "Remove")), "watchlist r must be labeled Remove");
+        assert!(
+            !hints.iter().any(|(k, l)| *k == "r" && *l == "Refresh"),
+            "watchlist r must NOT be labeled Refresh"
+        );
+    }
+
+    #[test]
+    fn refresh_views_advertise_r_truthfully() {
+        // On these views `r` is bound to force_refresh, so the hint is honest.
+        for v in [ViewMode::Positions, ViewMode::Markets, ViewMode::Economy] {
+            let app = test_app(v);
+            let hints = context_hints(&app);
+            assert!(
+                hints.iter().any(|(k, l)| *k == "r" && *l == "Refresh"),
+                "{v:?} should advertise [r]Refresh"
+            );
+        }
+    }
 
     #[test]
     fn test_capitalize_first_basic() {
