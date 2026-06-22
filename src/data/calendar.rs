@@ -416,10 +416,13 @@ fn extract_date_from_text(text: &str) -> Option<NaiveDate> {
     None
 }
 
-/// Hardcoded sample calendar events for Mar-Apr 2026.
+/// Hardcoded sample calendar events (a realistic ~4-month macro cadence) used as
+/// a fallback when the live scrape fails. The base dates start 2026-03-04 and are
+/// rolled forward relative to "today" (see end of fn) so the fallback always has
+/// UPCOMING events instead of going empty once the wall clock passes the base.
 /// TODO: Replace with Finnhub API integration or similar free source.
 fn get_sample_events() -> Vec<Event> {
-    vec![
+    let mut events = vec![
         // ── March 2026 ─────────────────────────────────────────
         Event { date: "2026-03-04".into(), name: "JOLTS Job Openings".into(), impact: "high".into(), previous: Some("7.6M".into()), forecast: Some("7.5M".into()), event_type: "economic".into(), symbol: None },
         Event { date: "2026-03-05".into(), name: "ADP Employment Change".into(), impact: "medium".into(), previous: Some("183K".into()), forecast: Some("175K".into()), event_type: "economic".into(), symbol: None },
@@ -469,7 +472,22 @@ fn get_sample_events() -> Vec<Event> {
         Event { date: "2026-06-05".into(), name: "Non-Farm Payrolls".into(), impact: "high".into(), previous: Some("175K".into()), forecast: Some("180K".into()), event_type: "economic".into(), symbol: None },
         Event { date: "2026-06-10".into(), name: "Consumer Price Index (CPI)".into(), impact: "high".into(), previous: Some("2.7%".into()), forecast: Some("2.6%".into()), event_type: "economic".into(), symbol: None },
         Event { date: "2026-06-17".into(), name: "FOMC Rate Decision".into(), impact: "high".into(), previous: Some("3.00%".into()), forecast: Some("3.00%".into()), event_type: "economic".into(), symbol: None },
-    ]
+    ];
+    // Roll the sample calendar forward so the fallback always has UPCOMING events.
+    // The base dates begin 2026-03-04; once the wall clock passes them, an
+    // unshifted list would filter to empty. Shift every date by (today - base) so
+    // the series starts ~today and preserves its relative cadence.
+    let base = NaiveDate::from_ymd_opt(2026, 3, 4).expect("valid base date");
+    let today = Utc::now().date_naive();
+    if today > base {
+        let shift = (today - base).num_days();
+        for e in &mut events {
+            if let Ok(d) = NaiveDate::parse_from_str(&e.date, "%Y-%m-%d") {
+                e.date = (d + Duration::days(shift)).format("%Y-%m-%d").to_string();
+            }
+        }
+    }
+    events
 }
 
 #[cfg(test)]

@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-06-22 — fix(data): sample event calendar rolls forward (no longer goes empty / flaky test)
+
+- What: the hardcoded fallback macro calendar (used when the live scrape fails) had base dates 2026-03-04..06-17. Once the wall clock passed them the fallback filtered to an empty list, and `test_fetch_events_returns_non_empty` became a date-bomb flake under parallel runs.
+- How: `get_sample_events()` now shifts every sample date by `(today - base)` so the series always starts ~today and keeps its ~4-month cadence — the fallback always has upcoming events. Verified: `data calendar` returns 83 upcoming events starting today; calendar tests deterministic.
+- Files: `src/data/calendar.rs`.
+
 ### 2026-06-22 — feat(cli): agent-consumer JSON hardening for cycles/backtest/TA — unified envelope, real arrays, per-config DSR, honest insufficiency
 
 - What: an agent-consumer audit of the cycles/backtest/TA `--json` surface. All changes are ADDITIVE — existing payload fields (the shapes the Python `viz/` library and tests parse) are untouched; standard keys are merged in, never renamed or removed.
