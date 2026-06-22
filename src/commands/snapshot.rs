@@ -26,6 +26,7 @@ pub(crate) fn parse_view(slug: &str) -> Option<ViewMode> {
         "news" => Some(ViewMode::News),
         "journal" => Some(ViewMode::Journal),
         "risk" | "risk-dashboard" | "riskdashboard" => Some(ViewMode::RiskDashboard),
+        "cycles" => Some(ViewMode::Cycles),
         _ => None,
     }
 }
@@ -41,6 +42,7 @@ const VIEW_SLUGS: &[&str] = &[
     "news",
     "journal",
     "risk-dashboard",
+    "cycles",
 ];
 
 /// Render the TUI to stdout as ANSI-colored text.
@@ -82,6 +84,7 @@ pub fn run(
     }
     if let Some(st) = subtab {
         app.risk_subtab = st;
+        app.cycles_subtab = st;
     }
     // For demo renders, focus a held asset with rich history so analytics/risk
     // panels render with data rather than an empty-selection hint.
@@ -251,6 +254,8 @@ mod tests {
         assert_eq!(parse_view("portfolio"), Some(ViewMode::Positions));
         assert_eq!(parse_view("RISK-DASHBOARD"), Some(ViewMode::RiskDashboard));
         assert_eq!(parse_view("risk"), Some(ViewMode::RiskDashboard));
+        assert_eq!(parse_view("cycles"), Some(ViewMode::Cycles));
+        assert_eq!(parse_view("CYCLES"), Some(ViewMode::Cycles));
         assert_eq!(parse_view(" analytics "), Some(ViewMode::Analytics));
         assert_eq!(parse_view("nope"), None);
     }
@@ -272,6 +277,17 @@ mod tests {
             let subtab = if *slug == "risk-dashboard" { Some(3) } else { None };
             let r = run(&config, Some(140), Some(44), true, Some(slug), subtab, true);
             assert!(r.is_ok(), "rendering view {slug} failed: {r:?}");
+        }
+    }
+
+    #[test]
+    fn demo_snapshot_renders_every_cycles_subtab_without_panic() {
+        // Each Cycles sub-tab (Matrix / Bitcoin / Gold) must render without panic
+        // over the synthetic demo portfolio. Synthetic data only — never the real DB.
+        let config = Config::default();
+        for st in 0..crate::tui::views::cycles::SUBTAB_COUNT {
+            let r = run(&config, Some(160), Some(48), true, Some("cycles"), Some(st), true);
+            assert!(r.is_ok(), "rendering cycles sub-tab {st} failed: {r:?}");
         }
     }
 

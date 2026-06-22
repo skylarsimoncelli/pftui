@@ -41,6 +41,7 @@ pub enum ViewMode {
     News,
     Journal,
     RiskDashboard,
+    Cycles,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChartRenderMode {
@@ -539,6 +540,9 @@ pub struct App {
     /// Active sub-tab of the Risk Dashboard view: 0 = per-asset Risk grid,
     /// 1 = Basket allocation (risk-parity vs current). Cycled with h/l.
     pub risk_subtab: u8,
+    /// Active sub-tab of the Cycles view: 0 = Matrix, 1 = Bitcoin, 2 = Gold.
+    /// Cycled with h/l.
+    pub cycles_subtab: u8,
     pub g_pending: bool,
     pub terminal_height: u16,
     pub terminal_width: u16,
@@ -815,6 +819,7 @@ impl App {
             "news" => ViewMode::News,
             "journal" => ViewMode::Journal,
             "risk" => ViewMode::RiskDashboard,
+            "cycles" => ViewMode::Cycles,
             _ => ViewMode::Positions,
         }
     }
@@ -830,6 +835,7 @@ impl App {
             ViewMode::News => "news",
             ViewMode::Journal => "journal",
             ViewMode::RiskDashboard => "risk",
+            ViewMode::Cycles => "cycles",
         }
     }
 
@@ -889,6 +895,7 @@ impl App {
             analytics_selected_index: 0,
             analytics_shock_scale_pct: 100,
             risk_subtab: 0,
+            cycles_subtab: 0,
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             terminal_width: 120, // sensible default, updated on resize
@@ -2221,6 +2228,7 @@ impl App {
             ViewMode::News => "News",
             ViewMode::Journal => "Journal",
             ViewMode::RiskDashboard => "Risk",
+            ViewMode::Cycles => "Cycles",
         };
 
         // Only positions view has deeper navigation context
@@ -2599,7 +2607,8 @@ impl App {
             | ViewMode::Analytics
             | ViewMode::News
             | ViewMode::Journal
-            | ViewMode::RiskDashboard => self.view_mode,
+            | ViewMode::RiskDashboard
+            | ViewMode::Cycles => self.view_mode,
         };
 
         if desired == self.last_saved_home_tab {
@@ -2989,6 +2998,13 @@ impl App {
                 self.detail_open = false;
                 self.detail_popup_open = false;
             }
+            // Cycles page (C). In Positions, C keeps its pre-existing chart-mode
+            // toggle (handled below), so this opens Cycles from any other view.
+            KeyCode::Char('C') if !matches!(self.view_mode, ViewMode::Positions) => {
+                self.view_mode = ViewMode::Cycles;
+                self.detail_open = false;
+                self.detail_popup_open = false;
+            }
 
             // Alerts overlay toggle (Ctrl+A)
             KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -3213,6 +3229,22 @@ impl App {
             {
                 self.risk_subtab = (self.risk_subtab + crate::tui::views::risk_dashboard::SUBTAB_COUNT - 1)
                     % crate::tui::views::risk_dashboard::SUBTAB_COUNT;
+            }
+
+            // Cycles sub-tab cycling (Matrix ↔ Bitcoin ↔ Gold).
+            KeyCode::Char('l') | KeyCode::Char('L')
+                if matches!(self.view_mode, ViewMode::Cycles) =>
+            {
+                self.cycles_subtab =
+                    (self.cycles_subtab + 1) % crate::tui::views::cycles::SUBTAB_COUNT;
+            }
+            KeyCode::Char('h') | KeyCode::Char('H')
+                if matches!(self.view_mode, ViewMode::Cycles) =>
+            {
+                self.cycles_subtab = (self.cycles_subtab
+                    + crate::tui::views::cycles::SUBTAB_COUNT
+                    - 1)
+                    % crate::tui::views::cycles::SUBTAB_COUNT;
             }
 
             // Navigation
@@ -3834,7 +3866,7 @@ impl App {
                     if relative_row >= 2 {
                         let clicked_row = (relative_row - 2) as usize;
                         match self.view_mode {
-                            ViewMode::RiskDashboard => {}
+                            ViewMode::RiskDashboard | ViewMode::Cycles => {}
                             ViewMode::Watchlist => {
                                 if clicked_row < self.watchlist_entries.len() {
                                     self.watchlist_selected_index = clicked_row;
@@ -3915,7 +3947,7 @@ impl App {
         let old_pos_idx = self.selected_index;
 
         match self.view_mode {
-            ViewMode::RiskDashboard => {}
+            ViewMode::RiskDashboard | ViewMode::Cycles => {}
             ViewMode::Positions => {
                 if clicked_row < self.display_positions.len() {
                     self.selected_index = clicked_row;
@@ -4157,7 +4189,7 @@ impl App {
     fn move_down(&mut self) {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
-            ViewMode::RiskDashboard => {}
+            ViewMode::RiskDashboard | ViewMode::Cycles => {}
             ViewMode::Positions => {
                 if !self.display_positions.is_empty() {
                     self.selected_index =
@@ -4216,7 +4248,7 @@ impl App {
     fn move_up(&mut self) {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
-            ViewMode::RiskDashboard => {}
+            ViewMode::RiskDashboard | ViewMode::Cycles => {}
             ViewMode::Positions => {
                 self.selected_index = self.selected_index.saturating_sub(1);
             }
@@ -4250,7 +4282,7 @@ impl App {
     fn jump_to_top(&mut self) {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
-            ViewMode::RiskDashboard => {}
+            ViewMode::RiskDashboard | ViewMode::Cycles => {}
             ViewMode::Positions => {
                 self.selected_index = 0;
             }
@@ -4284,7 +4316,7 @@ impl App {
     fn jump_to_bottom(&mut self) {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
-            ViewMode::RiskDashboard => {}
+            ViewMode::RiskDashboard | ViewMode::Cycles => {}
             ViewMode::Positions => {
                 if !self.display_positions.is_empty() {
                     self.selected_index = self.display_positions.len() - 1;
@@ -4353,7 +4385,7 @@ impl App {
         let old_pos_idx = self.selected_index;
         let step = self.half_page();
         match self.view_mode {
-            ViewMode::RiskDashboard => {}
+            ViewMode::RiskDashboard | ViewMode::Cycles => {}
             ViewMode::Positions => {
                 if !self.display_positions.is_empty() {
                     self.selected_index =
@@ -4415,7 +4447,7 @@ impl App {
         let old_pos_idx = self.selected_index;
         let step = self.half_page();
         match self.view_mode {
-            ViewMode::RiskDashboard => {}
+            ViewMode::RiskDashboard | ViewMode::Cycles => {}
             ViewMode::Positions => {
                 self.selected_index = self.selected_index.saturating_sub(step);
             }

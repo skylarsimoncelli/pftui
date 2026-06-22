@@ -1,5 +1,16 @@
 # Changelog
 
+### 2026-06-22 — feat(tui): Cycles page (Phase-1 MVP) — Matrix + Bitcoin + Gold cycle clocks on key `C`
+
+- What: a new top-level **Cycles** view (key `C`, tab `[C]Cycles` after `[9]Risk`) with three h/l sub-tabs:
+  - **Matrix** (landing) — one dense row per asset with genuine anchored cycle data (Bitcoin, Gold, Silver): friendly name, cycle degree, cycle age + % of band, band position (`<pre`/`=in`/`>over`), translation (RT/LT), next-low window dates, trend-regime glyph (↗/↔/⟲ from the Hurst exponent), and a stance/position read + clarity dot for clock-backed assets. Sorted by next-low proximity. Silver phases WITH gold (a Matrix row, no dedicated tab).
+  - **Bitcoin** — the full ~4-year cycle clock as a 2×2 panel grid (stance, cycle position, valuation, deterministic-engine cross-check).
+  - **Gold** — the full ~6.9-year cycle clock, same 2×2 treatment.
+- Discipline: no practitioner/author names in the UI (functional language only — "low-band", "price/200d-avg", "projected cycle bottom", "supply event"); friendly asset names only (never tickers); only Bitcoin/Gold/Silver are tracked (no invented clocks for other assets). All metrics computed inline from in-memory `price_history` (no blocking I/O).
+- Tests: pure builder/helper unit tests in `cycles.rs` (band glyph, friendly degree, stance call, plainify-strips-names, regime glyph, matrix row, real-report clarity/engine lines); `parse_view("cycles")` + every Cycles sub-tab renders without panic via the demo snapshot path (synthetic data only). `cargo test`/`clippy` green.
+- Files: `src/tui/views/cycles.rs` (new), `src/tui/views/mod.rs`, `src/tui/ui.rs`, `src/tui/widgets/header.rs`, `src/tui/widgets/status_bar.rs`, `src/tui/views/help.rs`, `src/app.rs`, `src/commands/snapshot.rs`, `docs/KEYBINDINGS.md`.
+- Note: in Positions, `C` keeps its pre-existing chart-mode toggle; `C` opens Cycles from any other view (the `[C]` tab is reachable everywhere). Engine/Business/Macro sub-tabs are out of MVP scope (Phase 2+).
+
 ### 2026-06-22 — feat(cli): agent-grade cycle commands — uniform JSON errors + `--asset` parity + help examples
 
 - What: an agent-consumer review of the cycle-analytics CLI (agents are the primary consumer) found three gaps that forced per-command special-casing. Fixed the high-leverage ones:

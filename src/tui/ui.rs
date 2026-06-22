@@ -73,6 +73,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         ViewMode::News => views::news::render(frame, chunks[1], app),
         ViewMode::Journal => views::journal::render(frame, chunks[1], app),
         ViewMode::RiskDashboard => views::risk_dashboard::render(frame, chunks[1], app),
+        ViewMode::Cycles => views::cycles::render(frame, chunks[1], app),
     }
 
     widgets::status_bar::render(frame, chunks[2], app);
