@@ -78,9 +78,15 @@ fn context_hints(app: &App) -> Vec<(&'static str, &'static str)> {
         // view-specific affordance is switching to a view where you pick the
         // asset. (No `r`/refresh handler exists for this view — don't promise one.)
         ViewMode::RiskDashboard => vec![("h/l", "Risk/Basket/Cycle/Divers."), ("1/3", "Positions/Markets"), (":", "Cmd")],
-        // Read-only cycle clocks; h/l switches Matrix/Bitcoin/Gold. No refresh
-        // handler exists for this view — don't promise one.
-        ViewMode::Cycles => vec![("h/l", "Matrix/Bitcoin/Gold"), (":", "Cmd")],
+        // Read-only cycle clocks; h/l switches Matrix/Bitcoin/Gold/Engine.
+        // On the Matrix, j/k move a row cursor and Enter drills into that
+        // asset's tab. No refresh handler exists for this view — don't promise one.
+        ViewMode::Cycles => vec![
+            ("h/l", "Matrix/Bitcoin/Gold/Engine"),
+            ("j/k", "Select"),
+            ("Enter", "Open asset"),
+            (":", "Cmd"),
+        ],
     };
 
     if app.portfolio_mode == PortfolioMode::Full {
@@ -290,12 +296,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     if compact {
         spans.push(Span::styled("[?]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Help", Style::default().fg(t.text_secondary)));
-        spans.push(sep.clone());
-        spans.push(Span::styled("[/]", Style::default().fg(t.key_hint)));
-        spans.push(Span::styled(
-            "Search",
-            Style::default().fg(t.text_secondary),
-        ));
+        // Surface the view's PRIMARY navigation affordance instead of a
+        // hardcoded "[/]Search" that several views (Cycles, Risk) don't
+        // support. Take the first real context hint (e.g. Cycles → [h/l]).
+        if let Some((key, label)) = context_hints(app).into_iter().next() {
+            spans.push(sep.clone());
+            spans.push(Span::styled(
+                format!("[{key}]"),
+                Style::default().fg(t.key_hint),
+            ));
+            spans.push(Span::styled(label, Style::default().fg(t.text_secondary)));
+        }
         spans.push(sep.clone());
         spans.push(Span::styled("[:]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Cmd", Style::default().fg(t.text_secondary)));

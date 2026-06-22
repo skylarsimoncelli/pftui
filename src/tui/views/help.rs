@@ -74,7 +74,12 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("7", "News feed", kc, tc));
     lines.push(key_line("8", "Journal", kc, tc));
     lines.push(key_line("9", "Risk dashboard (focused asset)", kc, tc));
-    lines.push(key_line("C", "Cycles page (Matrix/Bitcoin/Gold; h/l)", kc, tc));
+    lines.push(key_line(
+        "C",
+        "Cycles page (Matrix/Bitcoin/Gold/Engine; h/l tabs, j/k select, Enter opens asset)",
+        kc,
+        tc,
+    ));
     lines.push(key_line(
         "Tab / ← / →",
         "Toggle Portfolio/Watchlist",

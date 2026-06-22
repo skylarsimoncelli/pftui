@@ -300,13 +300,44 @@ mod tests {
 
     #[test]
     fn demo_snapshot_renders_every_cycles_subtab_without_panic() {
-        // Each Cycles sub-tab (Matrix / Bitcoin / Gold) must render without panic
-        // over the synthetic demo portfolio. Synthetic data only — never the real DB.
+        // Each Cycles sub-tab (Matrix / Bitcoin / Gold / Engine) must render
+        // without panic over the synthetic demo portfolio, across the full
+        // width range (160→80). Synthetic data only — never the real DB.
         let config = Config::default();
-        for st in 0..crate::tui::views::cycles::SUBTAB_COUNT {
-            let r = run(&config, Some(160), Some(48), true, Some("cycles"), Some(st), true);
-            assert!(r.is_ok(), "rendering cycles sub-tab {st} failed: {r:?}");
+        for (w, h) in [(160u16, 48u16), (120, 44), (100, 40), (80, 30)] {
+            for st in 0..crate::tui::views::cycles::SUBTAB_COUNT {
+                let r = run(&config, Some(w), Some(h), true, Some("cycles"), Some(st), true);
+                assert!(r.is_ok(), "rendering cycles sub-tab {st} at {w}x{h} failed: {r:?}");
+            }
         }
+    }
+
+    #[test]
+    fn cycles_engine_subtab_surfaces_computed_degree_fields() {
+        // The Engine sub-tab (3) must surface the engine's per-degree signal
+        // in plain language: band statistics plus the trend/demarcation glosses.
+        // Synthetic demo data only.
+        let config = Config::default();
+        let buf = render_view_buffer(&config, 160, 48, Some("cycles"), Some(3), true)
+            .expect("engine render");
+        let text = buffer_to_plain_string(&buf, 160, 48).to_lowercase();
+        assert!(text.contains("cycle engine"), "engine header missing: {text}");
+        // Plain-language glosses for the demarcation/trend lines are present.
+        assert!(
+            text.contains("demarcation line") || text.contains("age / band"),
+            "engine fields missing: {text}"
+        );
+    }
+
+    #[test]
+    fn cycles_matrix_stance_survives_narrow_width() {
+        // B2d: Stance is the actionable verdict and must NOT be cut off when the
+        // Matrix narrows. At 80 cols the header still shows the Stance column.
+        let config = Config::default();
+        let buf = render_view_buffer(&config, 80, 30, Some("cycles"), Some(0), true)
+            .expect("matrix render");
+        let text = buffer_to_plain_string(&buf, 80, 30).to_lowercase();
+        assert!(text.contains("stance"), "Stance column dropped at 80 cols: {text}");
     }
 
     #[test]

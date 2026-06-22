@@ -1,5 +1,19 @@
 # Changelog
 
+### 2026-06-22 — feat(tui): Cycles page Phase-2 — interactive Matrix, new Engine sub-tab, responsive layout
+
+- What: turned the Cycles page from a passive display into a cycle trader's tool.
+  - **Matrix interactivity** — `j/k` now move a row cursor (marker `>` + row highlight) and `Enter` drills the focused row into its asset tab (Bitcoin row → Bitcoin tab, Gold/Silver rows → Gold tab). Cycles was previously an explicit no-op in the `j/k`/`Enter` handlers.
+  - **New "Engine" sub-tab (4th)** — surfaces the already-computed `DegreeStatus` for the focused asset, for EVERY measured degree (not just the longest): band statistics (median/SD, P15–P85, position before/in/past window), current high + provisional translation, future-demarcation-line state (cross + target + % achieved), trend-line state (valid/intact/broken), nested alignment (parent %, low sync, expected vs observed subcycles), half-cycle low, and the failed-cycle / peak-shift / late-peak-streak flags. Plain language only (no eponyms; "future demarcation line", "trend line").
+  - **Degree-coherence (B2a)** — when the engine downshifts off a cycle's anchored long degree for lack of deep history, the Matrix now labels the fallback (e.g. `~weeks-months (~6.9-year n/a)`) instead of silently advertising a shorter cycle than the dedicated tab.
+  - **Friendly degrees (B2b)** — every engine degree name maps to a plain horizon (`investor`→`~1-2 year`, `intermediate`→`~weeks-months`, `daily`→`~days-weeks`); no raw label leaks.
+  - **Stance first + glyphs (B2c)** — the actionable Stance/position column moved to the LEFT (second column) and is colored (green accumulate/early, amber elevated/advancing); bare `RT`/`LT` translation codes replaced with `↑ late-peak` / `↓ early-peak` arrows readable without the footnote.
+  - **Responsive Matrix (B2d)** — columns ellipsize/drop as width shrinks (Next-low <110, Regime <92, Age <76, Trans. <64) so the marker/Asset/**Stance**/Degree/Band core always survives narrowing; Stance is never the casualty. The 80-col status bar no longer advertises a dead `[/]Search` — it surfaces the view's real primary affordance (`[h/l]` for Cycles).
+  - **As-of / data-depth line** on the Matrix mirrors the clock-tab header; clock-factor bullets wrap instead of mid-word cutting.
+- Discipline preserved: no practitioner/author names or raw tickers anywhere; `cycles_render_is_free_of_jargon_and_tickers` now covers all 4 sub-tabs.
+- Tests: new unit tests for the Engine panel builder (plain-language band/flags), the Matrix row cursor + drill mapping + degree-fallback labeling, the full degree-name map, translation glyphs, ellipsize, and band words; snapshot no-panic test extended to 160/120/100/80 cols × 4 sub-tabs; new Engine-content and Stance-survives-at-80-cols render assertions. `cargo test`/`clippy` green.
+- Files: `src/tui/views/cycles.rs`, `src/app.rs`, `src/tui/widgets/status_bar.rs`, `src/tui/views/help.rs`, `src/commands/snapshot.rs`, `docs/KEYBINDINGS.md`.
+
 ### 2026-06-22 — feat(tui): Cycles page (Phase-1 MVP) — Matrix + Bitcoin + Gold cycle clocks on key `C`
 
 - What: a new top-level **Cycles** view (key `C`, tab `[C]Cycles` after `[9]Risk`) with three h/l sub-tabs:
