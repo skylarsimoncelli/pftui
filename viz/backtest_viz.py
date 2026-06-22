@@ -6,21 +6,21 @@ The backtest showcase, rendered from the hardened
 Rust data boundary):
 
   tearsheet — the EQUITY CURVE + UNDERWATER strip + stat line. The backtest's
-              `trades` list (per-trade `return_pct`, anchored on `exit_date`) is
-              compounded into a cumulative-equity curve; the running drawdown
-              from that curve is drawn as an underwater strip beneath it. A
-              header carries CAGR / Sharpe-proxy / max-DD / win-rate / #trades,
-              and the strategy's terminal equity is compared against the
-              buy-and-hold benchmark. IF the Monte-Carlo block is present, the
-              resampled TERMINAL-return spread (p5 / p50 / p95) is drawn as a
-              faint cone fanning off the end of the curve — the luck-vs-skill
-              spread. (Per-bar MC path bands are NOT exposed by the CLI, only
-              terminal + drawdown percentiles, so the cone is anchored at the
-              curve's end rather than tracking every bar — see viz/README.md.)
+              native `equity_curve` (per-trade-exit `{date, equity, drawdown_pct}`)
+              is drawn directly when present; the running drawdown from that
+              curve is drawn as an underwater strip beneath it. A header carries
+              CAGR / Sharpe-proxy / max-DD / win-rate / #trades, and the
+              strategy's terminal equity is compared against the buy-and-hold
+              benchmark. IF the Monte-Carlo block carries `path_envelope`, a TRUE
+              per-step cone (shaded p5–p95 band tracking the curve over time) is
+              drawn — the luck-vs-skill spread at every step, not just the end.
+              When only terminal percentiles are present (older JSON), it falls
+              back to a faint terminal fan anchored at the curve's end.
 
-The equity curve is reconstructed by compounding the per-trade `return_pct`
-the CLI already emits (verified to reproduce `total_return_pct` and
-`max_drawdown_pct` exactly); no number is invented here — Rust still owns the math.
+The equity curve prefers the native `equity_curve` array the CLI now emits
+(verified to reproduce `total_return_pct` and `max_drawdown_pct` exactly); when
+absent (older JSON) it falls back to compounding the per-trade `return_pct`.
+No number is invented here — Rust still owns the math.
 
 CLI:   python backtest_viz.py tearsheet --asset BTC --entry "rsi(14)<30" --exit "rsi(14)>70"
 Token: <!--BACKTEST_VIZ:tearsheet:BTC?entry=rsi(14)<30&exit=rsi(14)>70-->
@@ -55,12 +55,46 @@ def _num(v):
         return None
 
 
+def native_equity_curve(report):
+    """Map the native `equity_curve` array into plot points.
+
+    The CLI emits an ordered list of {date, equity, drawdown_pct} anchored on
+    trade-exit dates (with a leading 1.0 anchor on the first entry date). This
+    is the authoritative series — it reproduces total_return_pct / max_drawdown
+    exactly. Returns [] when the array is absent or unusable so the caller can
+    fall back to the per-trade reconstruction.
+
+    Points are {x: ordinal-day, eq: multiple, dd: drawdown FRACTION} — the same
+    shape the reconstruction emits (drawdown_pct is a percent in the JSON, so
+    it is divided by 100 here).
+    """
+    arr = report.get("equity_curve")
+    if not isinstance(arr, list):
+        return []
+    pts = []
+    for p in arr:
+        if not isinstance(p, dict):
+            continue
+        eq = _num(p.get("equity"))
+        dt = p.get("date")
+        if eq is None or not dt:
+            continue
+        try:
+            x = d2o(dt)
+        except (ValueError, TypeError):
+            continue
+        dd = _num(p.get("drawdown_pct"))
+        pts.append({"x": x, "eq": eq, "dd": (dd / 100.0) if dd is not None else 0.0})
+    return pts
+
+
 def equity_curve(trades):
     """Compound per-trade return_pct into a cumulative-equity curve.
 
-    Returns a list of points {x: ordinal-day, eq: multiple, dd: drawdown frac}
-    anchored on each trade's exit_date, with a leading 1.0 anchor at the first
-    entry. '' / [] inputs degrade to an empty list.
+    Fallback for OLD JSON without a native `equity_curve`. Returns a list of
+    points {x: ordinal-day, eq: multiple, dd: drawdown frac} anchored on each
+    trade's exit_date, with a leading 1.0 anchor at the first entry. '' / []
+    inputs degrade to an empty list.
     """
     pts = []
     eq = 1.0
@@ -98,7 +132,11 @@ def tearsheet(report, ttl):
     Needs at least two equity points (one trade beyond the anchor). Returns ''
     otherwise so the chart degrades to nothing in the report.
     """
-    pts = equity_curve(report.get("trades"))
+    # Prefer the native equity_curve (authoritative); fall back to compounding
+    # the per-trade return_pct for OLD JSON that predates the native series.
+    pts = native_equity_curve(report)
+    if len(pts) < 2:
+        pts = equity_curve(report.get("trades"))
     if len(pts) < 2:
         return ""
 
@@ -132,6 +170,19 @@ def tearsheet(report, ttl):
             if v is not None:
                 eq_hi = max(eq_hi, 1.0 + v / 100.0)
                 eq_lo = min(eq_lo, 1.0 + v / 100.0)
+        # Per-step envelope (true cone): include its band in the equity domain
+        # so the shaded p5-p95 region fits without clipping.
+        env = mc.get("path_envelope")
+        if isinstance(env, list):
+            for ep in env:
+                if not isinstance(ep, dict):
+                    continue
+                hi = _num(ep.get("p95"))
+                lo = _num(ep.get("p5"))
+                if hi is not None:
+                    eq_hi = max(eq_hi, hi)
+                if lo is not None and lo > 0:
+                    eq_lo = min(eq_lo, lo)
     # Log scale for equity (multiplicative returns read far better in log).
     import math
     eq_lo = max(eq_lo, 1e-6)
@@ -230,8 +281,53 @@ def tearsheet(report, ttl):
                      f'font-size="8" font-family={MONO!r}>'
                      f'{esc(f"hold {bench_eq:.1f}x")}</text>')
 
-    # ---- Monte-Carlo terminal cone (faint) at the curve's end ----
-    if mc_p5 is not None and mc_p95 is not None:
+    # ---- Monte-Carlo cone ----
+    # Preferred: a TRUE per-step cone (p5-p95 band tracking the curve over time)
+    # from `path_envelope`. Step k of the envelope aligns with equity point k
+    # (both are per-trade-exit and share the step-0 anchor at 1.0x), so the band
+    # is drawn on the SAME x-axis as the curve. Fallback: a terminal fan at the
+    # curve's end when only terminal percentiles are present (older JSON).
+    envelope = mc.get("path_envelope") if mc else None
+    drew_cone = False
+    if isinstance(envelope, list) and len(envelope) >= 2 and len(envelope) <= len(pts):
+        # Build (x, p5, p50, p95) using the equity-point dates as the x-axis.
+        band = []
+        for k, ep in enumerate(envelope):
+            if not isinstance(ep, dict) or k >= len(pts):
+                continue
+            p5 = _num(ep.get("p5"))
+            p50 = _num(ep.get("p50"))
+            p95 = _num(ep.get("p95"))
+            if p5 is None or p95 is None:
+                continue
+            band.append((pts[k]["x"], p5, p50, p95))
+        if len(band) >= 2:
+            # Shaded p5-p95 area: forward along p95, back along p5.
+            up = [f"{X(b[0]):.1f},{YE(b[3]):.1f}" for b in band]
+            dn = [f"{X(b[0]):.1f},{YE(b[1]):.1f}" for b in reversed(band)]
+            s.append(f'<polygon points="{" ".join(up + dn)}" fill="{BLUE}" '
+                     f'fill-opacity="0.10" stroke="none"/>')
+            # p5 / p95 boundary lines (faint) + a dashed p50 median path.
+            p95_path = "M" + " L".join(f"{X(b[0]):.1f},{YE(b[3]):.1f}" for b in band)
+            p5_path = "M" + " L".join(f"{X(b[0]):.1f},{YE(b[1]):.1f}" for b in band)
+            s.append(f'<path d="{p95_path}" fill="none" stroke="{BLUE}" '
+                     f'stroke-width="0.9" stroke-opacity="0.55"/>')
+            s.append(f'<path d="{p5_path}" fill="none" stroke="{BLUE}" '
+                     f'stroke-width="0.9" stroke-opacity="0.55"/>')
+            if all(b[2] is not None for b in band):
+                p50_path = "M" + " L".join(f"{X(b[0]):.1f},{YE(b[2]):.1f}" for b in band)
+                s.append(f'<path d="{p50_path}" fill="none" stroke="{BLUE}" '
+                         f'stroke-width="1" stroke-dasharray="3 3" '
+                         f'stroke-opacity="0.6"/>')
+            # Terminal band labels at the cone's right edge.
+            bx = X(band[-1][0])
+            for yv, lab in ((YE(band[-1][3]), f"P95 {band[-1][3]:.1f}x"),
+                            (YE(band[-1][1]), f"P5 {band[-1][1]:.1f}x")):
+                s.append(f'<text x="{bx+6:.1f}" y="{yv+3:.1f}" fill="{BLUE}" '
+                         f'font-size="7.5" font-family={MONO!r} '
+                         f'fill-opacity="0.85">{esc(lab)}</text>')
+            drew_cone = True
+    if not drew_cone and mc_p5 is not None and mc_p95 is not None:
         cx = X(x1)
         y5 = YE(1.0 + mc_p5 / 100.0)
         y95 = YE(1.0 + mc_p95 / 100.0)

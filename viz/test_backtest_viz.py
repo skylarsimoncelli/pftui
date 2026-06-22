@@ -119,6 +119,54 @@ def main():
     check("tearsheet empty when all trades unparseable",
           backtest_viz.tearsheet(bad, "t") == "")
 
+    # ---- NEW SHAPE: native equity_curve + per-step path_envelope ----
+    # Build a native equity_curve that reproduces the same compounding, plus a
+    # per-step MC envelope aligned to those points (step k <-> point k).
+    native_pts = [{"date": "2014-10-03", "equity": 1.0, "drawdown_pct": 0.0}]
+    eqv, peakv = 1.0, 1.0
+    for t in REPORT["trades"]:
+        eqv *= (1 + t["return_pct"] / 100)
+        peakv = max(peakv, eqv)
+        native_pts.append({"date": t["exit_date"], "equity": eqv,
+                           "drawdown_pct": (eqv / peakv - 1.0) * 100.0})
+    # Envelope: 8 steps (point count), widening p5<=p50<=p95 bands.
+    envelope = []
+    for k in range(len(native_pts)):
+        frac = k / max(len(native_pts) - 1, 1)
+        mid = native_pts[k]["equity"]
+        envelope.append({"step": k,
+                         "p5": max(mid * (1.0 - 0.5 * frac), 1e-3),
+                         "p50": mid,
+                         "p95": mid * (1.0 + 1.5 * frac)})
+    NEW = {**REPORT,
+           "equity_curve": native_pts,
+           "monte_carlo": {**REPORT["monte_carlo"], "path_envelope": envelope}}
+
+    npts = backtest_viz.native_equity_curve(NEW)
+    check("native_equity_curve reads the array", len(npts) == len(native_pts))
+    check("native_equity_curve starts at 1.0", abs(npts[0]["eq"] - 1.0) < 1e-9)
+    check("native_equity_curve final equity matches compounding",
+          abs(npts[-1]["eq"] - eqv) < 1e-6)
+    check("native_equity_curve converts drawdown_pct to fraction",
+          any(p["dd"] < -0.01 for p in npts) and all(p["dd"] <= 1e-9 for p in npts))
+
+    svg_new = backtest_viz.tearsheet(NEW, "BTC — new shape")
+    check("new-shape tearsheet renders", svg_new.startswith("<svg"))
+    check("new-shape draws per-step cone (multi-point p95 path)",
+          "<polygon" in svg_new and svg_new.count("<path") >= 4)
+    check("new-shape labels terminal P5/P95", "P5 " in svg_new and "P95 " in svg_new)
+    check("new-shape still draws underwater strip", "underwater" in svg_new)
+
+    # native curve is preferred over the trades reconstruction when present:
+    # corrupt trades but keep a valid native curve -> still renders correctly.
+    pref = {**NEW, "trades": [{"entry_date": "x", "exit_date": "y", "return_pct": 5.0}]}
+    check("native curve preferred over trades reconstruction",
+          backtest_viz.tearsheet(pref, "t").startswith("<svg"))
+
+    # OLD SHAPE still works (no equity_curve, no path_envelope -> terminal fan).
+    check("old-shape (no native curve) still renders via reconstruction",
+          backtest_viz.tearsheet(REPORT, "t").startswith("<svg"))
+
     # ---- arg parsing (asset + query string) ----
     asset, extra = backtest_viz._parse_arg("BTC?entry=rsi(14)%3C30&exit=rsi(14)%3E70")
     check("parse_arg extracts asset", asset == "BTC")
