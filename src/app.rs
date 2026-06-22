@@ -1140,14 +1140,28 @@ impl App {
         self.background_refresh_complete_rx = Some(rx);
         self.is_background_refreshing = true;
 
-        std::thread::spawn(move || {
-            if let Ok(backend) = crate::db::backend::open_from_config(&config, &db_path) {
-                // Run refresh silently so background sync does not corrupt the TUI screen.
-                let _ = crate::commands::refresh::run_quiet(&backend, &config, false);
-            }
-            // Signal completion (ignore if receiver was dropped)
-            let _ = tx.send(());
-        });
+        // Named "pftui-bg…" so the TUI panic hook (src/tui/mod.rs) recognises
+        // this as a background worker and routes any panic to panic.log instead
+        // of corrupting the live screen. catch_unwind guarantees the completion
+        // signal fires even on panic, so `is_background_refreshing` never sticks.
+        let spawn = std::thread::Builder::new()
+            .name("pftui-bg-refresh".to_string())
+            .spawn(move || {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if let Ok(backend) = crate::db::backend::open_from_config(&config, &db_path) {
+                        // Run refresh silently so background sync does not corrupt the screen.
+                        let _ = crate::commands::refresh::run_quiet(&backend, &config, false);
+                    }
+                }));
+                // Signal completion (ignore if receiver was dropped)
+                let _ = tx.send(());
+            });
+        if spawn.is_err() {
+            // Thread spawn failed — clear the in-flight flag so the UI doesn't
+            // hang on "Refreshing…" forever.
+            self.is_background_refreshing = false;
+            self.background_refresh_complete_rx = None;
+        }
     }
 
     fn load_data(&mut self) {

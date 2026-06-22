@@ -86,11 +86,16 @@ impl PriceService {
             .build()
             .context("Failed to build tokio runtime for PriceService")?;
 
-        let handle = std::thread::spawn(move || {
-            rt.block_on(async move {
-                Self::run_loop(cmd_rx, update_tx, &config).await;
-            });
-        });
+        // Named "pftui-bg…" so the TUI panic hook (src/tui/mod.rs) routes any
+        // panic on this worker to panic.log rather than corrupting the screen.
+        let handle = std::thread::Builder::new()
+            .name("pftui-bg-price".to_string())
+            .spawn(move || {
+                rt.block_on(async move {
+                    Self::run_loop(cmd_rx, update_tx, &config).await;
+                });
+            })
+            .context("Failed to spawn PriceService thread")?;
 
         Ok(PriceService {
             cmd_tx,

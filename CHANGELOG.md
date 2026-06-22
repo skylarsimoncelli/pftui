@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-06-22 — fix(tui): panic hook — a background-thread panic no longer corrupts the live TUI
+
+- What: a panic on a background worker thread (data refresh or price service) previously printed `thread panicked at …` straight to stderr **over** the ratatui alt-screen buffer while raw mode was still on, leaving the terminal corrupted — no nav bar, garbled status line (the bug an operator hit during a refresh). The TUI had **no panic hook** at all. Now `tui::run` installs one before entering raw mode.
+- How: the hook distinguishes worker threads (now named with a `pftui-bg` prefix via `std::thread::Builder` — `pftui-bg-refresh`, `pftui-bg-price`) from the main/TUI thread. A background-worker panic is routed to `~/.local/share/pftui/panic.log` and **never** touches the terminal, so a failed refresh degrades to a silent miss and the TUI keeps rendering. A main-thread panic restores the terminal (disable raw mode, leave alt screen, show cursor) before delegating to the previous hook so the message prints cleanly. The background-refresh body is additionally wrapped in `catch_unwind` so the completion signal always fires and `is_background_refreshing` never sticks on "Refreshing…". This is a robustness fix at the TUI boundary — it makes the *class* of "a worker panic corrupts the screen" impossible regardless of the underlying cause (e.g. an intermittent short-lived-runtime drop during refresh).
+- Tests: `cargo build --release` + `cargo clippy` clean; full `cargo test` green. The hook itself is exercised by the live TUI (panic rendering can't be asserted under `TestBackend`).
+- Files: `src/tui/mod.rs`, `src/app.rs`, `src/price/mod.rs`.
+
 ### 2026-06-21 — feat(tui): Diversification sub-tab — pairwise correlation + co-crash in the Risk Dashboard
 
 - What: the Risk Dashboard view (key `9`) gains a 4th sub-tab, **Diversification** (h/l now cycles Risk → Basket → Cycle → Diversification). For the held basket it shows, per asset pair, the **Pearson correlation** and the **co-crash λ_L** (empirical lower-tail dependence — the chance both crash together in the worst 5% of days), with a WEAK/MODERATE/STRONG verdict, sorted most-co-crashing first. The direct TUI visualization of the operator's core thesis — *does my book actually diversify, including in a crash?* (e.g. BTC↔gold). Surfaces the copula/tail-dependence work (previously CLI-only).
