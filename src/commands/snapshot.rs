@@ -341,6 +341,27 @@ mod tests {
     }
 
     #[test]
+    fn cycles_matrix_renders_bottom_confluence_column() {
+        // The Matrix must surface the monthly cycle-bottom confluence column:
+        // a plain "Low N/7" header and a per-row "N/7" count (or the missing
+        // dash). Name-free and ticker-free. Synthetic demo data only.
+        let config = Config::default();
+        let buf = render_view_buffer(&config, 160, 48, Some("cycles"), Some(0), true)
+            .expect("matrix render");
+        let text = buffer_to_plain_string(&buf, 160, 48);
+        assert!(
+            text.contains("Low N/7"),
+            "bottom-confluence column header missing: {text}"
+        );
+        // At least one row renders a real "N/7" cell or the missing dash.
+        let has_count = (0..=7).any(|n| text.contains(&format!("{n}/7")));
+        assert!(
+            has_count || text.contains("—"),
+            "bottom-confluence cell (N/7 or dash) missing: {text}"
+        );
+    }
+
+    #[test]
     fn cycles_render_is_free_of_jargon_and_tickers() {
         // Guards the operator's #1 constraint: NO practitioner/author names and
         // NO raw tickers may appear in the rendered Cycles UI. Renders every

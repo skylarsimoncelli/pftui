@@ -6,9 +6,6 @@
 
 ## P1 - Bugs/Regressions
 
-### Cycles Matrix — add a "Bottom N/7" column from the bottom-signals engine
-The Cycles → Matrix row layout was deliberately left with room AFTER Band / BEFORE Opens-in so a compact "Bottom N/7" mechanical cycle-bottom column can slot in without reworking the column plan (`src/tui/views/cycles.rs::render_matrix`). The engine now exists (`analytics cycles bottom-signals --asset <SYM>` → `met_count`/`total=7` via `src/analytics/cycle_signals.rs::cycle_bottom_signals`). Wire it into `build_matrix_rows`: compute N/7 per cycle asset off the in-memory `app.price_history` (pure CPU — no I/O on the event loop), surface the count (e.g. `5/7`) colored by proximity, and drill the per-criterion checklist into the Engine sub-tab. No new table — reads the engine output. Surfaces: Cycles Matrix + Engine.
-
 ### Yahoo fetch must never query bare crypto symbols (BTC equity-ticker collision)
 **Source:** 2026-06-11 price audit + repair. The canonical `BTC` series contained 237 rows of Yahoo's EQUITY ticker "BTC" (~$28-55) because some Yahoo fetch/backfill path queries the bare symbol instead of mapping crypto symbols to their `-USD` Yahoo tickers. Rows archived + deleted; the #907 ingest guard now rejects future collisions loudly (>20% d/d uncorroborated), but the mis-mapped fetch will retry and spam rejections every refresh. Find the path (grep yahoo fetch/backfill callers for symbol pass-through), add a crypto-symbol→Yahoo-ticker mapping (BTC→BTC-USD, ETH→ETH-USD; reuse the deep_alias machinery in series_registry), and a regression test that bare "BTC" never reaches the Yahoo URL builder. Layer: L0 ingest. Consumer: price_history integrity. Surfaces: CLI refresh output only.
 **Why:** symbol-collision corruption poisoned 52w ranges and long-window computations on the canonical series for months without detection until today's audit.
@@ -77,6 +74,9 @@ The Cycles → Matrix row layout was deliberately left with room AFTER Band / BE
 ---
 
 ## P2 - Coverage And Agent Consumption
+
+### Cycles Engine sub-tab — per-criterion ✓/✗ bottom-signal breakdown for the focused asset
+The Matrix now surfaces the monthly N/7 confluence count (`src/tui/views/cycles.rs`); the natural drill-down is the focused asset's per-criterion ✓/✗ checklist (the 7 `Criterion` rows from `cycle_bottom_signals(...).criteria` + the non-counted pi-cycle bonus) rendered in the Engine sub-tab so the user sees WHICH signals are firing, not just how many. Name-free / ticker-free; keep the jargon-guard green. Surfaces: Cycles Engine.
 
 ### Cycle-bottom signal suite — alert kind + composite backtest
 **Source:** 2026-06-23 (CYCLE-SIGNALS doc + integration pass). The `analytics cycles bottom-signals` N-of-7 confluence engine ships and is documented (docs/CYCLE-SIGNALS.md), analyst-wired, and rendered (`viz/cycle_signals_viz.py`), but two reliability surfaces are NOT yet built:

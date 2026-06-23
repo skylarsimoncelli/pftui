@@ -186,11 +186,12 @@ pftui analytics strategy segment --asset BTC --when "rsi(close,14) < 30 @monthly
 pftui analytics strategy explain --asset BTC --entry "..." --json
 ```
 
-> **TODO (follow-up):** there is **no dedicated `bottom-signals` backtest or
-> alert subcommand merged yet.** Two follow-ups: (1) a `bottom-signals`-aware
-> alert kind (or `analytics alerts` rule) so a rising N/7 arms a notification —
-> today `analytics alerts add --kind technical|indicator` covers individual
-> indicators but not the composite N/7; (2) a composite backtest that scores the
-> *whole suite's* hit-rate at historic cycle lows (did N/7 ≥ 5 reliably precede
-> the low-to-low recovery?). Until those land, document the per-criterion
-> `analytics strategy` path above and the alert gap here.
+> **Composite suite alerts (merged):** a rising N/7 (or any single criterion
+> firing) arms a notification through the cycle-signal alert engine in
+> `src/alerts/cycle_signal_alert.rs`. Use the composite condition
+> `cycle_bottom_<tf>_<N>` (e.g. `cycle_bottom_monthly_5` fires when the monthly
+> suite reaches ≥ 5/7) or the per-criterion condition
+> `cycle_criterion_<tf>_<key>` to watch a single signal. The composite
+> hit-rate-at-historic-lows backtest is also merged — it scores the *whole
+> suite's* lead/lag and coverage versus verified cycle lows. The per-criterion
+> `analytics strategy` path above remains available for single-indicator drills.

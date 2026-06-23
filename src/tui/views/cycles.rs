@@ -28,9 +28,11 @@ use crate::analytics::cycle_engine::{
     age_display, analyze, days_per_year_for, default_config, BandPosition, CycleReport,
     DegreeStatus,
 };
+use crate::analytics::cycle_signals::{cycle_bottom_signals, SignalTimeframe};
 use crate::analytics::hurst_rs;
 use crate::app::App;
 use crate::models::price::HistoryRecord;
+use crate::tui::theme::Theme;
 
 /// Sub-tab count (Matrix, Bitcoin, Gold, Engine). Cycled with h/l.
 pub const SUBTAB_COUNT: u8 = 4;
@@ -127,6 +129,10 @@ struct MatrixRow {
     last_low: String,
     regime: String,
     stance: String,
+    /// Count of the 7 cycle-bottom confluence criteria currently firing on the
+    /// operator's primary monthly bottom-watch timeframe. `None` when the
+    /// cached history is too shallow to aggregate monthly bars.
+    bottom_n7: Option<usize>,
     /// Sort key: bars/days until the next-low window opens (smaller = sooner).
     sort_key: i64,
 }
@@ -178,6 +184,7 @@ fn matrix_row(
     report: Option<&CycleReport>,
     stance: Option<&str>,
     expected_degree: &str,
+    bottom_n7: Option<usize>,
 ) -> MatrixRow {
     let regime = regime_glyph(closes).to_string();
     let bpw = report.map(|r| r.bars_per_week).unwrap_or(7);
@@ -302,6 +309,7 @@ fn matrix_row(
         last_low,
         regime,
         stance,
+        bottom_n7,
         sort_key,
     }
 }
@@ -412,6 +420,12 @@ fn build_matrix_rows(app: &App) -> Vec<MatrixRow> {
             // Silver phases WITH gold — no independent stance/clock.
             _ => Some("phases w/ gold".to_string()),
         };
+        // Monthly cycle-bottom confluence (the operator's primary bottom-watch
+        // timeframe — see docs/CYCLE-SIGNALS.md). Computed from the SAME deep
+        // daily history already in hand (no blocking fetch in the render path);
+        // `None` when too shallow to aggregate monthly bars.
+        let bottom_n7 = cycle_bottom_signals(a.ticker, hist, SignalTimeframe::Monthly)
+            .map(|s| s.met_count);
         rows.push(matrix_row(
             idx,
             a.name,
@@ -419,6 +433,7 @@ fn build_matrix_rows(app: &App) -> Vec<MatrixRow> {
             report.as_ref(),
             stance.as_deref(),
             expected_long_degree(a.ticker),
+            bottom_n7,
         ));
     }
     // Sort by next-low proximity (soonest first).
@@ -482,17 +497,18 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
     let cols = area.width;
 
     // Responsive column plan keyed to the cumulative fixed-column widths:
-    // marker(3)+Asset(8)+Stance(22)+Degree(20)+Band(8) = 61 base, then each
-    // optional column adds its width. Drop right-to-left as width shrinks, but
-    // the base columns — including Stance, the actionable verdict — ALWAYS
-    // survive narrowing (B2d). NOTE: a future "Bottom N/7" column is intended
-    // to slot in right here (after Band / before Opens-in) — keep room.
-    let show_opens = cols >= 71; // +Opens-in(10) — the accumulator's key number
-    let show_age = cols >= 84; // +Age/%band(13)
-    let show_tr = cols >= 97; // +Trans.(13)
-    let show_lastlow = cols >= 110; // +Last low(13)
-    let show_nextlow = cols >= 134; // +Next-low(24)
-    let show_regime = cols >= 140; // +Regime(6)
+    // marker(3)+Asset(8)+Stance(22)+Degree(20)+Band(8)+Low-N/7(8) = 69 base,
+    // then each optional column adds its width. Drop right-to-left as width
+    // shrinks, but the base columns — including Stance (the actionable verdict)
+    // and the bottom-confluence count — ALWAYS survive narrowing (B2d). The
+    // "Low N/7" column slots in right after Band / before Opens-in: it is the
+    // accumulator's cycle-bottom signal (monthly confluence, 0–7 criteria).
+    let show_opens = cols >= 79; // +Opens-in(10) — the accumulator's key number
+    let show_age = cols >= 92; // +Age/%band(13)
+    let show_tr = cols >= 105; // +Trans.(13)
+    let show_lastlow = cols >= 118; // +Last low(13)
+    let show_nextlow = cols >= 142; // +Next-low(24)
+    let show_regime = cols >= 148; // +Regime(6)
 
     // Header.
     let mut header = String::from("   "); // marker gutter
@@ -500,6 +516,7 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
     header.push_str(&format!("{:<22}", "Stance / position"));
     header.push_str(&format!("{:<20}", "Degree"));
     header.push_str(&format!("{:<8}", "Band"));
+    header.push_str(&format!("{:<8}", "Low N/7"));
     if show_opens {
         header.push_str(&format!("{:<10}", "Opens-in"));
     }
@@ -549,6 +566,12 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
         ));
         spans.push(Span::raw(format!("{:<20}", ellipsize(&r.degree, 19))));
         spans.push(Span::raw(format!("{:<8}", r.band)));
+        // Bottom-confluence count — color-graded toward green as confluence
+        // builds (the accumulator's cycle-bottom signal).
+        spans.push(Span::styled(
+            format!("{:<8}", bottom_n7_cell(r.bottom_n7)),
+            Style::default().fg(bottom_n7_color(r.bottom_n7, &app.theme)),
+        ));
         if show_opens {
             spans.push(Span::raw(format!("{:<10}", ellipsize(&r.opens_in, 9))));
         }
@@ -579,7 +602,7 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "j/k select · Enter → asset tab. Band <pre / =in / >over the low-to-low timing window. Sorted by next-low proximity.",
+        "j/k select · Enter → asset tab. Band <pre / =in / >over the low-to-low timing window. Low N/7 = monthly cycle-bottom criteria firing (higher = bottom building). Sorted by next-low proximity.",
         Style::default().fg(app.theme.text_muted),
     )));
     lines.push(Line::from(Span::styled(
@@ -617,6 +640,27 @@ fn stance_color(stance: &str, app: &App) -> Color {
         app.theme.stale_yellow
     } else {
         app.theme.text_primary
+    }
+}
+
+/// The bottom-confluence cell text: "N/7" when computable, else the page's
+/// missing-value dash. A high count = cycle-bottom confluence building =
+/// the accumulator's buy signal.
+fn bottom_n7_cell(n: Option<usize>) -> String {
+    match n {
+        Some(n) => format!("{n}/7"),
+        None => "—".to_string(),
+    }
+}
+
+/// Color-grade the bottom-confluence count: dim/neutral at 0–1 firing,
+/// ramping toward a positive green emphasis as confluence rises. Theme-aware.
+fn bottom_n7_color(n: Option<usize>, theme: &Theme) -> Color {
+    match n {
+        Some(c) if c >= 5 => theme.gain_green,
+        Some(c) if c >= 3 => theme.stale_yellow,
+        Some(_) => theme.text_secondary,
+        None => theme.text_muted,
     }
 }
 
@@ -1275,12 +1319,13 @@ mod tests {
     #[test]
     fn matrix_row_with_no_report_is_all_dashes_but_keeps_regime() {
         let closes: Vec<f64> = (0..300).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
-        let row = matrix_row(0, "Bitcoin", &closes, None, Some("ACCUMULATE ●"), "4-year");
+        let row = matrix_row(0, "Bitcoin", &closes, None, Some("ACCUMULATE ●"), "4-year", Some(4));
         assert_eq!(row.asset_idx, 0);
         assert_eq!(row.name, "Bitcoin");
         assert_eq!(row.degree, "—");
         assert_eq!(row.band, "—");
         assert_eq!(row.stance, "ACCUMULATE ●");
+        assert_eq!(row.bottom_n7, Some(4));
         // Regime is computed from closes even without an engine report.
         assert!(!row.regime.is_empty());
         assert_eq!(row.sort_key, i64::MAX / 2);
@@ -1296,8 +1341,73 @@ mod tests {
         let closes: Vec<f64> = (0..400).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
         // Claim a long degree that differs from what the report actually has.
         let bogus = if actual == "zzz" { "qqq" } else { "zzz" };
-        let row = matrix_row(1, "Gold", &closes, Some(&report), None, bogus);
+        let row = matrix_row(1, "Gold", &closes, Some(&report), None, bogus, None);
         assert!(row.degree.contains("n/a"), "expected fallback label, got {}", row.degree);
+    }
+
+    #[test]
+    fn bottom_n7_cell_formats_count_or_dash() {
+        // A known count renders "N/7"; insufficient history (None) renders the
+        // page's missing-value dash — never panics, never leaks anything else.
+        assert_eq!(bottom_n7_cell(Some(0)), "0/7");
+        assert_eq!(bottom_n7_cell(Some(4)), "4/7");
+        assert_eq!(bottom_n7_cell(Some(7)), "7/7");
+        assert_eq!(bottom_n7_cell(None), "—");
+    }
+
+    #[test]
+    fn bottom_n7_color_ramps_with_confluence() {
+        // The grade ramps from dim/neutral at low counts toward green as the
+        // bottom-confluence builds. Verified against a real theme.
+        let theme = crate::tui::theme::theme_by_name("midnight");
+        assert_eq!(bottom_n7_color(None, &theme), theme.text_muted);
+        assert_eq!(bottom_n7_color(Some(0), &theme), theme.text_secondary);
+        assert_eq!(bottom_n7_color(Some(1), &theme), theme.text_secondary);
+        assert_eq!(bottom_n7_color(Some(3), &theme), theme.stale_yellow);
+        assert_eq!(bottom_n7_color(Some(5), &theme), theme.gain_green);
+        assert_eq!(bottom_n7_color(Some(7), &theme), theme.gain_green);
+    }
+
+    #[test]
+    fn bottom_n7_engine_yields_count_on_deep_history_and_none_when_shallow() {
+        // Wired against the real engine: a deep synthetic daily series (enough
+        // for monthly aggregation) yields a count in 0..=7; a shallow series
+        // (below the engine's minimum) yields None — never panics.
+        use crate::analytics::cycle_signals::{cycle_bottom_signals, SignalTimeframe};
+        use chrono::{Duration, NaiveDate};
+        use rust_decimal::Decimal;
+
+        let start = NaiveDate::from_ymd_opt(2018, 1, 1).expect("date");
+        let mk = |n: usize| -> Vec<HistoryRecord> {
+            (0..n)
+                .map(|i| {
+                    let px = 100.0 + (i as f64 / 30.0).sin() * 10.0 + i as f64 * 0.01;
+                    let d = (start + Duration::days(i as i64))
+                        .format("%Y-%m-%d")
+                        .to_string();
+                    HistoryRecord {
+                        date: d,
+                        close: Decimal::from_f64_retain(px).unwrap_or_default(),
+                        volume: None,
+                        open: None,
+                        high: None,
+                        low: None,
+                    }
+                })
+                .collect()
+        };
+
+        let deep = mk(900); // ~2.5y of daily bars — monthly is computable
+        let got = cycle_bottom_signals("BTC-USD", &deep, SignalTimeframe::Monthly)
+            .map(|s| s.met_count);
+        assert!(matches!(got, Some(n) if n <= 7), "deep history should yield a count, got {got:?}");
+
+        let shallow = mk(20); // far below the engine minimum
+        assert_eq!(
+            cycle_bottom_signals("BTC-USD", &shallow, SignalTimeframe::Monthly).map(|s| s.met_count),
+            None,
+            "shallow history must degrade to None, not panic"
+        );
     }
 
     #[test]
@@ -1365,7 +1475,7 @@ mod tests {
         // a raw bar count.
         let report = synthetic_btc_report();
         let closes: Vec<f64> = (0..400).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
-        let row = matrix_row(0, "Bitcoin", &closes, Some(&report), None, "4-year");
+        let row = matrix_row(0, "Bitcoin", &closes, Some(&report), None, "4-year", None);
         // Age is "<n><unit> ..." — extract the leading number + unit.
         let first = row.age.split_whitespace().next().unwrap_or("");
         if first.ends_with("yr") {
@@ -1400,7 +1510,7 @@ mod tests {
             "test fixture invalid: no shorter degree has a band"
         );
         let closes: Vec<f64> = (0..400).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
-        let row = matrix_row(0, "Bitcoin", &closes, Some(&report), None, "");
+        let row = matrix_row(0, "Bitcoin", &closes, Some(&report), None, "", None);
         assert_ne!(row.band, "—", "band should fall back to the shorter degree");
         assert!(
             row.degree.contains("long n/a"),
