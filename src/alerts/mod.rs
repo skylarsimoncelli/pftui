@@ -1,3 +1,4 @@
+pub mod cycle_signal_alert;
 pub mod engine;
 pub mod rules;
 

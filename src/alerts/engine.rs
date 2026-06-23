@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use super::cycle_signal_alert;
 use super::{AlertDirection, AlertKind, AlertRule, AlertStatus};
 use crate::db::alerts;
 use crate::db::backend::BackendConnection;
@@ -481,6 +482,12 @@ fn evaluate_technical_alert_sqlite(
     if alert.condition.as_deref() == Some("correlation_break") {
         return evaluate_symbol_correlation_break_sqlite(conn, alert);
     }
+    if let Some(condition) = alert.condition.as_deref() {
+        if cycle_signal_alert::is_cycle_signal_condition(condition) {
+            let history = price_history::get_history(conn, &alert.symbol, CYCLE_SIGNAL_BARS)?;
+            return Ok(evaluate_cycle_signal_alert(alert, condition, &history));
+        }
+    }
     let history = price_history::get_history(conn, &alert.symbol, 240)?;
     Ok(evaluate_technical_from_history(
         alert,
@@ -497,12 +504,64 @@ fn evaluate_technical_alert_backend(
     if alert.condition.as_deref() == Some("correlation_break") {
         return evaluate_symbol_correlation_break_backend(backend, alert);
     }
+    if let Some(condition) = alert.condition.as_deref() {
+        if cycle_signal_alert::is_cycle_signal_condition(condition) {
+            let history =
+                price_history::get_history_backend(backend, &alert.symbol, CYCLE_SIGNAL_BARS)?;
+            return Ok(evaluate_cycle_signal_alert(alert, condition, &history));
+        }
+    }
     let history = price_history::get_history_backend(backend, &alert.symbol, 240)?;
     Ok(evaluate_technical_from_history(
         alert,
         price_map.get(&alert.symbol).copied(),
         &history,
     ))
+}
+
+/// Bars of daily history fetched for cycle-bottom signal evaluation. Deep
+/// enough to support monthly aggregation of the requested-TF oscillators
+/// (~10 years).
+const CYCLE_SIGNAL_BARS: u32 = 2600;
+
+/// Evaluate a cycle-bottom signal alert (`cycle_bottom_*` / `cycle_criterion_*`
+/// condition) from cached daily price history. Pure dispatch into
+/// `cycle_signal_alert`; edge-triggering is handled by the standard
+/// fired-state machinery.
+fn evaluate_cycle_signal_alert(
+    alert: &AlertRule,
+    condition: &str,
+    history: &[crate::models::price::HistoryRecord],
+) -> AlertEvaluation {
+    let parsed = match cycle_signal_alert::parse_condition(condition) {
+        Ok(p) => p,
+        Err(e) => {
+            return AlertEvaluation {
+                current_value: None,
+                is_triggered: false,
+                distance_pct: None,
+                trigger_data: json!({
+                    "kind": "cycle_bottom_signal",
+                    "condition": condition,
+                    "reason": "invalid_condition",
+                    "error": e.to_string(),
+                }),
+            };
+        }
+    };
+    let timeframe = match cycle_signal_alert::condition_timeframe(condition) {
+        Ok(tf) => tf,
+        Err(_) => crate::analytics::cycle_signals::SignalTimeframe::Monthly,
+    };
+    let signals =
+        crate::analytics::cycle_signals::cycle_bottom_signals(&alert.symbol, history, timeframe);
+    let eval = cycle_signal_alert::evaluate(&alert.symbol, &parsed, signals.as_ref());
+    AlertEvaluation {
+        current_value: eval.current_value,
+        is_triggered: eval.is_triggered,
+        distance_pct: None,
+        trigger_data: eval.trigger_data,
+    }
 }
 
 fn evaluate_macro_alert_backend(
@@ -2468,5 +2527,101 @@ mod tests {
         // Should trigger at custom 5pp threshold
         let eval_5 = evaluate_scenario_probability_shift_sqlite(&conn, 5.0).unwrap();
         assert!(eval_5.is_triggered, "5pp shift should trigger at 5pp threshold");
+    }
+
+    /// Deep synthetic daily history: a long decline into a sharp V-bottom and
+    /// recovery — the regime where cycle-bottom criteria fire. Used to smoke
+    /// the cycle-signal alert path end-to-end through the engine.
+    fn cycle_v_bottom_history(n_decline: usize, n_rally: usize) -> Vec<crate::models::price::HistoryRecord> {
+        use crate::models::price::HistoryRecord;
+        let start = chrono::NaiveDate::from_ymd_opt(2019, 1, 1).unwrap();
+        let mut out: Vec<HistoryRecord> = Vec::new();
+        let mut day = 0u64;
+        let mut price = 1000.0_f64;
+        for i in 0..n_decline {
+            price = 1000.0 - i as f64 * (700.0 / n_decline as f64);
+            let noise = 8.0 * (i as f64 / 11.0).sin();
+            let date = (start + chrono::Days::new(day)).format("%Y-%m-%d").to_string();
+            let close = Decimal::from_str(&format!("{:.4}", (price + noise).max(50.0))).unwrap();
+            out.push(HistoryRecord { date, close, volume: None, open: None, high: None, low: None });
+            day += 1;
+        }
+        let base = price;
+        for i in 0..n_rally {
+            let p = base + i as f64 * 6.0;
+            let date = (start + chrono::Days::new(day)).format("%Y-%m-%d").to_string();
+            let close = Decimal::from_str(&format!("{:.4}", p)).unwrap();
+            out.push(HistoryRecord { date, close, volume: None, open: None, high: None, low: None });
+            day += 1;
+        }
+        out
+    }
+
+    /// Seed deep BTC history so the cycle engine can compute, arm a daily
+    /// confluence alert with target 1, and exercise the edge-trigger contract:
+    /// the alert never reports newly_triggered on a second consecutive check
+    /// while the condition stays true (fires once per transition).
+    #[test]
+    fn cycle_confluence_alert_is_edge_triggered() {
+        let backend = BackendConnection::Sqlite { conn: open_in_memory() };
+        let conn = backend.sqlite();
+        let history = cycle_v_bottom_history(1600, 400);
+        price_history::upsert_history(conn, "BTC-USD", "test", &history).unwrap();
+
+        let id = alerts::add_alert(
+            conn,
+            new_alert(
+                "technical",
+                "BTC-USD",
+                "above",
+                Some("cycle_bottom_daily_1"),
+                "1",
+                "Bitcoin daily cycle-bottom signals ≥ 1/7",
+            ),
+        )
+        .unwrap();
+
+        // First check computes the read without panic and surfaces a met count.
+        let first = check_alerts_backend(&backend, conn).unwrap();
+        assert_eq!(first.len(), 1);
+        assert!(first[0].current_value.is_some(), "met count should be present");
+
+        if first[0].newly_triggered {
+            // Edge-trigger: a second check while still true must NOT re-fire
+            // (non-recurring alert flipped Armed→Triggered).
+            let second = check_alerts_backend(&backend, conn).unwrap();
+            assert!(!second[0].newly_triggered, "must not re-fire while still triggered");
+
+            // Re-arm → it fires again on the next transition.
+            alerts::update_alert_status(conn, id, AlertStatus::Armed, None).unwrap();
+            let third = check_alerts_backend(&backend, conn).unwrap();
+            assert!(third[0].newly_triggered, "re-armed alert must fire again");
+        }
+    }
+
+    /// A single-criterion cycle alert with an absurd target evaluates cleanly
+    /// and never fires when the criterion is not met (no panic on shallow read).
+    #[test]
+    fn cycle_criterion_alert_evaluates_without_panic() {
+        let backend = BackendConnection::Sqlite { conn: open_in_memory() };
+        let conn = backend.sqlite();
+        // Too-shallow history: signal engine returns None → never triggers.
+        let history = cycle_v_bottom_history(40, 10);
+        price_history::upsert_history(conn, "GC=F", "test", &history).unwrap();
+        alerts::add_alert(
+            conn,
+            new_alert(
+                "technical",
+                "GC=F",
+                "above",
+                Some("cycle_criterion_weekly_trend_line_reclaimed"),
+                "0",
+                "Gold weekly trend line reclaimed",
+            ),
+        )
+        .unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].newly_triggered, "shallow history must not fire");
     }
 }

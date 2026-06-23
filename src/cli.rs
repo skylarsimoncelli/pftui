@@ -3353,6 +3353,7 @@ pub enum AnalyticsCorrelationsCommand {
 #[derive(Subcommand)]
 pub enum AnalyticsAlertsCommand {
     /// Add an alert rule
+    #[command(after_help = "Cycle-bottom signal conditions (evaluated mechanically on `data refresh`):\n  Confluence threshold — fires when met/7 reaches a target on a timeframe:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_bottom_monthly_4\n  Single criterion — fires when one named composite criterion becomes met:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_criterion_weekly_trend_line_reclaimed\n\n  Timeframes: daily | weekly | monthly.\n  Criterion keys: momentum_turning_up, momentum_above_price, dss_bottoming,\n    roofing_confirming_up, volatility_bands_bullish, reversal_dots,\n    trend_line_reclaimed.\n  One-shot by default (fires once per transition; re-arm to re-enable). Add\n  --recurring --cooldown-minutes N to auto-rearm with a cooldown floor.")]
     Add {
         /// Legacy natural-language rule form: "BTC below 55000"
         rule: Option<String>,
