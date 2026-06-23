@@ -12,6 +12,7 @@ pub mod hurst_rs;
 pub mod cyber;
 pub mod cycle_clock;
 pub mod cycle_engine;
+pub mod cycle_signals;
 pub mod deltas;
 pub mod drawdown_metrics;
 pub mod drawdown;
