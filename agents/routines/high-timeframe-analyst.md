@@ -265,7 +265,11 @@ pftui analytics cycles analyze BTC --json
 pftui analytics cycles analyze GC=F --json
 pftui analytics cycles clock --asset BTC --json
 pftui analytics cycles clock --asset GC=F --json
+pftui analytics cycles bottom-signals --asset BTC --timeframe monthly --json
+pftui analytics cycles bottom-signals --asset GC=F --timeframe monthly --json
 ```
+
+`bottom-signals` is the mechanical **N-of-7 cycle-bottom confluence checklist** (engine: `analytics/cycle_signals.rs`, doctrine: docs/CYCLE-SIGNALS.md). It collapses ten independent momentum/volatility/trend primitives into seven composite criteria — each a firing/not-firing bottom confirmation (momentum line turning up, momentum above price momentum, double-smoothed stochastic bottoming, roofing filter confirming up, volatility bands bullish, significant reversal dots, trend line reclaimed) — plus a non-counted pi-cycle bottom bonus. `met_count/7` is the confluence; the `verdict` band runs no-firing → early/weak → building → strong → very-strong (all 7). These criteria historically turn together at past lows, so a rising N/7 is mechanical confirmation that a low is being *put in*, complementing the calendar (`clock`) and structure (`analyze`). **Read the current N/7 before any early-low call** — it is the deterministic half of the confirm checklist (the `cyber`/momentum primitives the prose checklist describes). A high N/7 with the clock still in-band is the convergence you want; a low N/7 during an early-low calendar claim is a red flag to name explicitly. Per criterion the JSON exposes the atomic `components[]` (raw boolean + oscillator value) so nothing is lost. `--timeframe daily|weekly|monthly` drives the momentum criteria (monthly = the cycle-low read; daily = the tactical read).
 
 `analyze` is the PRIMARY cycle command (engine: `analytics/cycle_engine.rs`, doctrine: docs/CYCLE-THEORY.md — do NOT re-derive cycle math agentically). Per degree (BTC: daily/investor/4-year; gold: intermediate/major) it emits the dated cycle-low list, the low-to-low timing band (empirical P15-P85), cycle age + band position (pre_band/in_band/over_band) + the next-low WINDOW, the translation ledger (LT/MID/RT — the first LT after an RT string is the canonical top warning), FLD state + measured-move target, VTL (a break confirms the peak of the next-longer degree), failed-cycle and possible-inversion flags, and a clarity grade (red-clarity counts are not acted on). For BTC it emits BOTH the halving clock and the pure low-to-low count, labeled — cite whichever framing you lean on. `pftui analytics cycles ledger <SYM> --degree <d> --json` gives the full per-cycle translation table.
 
@@ -275,7 +279,7 @@ The clock stays the halving/anchor framing: days/weeks since the 2024-04-19 halv
 
 Rules (mirrored in `cycle-frameworks` — the thesis row is canonical):
 - Any BTC timing view must state where it sits vs the cycle clock: week-of-cycle, the external Oct-2026 / $40k-53k consensus cluster, and which framework(s) it leans on or rejects.
-- An early-low call (before Sep 2026) must explicitly invoke the Loukas ~25% short-cycle tail AND name which items on the confirm checklist (vol-crush→expansion, F&G cycle-low extreme, MVRV bottoming band + falling reserves, price at 200W MA, confirmed breakout) have actually printed.
+- An early-low call (before Sep 2026) must explicitly invoke the Loukas ~25% short-cycle tail AND name which items on the confirm checklist (vol-crush→expansion, F&G cycle-low extreme, MVRV bottoming band + falling reserves, price at 200W MA, confirmed breakout) have actually printed — AND cite the current `bottom-signals` N/7 read (the mechanical confluence half of that checklist). A low N/7 under an early-low calendar claim is a divergence you must justify, not ignore.
 - Compute the 200W MA from the deep `BTC-USD` series (1400-row window), never the short `BTC` series — `analytics cycles clock` already does this.
 - The checklist confirms; the calendar does not. Cycle-date claims are not price predictions, and the clock never emits one.
 
