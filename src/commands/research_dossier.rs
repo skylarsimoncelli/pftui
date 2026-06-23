@@ -23,6 +23,7 @@ use serde::Serialize;
 
 use crate::db::backend::BackendConnection;
 use crate::db::forecast_misalignments::{self, MisalignmentRow};
+use crate::db::research_evidence::{self, EvidenceFilter, EvidenceRow};
 use crate::db::signal_expectancy::{self, ExpectancyRow};
 use crate::research::event_study::EventRow;
 use crate::research::forecast_scoring::{self, build_report, ForecastReport};
@@ -33,6 +34,11 @@ const PRECEDENT_EVENTS: usize = 5;
 
 /// Window for the scenario-ledger discipline stats (macro domain).
 const SCENARIO_STATS_WINDOW_DAYS: i64 = 90;
+
+/// How many captured research-evidence rows to surface, and the recency
+/// window for them.
+const EVIDENCE_LIMIT: i64 = 12;
+const EVIDENCE_WINDOW_DAYS: i64 = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DossierDomain {
@@ -84,6 +90,17 @@ impl DossierDomain {
             Self::Macro => &["macro"],
         }
     }
+
+    /// Research-evidence ledger layers relevant to the domain. Richer than the
+    /// scored-forecast layers — includes the external-TA, antithesis and
+    /// deepdive measurement origins that also persist sources.
+    fn evidence_layers(&self) -> &'static [&'static str] {
+        match self {
+            Self::Ta => &["low", "medium", "external-ta", "antithesis", "deepdive"],
+            Self::Cycles => &["medium", "high", "deepdive", "antithesis"],
+            Self::Macro => &["macro", "high", "antithesis", "deepdive"],
+        }
+    }
 }
 
 /// Scenario-ledger discipline stats (macro domain's section (a) substitute).
@@ -130,6 +147,10 @@ pub struct Dossier {
     pub misalignments: Vec<MisalignmentRow>,
     /// (c) worked precedents from significant measured edges.
     pub precedents: Vec<Precedent>,
+    /// (d) captured external research evidence for this domain/asset (the
+    /// research-evidence ledger consumed — sources that would otherwise have
+    /// evaporated into prose).
+    pub research_evidence: Vec<EvidenceRow>,
 }
 
 fn require_sqlite(backend: &BackendConnection) -> Result<&Connection> {
@@ -291,6 +312,30 @@ pub fn compile(
         });
     }
 
+    // (d) Captured research evidence for the domain. Query the ledger once
+    // (asset + recency filtered) and keep rows whose layer is relevant to the
+    // domain. We do NOT layer-filter in SQL because the ledger layers are
+    // richer (external-ta, antithesis, deepdive) than the forecast layers.
+    let since = (chrono::Utc::now().date_naive()
+        - chrono::Duration::days(EVIDENCE_WINDOW_DAYS))
+    .format("%Y-%m-%d")
+    .to_string();
+    let evidence_layers = domain.evidence_layers();
+    let mut research_evidence: Vec<EvidenceRow> = research_evidence::list(
+        conn,
+        &EvidenceFilter {
+            asset,
+            layer: None,
+            since: Some(&since),
+            source: None,
+            limit: None,
+        },
+    )?
+    .into_iter()
+    .filter(|r| evidence_layers.contains(&r.layer.as_str()))
+    .collect();
+    research_evidence.truncate(EVIDENCE_LIMIT as usize);
+
     Ok(Dossier {
         domain: domain.key().to_string(),
         asset_filter: asset_upper,
@@ -301,6 +346,7 @@ pub fn compile(
         forecast_report,
         misalignments,
         precedents,
+        research_evidence,
     })
 }
 
@@ -498,6 +544,46 @@ pub fn render_markdown(d: &Dossier, domain: DossierDomain) -> String {
                 }
                 out.push('\n');
             }
+        }
+    }
+
+    // (d) captured external research evidence (the research-evidence ledger)
+    out.push_str("\n\n## Captured external research evidence (last 120d)\n\n");
+    if d.research_evidence.is_empty() {
+        out.push_str(&format!(
+            "{NO_EVIDENCE} — no sources captured for this domain; analysts persist them with `pftui research evidence add`\n"
+        ));
+    } else {
+        out.push_str(&format!(
+            "{} captured source(s), newest first (the external record this domain consulted):\n\n",
+            d.research_evidence.len()
+        ));
+        for e in &d.research_evidence {
+            let stance = e
+                .stance
+                .as_deref()
+                .map(|s| format!(" [{s}]"))
+                .unwrap_or_default();
+            let dated = e
+                .source_date
+                .as_deref()
+                .map(|s| format!(" ({s})"))
+                .unwrap_or_default();
+            out.push_str(&format!(
+                "- {} [{}] {} — **{}**{}{}: {}\n",
+                e.run_date,
+                e.layer,
+                e.asset.as_deref().unwrap_or("macro-wide"),
+                e.source_name,
+                dated,
+                stance,
+                e.finding
+            ));
+            out.push_str(&format!("  - claim: {}", e.claim));
+            if let Some(url) = &e.source_url {
+                out.push_str(&format!("  — {url}"));
+            }
+            out.push('\n');
         }
     }
 

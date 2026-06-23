@@ -21,7 +21,11 @@ You receive:
 1. `{CTX}` — current snapshot JSON (read it fully).
 2. `{DEEP}` — historical retrospective JSON (read it fully — knowing what the house believes helps you rival it, but you must not adopt its priors).
 3. The held-asset list below.
-4. **Your own web research.** WebSearch is encouraged and expected. Seek out the credible dollar-bulls, cycle-skeptics, and hard-asset bears — the strongest published versions of the rival worldview (named analysts, desks, papers), not strawmen. Cite who and what you found.
+4. **Your own web research.** WebSearch is encouraged and expected. Seek out the credible dollar-bulls, cycle-skeptics, and hard-asset bears — the strongest published versions of the rival worldview (named analysts, desks, papers), not strawmen. Cite who and what you found. For each MATERIAL source, persist it to the append-only research-evidence ledger (one row per source) so the rival case's evidence survives as queryable rows; `--stance refutes` marks evidence against the house, `context` for neutral:
+
+```bash
+pftui research evidence add --layer antithesis --asset GC=F --claim "Gold overextended vs real yields" --source "<named desk/paper>" --url "https://example.com/x" --finding "real-yield gap implies fair value -12%" --stance refutes
+```
 
 You are explicitly DENIED:
 

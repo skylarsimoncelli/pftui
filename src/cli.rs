@@ -6933,6 +6933,14 @@ pub enum ResearchCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Research-evidence ledger: captured web-research findings + sources (append-only)
+    #[command(
+        after_help = "The research-evidence ledger captures the external sources report-run\nanalysts consult (IMF COFER, SIPRI/WGC, settlement volumes, on-chain\ndashboards, sell-side notes) as first-class rows — name, URL, source\ndate, the claim, the extracted finding, stance and confidence — so they\nsurvive instead of melting into free-text prose. Append-only (L3): rows\nare never updated or deleted. The competence dossier surfaces the\nrelevant rows so the record is actually consumed.\n\nExamples:\n  pftui research evidence add --layer high --asset BTC \\\n    --claim \"ETF net inflows accelerating\" --source \"Glassnode\" \\\n    --url \"https://glassnode.com/x\" --finding \"net inflows +12k BTC wk\"\n  pftui research evidence list --asset BTC --json\n  pftui research evidence list --layer macro --since 2026-06-01"
+    )]
+    Evidence {
+        #[command(subcommand)]
+        command: ResearchEvidenceCommand,
+    },
     /// Signal registry: canonical deterministic event emitters (id, version, description)
     Signals {
         #[command(subcommand)]
@@ -6996,6 +7004,65 @@ pub enum ResearchCommand {
         /// Restrict to one thesis section (default: every section)
         #[arg(long)]
         section: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ResearchEvidenceCommand {
+    /// Append one captured research finding + its source to the ledger
+    Add {
+        /// Analyst origin (free text): high|macro|medium|low|external-ta|antithesis|deepdive
+        #[arg(long)]
+        layer: String,
+        /// Symbol the finding concerns (omit for macro-wide findings)
+        #[arg(long)]
+        asset: Option<String>,
+        /// The assertion the evidence supports
+        #[arg(long)]
+        claim: String,
+        /// Source name (institution / outlet / dashboard)
+        #[arg(long)]
+        source: String,
+        /// Source URL
+        #[arg(long)]
+        url: Option<String>,
+        /// When the source was published (YYYY-MM-DD)
+        #[arg(long = "source-date")]
+        source_date: Option<String>,
+        /// The extracted finding / quote
+        #[arg(long)]
+        finding: String,
+        /// Stance: supports | refutes | context
+        #[arg(long)]
+        stance: Option<String>,
+        /// Optional confidence (decimal)
+        #[arg(long)]
+        confidence: Option<String>,
+        /// Report/research date (YYYY-MM-DD; default today)
+        #[arg(long = "run-date")]
+        run_date: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List captured evidence rows, newest-first, with optional filters
+    List {
+        /// Filter to one asset symbol
+        #[arg(long)]
+        asset: Option<String>,
+        /// Filter to one analyst layer
+        #[arg(long)]
+        layer: Option<String>,
+        /// Only rows with run_date on or after this date (YYYY-MM-DD)
+        #[arg(long)]
+        since: Option<String>,
+        /// Filter by source name (substring match)
+        #[arg(long)]
+        source: Option<String>,
+        /// Cap the number of rows returned
+        #[arg(long)]
+        limit: Option<i64>,
         #[arg(long)]
         json: bool,
     },

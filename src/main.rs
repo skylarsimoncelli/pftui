@@ -6120,6 +6120,50 @@ fn run_cli(cli: Cli) -> Result<()> {
             cli::ResearchCommand::Dossier { domain, asset, json } => {
                 commands::research_dossier::run(&backend, &domain, asset.as_deref(), json)
             }
+            cli::ResearchCommand::Evidence { command } => match command {
+                cli::ResearchEvidenceCommand::Add {
+                    layer,
+                    asset,
+                    claim,
+                    source,
+                    url,
+                    source_date,
+                    finding,
+                    stance,
+                    confidence,
+                    run_date,
+                    json,
+                } => commands::research_evidence::run_add(
+                    &backend,
+                    &layer,
+                    asset.as_deref(),
+                    &claim,
+                    &source,
+                    url.as_deref(),
+                    source_date.as_deref(),
+                    &finding,
+                    stance.as_deref(),
+                    confidence.as_deref(),
+                    run_date.as_deref(),
+                    json,
+                ),
+                cli::ResearchEvidenceCommand::List {
+                    asset,
+                    layer,
+                    since,
+                    source,
+                    limit,
+                    json,
+                } => commands::research_evidence::run_list(
+                    &backend,
+                    asset.as_deref(),
+                    layer.as_deref(),
+                    since.as_deref(),
+                    source.as_deref(),
+                    limit,
+                    json,
+                ),
+            },
             cli::ResearchCommand::Signals { command } => match command {
                 cli::ResearchSignalsCommand::List { json } => {
                     commands::research_harness::run_signals_list(json)
