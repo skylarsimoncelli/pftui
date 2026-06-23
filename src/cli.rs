@@ -4994,6 +4994,22 @@ pub enum AnalyticsCyclesCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Mechanical cycle-bottom signal suite: a deterministic confluence of
+    /// independent cycle-low confirmations, each at its natural timeframe.
+    /// Position/measurement only — never a price prediction.
+    #[command(after_help = "Scores 7 composite cycle-bottom criteria, each at its natural timeframe and\nchecked on the latest bar (N/7 confluence):\n  1. Momentum line turning up                 the RSI's moving average ticked up\n  2. Momentum line above price momentum       the RSI average reclaimed the RSI\n  3. Double-smoothed stochastic bottoming     stochastic ticked up AND crossed its trigger (oversold = context)\n  4. Roofing filter confirming up             de-trended cycle filter green (>=0) AND ticked up\n  5. Volatility bands bullish (daily)         daily momentum bands in the bullish state\n  6. Significant reversal dots (wk/mo)        weekly/monthly strength dots net-bullish\n  7. Trend line reclaimed (weekly)            price reclaimed the weekly trackline\n  bonus: pi-cycle bottom (daily)              fired recently — reported, NOT counted in the 7\n\nThe momentum/stochastic/roofing criteria run on the --timeframe (default monthly);\nthe band/dot/line/pi criteria always run on their own natural aggregation. Each\ncomposite exposes its atomic sub-signals + numeric values under `components[]` in\n--json.\n\nExamples:\n  pftui analytics cycles bottom-signals --asset BTC\n  pftui analytics cycles bottom-signals --asset BTC --timeframe monthly --json\n  pftui analytics cycles bottom-signals --asset gold --timeframe weekly")]
+    BottomSignals {
+        /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
+        symbol: Option<String>,
+        /// Asset (alias for the positional symbol; e.g. BTC, gold, GC=F)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Timeframe for the RSI/stochastic/roofing criteria: monthly (default), weekly, or daily
+        #[arg(long, default_value = "monthly")]
+        timeframe: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Translation ledger for one degree: per completed cycle the length,
     /// top position, LT/MID/RT class, and failed flag
     #[command(after_help = "Examples:\n  pftui analytics cycles ledger BTC --degree 4-year\n  pftui analytics cycles ledger --asset GC=F --degree major --json\n\nDegrees come from `cycles analyze` (daily, investor, 4-year, intermediate,\nmajor). Each row: cycle length, top position, LT/MID/RT translation class,\nfailed flag.")]

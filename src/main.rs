@@ -2745,6 +2745,26 @@ fn run_cli(cli: Cli) -> Result<()> {
                         )),
                     },
                 ),
+                cli::AnalyticsCyclesCommand::BottomSignals {
+                    symbol,
+                    asset,
+                    timeframe,
+                    json,
+                } => commands::cli_json::or_json_error(
+                    "analytics cycles bottom-signals",
+                    json,
+                    match symbol.or(asset) {
+                        Some(sym) => commands::cycle_signals_cmd::run(
+                            &backend,
+                            &sym,
+                            &timeframe,
+                            json,
+                        ),
+                        None => Err(anyhow::anyhow!(
+                            "provide a symbol (positional) or --asset, e.g. `cycles bottom-signals --asset BTC`"
+                        )),
+                    },
+                ),
                 cli::AnalyticsCyclesCommand::Ledger {
                     symbol,
                     asset,
