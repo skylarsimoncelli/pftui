@@ -1,5 +1,5 @@
 //! `pftui analytics cycles bottom-signals` — mechanical cycle-bottom signal
-//! suite. A deterministic N-of-N confluence of independent, Pine-ported
+//! suite. A deterministic N-of-7 confluence of independent, Pine-ported
 //! cycle-low confirmations, each evaluated at its natural timeframe. Position
 //! / measurement only — never a price prediction.
 
@@ -94,7 +94,11 @@ fn print_text(sig: &cycle_signals::CycleBottomSignals, series: &str) {
     println!();
     for c in &sig.criteria {
         let mark = if c.met { "✓" } else { "✗" };
-        println!("  {mark} {:<46} {}", c.label, c.detail);
+        println!("  {mark} {:<48} {}", c.label, c.detail);
+    }
+    if let Some(b) = &sig.bonus {
+        let mark = if b.met { "✓" } else { "✗" };
+        println!("  {mark} {:<48} {}  (bonus — not counted)", b.label, b.detail);
     }
     println!();
     println!("  {}/{} confluence", sig.met_count, sig.total);

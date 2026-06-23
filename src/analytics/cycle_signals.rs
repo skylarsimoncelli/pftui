@@ -1,25 +1,24 @@
 //! Mechanical cycle-bottom signal suite — a deterministic N-of-7 confluence of
 //! independent cycle-low confirmations.
 //!
-//! Each criterion is a faithful Pine-ported indicator evaluated at its NATURAL
-//! timeframe and reduced to a boolean "is this firing now?":
+//! The read collapses 10 atomic Pine-ported sub-signals into **7 composite
+//! criteria** (each scored 0/1), plus a non-counted bonus:
 //!
-//! | key | source | natural TF | what it measures |
+//! | # | composite | atomic sub-signals (components) | natural TF |
 //! |---|---|---|---|
-//! | `rsi_ma_turned_up`        | [`indicators::rsi_ma`]        | requested (monthly) | the RSI's own average ticked up |
-//! | `rsi_ma_cross_above_rsi`  | [`indicators::rsi_ma`]        | requested | the RSI average reclaimed the RSI |
-//! | `dss_turned_up`           | [`indicators::dss_bressert`]  | requested | double-smoothed stochastic ticked up |
-//! | `dss_cross_above_trigger` | [`indicators::dss_bressert`]  | requested | DSS crossed its trigger |
-//! | `dss_oversold`            | [`indicators::dss_bressert`]  | requested | DSS below 20 |
-//! | `erf_green`               | [`indicators::ehlers_roofing`]| requested | roofing filter ≥ 0 |
-//! | `erf_turned_up`           | [`indicators::ehlers_roofing`]| requested | roofing filter ticked up |
-//! | `cyberbands_bullish`      | `cyber::bands`                | DAILY | momentum bands in the bullish state |
-//! | `cyberdots_bullish`       | `cyber::dots`                 | weekly + monthly | strength dots net-bullish |
-//! | `cyberline_reclaim`       | `cyber::line`                 | WEEKLY | price reclaimed the trackline |
-//! | `pi_cycle_bottom` (bonus) | `cyber::pi_cycle`             | daily | Pi-Cycle bottom fired recently |
+//! | 1 | Momentum line turning up          | `rsi_ma_turned_up` | requested (monthly) |
+//! | 2 | Momentum line above price momentum| `rsi_ma_cross_above_rsi` | requested |
+//! | 3 | Double-smoothed stochastic bottoming | `dss_turned_up` && `dss_cross_above_trigger` (context: `dss_oversold`) | requested |
+//! | 4 | Roofing filter confirming up      | `erf_green` && `erf_turned_up` | requested |
+//! | 5 | Volatility bands bullish          | `cyberbands_bullish` | DAILY |
+//! | 6 | Significant reversal dots         | `cyberdots_bullish` | weekly + monthly |
+//! | 7 | Trend line reclaimed              | `cyberline_reclaim` | WEEKLY |
+//! | bonus | Pi-cycle bottom (not counted) | `pi_cycle_bottom` | daily |
 //!
-//! Confluence = `met_count / total`. The suite is position-only / measurement —
-//! it never emits a price target. All math is `f64`; no money flows through.
+//! Confluence = `met_count / 7`. The atomic booleans + their oscillator values
+//! are preserved on the typed struct and emitted as `components[]` per criterion
+//! so nothing is lost. The suite is position-only / measurement — it never emits
+//! a price target. All math is `f64`; no money flows through.
 
 use chrono::{Datelike, NaiveDate};
 use serde::Serialize;
@@ -59,17 +58,46 @@ impl SignalTimeframe {
     }
 }
 
-/// One evaluated criterion row for display/itemization.
+/// One atomic sub-signal backing a composite criterion: the raw boolean plus
+/// its numeric oscillator reading (when one exists). Exposed in JSON so nothing
+/// from the underlying 10-primitive read is lost.
 #[derive(Debug, Clone, Serialize)]
-pub struct Criterion {
-    /// Stable machine key (e.g. `rsi_ma_turned_up`).
+pub struct Component {
+    /// Stable machine key (e.g. `dss_turned_up`).
     pub key: String,
     /// Human label (no practitioner names).
     pub label: String,
-    /// Whether this criterion is firing on the latest bar.
+    /// Whether this sub-signal is active on the latest bar.
+    pub met: bool,
+    /// Backing oscillator value, when this sub-signal has a numeric reading.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
+}
+
+/// One evaluated COMPOSITE criterion row (1 of 7) for display/itemization.
+#[derive(Debug, Clone, Serialize)]
+pub struct Criterion {
+    /// Stable machine key (e.g. `momentum_turning_up`).
+    pub key: String,
+    /// Human label (no practitioner names).
+    pub label: String,
+    /// Whether this composite criterion is firing on the latest bar.
     pub met: bool,
     /// One-line plain-language detail with the backing value(s).
     pub detail: String,
+    /// Atomic sub-signals that make up this composite (+ context flags).
+    pub components: Vec<Component>,
+}
+
+/// The non-counted bonus signal (Pi-Cycle bottom on daily).
+#[derive(Debug, Clone, Serialize)]
+pub struct BonusSignal {
+    pub key: String,
+    pub label: String,
+    pub met: bool,
+    pub detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_bottom: Option<String>,
 }
 
 /// Full cycle-bottom signal read.
@@ -116,12 +144,15 @@ pub struct CycleBottomSignals {
     pub pi_cycle_bottom: bool,
     pub pi_cycle_last_bottom: Option<String>,
 
-    /// Ordered criteria list (the 7 core + bonus pi-cycle when computable).
+    /// Ordered list of the 7 composite criteria.
     pub criteria: Vec<Criterion>,
-    /// How many of `total` core criteria are firing.
+    /// How many of `total` composite criteria are firing.
     pub met_count: usize,
-    /// Total core criteria (7).
+    /// Total composite criteria (always 7).
     pub total: usize,
+    /// Non-counted bonus signal (Pi-Cycle bottom), present when computable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bonus: Option<BonusSignal>,
     /// One-line plain-language verdict.
     pub verdict: String,
 }
@@ -336,73 +367,117 @@ pub fn cycle_bottom_signals(
         .map(|d| within_recent(&daily.dates, d, 120))
         .unwrap_or(false);
 
-    // --- Assemble the ordered criteria list (7 core) ---
+    // --- Collapse the 10 atomic sub-signals into 7 composite criteria ---
     let tf_label = timeframe.label();
     let mut criteria: Vec<Criterion> = Vec::new();
+
+    // 1. Momentum line turning up.
     criteria.push(Criterion {
-        key: "rsi_ma_turned_up".into(),
-        label: "RSI average turned up".into(),
+        key: "momentum_turning_up".into(),
+        label: "Momentum line turning up".into(),
         met: rsi_ma_turned_up,
-        detail: format!(
-            "{tf_label} RSI {} · RSI-avg {}",
-            fmt(rsi),
-            fmt(rsi_ma_v)
-        ),
+        detail: format!("{tf_label} RSI {} · RSI-avg {}", fmt(rsi), fmt(rsi_ma_v)),
+        components: vec![Component {
+            key: "rsi_ma_turned_up".into(),
+            label: "RSI average ticked up".into(),
+            met: rsi_ma_turned_up,
+            value: rsi_ma_v,
+        }],
     });
+
+    // 2. Momentum line crossed above price momentum.
     criteria.push(Criterion {
-        key: "rsi_ma_cross_above_rsi".into(),
-        label: "RSI average reclaimed the RSI".into(),
+        key: "momentum_above_price".into(),
+        label: "Momentum line crossed above price momentum".into(),
         met: rsi_ma_cross_above_rsi,
         detail: format!("{tf_label} RSI-avg {} vs RSI {}", fmt(rsi_ma_v), fmt(rsi)),
+        components: vec![Component {
+            key: "rsi_ma_cross_above_rsi".into(),
+            label: "RSI average reclaimed the RSI".into(),
+            met: rsi_ma_cross_above_rsi,
+            value: rsi_ma_v,
+        }],
     });
+
+    // 3. Double-smoothed stochastic bottoming = turned up AND crossed trigger.
+    //    (Oversold is a qualifying CONTEXT flag, not a firing condition.)
+    let dss_bottoming = dss_turned_up && dss_cross_above_trigger;
     criteria.push(Criterion {
-        key: "dss_turned_up".into(),
-        label: "Double-smoothed stochastic turned up".into(),
-        met: dss_turned_up,
-        detail: format!("{tf_label} value {} (trigger {})", fmt(dss), fmt(dss_trigger)),
-    });
-    criteria.push(Criterion {
-        key: "dss_cross_above_trigger".into(),
-        label: "Double-smoothed stochastic crossed its trigger".into(),
-        met: dss_cross_above_trigger,
+        key: "dss_bottoming".into(),
+        label: "Double-smoothed stochastic bottoming".into(),
+        met: dss_bottoming,
         detail: format!(
-            "{tf_label} value {} crossed trigger {}{}",
+            "{tf_label} value {} vs trigger {}{}",
             fmt(dss),
             fmt(dss_trigger),
-            if dss_oversold { " from oversold" } else { "" }
+            if dss_oversold { " (oversold)" } else { "" }
         ),
+        components: vec![
+            Component {
+                key: "dss_turned_up".into(),
+                label: "DSS ticked up".into(),
+                met: dss_turned_up,
+                value: dss,
+            },
+            Component {
+                key: "dss_cross_above_trigger".into(),
+                label: "DSS crossed above trigger".into(),
+                met: dss_cross_above_trigger,
+                value: dss_trigger,
+            },
+            Component {
+                key: "dss_oversold".into(),
+                label: "DSS oversold (<20) — context".into(),
+                met: dss_oversold,
+                value: dss,
+            },
+        ],
     });
+
+    // 4. Roofing filter confirming up = green AND turned up.
+    let erf_confirming = erf_green && erf_turned_up;
     criteria.push(Criterion {
-        key: "dss_oversold".into(),
-        label: "Double-smoothed stochastic oversold (<20)".into(),
-        met: dss_oversold,
-        detail: format!("{tf_label} value {}", fmt(dss)),
-    });
-    criteria.push(Criterion {
-        key: "erf_green".into(),
-        label: "Roofing filter positive (green)".into(),
-        met: erf_green,
+        key: "roofing_confirming_up".into(),
+        label: "Roofing filter confirming up".into(),
+        met: erf_confirming,
         detail: format!("{tf_label} value {}", fmt(erf)),
+        components: vec![
+            Component {
+                key: "erf_green".into(),
+                label: "Roofing filter positive (≥0)".into(),
+                met: erf_green,
+                value: erf,
+            },
+            Component {
+                key: "erf_turned_up".into(),
+                label: "Roofing filter ticked up".into(),
+                met: erf_turned_up,
+                value: erf,
+            },
+        ],
     });
+
+    // 5. Volatility bands bullish (daily).
     criteria.push(Criterion {
-        key: "erf_turned_up".into(),
-        label: "Roofing filter turned up".into(),
-        met: erf_turned_up,
-        detail: format!("{tf_label} value {}", fmt(erf)),
-    });
-    // Cyber criteria (count toward the suite at their natural TFs).
-    criteria.push(Criterion {
-        key: "cyberbands_bullish".into(),
-        label: "Daily momentum bands turned bullish".into(),
+        key: "volatility_bands_bullish".into(),
+        label: "Volatility bands bullish (daily)".into(),
         met: cyberbands_bullish,
         detail: format!(
             "daily band state: {}",
             cyberbands_state.as_deref().unwrap_or("n/a")
         ),
+        components: vec![Component {
+            key: "cyberbands_bullish".into(),
+            label: "Daily momentum bands in bullish state".into(),
+            met: cyberbands_bullish,
+            value: None,
+        }],
     });
+
+    // 6. Significant reversal dots (weekly/monthly).
     criteria.push(Criterion {
-        key: "cyberdots_bullish".into(),
-        label: "Higher-timeframe strength dots net-bullish".into(),
+        key: "reversal_dots".into(),
+        label: "Significant reversal dots (weekly/monthly)".into(),
         met: cyberdots_bullish,
         detail: format!(
             "weekly up {} · monthly up {}",
@@ -413,10 +488,20 @@ pub fn cycle_bottom_signals(
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "n/a".into())
         ),
+        components: vec![Component {
+            key: "cyberdots_bullish".into(),
+            label: "Higher-timeframe strength dots net-bullish".into(),
+            met: cyberdots_bullish,
+            value: cyberdots_weekly_strength
+                .or(cyberdots_monthly_strength)
+                .map(|s| s as f64),
+        }],
     });
+
+    // 7. Trend line reclaimed (weekly).
     criteria.push(Criterion {
-        key: "cyberline_reclaim".into(),
-        label: "Price reclaimed the weekly trackline".into(),
+        key: "trend_line_reclaimed".into(),
+        label: "Trend line reclaimed (weekly)".into(),
         met: cyberline_reclaim,
         detail: format!(
             "weekly line {} · price {} ({})",
@@ -428,22 +513,29 @@ pub fn cycle_bottom_signals(
                 None => "n/a",
             }
         ),
+        components: vec![Component {
+            key: "cyberline_reclaim".into(),
+            label: "Price reclaimed the weekly trackline".into(),
+            met: cyberline_reclaim,
+            value: cyberline_value,
+        }],
     });
 
-    // Bonus pi-cycle row, appended after the core 10 (only counts as bonus).
-    let core_total = criteria.len();
+    let core_total = 7usize;
+    debug_assert_eq!(criteria.len(), core_total, "must emit exactly 7 composites");
     let met_count = criteria.iter().filter(|c| c.met).count();
-    if pi.is_some() {
-        criteria.push(Criterion {
-            key: "pi_cycle_bottom".into(),
-            label: "Pi-cycle bottom fired recently (bonus)".into(),
-            met: pi_cycle_bottom,
-            detail: match &pi_cycle_last_bottom {
-                Some(d) => format!("last bottom {d}"),
-                None => "no bottom in window".into(),
-            },
-        });
-    }
+
+    // Bonus pi-cycle (daily) — reported separately, NEVER counted in the 7.
+    let bonus = pi.as_ref().map(|_| BonusSignal {
+        key: "pi_cycle_bottom".into(),
+        label: "Pi-cycle bottom fired recently (bonus)".into(),
+        met: pi_cycle_bottom,
+        detail: match &pi_cycle_last_bottom {
+            Some(d) => format!("last bottom {d}"),
+            None => "no bottom in window".into(),
+        },
+        last_bottom: pi_cycle_last_bottom.clone(),
+    });
 
     let verdict = build_verdict(timeframe, met_count, core_total, &criteria);
 
@@ -476,6 +568,7 @@ pub fn cycle_bottom_signals(
         criteria,
         met_count,
         total: core_total,
+        bonus,
         verdict,
     })
 }
@@ -502,6 +595,7 @@ fn build_verdict(
         .filter(|c| c.met)
         .map(|c| c.label.as_str())
         .collect();
+    // Verdict bands on the 0..7 composite scale.
     let strength = if met == 0 {
         "no cycle-bottom criteria firing"
     } else if met <= 2 {
@@ -511,7 +605,7 @@ fn build_verdict(
     } else if met <= 6 {
         "strong cycle-bottom confluence"
     } else {
-        "very strong cycle-bottom confluence"
+        "very strong cycle-bottom confluence (all 7)"
     };
     if firing.is_empty() {
         format!("{} suite: {met}/{total} — {strength}", tf.label())
@@ -581,13 +675,16 @@ mod tests {
         let sig = cycle_bottom_signals("TEST", &h, SignalTimeframe::Monthly)
             .expect("signals on deep history");
         assert_eq!(sig.timeframe, SignalTimeframe::Monthly);
-        assert_eq!(sig.total, 10, "10 core criteria");
-        assert_eq!(sig.criteria.iter().take(sig.total).filter(|c| c.met).count(), sig.met_count);
+        assert_eq!(sig.total, 7, "7 composite criteria");
+        assert_eq!(sig.criteria.len(), 7, "exactly 7 criteria rows");
+        assert_eq!(sig.criteria.iter().filter(|c| c.met).count(), sig.met_count);
+        // Every composite must expose its atomic components.
+        assert!(sig.criteria.iter().all(|c| !c.components.is_empty()));
         // After a strong recovery off a multi-year low, momentum criteria must
-        // be firing — assert at least several of the ten light up.
+        // be firing — assert at least a third of the seven light up.
         assert!(
-            sig.met_count >= 4,
-            "expected ≥4/10 at a clean V-bottom recovery, got {}: {:?}",
+            sig.met_count >= 3,
+            "expected ≥3/7 at a clean V-bottom recovery, got {}: {:?}",
             sig.met_count,
             sig.criteria
                 .iter()
@@ -645,6 +742,6 @@ mod tests {
             !sig.cyberdots_bullish,
             "strength dots should not be net-bullish mid-crash"
         );
-        assert!(sig.met_count <= 5, "a crash should not light up most criteria");
+        assert!(sig.met_count <= 3, "a crash should not light up most criteria");
     }
 }
