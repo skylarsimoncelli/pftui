@@ -2750,21 +2750,42 @@ fn run_cli(cli: Cli) -> Result<()> {
                     asset,
                     timeframe,
                     json,
-                } => commands::cli_json::or_json_error(
-                    "analytics cycles bottom-signals",
-                    json,
-                    match symbol.or(asset) {
-                        Some(sym) => commands::cycle_signals_cmd::run(
-                            &backend,
-                            &sym,
-                            &timeframe,
-                            json,
-                        ),
-                        None => Err(anyhow::anyhow!(
-                            "provide a symbol (positional) or --asset, e.g. `cycles bottom-signals --asset BTC`"
-                        )),
-                    },
-                ),
+                    sub,
+                } => match sub {
+                    Some(cli::BottomSignalsCommand::Backtest {
+                        symbol: bt_symbol,
+                        asset: bt_asset,
+                        timeframe: bt_tf,
+                        window,
+                        json: bt_json,
+                    }) => commands::cli_json::or_json_error(
+                        "analytics cycles bottom-signals backtest",
+                        bt_json,
+                        match bt_symbol.or(bt_asset).or(symbol).or(asset) {
+                            Some(sym) => commands::cycle_signals_cmd::run_backtest(
+                                &backend, &sym, &bt_tf, window, bt_json,
+                            ),
+                            None => Err(anyhow::anyhow!(
+                                "provide a symbol (positional) or --asset, e.g. `cycles bottom-signals backtest --asset BTC`"
+                            )),
+                        },
+                    ),
+                    None => commands::cli_json::or_json_error(
+                        "analytics cycles bottom-signals",
+                        json,
+                        match symbol.or(asset) {
+                            Some(sym) => commands::cycle_signals_cmd::run(
+                                &backend,
+                                &sym,
+                                &timeframe,
+                                json,
+                            ),
+                            None => Err(anyhow::anyhow!(
+                                "provide a symbol (positional) or --asset, e.g. `cycles bottom-signals --asset BTC`"
+                            )),
+                        },
+                    ),
+                },
                 cli::AnalyticsCyclesCommand::Ledger {
                     symbol,
                     asset,

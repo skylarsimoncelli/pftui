@@ -5010,6 +5010,10 @@ pub enum AnalyticsCyclesCommand {
         timeframe: String,
         #[arg(long)]
         json: bool,
+        /// Reliability backtest: measure each criterion's lead/lag + hit-rate
+        /// vs the verified cycle-low anchors (no-lookahead, point-in-time).
+        #[command(subcommand)]
+        sub: Option<BottomSignalsCommand>,
     },
     /// Translation ledger for one degree: per completed cycle the length,
     /// top position, LT/MID/RT class, and failed flag
@@ -5023,6 +5027,31 @@ pub enum AnalyticsCyclesCommand {
         /// Degree name (e.g. daily, investor, 4-year, intermediate, major)
         #[arg(long)]
         degree: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum BottomSignalsCommand {
+    /// Reliability backtest of the 7 cycle-bottom criteria (+ N/7 confluence)
+    /// against the verified cycle-low anchors: per-criterion hit-rate /
+    /// precision, signed lead/lag distribution, coverage / recall, and
+    /// false-positive count. Point-in-time (no lookahead). Honest about the
+    /// tiny anchor count — emits a small_n caveat.
+    #[command(after_help = "Measures, for each of the 7 composite criteria and the N/7 confluence at\nthresholds >=3 / >=4 / >=5, how reliably the signal LEADS a verified cycle low.\n\nMethod (no lookahead): at each historical bar i the engine reads ONLY\nhistory[..=i]; a criterion 'fires' on the rising edge (newly true). Each firing\nis matched to the nearest verified low within +/- the match window:\n  precision (hit-rate)  fraction of firings near a real low\n  lead/lag              signed days fired->low (negative = led the low); median + range\n  coverage (recall)     fraction of known lows the criterion flagged in-window\n  false positives       firings with no nearby low\n\nHONESTY: there are only ~3 documented lows per asset; a 3-sample hit-rate is\nNOT robust. The result carries small_n / insufficient_anchors flags.\n\nExamples:\n  pftui analytics cycles bottom-signals backtest --asset BTC --json\n  pftui analytics cycles bottom-signals backtest --asset gold --timeframe weekly --window 120")]
+    Backtest {
+        /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
+        symbol: Option<String>,
+        /// Asset (alias for the positional symbol; e.g. BTC, gold, GC=F)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Timeframe for the RSI/stochastic/roofing criteria: monthly (default), weekly, or daily
+        #[arg(long, default_value = "monthly")]
+        timeframe: String,
+        /// Match window in DAYS (+/-) around a verified low for a firing to count as a hit
+        #[arg(long)]
+        window: Option<i64>,
         #[arg(long)]
         json: bool,
     },

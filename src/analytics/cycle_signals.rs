@@ -250,6 +250,12 @@ fn aggregate_ohlc(daily: &Ohlc, tf: SignalTimeframe) -> Ohlc {
 /// bars). Below this the engine returns `None`.
 const MIN_DAILY_BARS: usize = 120;
 
+/// Minimum daily bars for a meaningful read — exposed so the reliability
+/// backtest can size its rolling-evaluation start point identically.
+pub fn min_daily_bars() -> usize {
+    MIN_DAILY_BARS
+}
+
 /// Compute the full cycle-bottom signal suite for `symbol` over DAILY
 /// `history` (oldest-first). `timeframe` drives the RSI-MA / DSS / ERF
 /// criteria; the cyber criteria run on their own fixed aggregations.
