@@ -66,6 +66,12 @@ Don't paraphrase, don't editorialize at this step — just capture. Format:
   Source quality: <tier-1 desk / tier-2 retail TA / tier-3 reddit / on-chain data / sentiment index>
 ```
 
+As you capture each MATERIAL take, ALSO persist it to the append-only research-evidence ledger so the source survives as a queryable row (not just inline prose). One row per source; `--stance` is `supports|refutes|context`:
+
+```bash
+pftui research evidence add --layer external-ta --asset BTC --claim "Bullish above 95k" --source "TradingView desk note" --url "https://tradingview.com/x" --source-date 2026-06-22 --finding "targets 110k, invalidation 88k, swing horizon" --stance context
+```
+
 ## 2. Per held asset: comparison block (the synthesis)
 
 Read pftui's current convergence:

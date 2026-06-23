@@ -116,6 +116,7 @@ pub mod research;
 pub mod research_harness;
 pub mod research_forecasts;
 pub mod research_dossier;
+pub mod research_evidence;
 pub mod research_thesis_verify;
 pub mod scan;
 pub mod scenario;

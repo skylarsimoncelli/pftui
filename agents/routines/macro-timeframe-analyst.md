@@ -186,6 +186,14 @@ The table is reference data for the entire system. Improving its accuracy compou
 
 Use web_search for latest data from: IMF (COFER reserve data, GDP rankings), World Bank (education, competitiveness indices), WIPO (patent filings, innovation rankings), SIPRI (military spending), WTO (trade volumes), WGC (central bank gold purchases).
 
+For each MATERIAL external source you consult, persist it to the append-only research-evidence ledger (one row per source) so the source, URL and finding survive as queryable rows instead of evaporating into prose. Omit `--asset` for macro-wide findings; `--stance` is `supports|refutes|context`.
+
+```bash
+pftui research evidence add --layer macro --claim "USD reserve share declining" --source "IMF COFER Q1 2026" --url "https://imf.org/cofer" --finding "USD share 57.8%, -0.4pp QoQ" --stance supports
+```
+
+Read back with `pftui research evidence list --layer macro --json`; the macro competence dossier consumes these rows.
+
 ### 1a. Update Power Metrics
 
 For each of the 8 determinants, check if new data is available. Update when evidence warrants:

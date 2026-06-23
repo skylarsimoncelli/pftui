@@ -133,6 +133,16 @@ Do 5-8 deep research queries. pftui provides the data foundation; web research p
 - **Energy transition:** Supply gap analysis, construction pipelines, power demand projections
 - **Geopolitical decoupling:** Export control impacts, supply chain restructuring, dual-technology ecosystems
 
+### Persist what you consult (research-evidence ledger)
+
+For each MATERIAL external source you consult, append it to the append-only research-evidence ledger so the source, URL and finding survive instead of melting into prose. One row per source. Use `--asset` for an asset-specific finding, omit it for macro-wide. `--stance` is `supports|refutes|context`.
+
+```bash
+pftui research evidence add --layer high --asset BTC --claim "Self-custody ratio rising" --source "Glassnode" --url "https://glassnode.com/x" --finding "exchange reserves -3% MoM" --stance supports
+```
+
+Read it back (filterable) with `pftui research evidence list --asset BTC --json`; the competence dossier surfaces these rows automatically.
+
 ## Power Structure Lens — Quarterly Power Structure Assessment
 
 Apply the power structure framework at the structural level. This is where the FIC/MIC/TIC power dynamics intersect with Dalio's empire cycle and the longer arc of the multipolar transition.

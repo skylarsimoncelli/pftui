@@ -525,6 +525,13 @@ writers = ["src/db/regime_snapshots.rs"]
 readers = ["src/db/regime_snapshots.rs"]
 rebuildable = true
 
+[tables.research_evidence]
+layer = "L3"
+purpose = "Append-only ledger of structured web-research findings + sources (name, URL, source date, claim, finding, stance, confidence) captured by report-run analysts (high/macro/external-ta/antithesis/deepdive). Captures the sources that previously melted into free-text prose so they survive as queryable, citeable rows. System output, never mutated."
+writers = ["src/db/research_evidence.rs", "src/commands/research_evidence.rs"]
+readers = ["src/commands/research_evidence.rs", "src/commands/research_dossier.rs"]
+append_only = true
+
 [tables.research_questions]
 layer = "L4"
 purpose = "Open research question backlog — dormant, 0 rows"
