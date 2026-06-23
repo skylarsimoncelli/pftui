@@ -366,6 +366,61 @@ mod tests {
     }
 
     #[test]
+    fn cycles_matrix_age_is_never_a_raw_bar_count() {
+        // Regression guard for the "1310yr" bug: `cycle_age_bars` is a RAW bar
+        // count and must be converted to its display unit before the unit
+        // suffix is appended. Scan every age-like "<number><yr>" token in the
+        // rendered Matrix/Engine and assert no year value is implausibly large
+        // (a raw bar count rendered as years would be hundreds/thousands).
+        let config = Config::default();
+        let re_yr = regex_lite_year_tokens;
+        for st in [0u8, 3] {
+            for (w, h) in [(160u16, 48u16), (120, 44)] {
+                let buf = render_view_buffer(&config, w, h, Some("cycles"), Some(st), true)
+                    .expect("cycles render");
+                let text = buffer_to_plain_string(&buf, w, h);
+                for years in re_yr(&text) {
+                    assert!(
+                        years < 30.0,
+                        "implausible age {years}yr in Cycles sub-tab {st} \
+                         (raw bar count leaked as years?): {text}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Tiny dependency-free scanner: pull every `<number>yr` token's numeric
+    /// value out of rendered text (handles integer and one-decimal forms).
+    fn regex_lite_year_tokens(text: &str) -> Vec<f64> {
+        let mut out = Vec::new();
+        let bytes: Vec<char> = text.chars().collect();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == 'y'
+                && i + 1 < bytes.len()
+                && bytes[i + 1] == 'r'
+                && i > 0
+                && (bytes[i - 1].is_ascii_digit())
+            {
+                // Walk backwards over digits and a single dot to capture the number.
+                let mut j = i;
+                while j > 0
+                    && (bytes[j - 1].is_ascii_digit() || bytes[j - 1] == '.')
+                {
+                    j -= 1;
+                }
+                let num: String = bytes[j..i].iter().collect();
+                if let Ok(v) = num.parse::<f64>() {
+                    out.push(v);
+                }
+            }
+            i += 1;
+        }
+        out
+    }
+
+    #[test]
     fn unknown_view_is_an_error() {
         let config = Config::default();
         let r = run(&config, Some(120), Some(40), true, Some("bogus"), None, true);

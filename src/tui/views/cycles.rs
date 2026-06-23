@@ -24,7 +24,10 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
 use crate::analytics::cycle_clock::{btc_cycle_clock, gold_cycle_clock, BtcCycleClock, GoldCycleClock};
-use crate::analytics::cycle_engine::{analyze, default_config, BandPosition, CycleReport, DegreeStatus};
+use crate::analytics::cycle_engine::{
+    age_display, analyze, days_per_year_for, default_config, BandPosition, CycleReport,
+    DegreeStatus,
+};
 use crate::analytics::hurst_rs;
 use crate::app::App;
 use crate::models::price::HistoryRecord;
@@ -117,6 +120,11 @@ struct MatrixRow {
     band: String,
     translation: String,
     next_low: String,
+    /// Plain "opens in ~Nwk" read on when the next-low window starts — the
+    /// single most decision-relevant number for an accumulator.
+    opens_in: String,
+    /// Date of the last confirmed cycle low (anchors the age number).
+    last_low: String,
     regime: String,
     stance: String,
     /// Sort key: bars/days until the next-low window opens (smaller = sooner).
@@ -172,25 +180,49 @@ fn matrix_row(
     expected_degree: &str,
 ) -> MatrixRow {
     let regime = regime_glyph(closes).to_string();
+    let bpw = report.map(|r| r.bars_per_week).unwrap_or(7);
     // The longest degree is the cycle-defining one (engine emits longest-first).
-    let deg: Option<&DegreeStatus> = report.and_then(|r| r.degrees.first());
+    let long_deg: Option<&DegreeStatus> = report.and_then(|r| r.degrees.first());
+    // Fix 4: the longest degree on a shallow series often has NO completed
+    // cycles (band == None), so its band/next-low render as "—". Fall back to
+    // the longest SHORTER degree that DOES have a band, and surface ITS timing
+    // on the landing row, while still labeling the data-starved long degree.
+    let stats_deg: Option<&DegreeStatus> = long_deg
+        .filter(|d| d.band.is_some())
+        .or_else(|| {
+            report.and_then(|r| r.degrees.iter().find(|d| d.band.is_some()))
+        })
+        .or(long_deg);
 
-    let (degree, age, band, translation, next_low, sort_key) = match deg {
+    let (degree, age, band, translation, next_low, opens_in, last_low, sort_key) = match long_deg {
         Some(d) => {
             // Friendly degree label — strip doctrine names, describe by horizon.
             // B2a degree-coherence: if the engine downshifted off the cycle's
             // anchored long degree (insufficient deep history), say so plainly
             // so the Matrix can't silently advertise a different cycle than the
             // dedicated tab.
-            let degree = if !expected_degree.is_empty() && d.degree != expected_degree {
+            let downshifted = !expected_degree.is_empty() && d.degree != expected_degree;
+            // The stats degree may differ from the displayed (long) degree when
+            // the long degree has no band — flag that the row's timing comes
+            // from a shorter degree so the user isn't misled.
+            let stats_is_fallback =
+                stats_deg.map(|s| s.degree != d.degree).unwrap_or(false);
+            let degree = if downshifted {
                 format!(
                     "{} ({} n/a)",
                     friendly_degree(&d.degree),
                     friendly_degree(expected_degree)
                 )
+            } else if stats_is_fallback {
+                // Long degree shown, but its stats are pending; the timing
+                // columns are the shorter degree's. Mark it honestly.
+                format!("{} (long n/a)", friendly_degree(&d.degree))
             } else {
                 friendly_degree(&d.degree)
             };
+
+            // Age + %-of-band always read off the LONG degree (it owns the age),
+            // converting the raw bar count into the degree's display unit.
             let age = match (d.cycle_age_bars, d.band.as_ref(), &d.unit) {
                 (Some(age), Some(b), unit) => {
                     let pct = if b.band_hi_bars > 0.0 {
@@ -198,28 +230,55 @@ fn matrix_row(
                     } else {
                         0.0
                     };
-                    format!("{age}{unit} {pct:.0}%")
+                    format!("{} {pct:.0}%", age_in_unit(age as f64, unit, bpw))
                 }
-                (Some(age), None, unit) => format!("{age}{unit}"),
+                (Some(age), None, unit) => age_in_unit(age as f64, unit, bpw),
                 _ => "—".to_string(),
             };
-            let band = band_glyph(d.band_position).to_string();
-            let translation = d
+
+            // Band / translation / next-low / opens-in come from the stats
+            // degree (which has a band when the long degree doesn't).
+            let sd = stats_deg.unwrap_or(d);
+            let band = band_glyph(sd.band_position).to_string();
+            // Translation: prefer a completed-cycle class; else fall back to the
+            // current top's provisional translation so even a 0-completed-cycle
+            // series gives a live late/early-peak read.
+            let translation = sd
                 .ledger
                 .last()
                 .and_then(|e| e.class.clone())
                 .map(|c| translation_glyph(&c).to_string())
+                .or_else(|| {
+                    sd.current_top
+                        .as_ref()
+                        .and_then(|t| t.provisional_translation_pct)
+                        .map(provisional_translation_glyph)
+                })
                 .unwrap_or_else(|| "—".to_string());
-            let next_low = d
+            let next_low = sd
                 .next_low_window
                 .as_ref()
                 .map(|w| format!("{}→{}", w.start_date, w.end_date))
                 .unwrap_or_else(|| "—".to_string());
+            // "opens in ~Nwk" — bars to band start, converted to the stats
+            // degree's display unit. Negative → window already open/past.
+            let opens_in = match sd.bars_to_band_start {
+                Some(b) if b > 0 => format!("~{}", age_in_unit(b as f64, &sd.unit, bpw)),
+                Some(_) => "now".to_string(),
+                None => "—".to_string(),
+            };
+            let last_low = d
+                .last_confirmed_low
+                .as_ref()
+                .map(|l| l.date.clone())
+                .unwrap_or_else(|| "—".to_string());
             // Sort by bars-to-band-start (sooner = first); missing → far future.
-            let sort_key = d.bars_to_band_start.unwrap_or(i64::MAX / 2);
-            (degree, age, band, translation, next_low, sort_key)
+            let sort_key = sd.bars_to_band_start.unwrap_or(i64::MAX / 2);
+            (degree, age, band, translation, next_low, opens_in, last_low, sort_key)
         }
         None => (
+            "—".to_string(),
+            "—".to_string(),
             "—".to_string(),
             "—".to_string(),
             "—".to_string(),
@@ -239,10 +298,26 @@ fn matrix_row(
         band,
         translation,
         next_low,
+        opens_in,
+        last_low,
         regime,
         stance,
         sort_key,
     }
+}
+
+/// Provisional translation glyph from a current-top's through-cycle fraction
+/// (0.0–1.0). Mirrors `translation_glyph` thresholds so a live read reads the
+/// same as a completed-cycle read. >60% late-peak, <40% early-peak, else mid.
+fn provisional_translation_glyph(pct: f64) -> String {
+    let g = if pct >= 0.6 {
+        "↑ late-peak"
+    } else if pct <= 0.4 {
+        "↓ early-peak"
+    } else {
+        "↕ mid-peak"
+    };
+    format!("{g}?") // '?' marks it provisional (no completed cycle yet)
 }
 
 /// Plain, footnote-free glyph for a cycle's translation (where the top sat
@@ -266,6 +341,14 @@ fn expected_long_degree(ticker: &str) -> &'static str {
         "GC=F" | "SI=F" => "major",
         _ => "",
     }
+}
+
+/// Format a RAW bar count into a human "{N}{unit}" string in the degree's own
+/// display unit (yr/wk/d), using the asset's `bars_per_week` calendar. This is
+/// the fix for the "1310yr" bug: `cycle_age_bars` is a raw bar count, never a
+/// value in `unit`, so it must be converted before the unit suffix is appended.
+fn age_in_unit(bars: f64, unit: &str, bars_per_week: u32) -> String {
+    format!("{}{unit}", age_display(bars, unit, bars_per_week))
 }
 
 /// Map an engine degree name to a plain, doctrine-free horizon label.
@@ -370,7 +453,12 @@ fn matrix_depth_line(app: &App) -> Option<String> {
     let a = &CYCLE_ASSETS[0]; // anchor freshness on Bitcoin (deepest series)
     let hist = history_for(app, a)?;
     let bars = hist.len();
-    let years = (bars as f64 / 252.0 * 10.0).round() / 10.0;
+    // Bitcoin is crypto (7 bars/wk → 365-day calendar year), so a bar count
+    // must NOT be divided by 252 trading days/yr (that overstates the span).
+    let bpw = analyze(&default_config(a.ticker, a.ticker), hist)
+        .map(|r| r.bars_per_week)
+        .unwrap_or(7);
+    let years = (bars as f64 / days_per_year_for(bpw) * 10.0).round() / 10.0;
     let as_of = hist.last().map(|r| r.date.clone()).unwrap_or_default();
     Some(format!("as of {as_of} · ~{years:.1}y of daily depth ({bars} bars)"))
 }
@@ -397,11 +485,14 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
     // marker(3)+Asset(8)+Stance(22)+Degree(20)+Band(8) = 61 base, then each
     // optional column adds its width. Drop right-to-left as width shrinks, but
     // the base columns — including Stance, the actionable verdict — ALWAYS
-    // survive narrowing (B2d).
-    let show_age = cols >= 74; // +Age/%band(13)
-    let show_tr = cols >= 87; // +Trans.(13)
-    let show_nextlow = cols >= 111; // +Next-low(24)
-    let show_regime = cols >= 117; // +Regime(6)
+    // survive narrowing (B2d). NOTE: a future "Bottom N/7" column is intended
+    // to slot in right here (after Band / before Opens-in) — keep room.
+    let show_opens = cols >= 71; // +Opens-in(10) — the accumulator's key number
+    let show_age = cols >= 84; // +Age/%band(13)
+    let show_tr = cols >= 97; // +Trans.(13)
+    let show_lastlow = cols >= 110; // +Last low(13)
+    let show_nextlow = cols >= 134; // +Next-low(24)
+    let show_regime = cols >= 140; // +Regime(6)
 
     // Header.
     let mut header = String::from("   "); // marker gutter
@@ -409,11 +500,17 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
     header.push_str(&format!("{:<22}", "Stance / position"));
     header.push_str(&format!("{:<20}", "Degree"));
     header.push_str(&format!("{:<8}", "Band"));
+    if show_opens {
+        header.push_str(&format!("{:<10}", "Opens-in"));
+    }
     if show_age {
         header.push_str(&format!("{:<13}", "Age/%band"));
     }
     if show_tr {
         header.push_str(&format!("{:<13}", "Trans."));
+    }
+    if show_lastlow {
+        header.push_str(&format!("{:<13}", "Last low"));
     }
     if show_nextlow {
         header.push_str(&format!("{:<24}", "Next-low window"));
@@ -452,11 +549,17 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
         ));
         spans.push(Span::raw(format!("{:<20}", ellipsize(&r.degree, 19))));
         spans.push(Span::raw(format!("{:<8}", r.band)));
+        if show_opens {
+            spans.push(Span::raw(format!("{:<10}", ellipsize(&r.opens_in, 9))));
+        }
         if show_age {
             spans.push(Span::raw(format!("{:<13}", ellipsize(&r.age, 12))));
         }
         if show_tr {
             spans.push(Span::raw(format!("{:<13}", ellipsize(&r.translation, 12))));
+        }
+        if show_lastlow {
+            spans.push(Span::raw(format!("{:<13}", ellipsize(&r.last_low, 12))));
         }
         if show_nextlow {
             spans.push(Span::raw(format!("{:<24}", ellipsize(&r.next_low, 23))));
@@ -552,7 +655,7 @@ fn render_bitcoin(frame: &mut Frame, area: Rect, app: &App) {
     panel(frame, tl, app, "Stance", btc_stance_lines(&clock));
     panel(frame, tr, app, "Cycle position", btc_position_lines(&clock));
     panel(frame, bl, app, "Valuation", btc_valuation_lines(&clock));
-    panel(frame, br, app, "Engine cross-check", engine_lines(cycle_deg));
+    panel(frame, br, app, "Engine cross-check", engine_lines(cycle_deg, report.as_ref().map(|r| r.bars_per_week).unwrap_or(7)));
 }
 
 fn btc_stance_lines(c: &BtcCycleClock) -> Vec<Line<'static>> {
@@ -646,7 +749,7 @@ fn render_gold(frame: &mut Frame, area: Rect, app: &App) {
     panel(frame, tl, app, "Cycle position", gold_position_lines(&clock));
     panel(frame, tr, app, "Last cycle low", gold_low_lines(&clock));
     panel(frame, bl, app, "Valuation", gold_valuation_lines(&clock));
-    panel(frame, br, app, "Engine cross-check", engine_lines(cycle_deg));
+    panel(frame, br, app, "Engine cross-check", engine_lines(cycle_deg, report.as_ref().map(|r| r.bars_per_week).unwrap_or(7)));
 }
 
 fn gold_position_lines(c: &GoldCycleClock) -> Vec<Line<'static>> {
@@ -763,7 +866,7 @@ fn render_engine(frame: &mut Frame, area: Rect, app: &App) {
         if i > 0 {
             lines.push(Line::from(""));
         }
-        engine_degree_lines(d, &mut lines, app);
+        engine_degree_lines(d, report.bars_per_week, &mut lines, app);
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
@@ -782,7 +885,7 @@ fn render_engine(frame: &mut Frame, area: Rect, app: &App) {
 /// Render one degree's full computed status into `lines` (plain language).
 /// This is the heart of the Engine tab — pure surfacing of the signal the
 /// engine already computes but the rest of the UI discards.
-fn engine_degree_lines(d: &DegreeStatus, lines: &mut Vec<Line<'static>>, app: &App) {
+fn engine_degree_lines(d: &DegreeStatus, bars_per_week: u32, lines: &mut Vec<Line<'static>>, app: &App) {
     use crate::analytics::cycle_engine::Clarity;
     let dot = match d.clarity {
         Clarity::Green => "●",
@@ -805,17 +908,17 @@ fn engine_degree_lines(d: &DegreeStatus, lines: &mut Vec<Line<'static>>, app: &A
     if let Some(b) = &d.band {
         let age = d
             .cycle_age_bars
-            .map(|a| format!("{a}{}", d.unit))
+            .map(|a| age_in_unit(a as f64, &d.unit, bars_per_week))
             .unwrap_or_else(|| "—".into());
         lines.push(engine_kv(
             "  Age / band",
             format!(
-                "{age} · pos {} · median {:.0}{u} (sd {:.0}) · usual {:.0}–{:.0}{u}",
+                "{age} · pos {} · median {}{u} (sd {}) · usual {}–{}{u}",
                 band_word(d.band_position),
-                b.median_bars,
-                b.sd_bars,
-                b.p15_bars,
-                b.p85_bars,
+                age_display(b.median_bars, &d.unit, bars_per_week),
+                age_display(b.sd_bars, &d.unit, bars_per_week),
+                age_display(b.p15_bars, &d.unit, bars_per_week),
+                age_display(b.p85_bars, &d.unit, bars_per_week),
                 u = d.unit,
             ),
             app,
@@ -841,7 +944,12 @@ fn engine_degree_lines(d: &DegreeStatus, lines: &mut Vec<Line<'static>>, app: &A
             .unwrap_or_default();
         lines.push(engine_kv(
             "  Current high",
-            format!("{} @ {} ({} bars from low){trans}", t.date, t.price, t.bars_from_low),
+            format!(
+                "{} @ {} ({} from low){trans}",
+                t.date,
+                t.price,
+                age_in_unit(t.bars_from_low as f64, &d.unit, bars_per_week)
+            ),
             app,
         ));
     }
@@ -966,7 +1074,7 @@ fn band_word(pos: Option<BandPosition>) -> &'static str {
 // ---------------------------------------------------------------------------
 
 /// Engine cross-check panel from the cycle-defining degree (plain language).
-fn engine_lines(deg: Option<&DegreeStatus>) -> Vec<Line<'static>> {
+fn engine_lines(deg: Option<&DegreeStatus>, bars_per_week: u32) -> Vec<Line<'static>> {
     match deg {
         Some(d) => {
             let mut lines = vec![
@@ -974,7 +1082,10 @@ fn engine_lines(deg: Option<&DegreeStatus>) -> Vec<Line<'static>> {
                 Line::from(format!("Band: {}", band_glyph(d.band_position))),
             ];
             if let Some(age) = d.cycle_age_bars {
-                lines.push(Line::from(format!("Cycle age: {}{}", age, d.unit)));
+                lines.push(Line::from(format!(
+                    "Cycle age: {}",
+                    age_in_unit(age as f64, &d.unit, bars_per_week)
+                )));
             }
             if let Some(w) = &d.next_low_window {
                 lines.push(Line::from(format!("Next low: {}→{}", w.start_date, w.end_date)));
@@ -1112,7 +1223,7 @@ mod tests {
         let d = report.degrees.first().expect("a degree");
         let app = test_app();
         let mut lines: Vec<Line<'static>> = Vec::new();
-        engine_degree_lines(d, &mut lines, &app);
+        engine_degree_lines(d, report.bars_per_week, &mut lines, &app);
         let t = text(lines).to_lowercase();
         // Surfaces band statistics under a plain heading.
         assert!(t.contains("age / band"), "{t}");
@@ -1225,12 +1336,128 @@ mod tests {
     #[test]
     fn engine_lines_render_plain_band_label_for_a_real_degree() {
         let report = synthetic_gold_report();
-        let lines = engine_lines(report.degrees.first());
+        let lines = engine_lines(report.degrees.first(), report.bars_per_week);
         let t = text(lines);
         // No doctrine words; functional band vocabulary only.
         let lower = t.to_lowercase();
         assert!(!lower.contains("loukas") && !lower.contains("olson"), "{t}");
         assert!(t.contains("Degree:"), "{t}");
+    }
+
+    #[test]
+    fn age_in_unit_converts_bars_not_raw_count() {
+        // THE BUG: 1310 daily crypto bars (7/wk) is ~3.6 years, NEVER "1310yr".
+        // age_in_unit must divide the bar count by the bars/yr calendar first.
+        let s = age_in_unit(1310.0, "yr", 7);
+        assert_eq!(s, "3.6yr", "expected ~3.6yr, got {s}");
+        // Weeks: 1310 bars / 7 per wk = 187 wk.
+        assert_eq!(age_in_unit(1310.0, "wk", 7), "187wk");
+        // Days: passthrough.
+        assert_eq!(age_in_unit(42.0, "d", 7), "42d");
+        // Equities (5 bars/wk): 1260 bars ≈ 5.0 yr (252 trading days/yr).
+        assert_eq!(age_in_unit(1260.0, "yr", 5), "4.8yr");
+    }
+
+    #[test]
+    fn matrix_age_string_parses_to_a_plausible_year_value() {
+        // Regression guard for "1310yr": build a real BTC-shaped report and
+        // assert the Age cell's leading number is a plausible <30yr figure, not
+        // a raw bar count.
+        let report = synthetic_btc_report();
+        let closes: Vec<f64> = (0..400).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
+        let row = matrix_row(0, "Bitcoin", &closes, Some(&report), None, "4-year");
+        // Age is "<n><unit> ..." — extract the leading number + unit.
+        let first = row.age.split_whitespace().next().unwrap_or("");
+        if first.ends_with("yr") {
+            let n: f64 = first.trim_end_matches("yr").parse().expect("yr number");
+            assert!(n < 30.0, "implausible age {n}yr in {:?}", row.age);
+        } else if first.ends_with("wk") {
+            let n: f64 = first.trim_end_matches("wk").parse().expect("wk number");
+            assert!(n < 2000.0, "implausible age {n}wk in {:?}", row.age);
+        }
+        // The opens-in column, if populated, must not be a raw bar count either.
+        if let Some(rest) = row.opens_in.strip_prefix('~') {
+            if let Some(num) = rest.strip_suffix("yr") {
+                let n: f64 = num.parse().expect("opens-in yr");
+                assert!(n < 30.0, "implausible opens-in {n}yr");
+            }
+        }
+    }
+
+    #[test]
+    fn matrix_row_falls_back_to_shorter_degree_band() {
+        // Fix 4: when the longest degree has band=None but a shorter degree has
+        // a band, the row must render the shorter degree's band/timing (not "—")
+        // and label the long degree as pending.
+        let report = report_with_band_only_on_shorter_degree();
+        // Sanity: the long (first) degree has no band; a later one does.
+        assert!(
+            report.degrees.first().unwrap().band.is_none(),
+            "test fixture invalid: long degree already has a band"
+        );
+        assert!(
+            report.degrees.iter().any(|d| d.band.is_some()),
+            "test fixture invalid: no shorter degree has a band"
+        );
+        let closes: Vec<f64> = (0..400).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
+        let row = matrix_row(0, "Bitcoin", &closes, Some(&report), None, "");
+        assert_ne!(row.band, "—", "band should fall back to the shorter degree");
+        assert!(
+            row.degree.contains("long n/a"),
+            "long degree should be flagged pending, got {:?}",
+            row.degree
+        );
+    }
+
+    /// A real BTC `CycleReport` deep enough to populate the long degree.
+    fn synthetic_btc_report() -> CycleReport {
+        use crate::analytics::cycle_engine::{analyze, default_config};
+        use crate::models::price::HistoryRecord;
+        use chrono::{Duration, NaiveDate};
+        let start = NaiveDate::from_ymd_opt(2014, 1, 1).unwrap();
+        let mut rows = Vec::new();
+        for i in 0..4200i64 {
+            let d = start + Duration::days(i);
+            let base = 5000.0 + i as f64 * 5.0;
+            let wave = 8000.0 * ((i as f64) / 233.0).sin();
+            let close = rust_decimal::Decimal::from_f64_retain((base + wave).max(100.0)).unwrap();
+            rows.push(HistoryRecord {
+                date: d.format("%Y-%m-%d").to_string(),
+                close,
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            });
+        }
+        analyze(&default_config("BTC-USD", "BTC-USD"), &rows).expect("report")
+    }
+
+    /// A BTC report on a SHALLOW (~5y) series: the anchored long degree resolves
+    /// too few lows for a band, but a shorter degree does. Exercises Fix 4.
+    fn report_with_band_only_on_shorter_degree() -> CycleReport {
+        use crate::analytics::cycle_engine::{analyze, default_config};
+        use crate::models::price::HistoryRecord;
+        use chrono::{Duration, NaiveDate};
+        let start = NaiveDate::from_ymd_opt(2021, 1, 1).unwrap();
+        let mut rows = Vec::new();
+        // ~3.5y of daily bars with a ~5-month sub-cycle → short degrees complete
+        // several cycles (band present) while the 4-year anchor cannot.
+        for i in 0..1280i64 {
+            let d = start + Duration::days(i);
+            let base = 30000.0 + i as f64 * 10.0;
+            let wave = 6000.0 * ((i as f64) / 24.0).sin();
+            let close = rust_decimal::Decimal::from_f64_retain((base + wave).max(100.0)).unwrap();
+            rows.push(HistoryRecord {
+                date: d.format("%Y-%m-%d").to_string(),
+                close,
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            });
+        }
+        analyze(&default_config("BTC-USD", "BTC-USD"), &rows).expect("report")
     }
 
     /// A real `CycleReport` from a deterministic synthetic series — no private
