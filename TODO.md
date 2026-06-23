@@ -6,6 +6,9 @@
 
 ## P1 - Bugs/Regressions
 
+### Cycles Matrix — add a "Bottom N/7" column once the bottom-signals engine lands
+The Cycles → Matrix row layout was deliberately left with room AFTER Band / BEFORE Opens-in so a compact "Bottom N/7" mechanical cycle-bottom column can slot in without reworking the column plan (`src/tui/views/cycles.rs::render_matrix`). Add it after `analytics cycles bottom-signals` (parallel branch) exposes the N/7 score per asset; surface the count (e.g. `5/7`) colored by proximity, drill the per-criterion detail into the Engine sub-tab. No new table — reads the bottom-signals engine output. Surfaces: Cycles Matrix + Engine.
+
 ### Yahoo fetch must never query bare crypto symbols (BTC equity-ticker collision)
 **Source:** 2026-06-11 price audit + repair. The canonical `BTC` series contained 237 rows of Yahoo's EQUITY ticker "BTC" (~$28-55) because some Yahoo fetch/backfill path queries the bare symbol instead of mapping crypto symbols to their `-USD` Yahoo tickers. Rows archived + deleted; the #907 ingest guard now rejects future collisions loudly (>20% d/d uncorroborated), but the mis-mapped fetch will retry and spam rejections every refresh. Find the path (grep yahoo fetch/backfill callers for symbol pass-through), add a crypto-symbol→Yahoo-ticker mapping (BTC→BTC-USD, ETH→ETH-USD; reuse the deep_alias machinery in series_registry), and a regression test that bare "BTC" never reaches the Yahoo URL builder. Layer: L0 ingest. Consumer: price_history integrity. Surfaces: CLI refresh output only.
 **Why:** symbol-collision corruption poisoned 52w ranges and long-window computations on the canonical series for months without detection until today's audit.

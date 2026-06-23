@@ -1184,11 +1184,27 @@ fn degree_unit(prior_len_bars: usize, bars_per_week: u32) -> &'static str {
     }
 }
 
-fn age_display(bars: f64, unit: &str, bars_per_week: u32) -> String {
+/// Convert a raw bar count into the degree's display unit ("yr"/"wk"/"d"),
+/// using the asset's `bars_per_week` calendar (7 for crypto, 5 for equities).
+/// Returns the NUMBER ONLY (no unit suffix) so callers control formatting.
+/// This is the single owner of the bars→display conversion — the TUI threads
+/// `report.bars_per_week` in rather than re-deriving the calendar.
+pub fn age_display(bars: f64, unit: &str, bars_per_week: u32) -> String {
     match unit {
         "yr" => format!("{:.1}", bars / (bars_per_week as f64 * 52.18)),
         "wk" => format!("{:.0}", bars / bars_per_week as f64),
         _ => format!("{bars:.0}"),
+    }
+}
+
+/// Calendar-days per year implied by the asset's `bars_per_week` (crypto trades
+/// 7/wk → 365-day year; equities 5/wk → 252 trading days/yr). Used to convert a
+/// raw bar count into calendar-years for depth/anchor lines.
+pub fn days_per_year_for(bars_per_week: u32) -> f64 {
+    if bars_per_week >= 7 {
+        365.0
+    } else {
+        252.0
     }
 }
 

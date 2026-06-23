@@ -75,6 +75,14 @@ pub enum ChartTimeframe {
     FiveYears,
 }
 
+/// Deep history depth (calendar days) the Cycles view requests for its tracked
+/// assets, independent of `chart_timeframe`. ~12.5y covers Bitcoin's full
+/// on-exchange history (back to ~2014) so the long cycle degree can resolve
+/// enough documented lows to populate band/translation/next-low honestly. The
+/// normal 5Y chart cap is only ~1825 bars (~1 resolved anchor). This is a plain
+/// async fetch over the price-service channel — it never blocks the event loop.
+pub const MAX_CYCLE_HISTORY_DAYS: u32 = 4500;
+
 impl ChartTimeframe {
     pub fn days(self) -> u32 {
         match self {
@@ -1492,6 +1500,28 @@ impl App {
             }
         }
 
+        // Deep history for the cycle-tracked assets (Bitcoin, Gold, Silver).
+        // The Cycles view's long degree needs ~12y of bars to resolve enough
+        // documented lows to populate band/translation/next-low; the default 3M
+        // / on-demand 5Y caps leave those blank. Requested ONCE at startup over
+        // the same non-blocking batch channel. Overrides any shallower depth
+        // already queued for these symbols above (max-merged in the tracker).
+        for (sym, cat) in [
+            ("BTC-USD", AssetCategory::Crypto),
+            ("GC=F", AssetCategory::Commodity),
+            ("SI=F", AssetCategory::Commodity),
+        ] {
+            let prior = self.fetched_history_days.get(sym).copied().unwrap_or(0);
+            if seen.contains(sym) {
+                // Already queued shallow above — re-queue at the deep depth.
+                batch.retain(|(s, _, _)| s != sym);
+            }
+            seen.insert(sym.to_string());
+            batch.push((sym.to_string(), cat, MAX_CYCLE_HISTORY_DAYS));
+            self.fetched_history_days
+                .insert(sym.to_string(), prior.max(MAX_CYCLE_HISTORY_DAYS));
+        }
+
         // Send as a single batch for concurrent fetching
         if !batch.is_empty() {
             for (sym, _, _) in &batch {
@@ -1536,6 +1566,25 @@ impl App {
                 category,
                 needed_days,
             ));
+        }
+    }
+
+    /// Request DEEP daily history for the cycle-tracked assets (Bitcoin, Gold,
+    /// Silver), independent of the chart timeframe. The Cycles view's long
+    /// degree needs ~12y of bars to resolve enough documented lows; the normal
+    /// 5Y chart cap leaves band/translation/next-low blank. Reuses the same
+    /// non-blocking `request_history_if_needed` path (channel send → bg fetch),
+    /// so it adds NO blocking I/O to the event loop and is idempotent per
+    /// session (the day-tracker short-circuits once the deep range is fetched).
+    /// Does not touch any other view's chart history.
+    fn request_cycle_history(&mut self) {
+        const CYCLE_FETCH: [(&str, AssetCategory); 3] = [
+            ("BTC-USD", AssetCategory::Crypto),
+            ("GC=F", AssetCategory::Commodity),
+            ("SI=F", AssetCategory::Commodity),
+        ];
+        for (sym, cat) in CYCLE_FETCH {
+            self.request_history_if_needed(sym, cat, MAX_CYCLE_HISTORY_DAYS);
         }
     }
 
@@ -3010,6 +3059,9 @@ impl App {
                 self.view_mode = ViewMode::Cycles;
                 self.detail_open = false;
                 self.detail_popup_open = false;
+                // Ensure the cycle assets have deep history (idempotent; the
+                // day-tracker short-circuits once the deep range is fetched).
+                self.request_cycle_history();
             }
 
             // Alerts overlay toggle (Ctrl+A)
