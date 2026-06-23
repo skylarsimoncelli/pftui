@@ -555,6 +555,9 @@ fn hours_since_local_midnight() -> i64 {
 fn default_label(kind: &AlertKind, symbol: &str, condition: &str) -> String {
     match kind {
         AlertKind::Technical => {
+            if crate::alerts::cycle_signal_alert::is_cycle_signal_condition(condition) {
+                return cycle_signal_label(symbol, condition);
+            }
             if symbol.is_empty() {
                 condition.to_string()
             } else {
@@ -563,6 +566,32 @@ fn default_label(kind: &AlertKind, symbol: &str, condition: &str) -> String {
         }
         AlertKind::Macro => condition.replace('_', " "),
         _ => condition.to_string(),
+    }
+}
+
+/// Friendly, name-free default label for a cycle-bottom signal alert.
+fn cycle_signal_label(symbol: &str, condition: &str) -> String {
+    use crate::alerts::cycle_signal_alert::{
+        criterion_label, friendly_asset, parse_condition, CycleSignalCondition,
+    };
+    let asset = friendly_asset(symbol);
+    match parse_condition(condition) {
+        Ok(CycleSignalCondition::Confluence { timeframe, target }) => format!(
+            "{} {} cycle-bottom signals ≥ {}/7",
+            asset,
+            timeframe.label(),
+            target
+        ),
+        Ok(CycleSignalCondition::Criterion {
+            timeframe,
+            criterion_key,
+        }) => format!(
+            "{} {} {}",
+            asset,
+            timeframe.label(),
+            criterion_label(&criterion_key)
+        ),
+        Err(_) => format!("{} {}", symbol, condition.replace('_', " ")),
     }
 }
 
