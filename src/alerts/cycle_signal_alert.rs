@@ -116,6 +116,35 @@ pub fn parse_condition(condition: &str) -> anyhow::Result<CycleSignalCondition> 
     anyhow::bail!("not a cycle-signal condition: {condition}")
 }
 
+/// Validate a cycle-signal condition string at arm-time.
+///
+/// Only applies to conditions carrying the `cycle_bottom_` / `cycle_criterion_`
+/// prefixes — ALL other (non-cycle) `Technical` conditions are not this
+/// function's concern and must be validated/passed elsewhere; callers gate on
+/// [`is_cycle_signal_condition`] before invoking this.
+///
+/// Returns `Ok(())` for a structurally-valid cycle condition, or an error whose
+/// message lists the full valid set (timeframes, N range, the 7 criterion keys)
+/// so the operator can correct a typo without reading the docs.
+///
+/// Validation grammar:
+/// - timeframe ∈ {daily, weekly, monthly}
+/// - `cycle_bottom_<tf>_<N>`        → N ∈ 1..=7
+/// - `cycle_criterion_<tf>_<key>`   → key ∈ the 7 [`CRITERION_KEYS`]
+pub fn validate_condition(condition: &str) -> anyhow::Result<()> {
+    parse_condition(condition).map(|_| ()).map_err(|e| {
+        anyhow::anyhow!(
+            "{e}\n\nValid cycle-bottom conditions:\n  \
+             Confluence threshold — cycle_bottom_<timeframe>_<N>\n  \
+             Single criterion    — cycle_criterion_<timeframe>_<key>\n  \
+             Timeframes: daily | weekly | monthly\n  \
+             N (confluence target): 1..=7\n  \
+             Criterion keys: {}",
+            CRITERION_KEYS.join(", ")
+        )
+    })
+}
+
 /// The timeframe a condition runs on (so the caller knows which signal read to
 /// compute).
 pub fn condition_timeframe(condition: &str) -> anyhow::Result<SignalTimeframe> {
@@ -318,6 +347,79 @@ mod tests {
     #[test]
     fn parse_rejects_unknown_criterion() {
         assert!(parse_condition("cycle_criterion_weekly_not_a_real_key").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_all_invalid_shapes() {
+        // Bad timeframe (yearly is not a SignalTimeframe).
+        assert!(validate_condition("cycle_bottom_yearly_4").is_err());
+        // N = 0 and N > 7 can never fire.
+        assert!(validate_condition("cycle_bottom_monthly_0").is_err());
+        assert!(validate_condition("cycle_bottom_monthly_8").is_err());
+        // Unknown criterion key.
+        assert!(validate_condition("cycle_criterion_weekly_bogus_key").is_err());
+        // Non-numeric target.
+        assert!(validate_condition("cycle_bottom_monthly_x").is_err());
+    }
+
+    #[test]
+    fn validate_error_lists_the_valid_set() {
+        let err = validate_condition("cycle_bottom_monthly_8")
+            .unwrap_err()
+            .to_string();
+        // The message must guide the operator: timeframes, N range, every key.
+        assert!(err.contains("daily"));
+        assert!(err.contains("weekly"));
+        assert!(err.contains("monthly"));
+        assert!(err.contains("1..=7"));
+        for key in CRITERION_KEYS {
+            assert!(err.contains(key), "valid-set message omitted key {key}: {err}");
+        }
+    }
+
+    #[test]
+    fn validate_accepts_every_valid_confluence_target() {
+        for tf in ["daily", "weekly", "monthly"] {
+            for n in 1..=7 {
+                let cond = format!("cycle_bottom_{tf}_{n}");
+                assert!(
+                    validate_condition(&cond).is_ok(),
+                    "valid confluence rejected: {cond}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn non_cycle_conditions_are_not_recognized_as_cycle() {
+        // These are real Technical conditions handled elsewhere; the validator
+        // gate (is_cycle_signal_condition) must NOT claim them, so they pass
+        // through arm-time unchanged.
+        for cond in [
+            "price_below_sma200",
+            "price_above_sma50",
+            "rsi_above_70",
+            "rsi_below_30",
+            "price_change_pct_above_5",
+        ] {
+            assert!(
+                !is_cycle_signal_condition(cond),
+                "non-cycle condition wrongly claimed by cycle validator: {cond}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_accepts_every_known_criterion_key() {
+        for tf in ["daily", "weekly", "monthly"] {
+            for key in CRITERION_KEYS {
+                let cond = format!("cycle_criterion_{tf}_{key}");
+                assert!(
+                    validate_condition(&cond).is_ok(),
+                    "valid criterion rejected: {cond}"
+                );
+            }
+        }
     }
 
     #[test]

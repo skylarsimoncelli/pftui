@@ -3378,6 +3378,9 @@ pub enum AnalyticsAlertsCommand {
         /// Cooldown in minutes before a recurring alert can fire again
         #[arg(long, default_value_t = 0)]
         cooldown_minutes: i64,
+        /// Emit the created alert as a JSON envelope (incl. the load-bearing id)
+        #[arg(long)]
+        json: bool,
     },
     /// List alerts
     List {

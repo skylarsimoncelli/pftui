@@ -3,9 +3,10 @@
 //! cycle-low confirmations, each evaluated at its natural timeframe. Position
 //! / measurement only — never a price prediction.
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::analytics::cycle_signal_backtest::{self, DEFAULT_CONFLUENCE_THRESHOLDS};
+use crate::commands::cli_json::ErrorDetail;
 use crate::analytics::cycle_signals::{self, SignalTimeframe};
 use crate::commands::cli_json;
 use crate::db::backend::BackendConnection;
@@ -55,18 +56,21 @@ pub fn run(
     let tf = SignalTimeframe::parse(timeframe)?;
     let (series, history) = load_deep_history(backend, symbol)?;
     if history.is_empty() {
-        bail!(
+        return Err(anyhow::anyhow!(
             "no price history for {} — run `pftui data refresh` or check the symbol",
             symbol.to_uppercase()
-        );
+        ))
+        .context(ErrorDetail::new("no_history"));
     }
     let Some(sig) = cycle_signals::cycle_bottom_signals(&series, &history, tf) else {
-        bail!(
-            "insufficient history for a {} cycle-bottom read on {} ({} daily rows)",
+        return Err(anyhow::anyhow!(
+            "insufficient history for a {} cycle-bottom read on {} ({} daily rows; need {})",
             tf.label(),
             series,
-            history.len()
-        );
+            history.len(),
+            cycle_signals::min_daily_bars()
+        ))
+        .context(ErrorDetail::with_bars("insufficient_history", history.len()));
     };
 
     if json_output {
@@ -94,13 +98,26 @@ pub fn run_backtest(
     window: Option<i64>,
     json_output: bool,
 ) -> Result<()> {
+    // A zero match-window is meaningless (a firing would have to land EXACTLY
+    // on the verified-low date), so reject it rather than silently clamping to
+    // 1. clap already rejects negatives via the i64 parse path; this closes the
+    // 0 hole. Omit --window entirely for the default window.
+    if window == Some(0) {
+        bail!(
+            "--window 0 is not meaningful (a firing would have to land exactly on \
+             the verified-low date); use a positive day count or omit --window for \
+             the default ±{}-day window",
+            cycle_signal_backtest::DEFAULT_WINDOW_BARS
+        );
+    }
     let tf = SignalTimeframe::parse(timeframe)?;
     let (series, history) = load_deep_history(backend, symbol)?;
     if history.is_empty() {
-        bail!(
+        return Err(anyhow::anyhow!(
             "no price history for {} — run `pftui data refresh` or check the symbol",
             symbol.to_uppercase()
-        );
+        ))
+        .context(ErrorDetail::new("no_history"));
     }
     let Some(bt) = cycle_signal_backtest::run_backtest(
         symbol,
@@ -110,12 +127,14 @@ pub fn run_backtest(
         window,
         &DEFAULT_CONFLUENCE_THRESHOLDS,
     ) else {
-        bail!(
-            "insufficient history for a {} cycle-bottom backtest on {} ({} daily rows)",
+        return Err(anyhow::anyhow!(
+            "insufficient history for a {} cycle-bottom backtest on {} ({} daily rows; need {})",
             tf.label(),
             series,
-            history.len()
-        );
+            history.len(),
+            cycle_signals::min_daily_bars()
+        ))
+        .context(ErrorDetail::with_bars("insufficient_history", history.len()));
     };
 
     if json_output {

@@ -4779,13 +4779,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                         label,
                         recurring,
                         cooldown_minutes,
+                        json,
                     } => (
                         "add",
                         commands::alerts::AlertsArgs {
                             rule,
                             id: None,
                             ids: vec![],
-                            json: false,
+                            json,
                             status_filter: None,
                             today: false,
                             kind,

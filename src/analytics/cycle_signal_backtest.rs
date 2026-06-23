@@ -75,6 +75,11 @@ pub struct Firing {
 pub struct CriterionReliability {
     /// Stable machine key (criterion key, or e.g. `confluence_ge_3`).
     pub key: String,
+    /// Numeric confluence threshold (N of 7) for confluence rows; `None` for
+    /// per-criterion rows. Lets agents read the threshold without string-parsing
+    /// the `confluence_ge_<N>` key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<usize>,
     /// Human label (no practitioner names).
     pub label: String,
     /// Total firings (rising edges) over history.
@@ -262,6 +267,7 @@ fn build_reliability(
 
     CriterionReliability {
         key: key.to_string(),
+        threshold: None,
         label: label.to_string(),
         firings: n,
         hits,
@@ -399,12 +405,14 @@ pub fn run_backtest(
         .iter()
         .enumerate()
         .map(|(ti, &thr)| {
-            build_reliability(
+            let mut row = build_reliability(
                 &format!("confluence_ge_{thr}"),
                 &format!("Confluence ≥{thr}/7 criteria firing"),
                 std::mem::take(&mut conf_firings[ti]),
                 total_anchors,
-            )
+            );
+            row.threshold = Some(thr);
+            row
         })
         .collect();
 
@@ -624,6 +632,20 @@ mod tests {
         .expect("backtest");
         assert_eq!(bt.criteria.len(), 7);
         assert_eq!(bt.confluence.len(), 3);
+        // Confluence rows carry the numeric threshold (matching DEFAULT_CONFLUENCE_THRESHOLDS)
+        // so agents don't string-parse the `confluence_ge_<N>` key.
+        let thresholds: Vec<usize> = bt.confluence.iter().filter_map(|c| c.threshold).collect();
+        assert_eq!(thresholds, DEFAULT_CONFLUENCE_THRESHOLDS.to_vec());
+        for c in &bt.confluence {
+            assert_eq!(
+                c.threshold,
+                c.key.strip_prefix("confluence_ge_").and_then(|n| n.parse().ok()),
+                "threshold field must match the key for {}",
+                c.key
+            );
+        }
+        // Per-criterion rows have no threshold (omitted from JSON).
+        assert!(bt.criteria.iter().all(|c| c.threshold.is_none()));
         // No anchors for TEST => small_n + insufficient caveat.
         assert!(bt.anchors.is_empty());
         assert!(bt.small_n);
