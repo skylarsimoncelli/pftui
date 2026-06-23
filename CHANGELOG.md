@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-06-23 — fix(alerts): wire cycle-signal condition validation into `alerts add` (false-green fix)
+
+- Bug: #1015 added a cycle-condition validator but never called it on the `alerts add` path, so impossible/invalid conditions (`cycle_bottom_monthly_8`, unknown criterion keys, bad timeframes, zero target) still armed with a green success and exit 0 — a false-green that would make an agent report "alert armed" for something structurally unfireable. The friendly-label helper swallowed the same parse error into a raw slug.
+- Fix: `run_add` now calls `cycle_signal_alert::parse_condition` for cycle conditions before insert and propagates the error (non-zero exit). Non-cycle Technical conditions pass through unchanged. +4 end-to-end `run_add` regression tests.
+
 ### 2026-06-23 — feat(cycles): Cycles → Matrix "Low N/7" bottom-confluence column — monthly N-of-7 cycle-bottom count per asset, color-graded toward green
 
 - What: the Cycles → Matrix landing page now shows the mechanical cycle-bottom **confluence count** per tracked asset (Bitcoin / Gold / Silver) in the column slot PR #1010 deliberately reserved after Band / before Opens-in. Header "Low N/7", cell `N/7` (e.g. `3/7`), color-graded; insufficient history → the page's missing-value dash. The capstone of the cycle-bottom signal suite — engine + CLI + alerts + reliability backtest + docs all already merged; this surfaces it in the TUI.
