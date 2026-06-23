@@ -5,6 +5,7 @@
 
 use anyhow::{bail, Result};
 
+use crate::analytics::cycle_signal_backtest::{self, DEFAULT_CONFLUENCE_THRESHOLDS};
 use crate::analytics::cycle_signals::{self, SignalTimeframe};
 use crate::commands::cli_json;
 use crate::db::backend::BackendConnection;
@@ -81,6 +82,94 @@ pub fn run(
         print_text(&sig, &series);
     }
     Ok(())
+}
+
+/// Reliability backtest: measure each criterion's lead/lag + hit-rate against
+/// the verified cycle-low anchors over the full available history. Compute-only
+/// — nothing is persisted.
+pub fn run_backtest(
+    backend: &BackendConnection,
+    symbol: &str,
+    timeframe: &str,
+    window: Option<i64>,
+    json_output: bool,
+) -> Result<()> {
+    let tf = SignalTimeframe::parse(timeframe)?;
+    let (series, history) = load_deep_history(backend, symbol)?;
+    if history.is_empty() {
+        bail!(
+            "no price history for {} — run `pftui data refresh` or check the symbol",
+            symbol.to_uppercase()
+        );
+    }
+    let Some(bt) = cycle_signal_backtest::run_backtest(
+        symbol,
+        &series,
+        &history,
+        tf,
+        window,
+        &DEFAULT_CONFLUENCE_THRESHOLDS,
+    ) else {
+        bail!(
+            "insufficient history for a {} cycle-bottom backtest on {} ({} daily rows)",
+            tf.label(),
+            series,
+            history.len()
+        );
+    };
+
+    if json_output {
+        let payload = serde_json::to_value(&bt)?;
+        let payload = cli_json::envelope(
+            payload,
+            "analytics cycles bottom-signals backtest",
+            &bt.as_of,
+            Some(&series),
+        );
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_backtest(&bt);
+    }
+    Ok(())
+}
+
+fn print_backtest(bt: &cycle_signal_backtest::CycleSignalBacktest) {
+    println!(
+        "Cycle-Bottom Signal Reliability — {} ({} timeframe, series {})",
+        bt.symbol,
+        bt.timeframe.label(),
+        bt.series
+    );
+    println!(
+        "  {} daily bars · as of {} · ±{}-day match window",
+        bt.bars, bt.as_of, bt.window_days
+    );
+    if bt.anchors.is_empty() {
+        println!("  verified cycle-low anchors: none");
+    } else {
+        println!("  verified cycle-low anchors: {}", bt.anchors.join(", "));
+    }
+    if !bt.unverified_anchors.is_empty() {
+        println!("  (unverified documented dates: {})", bt.unverified_anchors.join(", "));
+    }
+    println!();
+    println!("  Per-criterion reliability:");
+    for c in &bt.criteria {
+        println!("    {:<46} {}", c.label, c.summary);
+    }
+    println!();
+    println!("  Confluence (N/7):");
+    for c in &bt.confluence {
+        println!("    {:<46} {}", c.label, c.summary);
+    }
+    println!();
+    println!("  {}", bt.headline);
+    println!();
+    if bt.small_n {
+        println!("  ⚠ {}", bt.caveat);
+    } else {
+        println!("  {}", bt.caveat);
+    }
 }
 
 fn print_text(sig: &cycle_signals::CycleBottomSignals, series: &str) {
