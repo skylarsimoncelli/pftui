@@ -123,6 +123,14 @@ sqlite3 "$DB" "SELECT content FROM thesis WHERE section='btc-cycle-framework'"  
 
 The external consensus prior (4-yr cycle intact; low clusters Oct 2026 in the $40k-53k zone; Loukas alone carries a ~25% early-low tail) is the benchmark every macro BTC timing view must position itself against — lean on it or reject it explicitly, never ignore it. Early-low claims require the confirm checklist in `cycle-frameworks`, not calendar arguments.
 
+The deterministic half of that confirm checklist is the mechanical **N-of-7 cycle-bottom confluence** (engine: `analytics/cycle_signals.rs`, doctrine: docs/CYCLE-SIGNALS.md):
+
+```bash
+pftui analytics cycles bottom-signals --asset BTC --timeframe monthly --json   # met_count/7 + per-criterion verdict
+```
+
+Seven composite criteria (momentum line turning up / above price momentum, double-smoothed stochastic bottoming, roofing filter confirming up, volatility bands bullish, significant reversal dots, trend line reclaimed) — each a firing/not-firing bottom confirmation that historically turn together at past lows — plus a non-counted pi-cycle bottom bonus. A high `met_count/7` with the clock still in its low band is the convergence a structural-low call wants; a low N/7 during an early-low calendar argument is a divergence to name explicitly, never paper over.
+
 ## Step 0b: Backtest cycle hypotheses (don't assert what you can measure)
 
 Before stating that a major/structural cycle pattern "usually" does X, test it against the full price history. `analytics strategy` evaluates a trade-rule expression lookahead-safe and reports trades or regime-segmented forward returns, always beside buy-and-hold. A big cycle is expressible as a long-MA state (e.g. price vs its 200-week MA = bull/bear major cycle) and a rate cycle as an MA crossing on a yield symbol (`us10y`/`^TNX`, `fedfunds`/`^IRX`) — no bespoke classifier needed. Full DSL (fields, `sma`/`ema`/`rsi`, `@weekly`/`@monthly`, `crosses_above`/`crosses_below`, `and`/`or`/`not`) is in AGENTS.md under "analytics strategy".

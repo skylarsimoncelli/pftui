@@ -31,8 +31,10 @@ import sys
 # independent). Headings come from the public newsletter + deep-dive structure.
 RULES = [
     (r"^##\s+Macro\b", ["<!--MACRO_VIZ:environment:-->", "<!--RATES_VIZ:realrates:-->"]),
-    (r"^##\s+Bitcoin\b", ["<!--CYCLE_VIZ:map:BTC-->", "<!--CYCLE_VIZ:dial:BTC-->"]),
-    (r"^##\s+Gold\b", ["<!--CYCLE_VIZ:map:GC=F-->", "<!--CYCLE_VIZ:dial:GC=F-->"]),
+    (r"^##\s+Bitcoin\b", ["<!--CYCLE_VIZ:map:BTC-->", "<!--CYCLE_VIZ:dial:BTC-->",
+                          "<!--CYCLE_SIGNALS_VIZ:checklist:BTC-->"]),
+    (r"^##\s+Gold\b", ["<!--CYCLE_VIZ:map:GC=F-->", "<!--CYCLE_VIZ:dial:GC=F-->",
+                       "<!--CYCLE_SIGNALS_VIZ:checklist:GC=F-->"]),
     (r"^##\s+(News\s*&\s*Catalysts|Catalysts)\b", ["<!--MACRO_VIZ:catalysts:-->"]),
     (r"^##\s+Scenario\s+Dashboard\b", ["<!--SCENARIO_VIZ:dashboard:-->"]),
 ]
@@ -66,7 +68,9 @@ def _self_test():
         ("macro env after Macro", "<!--MACRO_VIZ:environment:-->" in out),
         ("real-rates after Macro", "<!--RATES_VIZ:realrates:-->" in out),
         ("cycle map after Bitcoin", "<!--CYCLE_VIZ:map:BTC-->" in out),
+        ("bottom-signals after Bitcoin", "<!--CYCLE_SIGNALS_VIZ:checklist:BTC-->" in out),
         ("gold map after Gold", "<!--CYCLE_VIZ:map:GC=F-->" in out),
+        ("bottom-signals after Gold", "<!--CYCLE_SIGNALS_VIZ:checklist:GC=F-->" in out),
         ("catalysts after News", "<!--MACRO_VIZ:catalysts:-->" in out),
         ("scenario after Dashboard", "<!--SCENARIO_VIZ:dashboard:-->" in out),
         ("idempotent (no double-insert)", inject(out).count("<!--CYCLE_VIZ:map:BTC-->") == 1),
