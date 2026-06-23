@@ -57,7 +57,7 @@
 **Docs:** docs/CLI-DESIGN.md §3 status; CHANGELOG bug entry.
 
 #### C8. `--json` coverage completion + exemption registry
-**Scope:** Per CLI-DESIGN.md §7. Add `--json` to the 16 non-exempt leaves missing it: `portfolio history` (subsumes the standing P2 item — restore the AGENTS.md flag + Historical Comparison pattern), `portfolio target set/remove`, `portfolio watchlist add/remove`, `analytics alerts add/remove/rearm/seed-defaults`, `system mirror sync`, `system mobile enable/disable`, `system mobile token generate`. Codify the exemption registry (`console`, `system setup/demo/snapshot/web`, `system mobile serve`, `system export/import`).
+**Scope:** Per CLI-DESIGN.md §7. Add `--json` to the 16 non-exempt leaves missing it: `portfolio history` (subsumes the standing P2 item — restore the AGENTS.md flag + Historical Comparison pattern), `portfolio target set/remove`, `portfolio watchlist add/remove`, `analytics alerts remove/rearm/seed-defaults` (`alerts add` DONE), `system mirror sync`, `system mobile enable/disable`, `system mobile token generate`. Codify the exemption registry (`console`, `system setup/demo/snapshot/web`, `system mobile serve`, `system export/import`).
 **Contract/test (forever):** new assertion inside `tests/cli_help_smoke.rs` (it already walks every leaf): each leaf's help must contain `--json` OR the leaf must be in the explicit exemption list — new commands cannot ship without choosing.
 **Files:** `src/cli.rs`, `src/commands/{history,watchlist_cli,alerts,…}.rs`, `tests/cli_help_smoke.rs`.
 **Docs:** AGENTS.md Portfolio State table (+ Historical Comparison pattern), remove the P2 `portfolio history` item.

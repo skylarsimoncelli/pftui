@@ -109,6 +109,7 @@ series; `gold`/`GC=F` resolve to the gold series.
 
 ```jsonc
 {
+  "command": "analytics cycles bottom-signals",
   "symbol": "BTC-USD",
   "resolved_symbol": "BTC-USD",
   "timeframe": "monthly",
@@ -195,3 +196,36 @@ pftui analytics strategy explain --asset BTC --entry "..." --json
 > hit-rate-at-historic-lows backtest is also merged — it scores the *whole
 > suite's* lead/lag and coverage versus verified cycle lows. The per-criterion
 > `analytics strategy` path above remains available for single-indicator drills.
+
+### Running the suite backtest
+
+```bash
+pftui analytics cycles bottom-signals backtest --asset BTC --json
+pftui analytics cycles bottom-signals backtest --asset gold --timeframe weekly --window 120 --json
+```
+
+Each confluence row reports `key` (`confluence_ge_3|4|5`), the numeric
+`threshold` (`3|4|5`), and `firings`/`hits`/`precision`/`coverage`. A higher
+confluence threshold can show **more** firings than a lower one — this is *not* a
+bug. Firings are counted as rising edges *per threshold*: each threshold has its
+own armed→fired state machine, so the met-count repeatedly crossing up through a
+higher line (e.g. 4→5→4→5) produces a separate firing every time it re-crosses,
+which can exceed the number of distinct times it first crossed a lower line.
+
+`--window` is the ± match window in **days** around a verified low; it has a floor
+of 1 (`--window 0` is rejected as meaningless, since a firing would then have to
+land exactly on the verified-low date). Omit `--window` for the default
+±90-day window.
+
+### Structured error reasons
+
+Under `--json`, a failed `bottom-signals` / backtest run emits
+`{"error": {"command", "message", "reason", "bars_available?}}`. The machine-readable
+`reason` is one of:
+
+- `no_history` — the series has zero cached bars (an unknown ticker and an
+  uncached-but-valid symbol are indistinguishable without a network call, so both
+  collapse to this reason; run `pftui data refresh` for a valid symbol).
+- `insufficient_history` — the series resolved with some bars but fewer than the
+  ~120-daily-bar floor the smoothing chains need; `bars_available` reports how
+  many were found.

@@ -11,6 +11,7 @@ use crate::alerts::engine::{check_alerts_backend_only, AlertCheckResult};
 use crate::alerts::rules::parse_rule;
 use crate::alerts::{AlertDirection, AlertKind, AlertRule, AlertStatus};
 use crate::analytics::levels::select_actionable_level;
+use crate::commands::cli_json;
 use crate::db::alerts::{self as alerts_db, NewAlert};
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache;
@@ -101,6 +102,13 @@ fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
         return Ok(());
     }
 
+    let result = run_add_structured(backend, args);
+    cli_json::or_json_error("analytics alerts add", args.json, result)
+}
+
+/// Body of the structured (`--kind`/`--condition`) add path. Split out so the
+/// `--json` error envelope can wrap a single fallible unit.
+fn run_add_structured(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     let kind: AlertKind = args
         .kind
         .as_deref()
@@ -111,6 +119,16 @@ fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
         .condition
         .clone()
         .ok_or_else(|| anyhow::anyhow!("--condition is required for structured alerts"))?;
+
+    // Validate cycle-bottom signal conditions BEFORE arming. A structurally
+    // impossible condition (bad timeframe, N out of 1..=7, unknown criterion
+    // key) can never fire, so arming it is a silent false-green. Only the
+    // cycle_bottom_/cycle_criterion_ prefixes are validated here; every other
+    // Technical condition passes through unchanged.
+    if crate::alerts::cycle_signal_alert::is_cycle_signal_condition(&condition) {
+        crate::alerts::cycle_signal_alert::validate_condition(&condition)?;
+    }
+
     let label = args
         .label
         .clone()
@@ -134,11 +152,26 @@ fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
         },
     )?;
 
-    println!("🟢 Alert #{} created: {}", id, label);
-    println!(
-        "   Type: {} | Condition: {} | Recurring: {}",
-        kind, condition, args.recurring
-    );
+    if args.json {
+        let payload = json!({
+            "command": "analytics alerts add",
+            "id": id,
+            "symbol": symbol,
+            "kind": kind_text,
+            "condition": condition,
+            "label": label,
+            "recurring": args.recurring,
+            "cooldown_minutes": args.cooldown_minutes,
+            "status": "armed",
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("🟢 Alert #{} created: {}", id, label);
+        println!(
+            "   Type: {} | Condition: {} | Recurring: {}",
+            kind, condition, args.recurring
+        );
+    }
     Ok(())
 }
 
