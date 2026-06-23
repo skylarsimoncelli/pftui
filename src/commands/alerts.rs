@@ -111,6 +111,14 @@ fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
         .condition
         .clone()
         .ok_or_else(|| anyhow::anyhow!("--condition is required for structured alerts"))?;
+    // Reject impossible/invalid cycle-signal conditions up front instead of silently
+    // arming an alert that can never fire (e.g. cycle_bottom_monthly_8, an unknown
+    // criterion key, or a bad timeframe). The friendly-label path swallows this same
+    // parse error into a raw slug, so validation must happen here. Non-cycle technical
+    // conditions are unaffected.
+    if crate::alerts::cycle_signal_alert::is_cycle_signal_condition(&condition) {
+        crate::alerts::cycle_signal_alert::parse_condition(&condition)?;
+    }
     let label = args
         .label
         .clone()
@@ -1619,6 +1627,69 @@ mod tests {
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].symbol, "GC=F");
         assert_eq!(alerts[0].threshold, "5500");
+    }
+
+    #[test]
+    fn cycle_alert_add_rejects_impossible_confluence() {
+        // cycle_bottom_monthly_8 can never fire (max is 7/7) — must be rejected,
+        // not silently armed. Regression guard for the false-green trust bug.
+        let backend = setup_backend();
+        let args = AlertsArgs {
+            kind: Some("technical".to_string()),
+            symbol: Some("BTC-USD".to_string()),
+            condition: Some("cycle_bottom_monthly_8".to_string()),
+            ..default_args()
+        };
+        assert!(run_add(&backend, &args).is_err());
+        assert_eq!(alerts_db::list_alerts_backend(&backend).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn cycle_alert_add_rejects_unknown_criterion_and_bad_timeframe() {
+        let backend = setup_backend();
+        for bad in [
+            "cycle_criterion_weekly_bogus_key",
+            "cycle_bottom_yearly_4",
+            "cycle_bottom_monthly_0",
+        ] {
+            let args = AlertsArgs {
+                kind: Some("technical".to_string()),
+                symbol: Some("BTC-USD".to_string()),
+                condition: Some(bad.to_string()),
+                ..default_args()
+            };
+            assert!(run_add(&backend, &args).is_err(), "should reject {bad}");
+        }
+        assert_eq!(alerts_db::list_alerts_backend(&backend).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn cycle_alert_add_accepts_valid_condition() {
+        let backend = setup_backend();
+        let args = AlertsArgs {
+            kind: Some("technical".to_string()),
+            symbol: Some("BTC-USD".to_string()),
+            condition: Some("cycle_bottom_monthly_4".to_string()),
+            ..default_args()
+        };
+        run_add(&backend, &args).unwrap();
+        let alerts = alerts_db::list_alerts_backend(&backend).unwrap();
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].condition.as_deref(), Some("cycle_bottom_monthly_4"));
+    }
+
+    #[test]
+    fn non_cycle_technical_condition_still_arms() {
+        // The cycle validator must NOT reject ordinary technical conditions.
+        let backend = setup_backend();
+        let args = AlertsArgs {
+            kind: Some("technical".to_string()),
+            symbol: Some("BTC-USD".to_string()),
+            condition: Some("price_below_sma200".to_string()),
+            ..default_args()
+        };
+        run_add(&backend, &args).unwrap();
+        assert_eq!(alerts_db::list_alerts_backend(&backend).unwrap().len(), 1);
     }
 
     #[test]
