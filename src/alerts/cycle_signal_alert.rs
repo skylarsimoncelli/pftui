@@ -5,7 +5,7 @@
 //! confluence-threshold and single-criterion conditions are raised
 //! automatically on every `data refresh`.
 //!
-//! Two condition shapes are supported, both carried on the existing
+//! Three condition shapes are supported, all carried on the existing
 //! `Technical` alert kind via the `condition` string (no new AlertKind,
 //! no new storage — edge-triggering reuses the standard armed→triggered
 //! fired-state machinery):
@@ -17,6 +17,10 @@
 //! 2. **Single criterion** — `cycle_criterion_<timeframe>_<criterion_key>`
 //!    (e.g. `cycle_criterion_weekly_trend_line_reclaimed`). Fires when that
 //!    one named composite criterion is met on `<timeframe>`.
+//!
+//! 3. **Single component** — `cycle_component_<timeframe>_<component_key>`
+//!    (e.g. `cycle_component_monthly_erf_turned_up`). Fires when that one
+//!    atomic subcondition is met on `<timeframe>`.
 //!
 //! The evaluation here is pure (no DB): it takes an already-computed
 //! `Option<CycleBottomSignals>` so the transition/edge-trigger semantics can
@@ -35,6 +39,8 @@ use crate::analytics::cycle_signals::{CycleBottomSignals, SignalTimeframe};
 pub const CONFLUENCE_PREFIX: &str = "cycle_bottom_";
 /// Condition-string prefix for single-criterion alerts.
 pub const CRITERION_PREFIX: &str = "cycle_criterion_";
+/// Condition-string prefix for atomic component alerts.
+pub const COMPONENT_PREFIX: &str = "cycle_component_";
 
 /// The 7 composite criterion keys, as emitted by the signal engine. Used to
 /// disambiguate the timeframe token from the criterion key when parsing a
@@ -47,6 +53,22 @@ pub const CRITERION_KEYS: [&str; 7] = [
     "volatility_bands_bullish",
     "reversal_dots",
     "trend_line_reclaimed",
+];
+
+/// Alertable atomic component keys emitted inside the cycle-bottom criteria.
+pub const COMPONENT_KEYS: [&str; 12] = [
+    "rsi_ma_turned_up",
+    "rsi_ma_cross_above_rsi",
+    "dss_turned_up",
+    "dss_cross_above_trigger",
+    "dss_oversold",
+    "erf_bottom_zone",
+    "erf_turned_up",
+    "cyberbands_bullish",
+    "cyberdots_bullish",
+    "cyberline_reclaim",
+    "pi_cycle_bottom",
+    "erf_positive",
 ];
 
 /// A parsed cycle-signal alert condition.
@@ -62,18 +84,47 @@ pub enum CycleSignalCondition {
         timeframe: SignalTimeframe,
         criterion_key: String,
     },
+    /// Fire when the named atomic component is met on the given timeframe.
+    Component {
+        timeframe: SignalTimeframe,
+        component_key: String,
+    },
 }
 
 /// Returns true if a condition string is a cycle-signal alert condition.
 pub fn is_cycle_signal_condition(condition: &str) -> bool {
-    condition.starts_with(CONFLUENCE_PREFIX) || condition.starts_with(CRITERION_PREFIX)
+    condition.starts_with(CONFLUENCE_PREFIX)
+        || condition.starts_with(CRITERION_PREFIX)
+        || condition.starts_with(COMPONENT_PREFIX)
 }
 
 /// Parse a cycle-signal condition string into its typed form.
 ///
 /// Confluence: `cycle_bottom_<timeframe>_<N>`.
 /// Criterion:  `cycle_criterion_<timeframe>_<criterion_key>`.
+/// Component:  `cycle_component_<timeframe>_<component_key>`.
 pub fn parse_condition(condition: &str) -> anyhow::Result<CycleSignalCondition> {
+    if let Some(rest) = condition.strip_prefix(COMPONENT_PREFIX) {
+        // rest = "<timeframe>_<component_key>"
+        let (tf_token, key) = rest.split_once('_').ok_or_else(|| {
+            anyhow::anyhow!(
+                "invalid cycle component condition '{condition}' — expected \
+                 cycle_component_<timeframe>_<component_key>"
+            )
+        })?;
+        let timeframe = SignalTimeframe::parse(tf_token)?;
+        if !COMPONENT_KEYS.contains(&key) {
+            anyhow::bail!(
+                "unknown cycle component key '{key}' — expected one of: {}",
+                COMPONENT_KEYS.join(", ")
+            );
+        }
+        return Ok(CycleSignalCondition::Component {
+            timeframe,
+            component_key: key.to_string(),
+        });
+    }
+
     if let Some(rest) = condition.strip_prefix(CRITERION_PREFIX) {
         // rest = "<timeframe>_<criterion_key>"
         let (tf_token, key) = rest.split_once('_').ok_or_else(|| {
@@ -105,7 +156,9 @@ pub fn parse_condition(condition: &str) -> anyhow::Result<CycleSignalCondition> 
         })?;
         let timeframe = SignalTimeframe::parse(tf_token)?;
         let target: usize = n_token.parse().map_err(|_| {
-            anyhow::anyhow!("invalid confluence target '{n_token}' in '{condition}' — expected 1..=7")
+            anyhow::anyhow!(
+                "invalid confluence target '{n_token}' in '{condition}' — expected 1..=7"
+            )
         })?;
         if target == 0 || target > 7 {
             anyhow::bail!("confluence target must be 1..=7, got {target}");
@@ -131,16 +184,20 @@ pub fn parse_condition(condition: &str) -> anyhow::Result<CycleSignalCondition> 
 /// - timeframe ∈ {daily, weekly, monthly}
 /// - `cycle_bottom_<tf>_<N>`        → N ∈ 1..=7
 /// - `cycle_criterion_<tf>_<key>`   → key ∈ the 7 [`CRITERION_KEYS`]
+/// - `cycle_component_<tf>_<key>`   → key ∈ [`COMPONENT_KEYS`]
 pub fn validate_condition(condition: &str) -> anyhow::Result<()> {
     parse_condition(condition).map(|_| ()).map_err(|e| {
         anyhow::anyhow!(
             "{e}\n\nValid cycle-bottom conditions:\n  \
              Confluence threshold — cycle_bottom_<timeframe>_<N>\n  \
              Single criterion    — cycle_criterion_<timeframe>_<key>\n  \
+             Single component    — cycle_component_<timeframe>_<key>\n  \
              Timeframes: daily | weekly | monthly\n  \
              N (confluence target): 1..=7\n  \
-             Criterion keys: {}",
-            CRITERION_KEYS.join(", ")
+             Criterion keys: {}\n  \
+             Component keys: {}",
+            CRITERION_KEYS.join(", "),
+            COMPONENT_KEYS.join(", ")
         )
     })
 }
@@ -151,6 +208,7 @@ pub fn condition_timeframe(condition: &str) -> anyhow::Result<SignalTimeframe> {
     Ok(match parse_condition(condition)? {
         CycleSignalCondition::Confluence { timeframe, .. } => timeframe,
         CycleSignalCondition::Criterion { timeframe, .. } => timeframe,
+        CycleSignalCondition::Component { timeframe, .. } => timeframe,
     })
 }
 
@@ -187,6 +245,25 @@ pub fn criterion_label(key: &str) -> &'static str {
         "reversal_dots" => "significant reversal dots",
         "trend_line_reclaimed" => "trend line reclaimed",
         _ => "cycle-bottom criterion",
+    }
+}
+
+/// Human label for an atomic component key (no practitioner names).
+pub fn component_label(key: &str) -> &'static str {
+    match key {
+        "rsi_ma_turned_up" => "RSI average ticked up",
+        "rsi_ma_cross_above_rsi" => "RSI average reclaimed the RSI",
+        "dss_turned_up" => "stochastic ticked up",
+        "dss_cross_above_trigger" => "stochastic crossed above trigger",
+        "dss_oversold" => "stochastic oversold",
+        "erf_bottom_zone" => "roofing filter in bottom zone",
+        "erf_turned_up" => "roofing filter ticked up",
+        "erf_positive" => "roofing filter positive",
+        "cyberbands_bullish" => "daily momentum bands bullish",
+        "cyberdots_bullish" => "higher-timeframe strength dots bullish",
+        "cyberline_reclaim" => "weekly trend line reclaimed",
+        "pi_cycle_bottom" => "cycle-bottom bonus fired recently",
+        _ => "cycle-bottom component",
     }
 }
 
@@ -266,13 +343,74 @@ pub fn evaluate(
                 }),
             }
         }
+        CycleSignalCondition::Component {
+            timeframe,
+            component_key,
+        } => {
+            let component = find_component(sig, component_key);
+            let is_triggered = component
+                .map(|component| component.0)
+                .unwrap_or_else(|| component_fallback(sig, component_key).unwrap_or(false));
+            let value = component
+                .and_then(|component| component.1)
+                .or_else(|| component_value_fallback(sig, component_key));
+            CycleSignalEval {
+                is_triggered,
+                current_value: Some(Decimal::from(if is_triggered { 1u8 } else { 0u8 })),
+                trigger_data: json!({
+                    "kind": "cycle_bottom_component",
+                    "symbol": symbol,
+                    "asset": asset,
+                    "timeframe": timeframe.label(),
+                    "component_key": component_key,
+                    "component_label": component_label(component_key),
+                    "met": is_triggered,
+                    "value": value,
+                    "met_count": sig.met_count,
+                    "total": sig.total,
+                    "as_of": sig.as_of,
+                    "message": format!(
+                        "{asset} {} {} (cycle-bottom signals {}/{})",
+                        timeframe.label(),
+                        component_label(component_key),
+                        sig.met_count,
+                        sig.total
+                    ),
+                }),
+            }
+        }
+    }
+}
+
+fn find_component(sig: &CycleBottomSignals, component_key: &str) -> Option<(bool, Option<f64>)> {
+    sig.criteria
+        .iter()
+        .flat_map(|criterion| criterion.components.iter())
+        .find(|component| component.key == component_key)
+        .map(|component| (component.met, component.value))
+}
+
+fn component_fallback(sig: &CycleBottomSignals, component_key: &str) -> Option<bool> {
+    match component_key {
+        "erf_positive" => Some(sig.erf_positive),
+        "pi_cycle_bottom" => Some(sig.pi_cycle_bottom),
+        _ => None,
+    }
+}
+
+fn component_value_fallback(sig: &CycleBottomSignals, component_key: &str) -> Option<f64> {
+    match component_key {
+        "erf_positive" => sig.erf,
+        _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analytics::cycle_signals::{Criterion, CycleBottomSignals, SignalTimeframe};
+    use crate::analytics::cycle_signals::{
+        Component, Criterion, CycleBottomSignals, SignalTimeframe, WatchItem,
+    };
 
     fn synthetic_signals(timeframe: SignalTimeframe, met_keys: &[&str]) -> CycleBottomSignals {
         let criteria: Vec<Criterion> = CRITERION_KEYS
@@ -282,10 +420,27 @@ mod tests {
                 label: k.to_string(),
                 met: met_keys.contains(k),
                 detail: String::new(),
-                components: vec![],
+                components: synthetic_components(k, met_keys),
             })
             .collect();
         let met_count = criteria.iter().filter(|c| c.met).count();
+        let core_watch: Vec<WatchItem> = criteria
+            .iter()
+            .take(4)
+            .map(|c| WatchItem {
+                key: c.key.clone(),
+                label: c.label.clone(),
+                met: c.met,
+                met_components: c
+                    .components
+                    .iter()
+                    .filter(|component| component.met)
+                    .count(),
+                total_components: c.components.len(),
+                detail: c.detail.clone(),
+                components: c.components.clone(),
+            })
+            .collect();
         CycleBottomSignals {
             symbol: "BTC-USD".to_string(),
             timeframe,
@@ -300,7 +455,9 @@ mod tests {
             dss_cross_above_trigger: false,
             dss_oversold: false,
             erf: None,
+            erf_positive: false,
             erf_green: false,
+            erf_bottom_zone: false,
             erf_turned_up: false,
             cyberbands_state: None,
             cyberbands_bullish: false,
@@ -313,11 +470,33 @@ mod tests {
             pi_cycle_bottom: false,
             pi_cycle_last_bottom: None,
             criteria,
+            core_watch,
             met_count,
             total: 7,
             bonus: None,
             verdict: String::new(),
         }
+    }
+
+    fn synthetic_components(criterion_key: &str, met_keys: &[&str]) -> Vec<Component> {
+        let keys: &[&str] = match criterion_key {
+            "momentum_turning_up" => &["rsi_ma_turned_up"],
+            "momentum_above_price" => &["rsi_ma_cross_above_rsi"],
+            "dss_bottoming" => &["dss_turned_up", "dss_cross_above_trigger"],
+            "roofing_confirming_up" => &["erf_bottom_zone", "erf_turned_up"],
+            "volatility_bands_bullish" => &["cyberbands_bullish"],
+            "reversal_dots" => &["cyberdots_bullish"],
+            "trend_line_reclaimed" => &["cyberline_reclaim"],
+            _ => &[],
+        };
+        keys.iter()
+            .map(|key| Component {
+                key: (*key).to_string(),
+                label: (*key).to_string(),
+                met: met_keys.contains(key),
+                value: None,
+            })
+            .collect()
     }
 
     #[test]
@@ -345,6 +524,18 @@ mod tests {
     }
 
     #[test]
+    fn parse_component_condition() {
+        let parsed = parse_condition("cycle_component_monthly_erf_bottom_zone").unwrap();
+        assert_eq!(
+            parsed,
+            CycleSignalCondition::Component {
+                timeframe: SignalTimeframe::Monthly,
+                component_key: "erf_bottom_zone".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn parse_rejects_unknown_criterion() {
         assert!(parse_condition("cycle_criterion_weekly_not_a_real_key").is_err());
     }
@@ -358,6 +549,8 @@ mod tests {
         assert!(validate_condition("cycle_bottom_monthly_8").is_err());
         // Unknown criterion key.
         assert!(validate_condition("cycle_criterion_weekly_bogus_key").is_err());
+        // Unknown component key.
+        assert!(validate_condition("cycle_component_weekly_bogus_key").is_err());
         // Non-numeric target.
         assert!(validate_condition("cycle_bottom_monthly_x").is_err());
     }
@@ -373,7 +566,16 @@ mod tests {
         assert!(err.contains("monthly"));
         assert!(err.contains("1..=7"));
         for key in CRITERION_KEYS {
-            assert!(err.contains(key), "valid-set message omitted key {key}: {err}");
+            assert!(
+                err.contains(key),
+                "valid-set message omitted key {key}: {err}"
+            );
+        }
+        for key in COMPONENT_KEYS {
+            assert!(
+                err.contains(key),
+                "valid-set message omitted key {key}: {err}"
+            );
         }
     }
 
@@ -423,6 +625,19 @@ mod tests {
     }
 
     #[test]
+    fn validate_accepts_every_known_component_key() {
+        for tf in ["daily", "weekly", "monthly"] {
+            for key in COMPONENT_KEYS {
+                let cond = format!("cycle_component_{tf}_{key}");
+                assert!(
+                    validate_condition(&cond).is_ok(),
+                    "valid component rejected: {cond}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn parse_rejects_out_of_range_target() {
         assert!(parse_condition("cycle_bottom_monthly_0").is_err());
         assert!(parse_condition("cycle_bottom_monthly_8").is_err());
@@ -459,6 +674,16 @@ mod tests {
         assert!(evaluate("BTC-USD", &parsed, Some(&met)).is_triggered);
 
         let not_met = synthetic_signals(SignalTimeframe::Weekly, &["dss_bottoming"]);
+        assert!(!evaluate("BTC-USD", &parsed, Some(&not_met)).is_triggered);
+    }
+
+    #[test]
+    fn single_component_triggers_only_when_met() {
+        let parsed = parse_condition("cycle_component_monthly_erf_bottom_zone").unwrap();
+        let met = synthetic_signals(SignalTimeframe::Monthly, &["erf_bottom_zone"]);
+        assert!(evaluate("BTC-USD", &parsed, Some(&met)).is_triggered);
+
+        let not_met = synthetic_signals(SignalTimeframe::Monthly, &["erf_turned_up"]);
         assert!(!evaluate("BTC-USD", &parsed, Some(&not_met)).is_triggered);
     }
 

@@ -131,7 +131,9 @@ pub enum AgentMessageCommand {
     ///   pftui agent message ack --id 1 --id 2    # ack specific messages
     ///   pftui agent message ack --all             # ack all pending messages
     ///   pftui agent message ack --all --to bot-x  # ack all for a specific recipient
-    #[command(after_help = "Examples:\n  pftui agent message ack --id 12 --id 13\n  pftui agent message ack --all\n  pftui agent message ack --all --to morning-brief\n\n`--to` expects a recipient agent name, not a message ID or thread ID.\nUse it only with `--all` when you want to bulk-ack the queue for one recipient.")]
+    #[command(
+        after_help = "Examples:\n  pftui agent message ack --id 12 --id 13\n  pftui agent message ack --all\n  pftui agent message ack --all --to morning-brief\n\n`--to` expects a recipient agent name, not a message ID or thread ID.\nUse it only with `--all` when you want to bulk-ack the queue for one recipient."
+    )]
     Ack {
         /// One or more message IDs (repeatable: --id 1 --id 2 --id 3)
         #[arg(long)]
@@ -149,7 +151,9 @@ pub enum AgentMessageCommand {
         json: bool,
     },
     /// Acknowledge all pending messages for a recipient (alias for `ack --all`)
-    #[command(after_help = "Example:\n  pftui agent message ack-all --to morning-brief\n\n`--to` expects a recipient agent name.")]
+    #[command(
+        after_help = "Example:\n  pftui agent message ack-all --to morning-brief\n\n`--to` expects a recipient agent name."
+    )]
     #[command(name = "ack-all")]
     AckAll {
         /// Recipient agent name whose pending queue should be acknowledged
@@ -376,7 +380,9 @@ pub enum DashboardCommand {
 #[derive(Subcommand)]
 pub enum DataCommand {
     /// Fetch and cache current prices for tracked symbols
-    #[command(after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n  pftui data refresh --stale                    # only stale/empty status-tracked feeds\n  pftui data refresh --timeout 90 --json        # return partial JSON if the run exceeds 90s\n  pftui data refresh --accept-outlier BTC-USD   # admit a genuine >20% d/d gap past the price guard\n\n--only, --skip, and --stale are mutually exclusive.\n\nPrice-ingest guard: closes that move >20% day-over-day are SUSPECT and are\nrejected unless corroborated by a wired secondary source (BTC: mempool.space\n/ CoinGecko; GC=F: GeckoTerminal XAUT) within 5%, or admitted explicitly via\n--accept-outlier. Failed fetches never stamp a stale cached price onto\ntoday's date. Retro-scan stored history with: pftui data prices audit")]
+    #[command(
+        after_help = "Sources: prices, predictions, fedwatch, news_rss, news_brave, cot,\n         sentiment, calendar, economy, fred, bls, worldbank, comex,\n         onchain, analytics, alerts, cleanup.\n\nExamples:\n  pftui data refresh --only prices              # price data only\n  pftui data refresh --only prices,news_rss     # prices + RSS news\n  pftui data refresh --skip worldbank,bls,cot   # skip slow sources\n  pftui data refresh --stale                    # only stale/empty status-tracked feeds\n  pftui data refresh --timeout 90 --json        # return partial JSON if the run exceeds 90s\n  pftui data refresh --accept-outlier BTC-USD   # admit a genuine >20% d/d gap past the price guard\n\n--only, --skip, and --stale are mutually exclusive.\n\nPrice-ingest guard: closes that move >20% day-over-day are SUSPECT and are\nrejected unless corroborated by a wired secondary source (BTC: mempool.space\n/ CoinGecko; GC=F: GeckoTerminal XAUT) within 5%, or admitted explicitly via\n--accept-outlier. Failed fetches never stamp a stale cached price onto\ntoday's date. Retro-scan stored history with: pftui data prices audit"
+    )]
     Refresh {
         /// Send OS notification for newly triggered alerts
         #[arg(long)]
@@ -587,7 +593,9 @@ pub enum DataCommand {
         json: bool,
     },
     /// Options chain viewer + GEX (gamma exposure) ingestion (Yahoo free data)
-    #[command(after_help = "Subcommands:\n  refresh   Fetch + persist chain snapshots and compute GEX summaries\n  show      Display the most recent cached chain (Yahoo free data viewer)")]
+    #[command(
+        after_help = "Subcommands:\n  refresh   Fetch + persist chain snapshots and compute GEX summaries\n  show      Display the most recent cached chain (Yahoo free data viewer)"
+    )]
     Options {
         #[command(subcommand)]
         command: DataOptionsCommand,
@@ -623,7 +631,10 @@ pub enum DataCommand {
         json: bool,
     },
     /// Consolidated closing prices for all portfolio + watchlist symbols
-    #[command(alias = "quotes", after_help = "Aliases: `data quotes` also works.\n\nFor overnight futures specifically, see: pftui data futures\nFor market overview symbols, add --market flag.\nUse --auto-refresh to automatically refresh stale (>2h) prices before returning.\nRetro-scan stored history for corrupt prints: pftui data prices audit")]
+    #[command(
+        alias = "quotes",
+        after_help = "Aliases: `data quotes` also works.\n\nFor overnight futures specifically, see: pftui data futures\nFor market overview symbols, add --market flag.\nUse --auto-refresh to automatically refresh stale (>2h) prices before returning.\nRetro-scan stored history for corrupt prints: pftui data prices audit"
+    )]
     Prices {
         #[command(subcommand)]
         command: Option<DataPricesCommand>,
@@ -655,7 +666,9 @@ pub enum DataCommand {
         json: bool,
     },
     /// Overnight futures prices for pre-market positioning (ES, NQ, YM, RTY, GC, SI, CL)
-    #[command(after_help = "For portfolio/watchlist price quotes, see: pftui data prices (alias: data quotes)\nFor market overview prices, see: pftui data prices --market")]
+    #[command(
+        after_help = "For portfolio/watchlist price quotes, see: pftui data prices (alias: data quotes)\nFor market overview prices, see: pftui data prices --market"
+    )]
     Futures {
         /// Output as JSON for agent/script consumption
         #[arg(long)]
@@ -669,7 +682,10 @@ pub enum DataCommand {
         json: bool,
     },
     /// Alert management lives under `analytics alerts` — this redirects there
-    #[command(name = "alerts", after_help = "Alerts are managed under the analytics domain:\n\n  pftui analytics alerts list        List alert rules\n  pftui analytics alerts check       Check alerts against current data\n  pftui analytics alerts add          Add an alert rule\n  pftui analytics alerts ack          Acknowledge triggered alerts\n  pftui analytics alerts seed-defaults Seed smart-alert defaults\n\nRun `pftui analytics alerts --help` for full details.")]
+    #[command(
+        name = "alerts",
+        after_help = "Alerts are managed under the analytics domain:\n\n  pftui analytics alerts list        List alert rules\n  pftui analytics alerts check       Check alerts against current data\n  pftui analytics alerts add          Add an alert rule\n  pftui analytics alerts ack          Acknowledge triggered alerts\n  pftui analytics alerts seed-defaults Seed smart-alert defaults\n\nRun `pftui analytics alerts --help` for full details."
+    )]
     Alerts {
         #[command(subcommand)]
         command: Option<DataAlertsRedirect>,
@@ -681,7 +697,9 @@ pub enum DataCommand {
         command: DataRealYieldsCommand,
     },
     /// DB-wide false-value audit: per-table signature checks over stored series and ledgers (read-only)
-    #[command(after_help = "Read-only umbrella over per-table signature checks, each carrying\nper-table judgment (April-2020 negative oil is REAL; near-zero ^IRX yields\nare REAL — neither is condemned):\n\n  price_history        spike-and-revert scan + cross-population bimodality\n                       (two close bands >10x apart — the equity-collision\n                       signature) + exact-placeholder runs (>=5 identical\n                       closes to 4dp on FX/commodity symbols)\n  economic_data        plausible-range violations (quarantined=0 anomalies)\n  sentiment_history    0-100 range + duplicate (date, index_type)\n  cot_cache            negative position counts, net != long - short\n  onchain_cache        all-zero runs >=5 per metric (incl. etf_flow_*)\n  forecast_scores /    realized/forward returns outside +/-95% (non-crypto)\n  signal_expectancy /  or +/-99.9% (crypto) — fat-finger detection in our\n  recommendations      own ledgers\n  portfolio_snapshots  day-over-day total_value jumps >30% (severity info —\n                       flow events are real; deliberate operator backfill\n                       rows with cash_value=0 are excluded)\n  scenario_history     active-scenario probability book sums outside\n                       [60, 110] per recorded date + single-scenario moves\n                       >15pp between consecutive records (pre-2026-06-10\n                       ledger discipline: info — expected; on/after: suspect)\n  transactions         buy/sell fill price >15% from the nearest session\n                       close, nonpositive quantities, orphaned paired_tx_id\n                       (always suspect — operator-entered, never auto-fixed;\n                       output is row id + symbol + date + deviation ONLY)\n\nSeverity: info (real but notable) | suspect (likely false value) |\ncorrupt (provably wrong). Output lists row KEYS only, never values from\nthe operator's portfolio tables.\n\nRead-only by design — repair stays manual:\n  pftui data decontaminate --symbol SYM   # purge poisoned L2 derived rows\n  pftui data prices audit                 # price-only spike-revert detail\n\nExamples:\n  pftui data audit\n  pftui data audit --table price_history --json")]
+    #[command(
+        after_help = "Read-only umbrella over per-table signature checks, each carrying\nper-table judgment (April-2020 negative oil is REAL; near-zero ^IRX yields\nare REAL — neither is condemned):\n\n  price_history        spike-and-revert scan + cross-population bimodality\n                       (two close bands >10x apart — the equity-collision\n                       signature) + exact-placeholder runs (>=5 identical\n                       closes to 4dp on FX/commodity symbols)\n  economic_data        plausible-range violations (quarantined=0 anomalies)\n  sentiment_history    0-100 range + duplicate (date, index_type)\n  cot_cache            negative position counts, net != long - short\n  onchain_cache        all-zero runs >=5 per metric (incl. etf_flow_*)\n  forecast_scores /    realized/forward returns outside +/-95% (non-crypto)\n  signal_expectancy /  or +/-99.9% (crypto) — fat-finger detection in our\n  recommendations      own ledgers\n  portfolio_snapshots  day-over-day total_value jumps >30% (severity info —\n                       flow events are real; deliberate operator backfill\n                       rows with cash_value=0 are excluded)\n  scenario_history     active-scenario probability book sums outside\n                       [60, 110] per recorded date + single-scenario moves\n                       >15pp between consecutive records (pre-2026-06-10\n                       ledger discipline: info — expected; on/after: suspect)\n  transactions         buy/sell fill price >15% from the nearest session\n                       close, nonpositive quantities, orphaned paired_tx_id\n                       (always suspect — operator-entered, never auto-fixed;\n                       output is row id + symbol + date + deviation ONLY)\n\nSeverity: info (real but notable) | suspect (likely false value) |\ncorrupt (provably wrong). Output lists row KEYS only, never values from\nthe operator's portfolio tables.\n\nRead-only by design — repair stays manual:\n  pftui data decontaminate --symbol SYM   # purge poisoned L2 derived rows\n  pftui data prices audit                 # price-only spike-revert detail\n\nExamples:\n  pftui data audit\n  pftui data audit --table price_history --json"
+    )]
     Audit {
         /// Limit to one table's checks (e.g. price_history, economic_data)
         #[arg(long)]
@@ -691,7 +709,9 @@ pub enum DataCommand {
         json: bool,
     },
     /// Purge L2 derived rows computed from a corrupt L1 price series (dry-run by default)
-    #[command(after_help = "When price_history is repaired after a corruption incident, the L2 rows\ncomputed FROM the corrupt closes do not self-heal: technical_snapshots /\ncorrelation_snapshots are stamped per refresh run, so poisoned historical\nrows persist forever. This deletes them for one symbol.\n\nScope (per-symbol L2 only): technical_snapshots, correlation_snapshots\n(either side of the pair), technical_levels, technical_signals,\nsignal_expectancy. Excluded by design: timeframe_signals, regime_*,\nportfolio/position_snapshots (cross-asset aggregates / operator history —\npartial deletion would skew them).\n\nHonesty note: deleted HISTORICAL rows do not regrow on refresh (snapshots\nonly accumulate going forward); signal_expectancy alone fully rebuilds via\n`pftui research backtest`. Downstream readers tolerate the gap.\n\nDry-run is the default — counts only. `--confirm` executes inside a\ntransaction and writes a journal-note audit trail (author system,\nsection system).\n\nExamples:\n  pftui data decontaminate --symbol BTC --before 2026-06-12\n  pftui data decontaminate --symbol JPY=X --before 2026-06-12 --confirm")]
+    #[command(
+        after_help = "When price_history is repaired after a corruption incident, the L2 rows\ncomputed FROM the corrupt closes do not self-heal: technical_snapshots /\ncorrelation_snapshots are stamped per refresh run, so poisoned historical\nrows persist forever. This deletes them for one symbol.\n\nScope (per-symbol L2 only): technical_snapshots, correlation_snapshots\n(either side of the pair), technical_levels, technical_signals,\nsignal_expectancy. Excluded by design: timeframe_signals, regime_*,\nportfolio/position_snapshots (cross-asset aggregates / operator history —\npartial deletion would skew them).\n\nHonesty note: deleted HISTORICAL rows do not regrow on refresh (snapshots\nonly accumulate going forward); signal_expectancy alone fully rebuilds via\n`pftui research backtest`. Downstream readers tolerate the gap.\n\nDry-run is the default — counts only. `--confirm` executes inside a\ntransaction and writes a journal-note audit trail (author system,\nsection system).\n\nExamples:\n  pftui data decontaminate --symbol BTC --before 2026-06-12\n  pftui data decontaminate --symbol JPY=X --before 2026-06-12 --confirm"
+    )]
     Decontaminate {
         /// Symbol whose derived rows to purge (exact match; run once per symbol/alias)
         #[arg(long)]
@@ -710,7 +730,9 @@ pub enum DataCommand {
         json: bool,
     },
     /// Capital flow tracking: ETF creation/redemption, 13F flows, crypto exchange flows (F59 scaffold)
-    #[command(after_help = "Capital-flows provider scaffold. Real ETF/13F data requires a paid\nprovider; the default `noop` provider returns zero flows so the\nschema, CLI, and DB plumbing stay in place. Select a provider via\nthe `PFTUI_FLOWS_PROVIDER` env var (`noop`, `etf_com_csv`, `sec_edgar_13f`).\n\nExamples:\n  pftui data flows refresh --json\n  pftui data flows refresh --asset SPY --json\n  pftui data flows show --since 30d --json\n  pftui data flows show --asset BTC --json")]
+    #[command(
+        after_help = "Capital-flows provider scaffold. Real ETF/13F data requires a paid\nprovider; the default `noop` provider returns zero flows so the\nschema, CLI, and DB plumbing stay in place. Select a provider via\nthe `PFTUI_FLOWS_PROVIDER` env var (`noop`, `etf_com_csv`, `sec_edgar_13f`).\n\nExamples:\n  pftui data flows refresh --json\n  pftui data flows refresh --asset SPY --json\n  pftui data flows show --since 30d --json\n  pftui data flows show --asset BTC --json"
+    )]
     Flows {
         #[command(subcommand)]
         command: DataFlowsCommand,
@@ -1098,7 +1120,9 @@ pub enum ConsensusCommand {
 #[allow(clippy::large_enum_variant)] // Add carries the full journal-add discipline flag set
 pub enum DataPredictionsCommand {
     /// Show prediction market contract odds from Polymarket (tag-based macro-relevant contracts)
-    #[command(after_help = "Sources: Polymarket Gamma events API (fed, economics, geopolitics, politics, bitcoin, crypto, ai tags).\n\nWhen the enriched prediction_market_contracts table is populated (via `pftui refresh`), shows contracts with exchange, event grouping, liquidity, and end dates. Falls back to legacy predictions_cache when contracts table is empty.\n\nSee also: `data predictions stats`, `data predictions scorecard`, `data predictions unanswered`, `analytics predictions`")]
+    #[command(
+        after_help = "Sources: Polymarket Gamma events API (fed, economics, geopolitics, politics, bitcoin, crypto, ai tags).\n\nWhen the enriched prediction_market_contracts table is populated (via `pftui refresh`), shows contracts with exchange, event grouping, liquidity, and end dates. Falls back to legacy predictions_cache when contracts table is empty.\n\nSee also: `data predictions stats`, `data predictions scorecard`, `data predictions unanswered`, `analytics predictions`"
+    )]
     Markets {
         /// Filter by category: crypto, economics, geopolitics, ai, finance, macro
         #[arg(long)]
@@ -1811,7 +1835,10 @@ pub enum PortfolioCommand {
         json: bool,
     },
     /// Run named portfolio stress scenarios
-    #[command(name = "stress-test", after_help = "Run a named stress scenario against your portfolio to see the\nimpact. Use --list-scenarios to discover available preset names\nand active user-defined scenarios.\n\nBuilt-in presets: Oil $100, BTC 40k, Gold $6000, 2008 GFC,\n1973 Oil Crisis. Active scenarios from `analytics scenario list`\nare also available.\n\nSee also: analytics impact-matrix, analytics scenario list")]
+    #[command(
+        name = "stress-test",
+        after_help = "Run a named stress scenario against your portfolio to see the\nimpact. Use --list-scenarios to discover available preset names\nand active user-defined scenarios.\n\nBuilt-in presets: Oil $100, BTC 40k, Gold $6000, 2008 GFC,\n1973 Oil Crisis. Active scenarios from `analytics scenario list`\nare also available.\n\nSee also: analytics impact-matrix, analytics scenario list"
+    )]
     StressTest {
         /// Scenario name (e.g. "2008 GFC", "Oil $100", "BTC 40k")
         scenario: Option<String>,
@@ -2191,7 +2218,9 @@ pub enum SystemCommand {
         command: MirrorCommand,
     },
     /// Render the TUI as ANSI text to stdout (no interactive terminal required)
-    #[command(after_help = "Renders any view to text via an off-screen buffer — useful for docs,\nvisual review, and CI snapshots without an interactive terminal.\n\n--demo renders a self-contained SYNTHETIC portfolio (built in a temp dir,\nnever your real DB) so output is reproducible and safe to share.\n\nViews: positions, transactions, markets, economy, watchlist, analytics,\nnews, journal, risk-dashboard. --subtab selects a sub-tab (Risk Dashboard:\n0=Risk grid, 1=Basket, 2=Cycle, 3=Diversification).\n\nExamples:\n  pftui system snapshot --demo --view risk-dashboard --subtab 3 --plain\n  pftui system snapshot --demo --view positions --width 160 --height 50\n  pftui system snapshot --view analytics   # your real data, local only")]
+    #[command(
+        after_help = "Renders any view to text via an off-screen buffer — useful for docs,\nvisual review, and CI snapshots without an interactive terminal.\n\n--demo renders a self-contained SYNTHETIC portfolio (built in a temp dir,\nnever your real DB) so output is reproducible and safe to share.\n\nViews: positions, transactions, markets, economy, watchlist, analytics,\nnews, journal, risk-dashboard. --subtab selects a sub-tab (Risk Dashboard:\n0=Risk grid, 1=Basket, 2=Cycle, 3=Diversification).\n\nExamples:\n  pftui system snapshot --demo --view risk-dashboard --subtab 3 --plain\n  pftui system snapshot --demo --view positions --width 160 --height 50\n  pftui system snapshot --view analytics   # your real data, local only"
+    )]
     Snapshot {
         /// Terminal width in columns (default: 120)
         #[arg(long, default_value = "120")]
@@ -2421,9 +2450,15 @@ pub enum JournalEntryCommand {
         symbol: Option<String>,
         #[arg(long, help = "Conviction level (e.g. high, medium, low).")]
         conviction: Option<String>,
-        #[arg(long, help = "Entry author (e.g. skylar, analyst-low, analyst-medium, analyst-high, analyst-macro, analyst-evening, analyst-morning). Defaults to 'system'.")]
+        #[arg(
+            long,
+            help = "Entry author (e.g. skylar, analyst-low, analyst-medium, analyst-high, analyst-macro, analyst-evening, analyst-morning). Defaults to 'system'."
+        )]
         author: Option<String>,
-        #[arg(long, help = "Prepend the market snapshot line (see `pftui data snapshot-line`) so the entry self-contextualizes.")]
+        #[arg(
+            long,
+            help = "Prepend the market snapshot line (see `pftui data snapshot-line`) so the entry self-contextualizes."
+        )]
         stamp: bool,
         #[arg(long)]
         json: bool,
@@ -2742,11 +2777,7 @@ pub enum JournalPredictionCommand {
     /// only after the window expires clean. Already-scored predictions are
     /// never overwritten (use --force to allow). Also runs automatically as a
     /// tail step of `pftui data refresh`.
-    #[command(
-        name = "auto-score",
-        alias = "autoscore",
-        visible_alias = "score-auto"
-    )]
+    #[command(name = "auto-score", alias = "autoscore", visible_alias = "score-auto")]
     AutoScore {
         /// Only evaluate rules whose eval_date_end is on or after this YYYY-MM-DD date
         #[arg(long)]
@@ -2930,9 +2961,15 @@ pub enum JournalNotesCommand {
         date: Option<String>,
         #[arg(long)]
         section: Option<String>,
-        #[arg(long, help = "Note author (e.g. skylar, analyst-low, analyst-medium, analyst-high, analyst-macro, analyst-evening, analyst-morning, analyst-brief). Defaults to 'system'.")]
+        #[arg(
+            long,
+            help = "Note author (e.g. skylar, analyst-low, analyst-medium, analyst-high, analyst-macro, analyst-evening, analyst-morning, analyst-brief). Defaults to 'system'."
+        )]
         author: Option<String>,
-        #[arg(long, help = "Prepend the market snapshot line (see `pftui data snapshot-line`) so the note self-contextualizes.")]
+        #[arg(
+            long,
+            help = "Prepend the market snapshot line (see `pftui data snapshot-line`) so the note self-contextualizes."
+        )]
         stamp: bool,
         #[arg(long)]
         json: bool,
@@ -3353,7 +3390,9 @@ pub enum AnalyticsCorrelationsCommand {
 #[derive(Subcommand)]
 pub enum AnalyticsAlertsCommand {
     /// Add an alert rule
-    #[command(after_help = "Cycle-bottom signal conditions (evaluated mechanically on `data refresh`):\n  Confluence threshold — fires when met/7 reaches a target on a timeframe:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_bottom_monthly_4\n  Single criterion — fires when one named composite criterion becomes met:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_criterion_weekly_trend_line_reclaimed\n\n  Timeframes: daily | weekly | monthly.\n  Criterion keys: momentum_turning_up, momentum_above_price, dss_bottoming,\n    roofing_confirming_up, volatility_bands_bullish, reversal_dots,\n    trend_line_reclaimed.\n  One-shot by default (fires once per transition; re-arm to re-enable). Add\n  --recurring --cooldown-minutes N to auto-rearm with a cooldown floor.")]
+    #[command(
+        after_help = "Cycle-bottom signal conditions (evaluated mechanically on `data refresh`):\n  Confluence threshold — fires when met/7 reaches a target on a timeframe:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_bottom_monthly_4\n  Single criterion — fires when one named composite criterion becomes met:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_criterion_weekly_trend_line_reclaimed\n  Single component — fires when one atomic subcondition becomes met:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_component_monthly_erf_turned_up\n\n  Timeframes: daily | weekly | monthly.\n  Criterion keys: momentum_turning_up, momentum_above_price, dss_bottoming,\n    roofing_confirming_up, volatility_bands_bullish, reversal_dots,\n    trend_line_reclaimed.\n  Component keys: rsi_ma_turned_up, rsi_ma_cross_above_rsi, dss_turned_up,\n    dss_cross_above_trigger, dss_oversold, erf_bottom_zone, erf_turned_up,\n    erf_positive, cyberbands_bullish, cyberdots_bullish, cyberline_reclaim,\n    pi_cycle_bottom.\n  One-shot by default (fires once per transition; re-arm to re-enable). Add\n  --recurring --cooldown-minutes N to auto-rearm with a cooldown floor."
+    )]
     Add {
         /// Legacy natural-language rule form: "BTC below 55000"
         rule: Option<String>,
@@ -3436,7 +3475,9 @@ pub enum AnalyticsAlertsCommand {
         json: bool,
     },
     /// Acknowledge one or more alerts by ID, or bulk-ack by filter
-    #[command(after_help = "Acknowledge by ID:\n  pftui analytics alerts ack 1 2 3\n\nBulk-acknowledge all triggered:\n  pftui analytics alerts ack --all-triggered\n\nBulk-acknowledge with filters:\n  pftui analytics alerts ack --all-triggered --condition correlation_break\n  pftui analytics alerts ack --all-triggered --kind macro\n  pftui analytics alerts ack --all-triggered --symbol GC=F\n  pftui analytics alerts ack --all-triggered --kind price --symbol BTC --json")]
+    #[command(
+        after_help = "Acknowledge by ID:\n  pftui analytics alerts ack 1 2 3\n\nBulk-acknowledge all triggered:\n  pftui analytics alerts ack --all-triggered\n\nBulk-acknowledge with filters:\n  pftui analytics alerts ack --all-triggered --condition correlation_break\n  pftui analytics alerts ack --all-triggered --kind macro\n  pftui analytics alerts ack --all-triggered --symbol GC=F\n  pftui analytics alerts ack --all-triggered --kind price --symbol BTC --json"
+    )]
     Ack {
         /// One or more alert IDs to acknowledge
         #[arg(conflicts_with_all = ["all_triggered", "ack_condition", "ack_kind", "ack_symbol"])]
@@ -3467,7 +3508,9 @@ pub enum AnalyticsAlertsCommand {
     /// Seed a default smart-alert set for current holdings + core macro conditions
     SeedDefaults,
     /// Triage dashboard: prioritize, group, and score all alerts by urgency
-    #[command(after_help = "Groups alerts into urgency tiers:\n\n  🔴 CRITICAL  Newly triggered — needs immediate attention\n  🟠 HIGH      Previously triggered, not yet acknowledged\n  🟡 WATCH     Armed and within 5% of threshold\n  🟢 LOW       Armed but far from threshold\n\nSummary stats by kind (price/technical/macro/scenario/ratio)\nand actionability scoring.\n\nSee also: analytics alerts check, analytics alerts list")]
+    #[command(
+        after_help = "Groups alerts into urgency tiers:\n\n  🔴 CRITICAL  Newly triggered — needs immediate attention\n  🟠 HIGH      Previously triggered, not yet acknowledged\n  🟡 WATCH     Armed and within 5% of threshold\n  🟢 LOW       Armed but far from threshold\n\nSummary stats by kind (price/technical/macro/scenario/ratio)\nand actionability scoring.\n\nSee also: analytics alerts check, analytics alerts list"
+    )]
     Triage {
         /// Output as JSON
         #[arg(long)]
@@ -3710,7 +3753,10 @@ pub enum AnalyticsMacroRegimeCommand {
         regime: String,
         #[arg(long, help = "Conviction score 0.0–1.0 (default: auto-classified)")]
         confidence: Option<f64>,
-        #[arg(long, help = "Comma-separated list of key drivers (e.g. 'VIX compressed, S&P ATH')")]
+        #[arg(
+            long,
+            help = "Comma-separated list of key drivers (e.g. 'VIX compressed, S&P ATH')"
+        )]
         drivers: Option<String>,
         #[arg(long)]
         json: bool,
@@ -3783,7 +3829,10 @@ pub enum AnalyticsMacroRegimeCommand {
         json: bool,
     },
     /// Confidence trend: how regime confidence has evolved over time with direction and stability
-    #[command(name = "confidence-trend", after_help = "Shows how regime confidence has evolved over time. Computes a moving average\n(default 5-point) to smooth noise, identifies the trend direction\n(strengthening, weakening, stable), and calculates stability metrics.\n\nUseful for detecting whether the current regime is consolidating or about to\ntransition. A declining confidence trend often precedes regime changes.\n\nExamples:\n  pftui analytics macro regime confidence-trend --json\n  pftui analytics macro regime confidence-trend --window 10 --from 2026-03-01\n  pftui analytics macro regime confidence-trend --limit 50\n\nSee also: analytics macro regime history, analytics regime-transitions")]
+    #[command(
+        name = "confidence-trend",
+        after_help = "Shows how regime confidence has evolved over time. Computes a moving average\n(default 5-point) to smooth noise, identifies the trend direction\n(strengthening, weakening, stable), and calculates stability metrics.\n\nUseful for detecting whether the current regime is consolidating or about to\ntransition. A declining confidence trend often precedes regime changes.\n\nExamples:\n  pftui analytics macro regime confidence-trend --json\n  pftui analytics macro regime confidence-trend --window 10 --from 2026-03-01\n  pftui analytics macro regime confidence-trend --limit 50\n\nSee also: analytics macro regime history, analytics regime-transitions"
+    )]
     ConfidenceTrend {
         /// Number of recent snapshots to include (default: all in range)
         #[arg(long)]
@@ -4039,7 +4088,9 @@ pub enum SituationIndicatorCommand {
 #[derive(Subcommand)]
 pub enum SituationUpdateCommand {
     /// Log a structured event/update for a situation
-    #[command(after_help = "Valid severity values:\n  low       Minor update; watch but no immediate action.\n  normal    Default event/update severity.\n  elevated  Important development; likely follow-up needed.\n  critical  Urgent development with immediate portfolio or scenario impact.\n\nExample:\n  pftui analytics situation update log --situation \"Iran Escalation\" --headline \"Brent above 95\" --severity elevated")]
+    #[command(
+        after_help = "Valid severity values:\n  low       Minor update; watch but no immediate action.\n  normal    Default event/update severity.\n  elevated  Important development; likely follow-up needed.\n  critical  Urgent development with immediate portfolio or scenario impact.\n\nExample:\n  pftui analytics situation update log --situation \"Iran Escalation\" --headline \"Brent above 95\" --severity elevated"
+    )]
     Log {
         #[arg(long)]
         situation: String,
@@ -4971,7 +5022,9 @@ pub enum AnalyticsTechnicalsCommand {
 pub enum AnalyticsCyclesCommand {
     /// Cycle-position read (BTC halving/4yr cycle, gold ~6.9yr cycle (8yr is folklore)).
     /// Position only — never a price prediction.
-    #[command(after_help = "Examples:\n  pftui analytics cycles clock\n  pftui analytics cycles clock --asset BTC --json\n  pftui analytics cycles clock --asset GC=F\n\nDefault (no --asset) prints both BTC and gold clocks. --json emits a\n{btc, gold, note} envelope with snake_case fields.")]
+    #[command(
+        after_help = "Examples:\n  pftui analytics cycles clock\n  pftui analytics cycles clock --asset BTC --json\n  pftui analytics cycles clock --asset GC=F\n\nDefault (no --asset) prints both BTC and gold clocks. --json emits a\n{btc, gold, note} envelope with snake_case fields."
+    )]
     Clock {
         /// Restrict to one asset: BTC or GC=F (default: both)
         #[arg(long)]
@@ -5001,7 +5054,9 @@ pub enum AnalyticsCyclesCommand {
     /// Mechanical cycle-bottom signal suite: a deterministic confluence of
     /// independent cycle-low confirmations, each at its natural timeframe.
     /// Position/measurement only — never a price prediction.
-    #[command(after_help = "Scores 7 composite cycle-bottom criteria, each at its natural timeframe and\nchecked on the latest bar (N/7 confluence):\n  1. Momentum line turning up                 the RSI's moving average ticked up\n  2. Momentum line above price momentum       the RSI average reclaimed the RSI\n  3. Double-smoothed stochastic bottoming     stochastic ticked up AND crossed its trigger (oversold = context)\n  4. Roofing filter confirming up             de-trended cycle filter green (>=0) AND ticked up\n  5. Volatility bands bullish (daily)         daily momentum bands in the bullish state\n  6. Significant reversal dots (wk/mo)        weekly/monthly strength dots net-bullish\n  7. Trend line reclaimed (weekly)            price reclaimed the weekly trackline\n  bonus: pi-cycle bottom (daily)              fired recently — reported, NOT counted in the 7\n\nThe momentum/stochastic/roofing criteria run on the --timeframe (default monthly);\nthe band/dot/line/pi criteria always run on their own natural aggregation. Each\ncomposite exposes its atomic sub-signals + numeric values under `components[]` in\n--json.\n\nExamples:\n  pftui analytics cycles bottom-signals --asset BTC\n  pftui analytics cycles bottom-signals --asset BTC --timeframe monthly --json\n  pftui analytics cycles bottom-signals --asset gold --timeframe weekly")]
+    #[command(
+        after_help = "Scores 7 composite cycle-bottom criteria, each at its natural timeframe and\nchecked on the latest bar (N/7 confluence):\n  1. Momentum line turning up                 the RSI's moving average ticked up\n  2. Momentum line above price momentum       the RSI average reclaimed the RSI\n  3. Double-smoothed stochastic bottoming     stochastic ticked up AND crossed its trigger (oversold = context)\n  4. Roofing filter confirming up             de-trended cycle filter in bottom zone (<0) AND ticked up\n  5. Volatility bands bullish (daily)         daily momentum bands in the bullish state\n  6. Significant reversal dots (wk/mo)        weekly/monthly strength dots net-bullish\n  7. Trend line reclaimed (weekly)            price reclaimed the weekly trackline\n  bonus: pi-cycle bottom (daily)              fired recently — reported, NOT counted in the 7\n\nThe momentum/stochastic/roofing criteria run on the --timeframe (default monthly);\nthe band/dot/line/pi criteria always run on their own natural aggregation. The\nJSON includes `core_watch[]` for the four monthly cycle-watch items, plus every\ncomposite's atomic `components[]`.\n\nExamples:\n  pftui analytics cycles bottom-signals --asset BTC\n  pftui analytics cycles bottom-signals --asset BTC --timeframe monthly --json\n  pftui analytics cycles bottom-signals --asset gold --timeframe weekly"
+    )]
     BottomSignals {
         /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
         symbol: Option<String>,
@@ -5020,7 +5075,9 @@ pub enum AnalyticsCyclesCommand {
     },
     /// Translation ledger for one degree: per completed cycle the length,
     /// top position, LT/MID/RT class, and failed flag
-    #[command(after_help = "Examples:\n  pftui analytics cycles ledger BTC --degree 4-year\n  pftui analytics cycles ledger --asset GC=F --degree major --json\n\nDegrees come from `cycles analyze` (daily, investor, 4-year, intermediate,\nmajor). Each row: cycle length, top position, LT/MID/RT translation class,\nfailed flag.")]
+    #[command(
+        after_help = "Examples:\n  pftui analytics cycles ledger BTC --degree 4-year\n  pftui analytics cycles ledger --asset GC=F --degree major --json\n\nDegrees come from `cycles analyze` (daily, investor, 4-year, intermediate,\nmajor). Each row: cycle length, top position, LT/MID/RT translation class,\nfailed flag."
+    )]
     Ledger {
         /// Symbol/asset, positional. May also be given as --asset.
         symbol: Option<String>,
@@ -5042,7 +5099,9 @@ pub enum BottomSignalsCommand {
     /// precision, signed lead/lag distribution, coverage / recall, and
     /// false-positive count. Point-in-time (no lookahead). Honest about the
     /// tiny anchor count — emits a small_n caveat.
-    #[command(after_help = "Measures, for each of the 7 composite criteria and the N/7 confluence at\nthresholds >=3 / >=4 / >=5, how reliably the signal LEADS a verified cycle low.\n\nMethod (no lookahead): at each historical bar i the engine reads ONLY\nhistory[..=i]; a criterion 'fires' on the rising edge (newly true). Each firing\nis matched to the nearest verified low within +/- the match window:\n  precision (hit-rate)  fraction of firings near a real low\n  lead/lag              signed days fired->low (negative = led the low); median + range\n  coverage (recall)     fraction of known lows the criterion flagged in-window\n  false positives       firings with no nearby low\n\nHONESTY: there are only ~3 documented lows per asset; a 3-sample hit-rate is\nNOT robust. The result carries small_n / insufficient_anchors flags.\n\nExamples:\n  pftui analytics cycles bottom-signals backtest --asset BTC --json\n  pftui analytics cycles bottom-signals backtest --asset gold --timeframe weekly --window 120")]
+    #[command(
+        after_help = "Measures, for each of the 7 composite criteria and the N/7 confluence at\nthresholds >=3 / >=4 / >=5, how reliably the signal LEADS a verified cycle low.\n\nMethod (no lookahead): at each historical bar i the engine reads ONLY\nhistory[..=i]; a criterion 'fires' on the rising edge (newly true). Each firing\nis matched to the nearest verified low within +/- the match window:\n  precision (hit-rate)  fraction of firings near a real low\n  lead/lag              signed days fired->low (negative = led the low); median + range\n  coverage (recall)     fraction of known lows the criterion flagged in-window\n  false positives       firings with no nearby low\n\nHONESTY: there are only ~3 documented lows per asset; a 3-sample hit-rate is\nNOT robust. The result carries small_n / insufficient_anchors flags.\n\nExamples:\n  pftui analytics cycles bottom-signals backtest --asset BTC --json\n  pftui analytics cycles bottom-signals backtest --asset gold --timeframe weekly --window 120"
+    )]
     Backtest {
         /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
         symbol: Option<String>,
@@ -5078,7 +5137,9 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// Technical indicators for one or all assets (RSI, MACD, SMA, Bollinger, ATR)
-    #[command(after_help = "The --symbol/--timeframe/--limit/--include options below apply to the BARE form\n(`technicals` with no subcommand — the legacy RSI/MACD/SMA/BB/ATR panel).\nThe `indicators`, `structure`, and `cyber` SUBCOMMANDS instead take a POSITIONAL\nsymbol — e.g. `analytics technicals indicators BTC` (NOT `--symbol BTC`).\n\nExamples:\n  pftui analytics technicals --symbol BTC,GC=F          # bare panel, flag form\n  pftui analytics technicals indicators BTC             # subcommand, positional\n  pftui analytics technicals structure GC=F --timeframe weekly")]
+    #[command(
+        after_help = "The --symbol/--timeframe/--limit/--include options below apply to the BARE form\n(`technicals` with no subcommand — the legacy RSI/MACD/SMA/BB/ATR panel).\nThe `indicators`, `structure`, and `cyber` SUBCOMMANDS instead take a POSITIONAL\nsymbol — e.g. `analytics technicals indicators BTC` (NOT `--symbol BTC`).\n\nExamples:\n  pftui analytics technicals --symbol BTC,GC=F          # bare panel, flag form\n  pftui analytics technicals indicators BTC             # subcommand, positional\n  pftui analytics technicals structure GC=F --timeframe weekly"
+    )]
     Technicals {
         #[command(subcommand)]
         command: Option<AnalyticsTechnicalsCommand>,
@@ -5172,7 +5233,9 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// Compare pftui scenario probabilities vs prediction market consensus. Flag divergences.
-    #[command(after_help = "Compares pftui scenario probabilities against prediction market\nconsensus (Polymarket contracts). Flags divergences above the threshold\n(default: 15pp).\n\nRequires scenario↔contract mappings created via:\n  pftui data predictions map --scenario \"<name>\" --search \"<query>\"\n\nExample:\n  pftui analytics calibration --json\n  pftui analytics calibration --by-layer --json\n  pftui analytics calibration --threshold 10 --json\n\nSee also: data predictions map, analytics scenario list")]
+    #[command(
+        after_help = "Compares pftui scenario probabilities against prediction market\nconsensus (Polymarket contracts). Flags divergences above the threshold\n(default: 15pp).\n\nRequires scenario↔contract mappings created via:\n  pftui data predictions map --scenario \"<name>\" --search \"<query>\"\n\nExample:\n  pftui analytics calibration --json\n  pftui analytics calibration --by-layer --json\n  pftui analytics calibration --threshold 10 --json\n\nSee also: data predictions map, analytics scenario list"
+    )]
     Calibration {
         /// Divergence threshold in percentage points (default: 15)
         #[arg(long, default_value = "15")]
@@ -5219,7 +5282,10 @@ pub enum AnalyticsCommand {
         command: AnalyticsCalibrationMatrixCommand,
     },
     /// Compare scenario news pressure against mapped prediction-market movement
-    #[command(name = "narrative-divergence", after_help = "Scores each active scenario by comparing 24h topic-tagged news pressure\nagainst mapped prediction-market movement. Positive scores mean narrative\nis running ahead of money; negative scores mean pricing moved with little\nheadline confirmation. Computed live from news_cache + contract mappings;\nnothing is persisted.\n\nExamples:\n  pftui analytics narrative-divergence --json\n  pftui analytics narrative-divergence --hours 48 --threshold 1.5\n\nSee also: data news topics, data predictions map, analytics calibration")]
+    #[command(
+        name = "narrative-divergence",
+        after_help = "Scores each active scenario by comparing 24h topic-tagged news pressure\nagainst mapped prediction-market movement. Positive scores mean narrative\nis running ahead of money; negative scores mean pricing moved with little\nheadline confirmation. Computed live from news_cache + contract mappings;\nnothing is persisted.\n\nExamples:\n  pftui analytics narrative-divergence --json\n  pftui analytics narrative-divergence --hours 48 --threshold 1.5\n\nSee also: data news topics, data predictions map, analytics calibration"
+    )]
     NarrativeDivergence {
         /// News lookback window in hours
         #[arg(long, default_value = "24")]
@@ -5231,7 +5297,10 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// Compare topic news volume against rolling weekday baselines
-    #[command(name = "news-silence", after_help = "Reports whether tier-1/2 article volume by topic is silent, normal,\nor saturated versus a rolling weekday-matched baseline.\n\nExamples:\n  pftui analytics news-silence --json\n  pftui analytics news-silence --window-days 60\n  pftui analytics news-silence rebuild-baselines --since 90d --json\n\nSee also: data news, data news topics, analytics narrative-divergence")]
+    #[command(
+        name = "news-silence",
+        after_help = "Reports whether tier-1/2 article volume by topic is silent, normal,\nor saturated versus a rolling weekday-matched baseline.\n\nExamples:\n  pftui analytics news-silence --json\n  pftui analytics news-silence --window-days 60\n  pftui analytics news-silence rebuild-baselines --since 90d --json\n\nSee also: data news, data news topics, analytics narrative-divergence"
+    )]
     NewsSilence {
         #[command(subcommand)]
         command: Option<AnalyticsNewsSilenceCommand>,
@@ -5252,13 +5321,18 @@ pub enum AnalyticsCommand {
     /// dates, sections silently rot. `set-review` schedules a re-review
     /// date for a section; `review-due` lists sections whose date has
     /// passed plus sections with no date at all ("unscheduled").
-    #[command(after_help = "Examples:\n  pftui analytics thesis set-review cycle-frameworks --date 2026-09-01\n  pftui analytics thesis review-due --json\n\nSee also: analytics thesis-chains, analytics views stale")]
+    #[command(
+        after_help = "Examples:\n  pftui analytics thesis set-review cycle-frameworks --date 2026-09-01\n  pftui analytics thesis review-due --json\n\nSee also: analytics thesis-chains, analytics views stale"
+    )]
     Thesis {
         #[command(subcommand)]
         command: AnalyticsThesisCommand,
     },
     /// Debate accuracy scoring: track which side (bull/bear) was right historically
-    #[command(name = "debate-score", after_help = "Score resolved debates to track which side (bull/bear) was historically\ncorrect. Feeds into system accuracy tracking.\n\nWorkflow:\n  1. Debates are created and resolved via `agent debate`\n  2. Score resolved debates with `analytics debate-score add`\n  3. View accuracy stats with `analytics debate-score accuracy`\n  4. Find unscored debates with `analytics debate-score unscored`\n\nExamples:\n  pftui analytics debate-score add --debate-id 1 --winner bull --outcome \"BTC hit 185k\"\n  pftui analytics debate-score list --json\n  pftui analytics debate-score accuracy --topic BTC --json\n  pftui analytics debate-score unscored --json\n\nSee also: agent debate start, agent debate history, agent debate summary")]
+    #[command(
+        name = "debate-score",
+        after_help = "Score resolved debates to track which side (bull/bear) was historically\ncorrect. Feeds into system accuracy tracking.\n\nWorkflow:\n  1. Debates are created and resolved via `agent debate`\n  2. Score resolved debates with `analytics debate-score add`\n  3. View accuracy stats with `analytics debate-score accuracy`\n  4. Find unscored debates with `analytics debate-score unscored`\n\nExamples:\n  pftui analytics debate-score add --debate-id 1 --winner bull --outcome \"BTC hit 185k\"\n  pftui analytics debate-score list --json\n  pftui analytics debate-score accuracy --topic BTC --json\n  pftui analytics debate-score unscored --json\n\nSee also: agent debate start, agent debate history, agent debate summary"
+    )]
     DebateScore {
         #[command(subcommand)]
         command: AnalyticsDebateScoreCommand,
@@ -5273,7 +5347,9 @@ pub enum AnalyticsCommand {
         command: AnalyticsNewsSourcesCommand,
     },
     /// Per-analyst, per-asset directional views with conviction scores (F57: Timeframe Analyst Self-Awareness)
-    #[command(after_help = "Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) writes a structured\nview per asset on every run. Views include direction, conviction (-5 to +5),\nreasoning, key evidence, and blind spots.\n\nSubcommands:\n  set              — write/update an analyst's view on an asset\n  list             — list views with optional analyst/asset filters\n  matrix           — full cross-analyst view matrix\n  portfolio-matrix — portfolio-aware matrix with coverage stats\n  history          — view evolution over time for an asset\n  divergence       — surface assets where analysts strongly disagree\n  accuracy         — per-analyst accuracy against price outcomes\n  delete           — remove a view\n\nExamples:\n  pftui analytics views set --analyst low --asset BTC --direction bull \\\n    --conviction 3 --reasoning \"Momentum strong\" --json\n  pftui analytics views list --asset BTC --json\n  pftui analytics views history --asset BTC --json\n  pftui analytics views divergence --json\n  pftui analytics views accuracy --json\n  pftui analytics views matrix --json\n\nSee also: analytics alignment, analytics divergence")]
+    #[command(
+        after_help = "Each timeframe analyst (LOW/MEDIUM/HIGH/MACRO) writes a structured\nview per asset on every run. Views include direction, conviction (-5 to +5),\nreasoning, key evidence, and blind spots.\n\nSubcommands:\n  set              — write/update an analyst's view on an asset\n  list             — list views with optional analyst/asset filters\n  matrix           — full cross-analyst view matrix\n  portfolio-matrix — portfolio-aware matrix with coverage stats\n  history          — view evolution over time for an asset\n  divergence       — surface assets where analysts strongly disagree\n  accuracy         — per-analyst accuracy against price outcomes\n  delete           — remove a view\n\nExamples:\n  pftui analytics views set --analyst low --asset BTC --direction bull \\\n    --conviction 3 --reasoning \"Momentum strong\" --json\n  pftui analytics views list --asset BTC --json\n  pftui analytics views history --asset BTC --json\n  pftui analytics views divergence --json\n  pftui analytics views accuracy --json\n  pftui analytics views matrix --json\n\nSee also: analytics alignment, analytics divergence"
+    )]
     Views {
         #[command(subcommand)]
         command: AnalyticsViewsCommand,
@@ -5305,7 +5381,9 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// MEDIUM timeframe layer (weeks to months): swing trends, sector rotation, earnings impact
-    #[command(after_help = "This view is most useful when medium analyst views are populated.\nExamples:\n  pftui analytics views set --analyst medium --asset BTC --direction bull --conviction 2 --reasoning \"Rotation improving\"\n  pftui analytics views portfolio-matrix --json")]
+    #[command(
+        after_help = "This view is most useful when medium analyst views are populated.\nExamples:\n  pftui analytics views set --analyst medium --asset BTC --direction bull --conviction 2 --reasoning \"Rotation improving\"\n  pftui analytics views portfolio-matrix --json"
+    )]
     Medium {
         #[arg(long)]
         json: bool,
@@ -5352,13 +5430,16 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// Unified cross-timeframe view: alignment + divergence + correlation breaks in one call
-    #[command(name = "cross-timeframe", after_help = "\
+    #[command(
+        name = "cross-timeframe",
+        after_help = "\
 EXAMPLES:
   pftui analytics cross-timeframe --json             # Full alignment + divergence + breaks
   pftui analytics cross-timeframe --resolve --json    # Add resolution analysis for divergent assets
   pftui analytics cross-timeframe --resolve --symbol BTC --json
 
-See also: analytics alignment, analytics divergence, analytics correlations, analytics regime-transitions")]
+See also: analytics alignment, analytics divergence, analytics correlations, analytics regime-transitions"
+    )]
     CrossTimeframe {
         /// Filter to a specific symbol
         #[arg(long)]
@@ -5431,8 +5512,11 @@ EXAMPLES:
         json: bool,
     },
     /// Unified market snapshot: prices + sentiment + regime in one call
-    #[command(name = "market-snapshot", after_help = "\
-Combines portfolio/market prices, news sentiment scoring, and regime\ncontext into a single JSON payload. Replaces three separate agent calls\n(data prices --market, analytics news-sentiment, analytics regime-flows)\nwith one command.\n\nExamples:\n  pftui analytics market-snapshot --json    # Full snapshot for agent consumption\n  pftui analytics market-snapshot           # Terminal summary\n\nSee also: data prices, analytics news-sentiment, analytics regime-flows")]
+    #[command(
+        name = "market-snapshot",
+        after_help = "\
+Combines portfolio/market prices, news sentiment scoring, and regime\ncontext into a single JSON payload. Replaces three separate agent calls\n(data prices --market, analytics news-sentiment, analytics regime-flows)\nwith one command.\n\nExamples:\n  pftui analytics market-snapshot --json    # Full snapshot for agent consumption\n  pftui analytics market-snapshot           # Terminal summary\n\nSee also: data prices, analytics news-sentiment, analytics regime-flows"
+    )]
     MarketSnapshot {
         #[arg(long)]
         json: bool,
@@ -5495,7 +5579,9 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         command: AnalyticsTrendsCommand,
     },
     /// Alert rules and monitoring (also available as `data alerts`)
-    #[command(after_help = "Common workflows:\n  pftui analytics alerts check             Check all alerts against current data\n  pftui analytics alerts check --today     Check only today's triggers\n  pftui analytics alerts check --newly-triggered --json  Only new triggers (agent-friendly)\n  pftui analytics alerts check --condition correlation_break --json  Filter by condition\n  pftui analytics alerts check --kind macro --json  Filter by alert kind\n  pftui analytics alerts triage            Prioritized alert dashboard with urgency tiers\n  pftui analytics alerts list              List alert rules\n  pftui analytics alerts list --triggered  Show triggered alert log\n  pftui analytics alerts add \"BTC > 100000\" Add a custom alert rule\n  pftui analytics alerts seed-defaults     Seed smart-alert defaults for holdings\n\nAlso accessible via: pftui data alerts check, pftui data alerts list")]
+    #[command(
+        after_help = "Common workflows:\n  pftui analytics alerts check             Check all alerts against current data\n  pftui analytics alerts check --today     Check only today's triggers\n  pftui analytics alerts check --newly-triggered --json  Only new triggers (agent-friendly)\n  pftui analytics alerts check --condition correlation_break --json  Filter by condition\n  pftui analytics alerts check --kind macro --json  Filter by alert kind\n  pftui analytics alerts triage            Prioritized alert dashboard with urgency tiers\n  pftui analytics alerts list              List alert rules\n  pftui analytics alerts list --triggered  Show triggered alert log\n  pftui analytics alerts add \"BTC > 100000\" Add a custom alert rule\n  pftui analytics alerts seed-defaults     Seed smart-alert defaults for holdings\n\nAlso accessible via: pftui data alerts check, pftui data alerts list"
+    )]
     Alerts {
         #[command(subcommand)]
         command: AnalyticsAlertsCommand,
@@ -5551,7 +5637,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         command: AnalyticsPowerFlowCommand,
     },
     /// Ranked power-structure checklist combining regime flows, FIC/MIC balance, and conflict stress
-    #[command(name = "power-signals", after_help = "Aggregates the existing power-structure stack into one ranked checklist:\n  - `analytics regime-flows`\n  - `analytics power-flow assess`\n  - `analytics power-flow conflicts`\n\nUse this when an agent needs one JSON call for geopolitical stress, safe-haven rotation,\nand FIC/MIC/TIC balance instead of stitching three commands together.")]
+    #[command(
+        name = "power-signals",
+        after_help = "Aggregates the existing power-structure stack into one ranked checklist:\n  - `analytics regime-flows`\n  - `analytics power-flow assess`\n  - `analytics power-flow conflicts`\n\nUse this when an agent needs one JSON call for geopolitical stress, safe-haven rotation,\nand FIC/MIC/TIC balance instead of stitching three commands together."
+    )]
     PowerSignals {
         /// Number of days to use for power-flow/conflict lookback (default: 30)
         #[arg(long, default_value_t = 30)]
@@ -5584,7 +5673,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Consolidated morning intelligence: situation + deltas + synthesis + scenarios + correlation breaks + alerts + news sentiment in one call
-    #[command(name = "morning-brief", after_help = "Combines situation room, 24h deltas, cross-timeframe synthesis,\nactive scenario probabilities, correlation breaks, catalysts, portfolio impact,\ntriggered alerts, and news sentiment into a single payload.\n\nDesigned for morning-brief agents that previously needed 5-6 separate\nanalytics commands to assemble intelligence.\n\nSee also: analytics situation, analytics deltas, analytics synthesis")]
+    #[command(
+        name = "morning-brief",
+        after_help = "Combines situation room, 24h deltas, cross-timeframe synthesis,\nactive scenario probabilities, correlation breaks, catalysts, portfolio impact,\ntriggered alerts, and news sentiment into a single payload.\n\nDesigned for morning-brief agents that previously needed 5-6 separate\nanalytics commands to assemble intelligence.\n\nSee also: analytics situation, analytics deltas, analytics synthesis"
+    )]
     MorningBrief {
         /// Output as JSON for agent/script consumption (recommended)
         #[arg(long)]
@@ -5595,7 +5687,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         section: Option<String>,
     },
     /// Consolidated evening analysis: morning-brief + narrative + opportunities + conviction changes + prediction stats + cross-timeframe resolution in one call
-    #[command(name = "evening-brief", after_help = "Deep evening analysis payload for agents. Extends morning-brief with:\n  - Narrative: structured recap, key themes, analytical memory\n  - Opportunities: identified entry points, scenario plays\n  - Conviction changes: shifts over the past 7 days\n  - Prediction stats: overall accuracy scorecard\n  - Cross-timeframe resolution: divergent assets with stance guidance\n\nDesigned for the evening analyst who previously needed 20+ separate\nanalytics commands to assemble a full picture.\n\nSee also: analytics morning-brief, analytics narrative, analytics cross-timeframe")]
+    #[command(
+        name = "evening-brief",
+        after_help = "Deep evening analysis payload for agents. Extends morning-brief with:\n  - Narrative: structured recap, key themes, analytical memory\n  - Opportunities: identified entry points, scenario plays\n  - Conviction changes: shifts over the past 7 days\n  - Prediction stats: overall accuracy scorecard\n  - Cross-timeframe resolution: divergent assets with stance guidance\n\nDesigned for the evening analyst who previously needed 20+ separate\nanalytics commands to assemble a full picture.\n\nSee also: analytics morning-brief, analytics narrative, analytics cross-timeframe"
+    )]
     EveningBrief {
         /// Output as JSON for agent/script consumption (recommended)
         #[arg(long)]
@@ -5606,28 +5701,38 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         section: Option<String>,
     },
     /// Routine workflow guidance: prioritized action items, pending predictions, triggered alerts, stale convictions, scenario shifts
-    #[command(after_help = "Single-call routine priority advisor for agents. Answers\n\"what should I focus on right now?\" by aggregating:\n\n  - Triggered alerts needing acknowledgment\n  - Pending predictions past target date needing scoring\n  - Stale convictions (7+ days without update)\n  - Recently-updated scenarios (last 24h)\n\nAction items are ranked by urgency (critical > high > medium > low)\nwith suggested CLI commands for each.\n\nDesigned for agent routines that need a single entry point\nto determine workflow priorities.\n\nSee also: analytics alerts triage, analytics morning-brief")]
+    #[command(
+        after_help = "Single-call routine priority advisor for agents. Answers\n\"what should I focus on right now?\" by aggregating:\n\n  - Triggered alerts needing acknowledgment\n  - Pending predictions past target date needing scoring\n  - Stale convictions (7+ days without update)\n  - Recently-updated scenarios (last 24h)\n\nAction items are ranked by urgency (critical > high > medium > low)\nwith suggested CLI commands for each.\n\nDesigned for agent routines that need a single entry point\nto determine workflow priorities.\n\nSee also: analytics alerts triage, analytics morning-brief"
+    )]
     Guidance {
         /// Output as JSON for agent/script consumption (recommended)
         #[arg(long)]
         json: bool,
     },
     /// Regime-asset flow correlation: cross-references regime state with asset class flows to detect power structure patterns
-    #[command(name = "regime-flows", after_help = "Cross-references the current market regime with asset class flows to detect\npower structure patterns automatically. Monitors key ratios (gold/oil,\ncopper/gold, BTC/gold), safe-haven vs risk flows, energy complex signals,\nand defense sector tracking.\n\nDetects patterns: safe-haven rotation, geopolitical stress, inflationary pulse,\nrisk-on breakout, deflationary signal, dollar wrecking ball, energy crisis,\nand regime divergence.\n\nSee also: analytics macro regime, analytics correlations, analytics movers themes")]
+    #[command(
+        name = "regime-flows",
+        after_help = "Cross-references the current market regime with asset class flows to detect\npower structure patterns automatically. Monitors key ratios (gold/oil,\ncopper/gold, BTC/gold), safe-haven vs risk flows, energy complex signals,\nand defense sector tracking.\n\nDetects patterns: safe-haven rotation, geopolitical stress, inflationary pulse,\nrisk-on breakout, deflationary signal, dollar wrecking ball, energy crisis,\nand regime divergence.\n\nSee also: analytics macro regime, analytics correlations, analytics movers themes"
+    )]
     RegimeFlows {
         /// Output as JSON for agent/script consumption (recommended)
         #[arg(long)]
         json: bool,
     },
     /// Regime transition probability scoring: analyzes signal momentum, current state, and historical patterns to score likelihood of regime changes
-    #[command(name = "regime-transitions", after_help = "Scores the probability of transitioning from the current regime to each\npossible state (risk-on, risk-off, crisis, stagflation, etc.).\n\nAnalyzes:\n  - 6 signal momentum indicators (VIX, DXY, yields, equities, gold, oil)\n  - Current regime confidence and duration\n  - Special regime triggers (crisis: VIX>30+oil>90, stagflation: gold up+equities down)\n  - Historical transition frequency and patterns\n\nEach candidate shows probability, key drivers, confirmation triggers, and\ninvalidation conditions.\n\nSee also: analytics macro regime, analytics regime-flows, analytics synthesis")]
+    #[command(
+        name = "regime-transitions",
+        after_help = "Scores the probability of transitioning from the current regime to each\npossible state (risk-on, risk-off, crisis, stagflation, etc.).\n\nAnalyzes:\n  - 6 signal momentum indicators (VIX, DXY, yields, equities, gold, oil)\n  - Current regime confidence and duration\n  - Special regime triggers (crisis: VIX>30+oil>90, stagflation: gold up+equities down)\n  - Historical transition frequency and patterns\n\nEach candidate shows probability, key drivers, confirmation triggers, and\ninvalidation conditions.\n\nSee also: analytics macro regime, analytics regime-flows, analytics synthesis"
+    )]
     RegimeTransitions {
         /// Output as JSON for agent/script consumption (recommended)
         #[arg(long)]
         json: bool,
     },
     /// Prediction backtesting: replay scored predictions against historical prices to compute theoretical P&L
-    #[command(after_help = "Replays all scored predictions against historical price data.\nFor each: entry price at prediction date, exit price at target/scored date,\ntheoretical P&L based on conviction-weighted position sizing.\n\nConviction weights on $10,000 notional:\n  high = 10% ($1,000 position)\n  medium = 5% ($500 position)\n  low = 2% ($200 position)\n\nExamples:\n  pftui analytics backtest predictions --json\n  pftui analytics backtest predictions --symbol BTC-USD --json\n  pftui analytics backtest predictions --agent low-timeframe --json\n  pftui analytics backtest predictions --conviction high --json\n\nSee also: journal prediction scorecard, analytics views accuracy")]
+    #[command(
+        after_help = "Replays all scored predictions against historical price data.\nFor each: entry price at prediction date, exit price at target/scored date,\ntheoretical P&L based on conviction-weighted position sizing.\n\nConviction weights on $10,000 notional:\n  high = 10% ($1,000 position)\n  medium = 5% ($500 position)\n  low = 2% ($200 position)\n\nExamples:\n  pftui analytics backtest predictions --json\n  pftui analytics backtest predictions --symbol BTC-USD --json\n  pftui analytics backtest predictions --agent low-timeframe --json\n  pftui analytics backtest predictions --conviction high --json\n\nSee also: journal prediction scorecard, analytics views accuracy"
+    )]
     Backtest {
         #[command(subcommand)]
         command: AnalyticsBacktestCommand,
@@ -5638,7 +5743,9 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         command: AnalyticsEnvironmentCommand,
     },
     /// Closest historic environment analogs + the target asset's forward-return distribution after them
-    #[command(after_help = "Finds the historical days whose macro backdrop (equities/gold/oil/dollar/rates/vol)\nmost resembles today via a covariance-whitened (Mahalanobis) distance, then reports\nthe distribution of the chosen asset's forward returns following those analogs — with a\nbootstrap CI and an honest analog-quality note.\n\nExamples:\n  pftui analytics analog --asset BTC --horizon 90 --json\n  pftui analytics analog --asset GC=F --horizon 180 --k 30")]
+    #[command(
+        after_help = "Finds the historical days whose macro backdrop (equities/gold/oil/dollar/rates/vol)\nmost resembles today via a covariance-whitened (Mahalanobis) distance, then reports\nthe distribution of the chosen asset's forward returns following those analogs — with a\nbootstrap CI and an honest analog-quality note.\n\nExamples:\n  pftui analytics analog --asset BTC --horizon 90 --json\n  pftui analytics analog --asset GC=F --horizon 180 --k 30"
+    )]
     Analog {
         /// Asset whose forward returns are measured after each analog (alias or ticker)
         #[arg(long)]
@@ -5656,7 +5763,9 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Synthesized positioning for an asset: analog forward returns + regime quad + cycle clock, with honesty stats
-    #[command(after_help = "Composes the measured analog forward-return distribution, the growth×inflation\nregime quad, and the cycle clock into a single auditable stance (each driver shows its\nscore, weight, and reason). Applies a humility default — thin analog evidence or a CI\nstraddling zero caps confidence and says so.\n\nExample:\n  pftui analytics positioning --asset BTC --horizon 90 --json")]
+    #[command(
+        after_help = "Composes the measured analog forward-return distribution, the growth×inflation\nregime quad, and the cycle clock into a single auditable stance (each driver shows its\nscore, weight, and reason). Applies a humility default — thin analog evidence or a CI\nstraddling zero caps confidence and says so.\n\nExample:\n  pftui analytics positioning --asset BTC --horizon 90 --json"
+    )]
     Positioning {
         /// Asset to position (alias or ticker)
         #[arg(long)]
@@ -5669,7 +5778,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Extreme-Value-Theory tail risk (POT/GPD): fat-tail-aware VaR + Expected Shortfall + tail-fatness ξ
-    #[command(name = "tail-risk", after_help = "Fits a Generalized Pareto Distribution to the LEFT TAIL of an asset's daily\nreturns (Peaks-Over-Threshold). Gaussian/historical VaR understates crash depth\nfor fat-tailed assets; the GPD shape ξ measures HOW fat the tail is (ξ>0 = power-law,\nfatter than normal) and gives a principled VaR / Expected-Shortfall, with the\nhistorical estimate shown alongside. Closed-form probability-weighted-moments fit\n(auditable, far less shape-biased than plain method-of-moments; valid for ξ<1).\nVaR below the threshold quantile uses the empirical quantile (POT is valid only above it).\n\nExamples:\n  pftui analytics tail-risk --asset BTC --json\n  pftui analytics tail-risk --asset gold --lookback 1000 --threshold 95")]
+    #[command(
+        name = "tail-risk",
+        after_help = "Fits a Generalized Pareto Distribution to the LEFT TAIL of an asset's daily\nreturns (Peaks-Over-Threshold). Gaussian/historical VaR understates crash depth\nfor fat-tailed assets; the GPD shape ξ measures HOW fat the tail is (ξ>0 = power-law,\nfatter than normal) and gives a principled VaR / Expected-Shortfall, with the\nhistorical estimate shown alongside. Closed-form probability-weighted-moments fit\n(auditable, far less shape-biased than plain method-of-moments; valid for ξ<1).\nVaR below the threshold quantile uses the empirical quantile (POT is valid only above it).\n\nExamples:\n  pftui analytics tail-risk --asset BTC --json\n  pftui analytics tail-risk --asset gold --lookback 1000 --threshold 95"
+    )]
     TailRisk {
         /// Asset to analyze (alias or ticker, e.g. BTC, gold, SPY)
         #[arg(long)]
@@ -5684,7 +5796,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Tail dependence between two assets: do they co-crash? (Kendall τ + empirical/Clayton lower-tail λ_L)
-    #[command(name = "tail-dependence", after_help = "Correlation hides the failure mode that matters most: two assets can have modest\ncorrelation yet plunge TOGETHER in a crash. The lower-tail-dependence λ_L = P(Y crashing |\nX crashing) measures exactly that. Reports Pearson + Kendall τ, an empirical λ_L/λ_U at the\nchosen tail quantile, and the Clayton-copula λ_L (via τ inversion). Answers whether a\ndiversification pair (e.g. BTC vs gold) actually holds up when it's needed.\n\nExamples:\n  pftui analytics tail-dependence --asset BTC --vs gold --json\n  pftui analytics tail-dependence --asset BTC --vs SPY --q 5")]
+    #[command(
+        name = "tail-dependence",
+        after_help = "Correlation hides the failure mode that matters most: two assets can have modest\ncorrelation yet plunge TOGETHER in a crash. The lower-tail-dependence λ_L = P(Y crashing |\nX crashing) measures exactly that. Reports Pearson + Kendall τ, an empirical λ_L/λ_U at the\nchosen tail quantile, and the Clayton-copula λ_L (via τ inversion). Answers whether a\ndiversification pair (e.g. BTC vs gold) actually holds up when it's needed.\n\nExamples:\n  pftui analytics tail-dependence --asset BTC --vs gold --json\n  pftui analytics tail-dependence --asset BTC --vs SPY --q 5"
+    )]
     TailDependence {
         /// First asset (alias or ticker)
         #[arg(long)]
@@ -5699,7 +5814,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Anchored VWAP from a cycle low (or halving/ATH): average cost-basis since the anchor + price position
-    #[command(name = "avwap", after_help = "Anchored VWAP = the volume-weighted average price from a chosen anchor bar to now.\nAnchored to the last cycle low it's the average cost-basis of everyone who bought\nsince the bottom: price ABOVE = the average post-low buyer is in profit (basis\ndefended, accumulation intact); a break BELOW = that buyer is underwater. If any\nbar in the window lacks volume it degrades to a flat-weight anchored average price\nand says so (never a silent fake VWAP).\n\nExamples:\n  pftui analytics avwap --asset BTC --json\n  pftui analytics avwap --asset BTC --anchor halving\n  pftui analytics avwap --asset gold --anchor-date 2022-09-26")]
+    #[command(
+        name = "avwap",
+        after_help = "Anchored VWAP = the volume-weighted average price from a chosen anchor bar to now.\nAnchored to the last cycle low it's the average cost-basis of everyone who bought\nsince the bottom: price ABOVE = the average post-low buyer is in profit (basis\ndefended, accumulation intact); a break BELOW = that buyer is underwater. If any\nbar in the window lacks volume it degrades to a flat-weight anchored average price\nand says so (never a silent fake VWAP).\n\nExamples:\n  pftui analytics avwap --asset BTC --json\n  pftui analytics avwap --asset BTC --anchor halving\n  pftui analytics avwap --asset gold --anchor-date 2022-09-26"
+    )]
     Avwap {
         /// Asset (alias or ticker, e.g. BTC, gold, SPY)
         #[arg(long)]
@@ -5714,7 +5832,9 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Hurst exponent (R/S): is the asset trending, random-walk, or mean-reverting?
-    #[command(after_help = "Rescaled-Range Hurst exponent over the asset's LOG returns — a regime gauge.\nH>0.5 persistent/trending (trend-following has an edge); H≈0.5 random walk (no\nedge); H<0.5 mean-reverting (fade extremes). Anis-Lloyd/Peters bias-corrected.\n\nExamples:\n  pftui analytics hurst --asset BTC --json\n  pftui analytics hurst --asset gold --lookback 512")]
+    #[command(
+        after_help = "Rescaled-Range Hurst exponent over the asset's LOG returns — a regime gauge.\nH>0.5 persistent/trending (trend-following has an edge); H≈0.5 random walk (no\nedge); H<0.5 mean-reverting (fade extremes). Anis-Lloyd/Peters bias-corrected.\n\nExamples:\n  pftui analytics hurst --asset BTC --json\n  pftui analytics hurst --asset gold --lookback 512"
+    )]
     Hurst {
         /// Asset (alias or ticker)
         #[arg(long)]
@@ -5726,7 +5846,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Regime-break detection (CUSUM change-point): when did the drift last structurally break?
-    #[command(name = "regime-break", after_help = "Page's two-sided CUSUM on daily returns — detects when the return DRIFT\nstructurally shifted (a healthy dip vs 'the trend just broke', the key call for a\ndip-accumulator). Reports past change-points, the last one, and how close a fresh\nbreak is to firing now. k = slack (σ multiples, default 0.5), h = alarm threshold\n(default 5).\n\nExamples:\n  pftui analytics regime-break --asset BTC --json\n  pftui analytics regime-break --asset gold --k 0.5 --h 4")]
+    #[command(
+        name = "regime-break",
+        after_help = "Page's two-sided CUSUM on daily returns — detects when the return DRIFT\nstructurally shifted (a healthy dip vs 'the trend just broke', the key call for a\ndip-accumulator). Reports past change-points, the last one, and how close a fresh\nbreak is to firing now. k = slack (σ multiples, default 0.5), h = alarm threshold\n(default 5).\n\nExamples:\n  pftui analytics regime-break --asset BTC --json\n  pftui analytics regime-break --asset gold --k 0.5 --h 4"
+    )]
     RegimeBreak {
         /// Asset (alias or ticker)
         #[arg(long)]
@@ -5744,7 +5867,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Risk-side capstone: EVT tail-risk + co-crash dependence + regime + vol/drawdown in one view
-    #[command(name = "risk-dashboard", after_help = "The risk-side analogue of `positioning` — composes the measured risk\nprimitives (EVT fat-tail VaR/Expected-Shortfall + ξ, anchored co-crash tail\ndependence vs a partner, the Hurst/DFA regime, CUSUM drift-break, annualized vol,\nand drawdown) into one auditable view + a plain-language composite read. Each\nline is the same computation as its dedicated command.\n\nExamples:\n  pftui analytics risk-dashboard --asset BTC --json\n  pftui analytics risk-dashboard --asset gold --vs SPY")]
+    #[command(
+        name = "risk-dashboard",
+        after_help = "The risk-side analogue of `positioning` — composes the measured risk\nprimitives (EVT fat-tail VaR/Expected-Shortfall + ξ, anchored co-crash tail\ndependence vs a partner, the Hurst/DFA regime, CUSUM drift-break, annualized vol,\nand drawdown) into one auditable view + a plain-language composite read. Each\nline is the same computation as its dedicated command.\n\nExamples:\n  pftui analytics risk-dashboard --asset BTC --json\n  pftui analytics risk-dashboard --asset gold --vs SPY"
+    )]
     RiskDashboard {
         /// Asset to assess (alias or ticker)
         #[arg(long)]
@@ -5756,13 +5882,17 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Risk-aware basket weights (equal / inverse-vol / risk-parity / downside-risk-parity) with per-asset risk contributions + diversification ratio
-    #[command(after_help = "Compute portfolio weights for a basket of assets from their common price\nhistory, under four risk-aware schemes:\n  equal                 1/N (baseline)\n  inverse-vol           w_i ∝ 1/σ_i — equalizes standalone risk, ignores correlation\n  risk-parity           equal risk CONTRIBUTION (ERC) — each asset adds the same\n                        share of portfolio variance, using the full covariance\n  downside-risk-parity  ERC on the SEMIcovariance (co-downside only) — sizes for\n                        JOINT-CRASH risk rather than symmetric vol\n\nReports each asset's weight, annualized vol, and risk contribution, plus the\nportfolio vol and the diversification ratio (Σwᵢσᵢ / σ_portfolio, ≥1; higher =\nmore diversification benefit captured). Portfolio vol + diversification are\nalways full-variance (comparable across methods). Tickers with ^/=/- use their\nalias (gold, silver, us10y, dxy, vix).\n\nExamples:\n  pftui analytics basket weights --assets BTC,gold,SPY --method risk-parity\n  pftui analytics basket weights --assets BTC,gold,SPY --method downside-risk-parity\n  pftui analytics basket weights --assets BTC,gold --method inverse-vol --lookback 365 --json")]
+    #[command(
+        after_help = "Compute portfolio weights for a basket of assets from their common price\nhistory, under four risk-aware schemes:\n  equal                 1/N (baseline)\n  inverse-vol           w_i ∝ 1/σ_i — equalizes standalone risk, ignores correlation\n  risk-parity           equal risk CONTRIBUTION (ERC) — each asset adds the same\n                        share of portfolio variance, using the full covariance\n  downside-risk-parity  ERC on the SEMIcovariance (co-downside only) — sizes for\n                        JOINT-CRASH risk rather than symmetric vol\n\nReports each asset's weight, annualized vol, and risk contribution, plus the\nportfolio vol and the diversification ratio (Σwᵢσᵢ / σ_portfolio, ≥1; higher =\nmore diversification benefit captured). Portfolio vol + diversification are\nalways full-variance (comparable across methods). Tickers with ^/=/- use their\nalias (gold, silver, us10y, dxy, vix).\n\nExamples:\n  pftui analytics basket weights --assets BTC,gold,SPY --method risk-parity\n  pftui analytics basket weights --assets BTC,gold,SPY --method downside-risk-parity\n  pftui analytics basket weights --assets BTC,gold --method inverse-vol --lookback 365 --json"
+    )]
     Basket {
         #[command(subcommand)]
         command: AnalyticsBasketCommand,
     },
     /// Drawdown survival & recovery: Triple-Penance max-DD/time-under-water + risk-of-ruin (the TIME/solvency complement to EVT/CDaR depth)
-    #[command(after_help = "Model how LONG an asset stays underwater and the chance of being forced out\nbefore the cycle turns — the time/solvency axis the depth-only EVT and CDaR\nviews are missing (Bailey & López de Prado, Triple Penance).\n\n  Recovery cliff   gain needed to erase a drawdown D: D/(1−D) (50%→+100%, 80%→+400%)\n  Triple Penance   expected max drawdown, time-to-trough, and ~3×-longer recovery\n                   at confidence α, with an AR(1) serial-correlation correction\n                   (trending cycles understate underwater time on the i.i.d. view)\n  Risk of ruin     P(ever breaching the drawdown budget) = exp(−2μ·b/σ²)\n\nμ≤0 (an asset sitting at a cycle low) makes recovery unbounded and ruin certain\n— flagged loudly (reliable=false) rather than returning a misleading number.\nDepth is still measured by EVT/CDaR; this is the duration + probability layer.\n\nExamples:\n  pftui analytics survival --asset BTC\n  pftui analytics survival --asset gold --budget 30 --confidence 0.99 --json")]
+    #[command(
+        after_help = "Model how LONG an asset stays underwater and the chance of being forced out\nbefore the cycle turns — the time/solvency axis the depth-only EVT and CDaR\nviews are missing (Bailey & López de Prado, Triple Penance).\n\n  Recovery cliff   gain needed to erase a drawdown D: D/(1−D) (50%→+100%, 80%→+400%)\n  Triple Penance   expected max drawdown, time-to-trough, and ~3×-longer recovery\n                   at confidence α, with an AR(1) serial-correlation correction\n                   (trending cycles understate underwater time on the i.i.d. view)\n  Risk of ruin     P(ever breaching the drawdown budget) = exp(−2μ·b/σ²)\n\nμ≤0 (an asset sitting at a cycle low) makes recovery unbounded and ruin certain\n— flagged loudly (reliable=false) rather than returning a misleading number.\nDepth is still measured by EVT/CDaR; this is the duration + probability layer.\n\nExamples:\n  pftui analytics survival --asset BTC\n  pftui analytics survival --asset gold --budget 30 --confidence 0.99 --json"
+    )]
     Survival {
         /// Asset to assess (alias or ticker)
         #[arg(long)]
@@ -5781,7 +5911,9 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         json: bool,
     },
     /// Strategy backtesting: define trade conditions as an expression and test them against full price history
-    #[command(after_help = "Define a trade rule as an expression over price, indicators, and timeframes,\nthen backtest it against the full historical price database.\n\nExpression language:\n  close, open, high, low, volume        primary asset's daily field\n  close(BTC), close(GOLD)               another symbol (alphanumeric ticker OR alias)\n  sma(close, 200), ema(close, 21)       moving averages\n  rsi(14), rsi(close(BTC), 14)          RSI\n  atr(14) cci(20) williams_r(14) roc(10) standard OHLC indicators\n  fisher(10)                            Ehlers Fisher Transform (sharp turning-point oscillator)\n  stoch_k(14,3) stoch_d(14,3)           Stochastic %K / %D\n  adx(14) plus_di(14) minus_di(14)      ADX trend strength + directional\n  supertrend(10,3) supertrend_dir(10,3) ATR-band trailing stop + regime (+1/−1)\n  macd(12,26,9)  macd_line/macd_signal(12,26,9)   MACD (macd()=histogram)\n  bb_upper/bb_lower/bb_mid/bb_pct(20,2) Bollinger bands + %b\n  obv() mfi(14)                         volume indicators (need volume data)\n  atr(BTC,14) adx(gold,14)              any OHLC indicator on another symbol\n  highest(close,20) lowest(low,20)      rolling max/min over N bars\n  ago(close,1) pct_change(close,5)      lag / N-bar percent change\n  abs(close - sma(close,50))            absolute value\n  ... @weekly | @monthly                evaluate at a higher timeframe\n  >  <  >=  <=  ==                       comparisons\n  crosses_above / crosses_below         strict edge crossings\n  and  or  not                          boolean logic\n\nBreakout idiom: highest/lowest INCLUDE the current bar, so a prior-N-bar high is\n  ago(highest(high, N), 1) — e.g. entry \"close > ago(highest(close, 50), 1)\".\n\nSYMBOLS IN EXPRESSIONS must be alphanumeric (SPY, BTC) — tickers with '^', '=',\nor '-' (^TNX, GC=F, BTC-USD) CANNOT be typed directly; use their ALIAS instead:\n  gold=GC=F  silver=SI=F  us10y=^TNX  fedfunds=^IRX  us5y=^FVX  us30y=^TYX  dxy=DX-Y.NYB.\nSo 'rate hiking vs cutting' is a moving-average crossing on us10y (the ^TNX alias).\n\nExamples:\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\" --exit \"hold 365d\" --json\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) @monthly < 90\" --exit \"hold 90d\"\n  pftui analytics strategy backtest --asset BTC --entry \"macd(12,26,9) > 0 and adx(14) > 25\" --exit \"hold 10d\"\n  pftui analytics strategy backtest --asset BTC --entry \"bb_pct(20,2) < 0.05\" --exit \"hold 10d\" --trailing-stop 15\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) < 35\" --exit \"hold 10d\" --commission 0.1 --slippage 0.05 --next-bar-fill\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close,200)\" --exit \"hold 180d\" --vol-target 20\n  pftui analytics strategy segment --asset GC=F --when \"us10y > sma(us10y, 200)\"\n  pftui analytics strategy compare --asset GC=F --when \"us10y > sma(us10y, 200)\" --when-label hiking --vs \"us10y < sma(us10y, 200)\" --vs-label cutting\n  pftui analytics strategy explain --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\"\n\nReturns are statistics over price ratios (percent / growth), not monetary balances.\n\nJSON note: per-trade entry_price/exit_price in --json output are JSON NUMBERS\n(f64), not the string-decimals used by cycles/TA — the backtest engine computes\nthem in floating point and they are reference/display values, never stored money.\nreturn_pct and all ratios are likewise numbers.")]
+    #[command(
+        after_help = "Define a trade rule as an expression over price, indicators, and timeframes,\nthen backtest it against the full historical price database.\n\nExpression language:\n  close, open, high, low, volume        primary asset's daily field\n  close(BTC), close(GOLD)               another symbol (alphanumeric ticker OR alias)\n  sma(close, 200), ema(close, 21)       moving averages\n  rsi(14), rsi(close(BTC), 14)          RSI\n  atr(14) cci(20) williams_r(14) roc(10) standard OHLC indicators\n  fisher(10)                            Ehlers Fisher Transform (sharp turning-point oscillator)\n  stoch_k(14,3) stoch_d(14,3)           Stochastic %K / %D\n  adx(14) plus_di(14) minus_di(14)      ADX trend strength + directional\n  supertrend(10,3) supertrend_dir(10,3) ATR-band trailing stop + regime (+1/−1)\n  macd(12,26,9)  macd_line/macd_signal(12,26,9)   MACD (macd()=histogram)\n  bb_upper/bb_lower/bb_mid/bb_pct(20,2) Bollinger bands + %b\n  obv() mfi(14)                         volume indicators (need volume data)\n  atr(BTC,14) adx(gold,14)              any OHLC indicator on another symbol\n  highest(close,20) lowest(low,20)      rolling max/min over N bars\n  ago(close,1) pct_change(close,5)      lag / N-bar percent change\n  abs(close - sma(close,50))            absolute value\n  ... @weekly | @monthly                evaluate at a higher timeframe\n  >  <  >=  <=  ==                       comparisons\n  crosses_above / crosses_below         strict edge crossings\n  and  or  not                          boolean logic\n\nBreakout idiom: highest/lowest INCLUDE the current bar, so a prior-N-bar high is\n  ago(highest(high, N), 1) — e.g. entry \"close > ago(highest(close, 50), 1)\".\n\nSYMBOLS IN EXPRESSIONS must be alphanumeric (SPY, BTC) — tickers with '^', '=',\nor '-' (^TNX, GC=F, BTC-USD) CANNOT be typed directly; use their ALIAS instead:\n  gold=GC=F  silver=SI=F  us10y=^TNX  fedfunds=^IRX  us5y=^FVX  us30y=^TYX  dxy=DX-Y.NYB.\nSo 'rate hiking vs cutting' is a moving-average crossing on us10y (the ^TNX alias).\n\nExamples:\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\" --exit \"hold 365d\" --json\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) @monthly < 90\" --exit \"hold 90d\"\n  pftui analytics strategy backtest --asset BTC --entry \"macd(12,26,9) > 0 and adx(14) > 25\" --exit \"hold 10d\"\n  pftui analytics strategy backtest --asset BTC --entry \"bb_pct(20,2) < 0.05\" --exit \"hold 10d\" --trailing-stop 15\n  pftui analytics strategy backtest --asset BTC --entry \"rsi(14) < 35\" --exit \"hold 10d\" --commission 0.1 --slippage 0.05 --next-bar-fill\n  pftui analytics strategy backtest --asset BTC --entry \"close crosses_above sma(close,200)\" --exit \"hold 180d\" --vol-target 20\n  pftui analytics strategy segment --asset GC=F --when \"us10y > sma(us10y, 200)\"\n  pftui analytics strategy compare --asset GC=F --when \"us10y > sma(us10y, 200)\" --when-label hiking --vs \"us10y < sma(us10y, 200)\" --vs-label cutting\n  pftui analytics strategy explain --asset BTC --entry \"close crosses_above sma(close, 200) @weekly\"\n\nReturns are statistics over price ratios (percent / growth), not monetary balances.\n\nJSON note: per-trade entry_price/exit_price in --json output are JSON NUMBERS\n(f64), not the string-decimals used by cycles/TA — the backtest engine computes\nthem in floating point and they are reference/display values, never stored money.\nreturn_pct and all ratios are likewise numbers."
+    )]
     Strategy {
         #[command(subcommand)]
         command: AnalyticsStrategyCommand,
@@ -5826,7 +5958,10 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
     },
     /// `thesis_dependencies` — formalized cross-asset if-then chains.
     /// List, show, validate, or manually add chains.
-    #[command(name = "thesis-chains", after_help = "Cross-asset thesis dependency graph: structured\nantecedent → consequent triples extracted from the thesis table,\nprediction_lessons, and agent_messages.\n\nExamples:\n  pftui analytics thesis-chains list --json\n  pftui analytics thesis-chains list --state confirmed --json\n  pftui analytics thesis-chains show 1 --json\n  pftui analytics thesis-chains validate 1 --json\n  pftui analytics thesis-chains extract --dry-run --json\n  pftui analytics thesis-chains extract --from-thesis --from-lessons --apply --json\n  pftui analytics thesis-chains add --antecedent \"XAU > 4500\" \\\n    --consequent \"BTC > 100000\" --relation implies --conviction high")]
+    #[command(
+        name = "thesis-chains",
+        after_help = "Cross-asset thesis dependency graph: structured\nantecedent → consequent triples extracted from the thesis table,\nprediction_lessons, and agent_messages.\n\nExamples:\n  pftui analytics thesis-chains list --json\n  pftui analytics thesis-chains list --state confirmed --json\n  pftui analytics thesis-chains show 1 --json\n  pftui analytics thesis-chains validate 1 --json\n  pftui analytics thesis-chains extract --dry-run --json\n  pftui analytics thesis-chains extract --from-thesis --from-lessons --apply --json\n  pftui analytics thesis-chains add --antecedent \"XAU > 4500\" \\\n    --consequent \"BTC > 100000\" --relation implies --conviction high"
+    )]
     ThesisChains {
         #[command(subcommand)]
         command: AnalyticsThesisChainsCommand,
@@ -5870,7 +6005,9 @@ Combines portfolio/market prices, news sentiment scoring, and regime\ncontext in
         command: AnalyticsAdversaryCommand,
     },
     /// Capital flow aggregates: rolling-window net flow and top inflow/outflow per asset (F59 scaffold)
-    #[command(after_help = "Aggregates rows from the `capital_flows` table over a rolling\nwindow. Outflows and redemptions are signed negative.\n\nExamples:\n  pftui analytics flows summary --json\n  pftui analytics flows summary --since 30d --json\n\nSee also: pftui data flows refresh, pftui data flows show")]
+    #[command(
+        after_help = "Aggregates rows from the `capital_flows` table over a rolling\nwindow. Outflows and redemptions are signed negative.\n\nExamples:\n  pftui analytics flows summary --json\n  pftui analytics flows summary --since 30d --json\n\nSee also: pftui data flows refresh, pftui data flows show"
+    )]
     Flows {
         #[command(subcommand)]
         command: AnalyticsFlowsCommand,
@@ -5992,9 +6129,15 @@ pub enum AnalyticsRecommendationsCommand {
         asset: Option<String>,
         #[arg(long, help = "Alias for --asset (ledger vocabulary).")]
         symbol: Option<String>,
-        #[arg(long = "type", help = "Filter by recommendation type (add/wait/hold/trim/avoid/...).")]
+        #[arg(
+            long = "type",
+            help = "Filter by recommendation type (add/wait/hold/trim/avoid/...)."
+        )]
         recommendation_type: Option<String>,
-        #[arg(long, help = "Filter to recommendations on or after this date (YYYY-MM-DD or e.g. 30d).")]
+        #[arg(
+            long,
+            help = "Filter to recommendations on or after this date (YYYY-MM-DD or e.g. 30d)."
+        )]
         since: Option<String>,
         #[arg(long, help = "Maximum rows (newest first).")]
         limit: Option<usize>,
@@ -6006,13 +6149,26 @@ pub enum AnalyticsRecommendationsCommand {
         after_help = "Default (no --all/--id): fill fwd_30d_pct / fwd_90d_pct / fwd_180d_pct\nfor any priced ledger row whose horizon has elapsed — percent change from\nentry_price to the close at run_date+N. Idempotent: a scored horizon is\nnever overwritten. Runs automatically in the tail of `pftui data refresh`\n(this machine has no daemon).\n\nWith --all or --id: the legacy outcome-score pass (recommendation →\noperator action → bounded [-100,100] quality score at --horizon days).\n\nExamples:\n  pftui analytics recommendations score --json          # forward returns\n  pftui analytics recommendations score --all --horizon 30 --json"
     )]
     Score {
-        #[arg(long, help = "Legacy outcome scoring: score every recommendation without an outcome.")]
+        #[arg(
+            long,
+            help = "Legacy outcome scoring: score every recommendation without an outcome."
+        )]
         all: bool,
-        #[arg(long, help = "Legacy outcome scoring: score a single recommendation by id.")]
+        #[arg(
+            long,
+            help = "Legacy outcome scoring: score a single recommendation by id."
+        )]
         id: Option<i64>,
-        #[arg(long, default_value = "30", help = "Legacy outcome scoring: days after report_date to evaluate.")]
+        #[arg(
+            long,
+            default_value = "30",
+            help = "Legacy outcome scoring: days after report_date to evaluate."
+        )]
         horizon: i64,
-        #[arg(long, help = "Legacy outcome scoring: restrict to recommendations on or after this date.")]
+        #[arg(
+            long,
+            help = "Legacy outcome scoring: restrict to recommendations on or after this date."
+        )]
         since: Option<String>,
         #[arg(long)]
         json: bool,
@@ -6034,9 +6190,17 @@ pub enum AnalyticsRecommendationsCommand {
         recommendation_type: Option<String>,
         #[arg(long, help = "Filter by asset.")]
         asset: Option<String>,
-        #[arg(long, default_value = "90d", help = "Lookback window (e.g. 30d, 90d, or YYYY-MM-DD).")]
+        #[arg(
+            long,
+            default_value = "90d",
+            help = "Lookback window (e.g. 30d, 90d, or YYYY-MM-DD)."
+        )]
         since: String,
-        #[arg(long = "threshold", default_value = "0", help = "Score threshold for counting a hit.")]
+        #[arg(
+            long = "threshold",
+            default_value = "0",
+            help = "Score threshold for counting a hit."
+        )]
         threshold: f64,
         #[arg(long = "by-asset")]
         by_asset: bool,
@@ -6051,14 +6215,21 @@ pub enum AnalyticsRecommendationsCommand {
         reply_id: Option<i64>,
         #[arg(long = "transaction", help = "transactions.id to link.")]
         transaction_id: Option<i64>,
-        #[arg(long, help = "Action status: accepted/rejected/partial/deferred/ignored")]
+        #[arg(
+            long,
+            help = "Action status: accepted/rejected/partial/deferred/ignored"
+        )]
         action_status: Option<String>,
         #[arg(long)]
         json: bool,
     },
     /// Retroactively link existing operator_replies and transactions to open recommendations.
     RelinkHistorical {
-        #[arg(long, default_value = "7", help = "Transaction-link window in days (default 7).")]
+        #[arg(
+            long,
+            default_value = "7",
+            help = "Transaction-link window in days (default 7)."
+        )]
         window: i64,
         #[arg(long)]
         json: bool,
@@ -6207,7 +6378,9 @@ pub enum AnalyticsThesisChainsCommand {
     /// Heuristic backfill: scan thesis.content, prediction_lessons.why_wrong,
     /// and recent agent_messages for implication phrases and propose new
     /// chains. Dry-run by default — pass `--apply` to write.
-    #[command(after_help = "Examples:\n  pftui analytics thesis-chains extract --dry-run --json\n  pftui analytics thesis-chains extract --from-thesis --from-lessons --since 90d --apply --json\n\nPatterns detected: 'if X then Y', 'when X, Y', 'X implies Y', 'X -> Y',\n'X drives/accelerates Y', 'X dampens/weakens Y', 'X contradicts Y',\n'X is contingent on Y'. De-dupes against existing chains.")]
+    #[command(
+        after_help = "Examples:\n  pftui analytics thesis-chains extract --dry-run --json\n  pftui analytics thesis-chains extract --from-thesis --from-lessons --since 90d --apply --json\n\nPatterns detected: 'if X then Y', 'when X, Y', 'X implies Y', 'X -> Y',\n'X drives/accelerates Y', 'X dampens/weakens Y', 'X contradicts Y',\n'X is contingent on Y'. De-dupes against existing chains."
+    )]
     Extract {
         /// Read `thesis.content` rows
         #[arg(long = "from-thesis")]
@@ -6312,7 +6485,9 @@ pub enum AnalyticsLessonsCommand {
     /// Use `--dry-run` to preview without mutating. The status change is
     /// also journaled to `agent_messages` so analyst routines see that
     /// the substrate has been pruned.
-    #[command(after_help = "Examples:\n  pftui analytics lessons curate --dry-run --json\n  pftui analytics lessons curate --retire-after-days 90\n\nSee also: analytics lessons revive, analytics lessons health")]
+    #[command(
+        after_help = "Examples:\n  pftui analytics lessons curate --dry-run --json\n  pftui analytics lessons curate --retire-after-days 90\n\nSee also: analytics lessons revive, analytics lessons health"
+    )]
     Curate {
         /// Do not mutate; report what would be retired
         #[arg(long)]
@@ -6349,7 +6524,9 @@ pub enum AnalyticsLessonsCommand {
     /// rule consolidates one pattern into one imperative rule with its
     /// rationale and source lesson ids. Active rules are injected into
     /// analyst prompts in full.
-    #[command(after_help = "Examples:\n  pftui analytics lessons rules add --rule \"Cap magnitude forecasts at 1.5x trailing realized vol.\" \\\n    --rationale \"Magnitude overshoot is the dominant repeated miss.\" --sources \"12,40,77\"\n  pftui analytics lessons rules list --json\n  pftui analytics lessons rules cite 3\n  pftui analytics lessons rules retire 3\n\nSee also: analytics lessons curate, analytics lessons health")]
+    #[command(
+        after_help = "Examples:\n  pftui analytics lessons rules add --rule \"Cap magnitude forecasts at 1.5x trailing realized vol.\" \\\n    --rationale \"Magnitude overshoot is the dominant repeated miss.\" --sources \"12,40,77\"\n  pftui analytics lessons rules list --json\n  pftui analytics lessons rules cite 3\n  pftui analytics lessons rules retire 3\n\nSee also: analytics lessons curate, analytics lessons health"
+    )]
     Rules {
         #[command(subcommand)]
         command: AnalyticsLessonsRulesCommand,
@@ -6537,7 +6714,9 @@ pub enum AnalyticsStrategyCommand {
         json: bool,
     },
     /// Parameter sweep with multiple-testing correction: backtest each value of $P and judge the BEST via Deflated Sharpe
-    #[command(after_help = "Sweep one parameter across a grid and apply the Deflated Sharpe Ratio so the\nbest config is judged AFTER accounting for selection over N trials — the\noverfitting guard a single backtest can't give. Put `$P` in the entry rule where\nthe swept value goes.\n\nExamples:\n  pftui analytics strategy sweep --asset BTC --entry \"rsi(14) < $P\" --values \"20,25,30,35,40\" --exit \"hold 10d\"\n  pftui analytics strategy sweep --asset BTC --entry \"rsi($P) < 35\" --values \"7,14,21,28\" --exit \"hold 14d\" --json")]
+    #[command(
+        after_help = "Sweep one parameter across a grid and apply the Deflated Sharpe Ratio so the\nbest config is judged AFTER accounting for selection over N trials — the\noverfitting guard a single backtest can't give. Put `$P` in the entry rule where\nthe swept value goes.\n\nExamples:\n  pftui analytics strategy sweep --asset BTC --entry \"rsi(14) < $P\" --values \"20,25,30,35,40\" --exit \"hold 10d\"\n  pftui analytics strategy sweep --asset BTC --entry \"rsi($P) < 35\" --values \"7,14,21,28\" --exit \"hold 14d\" --json"
+    )]
     Sweep {
         /// Primary asset traded (alias or ticker)
         #[arg(long)]
@@ -6559,7 +6738,10 @@ pub enum AnalyticsStrategyCommand {
         json: bool,
     },
     /// Walk-forward optimization: optimize $P on each train fold, measure on the next held-out test fold (OOS)
-    #[command(name = "walkforward", after_help = "Splits the timeline into folds, optimizes the `$P` parameter on each train\nsegment, then measures the chosen value on the NEXT (held-out, out-of-sample)\nsegment. The Walk-Forward Efficiency (avg OOS Sharpe / avg in-sample-best Sharpe)\nis the honest \"does the optimization generalize or is it curve-fit?\" read that\neven a deflated single sweep can't fully give. Warmup-correct (full-history\nindicators, trades partitioned by date).\n\nExamples:\n  pftui analytics strategy walkforward --asset BTC --entry \"rsi(14) < $P\" --values \"20,25,30,35,40\" --exit \"hold 10d\" --folds 4\n  pftui analytics strategy walkforward --asset BTC --entry \"rsi($P) < 35\" --values \"7,14,21,28\" --folds 5 --json")]
+    #[command(
+        name = "walkforward",
+        after_help = "Splits the timeline into folds, optimizes the `$P` parameter on each train\nsegment, then measures the chosen value on the NEXT (held-out, out-of-sample)\nsegment. The Walk-Forward Efficiency (avg OOS Sharpe / avg in-sample-best Sharpe)\nis the honest \"does the optimization generalize or is it curve-fit?\" read that\neven a deflated single sweep can't fully give. Warmup-correct (full-history\nindicators, trades partitioned by date).\n\nExamples:\n  pftui analytics strategy walkforward --asset BTC --entry \"rsi(14) < $P\" --values \"20,25,30,35,40\" --exit \"hold 10d\" --folds 4\n  pftui analytics strategy walkforward --asset BTC --entry \"rsi($P) < 35\" --values \"7,14,21,28\" --folds 5 --json"
+    )]
     Walkforward {
         /// Primary asset traded (alias or ticker)
         #[arg(long)]
@@ -6605,14 +6787,18 @@ pub enum AnalyticsBacktestCommand {
         json: bool,
     },
     /// Aggregate backtest report: win rate by conviction, timeframe, asset class, and source agent
-    #[command(after_help = "Aggregates prediction backtest results into a structured report.\nBreaks down win rate, P&L, and accuracy by:\n  - Conviction level (high/medium/low)\n  - Timeframe (low/medium/high/macro)\n  - Asset class (equity/crypto/commodity/fund/forex)\n  - Source agent (which timeframe analyst)\n\nIncludes a Sharpe-ratio equivalent for the prediction-based strategy\nand identifies the most/least reliable conviction levels and agents.\n\nExamples:\n  pftui analytics backtest report --json\n  pftui analytics backtest report\n\nSee also: analytics backtest predictions, analytics views accuracy")]
+    #[command(
+        after_help = "Aggregates prediction backtest results into a structured report.\nBreaks down win rate, P&L, and accuracy by:\n  - Conviction level (high/medium/low)\n  - Timeframe (low/medium/high/macro)\n  - Asset class (equity/crypto/commodity/fund/forex)\n  - Source agent (which timeframe analyst)\n\nIncludes a Sharpe-ratio equivalent for the prediction-based strategy\nand identifies the most/least reliable conviction levels and agents.\n\nExamples:\n  pftui analytics backtest report --json\n  pftui analytics backtest report\n\nSee also: analytics backtest predictions, analytics views accuracy"
+    )]
     Report {
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
     },
     /// Per-agent accuracy breakdown: detailed backtest profile for a specific agent
-    #[command(after_help = "Produces a detailed accuracy profile for a single agent.\nIncludes win rate, P&L, Sharpe equivalent, streaks, best/worst trades,\nand breakdowns by conviction, timeframe, asset class, and symbol.\n\nAlso ranks the agent among all agents with ≥3 decided trades.\n\nExamples:\n  pftui analytics backtest agent --agent low-timeframe --json\n  pftui analytics backtest agent --agent macro-timeframe\n  pftui analytics backtest agent --agent high-timeframe --json\n\nSee also: analytics backtest report, analytics views accuracy")]
+    #[command(
+        after_help = "Produces a detailed accuracy profile for a single agent.\nIncludes win rate, P&L, Sharpe equivalent, streaks, best/worst trades,\nand breakdowns by conviction, timeframe, asset class, and symbol.\n\nAlso ranks the agent among all agents with ≥3 decided trades.\n\nExamples:\n  pftui analytics backtest agent --agent low-timeframe --json\n  pftui analytics backtest agent --agent macro-timeframe\n  pftui analytics backtest agent --agent high-timeframe --json\n\nSee also: analytics backtest report, analytics views accuracy"
+    )]
     Agent {
         /// Agent name (e.g. low-timeframe, high-timeframe, macro-timeframe)
         #[arg(long)]
@@ -6622,7 +6808,9 @@ pub enum AnalyticsBacktestCommand {
         json: bool,
     },
     /// Automated diagnostics: pattern detection, bias analysis, and actionable recommendations
-    #[command(after_help = "Analyses backtest data to identify systematic prediction problems.\nDetects: poor win rates, asset class weaknesses, conviction miscalibration,\nmean-reversion bias, loss magnitude asymmetry, losing streaks, and overtrading.\n\nEach finding includes severity (critical/warning/info), a detailed explanation\nof what the data shows, and a specific actionable recommendation.\n\nOptional --agent filter narrows analysis to a single agent.\n\nExamples:\n  pftui analytics backtest diagnostics --json\n  pftui analytics backtest diagnostics --agent evening-analyst --json\n  pftui analytics backtest diagnostics\n\nSee also: analytics backtest report, analytics backtest agent")]
+    #[command(
+        after_help = "Analyses backtest data to identify systematic prediction problems.\nDetects: poor win rates, asset class weaknesses, conviction miscalibration,\nmean-reversion bias, loss magnitude asymmetry, losing streaks, and overtrading.\n\nEach finding includes severity (critical/warning/info), a detailed explanation\nof what the data shows, and a specific actionable recommendation.\n\nOptional --agent filter narrows analysis to a single agent.\n\nExamples:\n  pftui analytics backtest diagnostics --json\n  pftui analytics backtest diagnostics --agent evening-analyst --json\n  pftui analytics backtest diagnostics\n\nSee also: analytics backtest report, analytics backtest agent"
+    )]
     Diagnostics {
         /// Filter to a specific agent (optional — analyses all agents if omitted)
         #[arg(long)]
@@ -6632,7 +6820,9 @@ pub enum AnalyticsBacktestCommand {
         json: bool,
     },
     /// Scenario-conditional backtest: hit rate of predictions made under a named regime
-    #[command(after_help = "Computes hit rates conditioned on the regime that was active when each\nprediction was made. Joins `scenario_prediction_links` to `user_predictions`,\nfilters by per-scenario probability bands, and reports correct/partial/wrong.\n\nRegime presets:\n  --regime stagflation-iran-cool  (Inflation Spike ≥85 AND Iran ≤20)\n  --regime crisis                 (Hard Recession ≥40 AND Iran ≥30)\n  --regime risk-on                (Risk-On ≥40)\n\nExamples:\n  pftui analytics backtest scenario --regime stagflation-iran-cool --json\n  pftui analytics backtest scenario --inflation-min 80 --iran-max 25 --json\n  pftui analytics backtest scenario --regime crisis --layer LOW --topic commodities --json")]
+    #[command(
+        after_help = "Computes hit rates conditioned on the regime that was active when each\nprediction was made. Joins `scenario_prediction_links` to `user_predictions`,\nfilters by per-scenario probability bands, and reports correct/partial/wrong.\n\nRegime presets:\n  --regime stagflation-iran-cool  (Inflation Spike ≥85 AND Iran ≤20)\n  --regime crisis                 (Hard Recession ≥40 AND Iran ≥30)\n  --regime risk-on                (Risk-On ≥40)\n\nExamples:\n  pftui analytics backtest scenario --regime stagflation-iran-cool --json\n  pftui analytics backtest scenario --inflation-min 80 --iran-max 25 --json\n  pftui analytics backtest scenario --regime crisis --layer LOW --topic commodities --json"
+    )]
     Scenario {
         /// Regime preset name (stagflation-iran-cool, crisis, risk-on)
         #[arg(long)]
@@ -6675,7 +6865,9 @@ pub enum AnalyticsBacktestCommand {
         json: bool,
     },
     /// Layer-bias matrix conditioned on a regime (LOW/MEDIUM/HIGH/MACRO × topic hit rates)
-    #[command(after_help = "Same shape as the calibration matrix but conditioned on the regime.\nSurfaces rows like 'LOW layer commodities hit rate was 65% during\nstagflation-iran-cool but 30% during crisis'.\n\nExamples:\n  pftui analytics backtest layer-bias --regime stagflation-iran-cool --json\n  pftui analytics backtest layer-bias --regime crisis --json")]
+    #[command(
+        after_help = "Same shape as the calibration matrix but conditioned on the regime.\nSurfaces rows like 'LOW layer commodities hit rate was 65% during\nstagflation-iran-cool but 30% during crisis'.\n\nExamples:\n  pftui analytics backtest layer-bias --regime stagflation-iran-cool --json\n  pftui analytics backtest layer-bias --regime crisis --json"
+    )]
     LayerBias {
         /// Regime preset name
         #[arg(long)]
@@ -6767,7 +6959,8 @@ pub enum AnalyticsPowerFlowCommand {
         json: bool,
     },
     /// Generate a structured FIC/MIC/TIC power assessment with trend analysis, key events, and regime detection
-    #[command(after_help = "Analyzes logged power flow events to produce a comprehensive assessment:\n\n\
+    #[command(
+        after_help = "Analyzes logged power flow events to produce a comprehensive assessment:\n\n\
         • Per-complex net scores, event counts, and trend direction\n\
         • First-half vs second-half trend comparison for momentum detection\n\
         • Directed power shifts between complexes\n\
@@ -6775,7 +6968,8 @@ pub enum AnalyticsPowerFlowCommand {
         • Regime classification (FIC/MIC/TIC-dominant or contested)\n\
         • Regime shift detection when a complex reverses direction\n\n\
         Designed for weekly assessments by medium-timeframe analysts.\n\n\
-        See also: analytics power-flow balance, analytics power-flow list, analytics regime-flows")]
+        See also: analytics power-flow balance, analytics power-flow list, analytics regime-flows"
+    )]
     Assess {
         /// Number of days to assess (default: 7)
         #[arg(long, default_value_t = 7)]
@@ -6788,7 +6982,9 @@ pub enum AnalyticsPowerFlowCommand {
         json: bool,
     },
     /// FIC/MIC conflict monitor: cross-references defense (ITA, XAR, PPA) with energy (XLE, CL=F) and VIX during crisis regimes
-    #[command(after_help = "Cross-references defense sector ETFs (ITA, XAR, PPA, LMT, RTX) with\nenergy (XLE, CL=F, BZ=F) and VIX to produce a geopolitical conflict\nassessment.\n\nDetects conflict signals:\n  • Defense sector bid strength\n  • Oil supply-risk premium\n  • VIX fear regime\n  • Safe-haven gold bid\n  • Equity risk-off rotation\n\nIncludes a Defense/Energy ratio (ITA/XLE), composite conflict score (0-100),\nand cross-references logged FIC/MIC power flow events for structural context.\n\nExamples:\n  pftui analytics power-flow conflicts --json\n  pftui analytics power-flow conflicts --days 14\n\nSee also: analytics power-flow assess, analytics regime-flows, analytics crisis")]
+    #[command(
+        after_help = "Cross-references defense sector ETFs (ITA, XAR, PPA, LMT, RTX) with\nenergy (XLE, CL=F, BZ=F) and VIX to produce a geopolitical conflict\nassessment.\n\nDetects conflict signals:\n  • Defense sector bid strength\n  • Oil supply-risk premium\n  • VIX fear regime\n  • Safe-haven gold bid\n  • Equity risk-off rotation\n\nIncludes a Defense/Energy ratio (ITA/XLE), composite conflict score (0-100),\nand cross-references logged FIC/MIC power flow events for structural context.\n\nExamples:\n  pftui analytics power-flow conflicts --json\n  pftui analytics power-flow conflicts --days 14\n\nSee also: analytics power-flow assess, analytics regime-flows, analytics crisis"
+    )]
     Conflicts {
         /// Number of days for power flow lookback (default: 30)
         #[arg(long, default_value_t = 30)]
@@ -6849,7 +7045,9 @@ pub enum Command {
     },
 
     /// Data management operations
-    #[command(after_help = "Looking for alerts? Use:\n  pftui data alerts check      Check alerts against current data\n  pftui data alerts list       List alert rules\n  pftui analytics alerts triage  Prioritized alert dashboard\n  pftui analytics alerts       Full alert management (add, ack, seed-defaults)")]
+    #[command(
+        after_help = "Looking for alerts? Use:\n  pftui data alerts check      Check alerts against current data\n  pftui data alerts list       List alert rules\n  pftui analytics alerts triage  Prioritized alert dashboard\n  pftui analytics alerts       Full alert management (add, ack, seed-defaults)"
+    )]
     Data {
         #[command(subcommand)]
         command: DataCommand,
@@ -6880,7 +7078,10 @@ pub enum Command {
     },
 
     /// Multi-timeframe analytics engine views (includes scenario, situation, signals, synthesis)
-    #[command(name = "analytics", after_help = "Key subcommands:\n  alerts     Alert rules: add, list, check, ack, seed-defaults (also: data alerts)\n  scenario   Macro scenario tracking: probabilities, triggers, history (alias: scenarios)\n  situation  Situation Room: active situations, regime, branches, indicators\n  signals    Technical and cross-timeframe signals\n  synthesis  Cross-timeframe alignment and divergence analysis")]
+    #[command(
+        name = "analytics",
+        after_help = "Key subcommands:\n  alerts     Alert rules: add, list, check, ack, seed-defaults (also: data alerts)\n  scenario   Macro scenario tracking: probabilities, triggers, history (alias: scenarios)\n  situation  Situation Room: active situations, regime, branches, indicators\n  signals    Technical and cross-timeframe signals\n  synthesis  Cross-timeframe alignment and divergence analysis"
+    )]
     Analytics {
         #[command(subcommand)]
         command: AnalyticsCommand,
@@ -6888,7 +7089,9 @@ pub enum Command {
 
     /// Research harness: the signal registry and event-study engine — measured
     /// expectancy (baseline lift, MAE/MFE, significance) instead of narrative
-    #[command(after_help = "The research harness converts deterministic engine signals\n(market structure, Cyber, cycle engine, SMA/RSI/Mayer thresholds) into\nMEASURED expectancy: per signal x asset x horizon forward-return stats\nwith baseline lift, MAE/MFE, overlap-honest significance and walk-forward\nas-of semantics.\n\nWorkflows:\n  pftui research signals list --json          # the registry (ids, versions)\n  pftui research backtest                     # all signals x held assets + SPY\n  pftui research backtest --asset GC=F --json # one asset, persist + print\n  pftui research expectancy --signal cyber_qb_flip_bear --json\n  pftui research events --signal structure_weekly_flip_down --asset BTC-USD")]
+    #[command(
+        after_help = "The research harness converts deterministic engine signals\n(market structure, Cyber, cycle engine, SMA/RSI/Mayer thresholds) into\nMEASURED expectancy: per signal x asset x horizon forward-return stats\nwith baseline lift, MAE/MFE, overlap-honest significance and walk-forward\nas-of semantics.\n\nWorkflows:\n  pftui research signals list --json          # the registry (ids, versions)\n  pftui research backtest                     # all signals x held assets + SPY\n  pftui research backtest --asset GC=F --json # one asset, persist + print\n  pftui research expectancy --signal cyber_qb_flip_bear --json\n  pftui research events --signal structure_weekly_flip_down --asset BTC-USD"
+    )]
     Research {
         #[command(subcommand)]
         command: ResearchCommand,
@@ -7009,7 +7212,6 @@ pub enum ResearchSignalsCommand {
         json: bool,
     },
 }
-
 
 #[derive(Subcommand)]
 pub enum ResearchForecastsCommand {
@@ -7186,8 +7388,7 @@ mod tests {
         assert_eq!(symbol.as_deref(), Some("BTC"));
         assert_eq!(asset, None);
 
-        let flag =
-            Cli::parse_from(["pftui", "analytics", "cycles", "analyze", "--asset", "gold"]);
+        let flag = Cli::parse_from(["pftui", "analytics", "cycles", "analyze", "--asset", "gold"]);
         let Some(Command::Analytics {
             command: AnalyticsCommand::Cycles { command },
         }) = flag.command
@@ -7335,12 +7536,16 @@ mod tests {
             })
         ));
 
-        let cli =
-            Cli::try_parse_from(["pftui", "research", "dossier", "ta", "--asset", "GC=F"])
-                .expect("dossier parses");
+        let cli = Cli::try_parse_from(["pftui", "research", "dossier", "ta", "--asset", "GC=F"])
+            .expect("dossier parses");
         match cli.command {
             Some(Command::Research {
-                command: ResearchCommand::Dossier { domain, asset, json },
+                command:
+                    ResearchCommand::Dossier {
+                        domain,
+                        asset,
+                        json,
+                    },
             }) => {
                 assert_eq!(domain, "ta");
                 assert_eq!(asset.as_deref(), Some("GC=F"));
@@ -7481,7 +7686,10 @@ mod tests {
             }) => {
                 assert_eq!(chart_name, "prob-bar");
                 assert!(from_db.is_none());
-                assert_eq!(from_json.as_deref(), Some(std::path::Path::new("scenario.json")));
+                assert_eq!(
+                    from_json.as_deref(),
+                    Some(std::path::Path::new("scenario.json"))
+                );
                 assert_eq!(out.as_deref(), Some(std::path::Path::new("scenario.png")));
                 assert_eq!(format, ReportChartFormat::Png);
                 assert!(!json);
@@ -7492,15 +7700,9 @@ mod tests {
 
     #[test]
     fn parses_report_drift_bar_from_db() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "report",
-            "chart",
-            "drift-bar",
-            "--from-db",
-            "BTC",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "report", "chart", "drift-bar", "--from-db", "BTC"])
+                .unwrap();
         match cli.command {
             Some(Command::Report {
                 command:
@@ -7549,7 +7751,10 @@ mod tests {
             }) => {
                 assert_eq!(chart_name, "what-changed-strip");
                 assert!(from_db.is_none());
-                assert_eq!(from_json.as_deref(), Some(std::path::Path::new("deltas.json")));
+                assert_eq!(
+                    from_json.as_deref(),
+                    Some(std::path::Path::new("deltas.json"))
+                );
                 assert_eq!(format, ReportChartFormat::Svg);
                 assert!(json);
             }
@@ -7653,7 +7858,10 @@ mod tests {
             }) => {
                 assert_eq!(chart_name, "factor-exposure");
                 assert!(from_db.is_none());
-                assert_eq!(from_json.as_deref(), Some(std::path::Path::new("factors.json")));
+                assert_eq!(
+                    from_json.as_deref(),
+                    Some(std::path::Path::new("factors.json"))
+                );
                 assert_eq!(format, ReportChartFormat::Svg);
                 assert!(json);
             }
@@ -7949,8 +8157,7 @@ mod tests {
 
     #[test]
     fn parses_portfolio_status() {
-        let cli =
-            Cli::try_parse_from(["pftui", "portfolio", "status", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "portfolio", "status", "--json"]).unwrap();
         match cli.command {
             Some(Command::Portfolio {
                 command: Some(PortfolioCommand::Status { json }),
@@ -7961,8 +8168,7 @@ mod tests {
 
     #[test]
     fn parses_portfolio_status_no_json() {
-        let cli =
-            Cli::try_parse_from(["pftui", "portfolio", "status"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "portfolio", "status"]).unwrap();
         match cli.command {
             Some(Command::Portfolio {
                 command: Some(PortfolioCommand::Status { json }),
@@ -7973,8 +8179,7 @@ mod tests {
 
     #[test]
     fn parses_portfolio_drawdown_json() {
-        let cli =
-            Cli::try_parse_from(["pftui", "portfolio", "drawdown", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "portfolio", "drawdown", "--json"]).unwrap();
         match cli.command {
             Some(Command::Portfolio {
                 command: Some(PortfolioCommand::Drawdown { json }),
@@ -8244,8 +8449,7 @@ mod tests {
 
     #[test]
     fn parse_portfolio_snapshot_alias_resolves_to_status() {
-        let cli =
-            Cli::try_parse_from(["pftui", "portfolio", "snapshot", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "portfolio", "snapshot", "--json"]).unwrap();
         match cli.command {
             Some(Command::Portfolio {
                 command: Some(PortfolioCommand::Status { json }),
@@ -8256,8 +8460,7 @@ mod tests {
 
     #[test]
     fn parse_portfolio_snapshot_alias_no_flags() {
-        let cli =
-            Cli::try_parse_from(["pftui", "portfolio", "snapshot"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "portfolio", "snapshot"]).unwrap();
         match cli.command {
             Some(Command::Portfolio {
                 command: Some(PortfolioCommand::Status { json }),
@@ -8344,7 +8547,8 @@ mod tests {
 
     #[test]
     fn parses_data_cot_force_refresh_command() {
-        let cli = Cli::try_parse_from(["pftui", "data", "cot", "--force-refresh", "--json"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "cot", "--force-refresh", "--json"]).unwrap();
         match cli.command {
             Some(Command::Data {
                 command:
@@ -8552,13 +8756,7 @@ mod tests {
             Some(Command::Agent {
                 command:
                     AgentCommand::Message {
-                        command:
-                            AgentMessageCommand::Ack {
-                                id,
-                                all,
-                                to,
-                                json,
-                            },
+                        command: AgentMessageCommand::Ack { id, all, to, json },
                     },
             }) => {
                 assert!(id.is_empty());
@@ -8579,13 +8777,7 @@ mod tests {
             Some(Command::Agent {
                 command:
                     AgentCommand::Message {
-                        command:
-                            AgentMessageCommand::Ack {
-                                id,
-                                all,
-                                to,
-                                json,
-                            },
+                        command: AgentMessageCommand::Ack { id, all, to, json },
                     },
             }) => {
                 assert!(id.is_empty());
@@ -8600,9 +8792,8 @@ mod tests {
     #[test]
     fn ack_id_conflicts_with_all_flag() {
         // --id and --all should conflict
-        let result = Cli::try_parse_from([
-            "pftui", "agent", "message", "ack", "--id", "1", "--all",
-        ]);
+        let result =
+            Cli::try_parse_from(["pftui", "agent", "message", "ack", "--id", "1", "--all"]);
         assert!(result.is_err());
     }
 
@@ -8955,8 +9146,7 @@ mod tests {
 
     #[test]
     fn parse_analytics_calibration_default() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "calibration", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "calibration", "--json"]).unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -9010,14 +9200,9 @@ mod tests {
 
     #[test]
     fn parse_analytics_calibration_by_layer() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "calibration",
-            "--by-layer",
-            "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "calibration", "--by-layer", "--json"])
+                .unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -9111,8 +9296,7 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::NewsSilence {
-                    command:
-                        Some(AnalyticsNewsSilenceCommand::RebuildBaselines { since, json }),
+                    command: Some(AnalyticsNewsSilenceCommand::RebuildBaselines { since, json }),
                     ..
                 },
         }) = cli.command
@@ -9141,7 +9325,11 @@ mod tests {
             command:
                 AnalyticsCommand::NewsSources {
                     command:
-                        AnalyticsNewsSourcesCommand::RebuildAccuracy { since, dry_run, json },
+                        AnalyticsNewsSourcesCommand::RebuildAccuracy {
+                            since,
+                            dry_run,
+                            json,
+                        },
                 },
         }) = cli.command
         else {
@@ -9154,13 +9342,7 @@ mod tests {
 
     #[test]
     fn parse_system_data_coverage() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "system",
-            "data-coverage",
-            "--json",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "system", "data-coverage", "--json"]).unwrap();
 
         let Some(Command::System {
             command: SystemCommand::DataCoverage { json },
@@ -9231,15 +9413,9 @@ mod tests {
 
     #[test]
     fn parse_analytics_lessons_revive_and_health() {
-        let revive_cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "lessons",
-            "revive",
-            "144",
-            "--json",
-        ])
-        .unwrap();
+        let revive_cli =
+            Cli::try_parse_from(["pftui", "analytics", "lessons", "revive", "144", "--json"])
+                .unwrap();
         let Some(Command::Analytics {
             command: AnalyticsCommand::Lessons { command },
         }) = revive_cli.command
@@ -9358,14 +9534,7 @@ mod tests {
 
     #[test]
     fn parse_analytics_views_matrix() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "views",
-            "matrix",
-            "--json",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "views", "matrix", "--json"]).unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -9381,14 +9550,9 @@ mod tests {
 
     #[test]
     fn parse_analytics_views_portfolio_matrix() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "views",
-            "portfolio-matrix",
-            "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "views", "portfolio-matrix", "--json"])
+                .unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -9476,15 +9640,8 @@ mod tests {
 
     #[test]
     fn parse_analytics_views_history_minimal() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "views",
-            "history",
-            "--asset",
-            "GLD",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "views", "history", "--asset", "GLD"])
+            .unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -9551,14 +9708,8 @@ mod tests {
 
     #[test]
     fn parse_analytics_views_divergence_defaults() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "views",
-            "divergence",
-            "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "views", "divergence", "--json"]).unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -9619,14 +9770,8 @@ mod tests {
 
     #[test]
     fn parse_analytics_views_accuracy_defaults() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "views",
-            "accuracy",
-            "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "views", "accuracy", "--json"]).unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -9706,10 +9851,7 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::DebateScore {
-                    command:
-                        AnalyticsDebateScoreCommand::List {
-                            winner, json, ..
-                        },
+                    command: AnalyticsDebateScoreCommand::List { winner, json, .. },
                 },
         }) = cli.command
         else {
@@ -9735,8 +9877,7 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::DebateScore {
-                    command:
-                        AnalyticsDebateScoreCommand::Accuracy { topic, json },
+                    command: AnalyticsDebateScoreCommand::Accuracy { topic, json },
                 },
         }) = cli.command
         else {
@@ -9832,8 +9973,7 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::DebateScore {
-                    command:
-                        AnalyticsDebateScoreCommand::Unscored { limit, json },
+                    command: AnalyticsDebateScoreCommand::Unscored { limit, json },
                 },
         }) = cli.command
         else {
@@ -10029,13 +10169,7 @@ mod tests {
 
     #[test]
     fn parse_analytics_scenario_timeline_no_args() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "scenario",
-            "timeline",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "scenario", "timeline"]).unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -10141,8 +10275,7 @@ mod tests {
 
     #[test]
     fn parse_analytics_scenario_suggest_no_json() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "scenario", "suggest"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "scenario", "suggest"]).unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -10189,14 +10322,9 @@ mod tests {
 
     #[test]
     fn parse_analytics_scenario_impact_matrix_json() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "scenario",
-            "impact-matrix",
-            "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "scenario", "impact-matrix", "--json"])
+                .unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -10213,13 +10341,7 @@ mod tests {
 
     #[test]
     fn parse_analytics_scenario_impact_matrix_no_json() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "scenario",
-            "impact-matrix",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "scenario", "impact-matrix"]).unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -10422,12 +10544,7 @@ mod tests {
                 AnalyticsCommand::Macro {
                     command:
                         Some(AnalyticsMacroCommand::Regime {
-                            command:
-                                AnalyticsMacroRegimeCommand::Summary {
-                                    from,
-                                    to,
-                                    json,
-                                },
+                            command: AnalyticsMacroRegimeCommand::Summary { from, to, json },
                         }),
                     ..
                 },
@@ -10489,14 +10606,9 @@ mod tests {
 
     #[test]
     fn parse_analytics_macro_regime_confidence_trend_defaults() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "macro",
-            "regime",
-            "confidence-trend",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "macro", "regime", "confidence-trend"])
+                .unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -10544,8 +10656,7 @@ mod tests {
                 AnalyticsCommand::Macro {
                     command:
                         Some(AnalyticsMacroCommand::Cycles {
-                            command:
-                                Some(AnalyticsMacroCyclesCommand::Current { country, json }),
+                            command: Some(AnalyticsMacroCyclesCommand::Current { country, json }),
                             ..
                         }),
                     ..
@@ -10561,23 +10672,16 @@ mod tests {
 
     #[test]
     fn parse_analytics_macro_cycles_current_no_country() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "macro",
-            "cycles",
-            "current",
-            "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "macro", "cycles", "current", "--json"])
+                .unwrap();
 
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::Macro {
                     command:
                         Some(AnalyticsMacroCommand::Cycles {
-                            command:
-                                Some(AnalyticsMacroCyclesCommand::Current { country, json }),
+                            command: Some(AnalyticsMacroCyclesCommand::Current { country, json }),
                             ..
                         }),
                     ..
@@ -10992,8 +11096,7 @@ mod tests {
 
     #[test]
     fn parse_analytics_cycles_analyze_no_degree() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "cycles", "analyze", "BTC"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "cycles", "analyze", "BTC"]).unwrap();
 
         let Some(Command::Analytics {
             command:
@@ -11310,12 +11413,7 @@ mod tests {
                 AnalyticsCommand::Situation {
                     command:
                         Some(SituationCommand::Update {
-                            command:
-                                SituationUpdateCommand::Log {
-                                    severity,
-                                    json,
-                                    ..
-                                },
+                            command: SituationUpdateCommand::Log { severity, json, .. },
                         }),
                     ..
                 },
@@ -11696,8 +11794,7 @@ mod tests {
         let Some(Command::Journal {
             command:
                 Some(JournalCommand::Prediction {
-                    command:
-                        JournalPredictionCommand::Add { value, claim, .. },
+                    command: JournalPredictionCommand::Add { value, claim, .. },
                 }),
         }) = cli.command
         else {
@@ -11724,8 +11821,7 @@ mod tests {
         let Some(Command::Journal {
             command:
                 Some(JournalCommand::Prediction {
-                    command:
-                        JournalPredictionCommand::Add { value, claim, .. },
+                    command: JournalPredictionCommand::Add { value, claim, .. },
                 }),
         }) = cli.command
         else {
@@ -11983,8 +12079,7 @@ mod tests {
 
     #[test]
     fn test_correlations_bare_json_flag() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "correlations", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "correlations", "--json"]).unwrap();
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics command");
         };
@@ -12013,7 +12108,13 @@ mod tests {
         let AnalyticsCommand::Correlations { command, json: _ } = command else {
             panic!("expected correlations");
         };
-        let Some(AnalyticsCorrelationsCommand::List { period, limit, json, .. }) = command else {
+        let Some(AnalyticsCorrelationsCommand::List {
+            period,
+            limit,
+            json,
+            ..
+        }) = command
+        else {
             panic!("expected List subcommand");
         };
         assert!(json);
@@ -12038,7 +12139,13 @@ mod tests {
         let AnalyticsCommand::Correlations { command, json: _ } = command else {
             panic!("expected correlations");
         };
-        let Some(AnalyticsCorrelationsCommand::List { period, limit, json, .. }) = command else {
+        let Some(AnalyticsCorrelationsCommand::List {
+            period,
+            limit,
+            json,
+            ..
+        }) = command
+        else {
             panic!("expected List subcommand");
         };
         assert!(!json);
@@ -12048,8 +12155,7 @@ mod tests {
 
     #[test]
     fn test_analytics_predictions_bare() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "predictions", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "predictions", "--json"]).unwrap();
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics command");
         };
@@ -12122,7 +12228,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         let Some(DataPredictionsCommand::Markets {
@@ -12142,12 +12251,14 @@ mod tests {
     #[test]
     fn test_predictions_stats_subcommand() {
         // data predictions stats --json
-        let cli =
-            Cli::try_parse_from(["pftui", "data", "predictions", "stats", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "data", "predictions", "stats", "--json"]).unwrap();
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         assert!(matches!(
@@ -12157,12 +12268,14 @@ mod tests {
 
         // analytics predictions stats --json
         let cli2 =
-            Cli::try_parse_from(["pftui", "analytics", "predictions", "stats", "--json"])
-                .unwrap();
+            Cli::try_parse_from(["pftui", "analytics", "predictions", "stats", "--json"]).unwrap();
         let Some(Command::Analytics { command: cmd2 }) = cli2.command else {
             panic!("expected analytics command");
         };
-        let AnalyticsCommand::Predictions { command: subcmd2, .. } = cmd2 else {
+        let AnalyticsCommand::Predictions {
+            command: subcmd2, ..
+        } = cmd2
+        else {
             panic!("expected predictions command");
         };
         assert!(matches!(
@@ -12186,7 +12299,10 @@ mod tests {
         let Some(Command::Data { command: cmd3 }) = cli3.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd3, .. } = cmd3 else {
+        let DataCommand::Predictions {
+            command: subcmd3, ..
+        } = cmd3
+        else {
             panic!("expected predictions command");
         };
         match subcmd3 {
@@ -12203,12 +12319,14 @@ mod tests {
         }
 
         // data predictions stats (no filters)
-        let cli4 =
-            Cli::try_parse_from(["pftui", "data", "predictions", "stats"]).unwrap();
+        let cli4 = Cli::try_parse_from(["pftui", "data", "predictions", "stats"]).unwrap();
         let Some(Command::Data { command: cmd4 }) = cli4.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd4, .. } = cmd4 else {
+        let DataCommand::Predictions {
+            command: subcmd4, ..
+        } = cmd4
+        else {
             panic!("expected predictions command");
         };
         match subcmd4 {
@@ -12241,7 +12359,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12310,7 +12431,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12379,7 +12503,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12401,19 +12528,15 @@ mod tests {
 
     #[test]
     fn parse_data_predictions_map_list() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "data",
-            "predictions",
-            "map",
-            "--list",
-            "--json",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "data", "predictions", "map", "--list", "--json"])
+            .unwrap();
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12441,7 +12564,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12481,7 +12607,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12513,7 +12642,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12548,7 +12680,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12582,7 +12717,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12616,11 +12754,18 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
-            Some(DataPredictionsCommand::SuggestMappings { scenario, limit, json }) => {
+            Some(DataPredictionsCommand::SuggestMappings {
+                scenario,
+                limit,
+                json,
+            }) => {
                 assert_eq!(scenario.as_deref(), Some("US Recession 2026"));
                 assert_eq!(limit, 3);
                 assert!(json);
@@ -12643,14 +12788,15 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
             Some(DataPredictionsCommand::Unmap {
-                scenario,
-                contract,
-                ..
+                scenario, contract, ..
             }) => {
                 assert_eq!(scenario, "Iran Strike");
                 assert!(contract.is_none());
@@ -12688,7 +12834,10 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics command");
         };
-        let AnalyticsCommand::Predictions { command: subcmd, .. } = command else {
+        let AnalyticsCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12735,7 +12884,10 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
-        let DataCommand::Predictions { command: subcmd, .. } = command else {
+        let DataCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12770,7 +12922,10 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics command");
         };
-        let AnalyticsCommand::Predictions { command: subcmd, .. } = command else {
+        let AnalyticsCommand::Predictions {
+            command: subcmd, ..
+        } = command
+        else {
             panic!("expected predictions command");
         };
         match subcmd {
@@ -12849,9 +13004,8 @@ mod tests {
 
     #[test]
     fn parse_alignment_summary_flag() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "alignment", "--summary", "--json"])
-                .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "alignment", "--summary", "--json"])
+            .unwrap();
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
@@ -12872,8 +13026,7 @@ mod tests {
 
     #[test]
     fn parse_alignment_bare_no_summary() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "alignment", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "alignment", "--json"]).unwrap();
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
@@ -12957,8 +13110,7 @@ mod tests {
 
     #[test]
     fn parse_news_sentiment_defaults() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "news-sentiment", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "news-sentiment", "--json"]).unwrap();
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
@@ -13046,10 +13198,8 @@ mod tests {
 
     #[test]
     fn parse_data_news_feeds_list_json() {
-        let cli = Cli::try_parse_from([
-            "pftui", "data", "news", "feeds", "list", "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "news", "feeds", "list", "--json"]).unwrap();
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
@@ -13156,14 +13306,7 @@ mod tests {
     #[test]
     fn parse_data_news_sources_stats_json() {
         let cli = Cli::try_parse_from([
-            "pftui",
-            "data",
-            "news",
-            "sources",
-            "stats",
-            "--since",
-            "30d",
-            "--json",
+            "pftui", "data", "news", "sources", "stats", "--since", "30d", "--json",
         ])
         .unwrap();
         let Some(Command::Data { command }) = cli.command else {
@@ -13492,7 +13635,14 @@ mod tests {
 
     #[test]
     fn parse_analytics_power_signals_json() {
-        let cli = Cli::parse_from(["pftui", "analytics", "power-signals", "--days", "14", "--json"]);
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "power-signals",
+            "--days",
+            "14",
+            "--json",
+        ]);
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
@@ -13529,8 +13679,7 @@ mod tests {
 
     #[test]
     fn parse_analytics_backtest_predictions_json() {
-        let cli =
-            Cli::parse_from(["pftui", "analytics", "backtest", "predictions", "--json"]);
+        let cli = Cli::parse_from(["pftui", "analytics", "backtest", "predictions", "--json"]);
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
@@ -13826,14 +13975,8 @@ mod tests {
 
     #[test]
     fn journal_entry_add_positional_value() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "journal",
-            "entry",
-            "add",
-            "Gold looking strong",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "journal", "entry", "add", "Gold looking strong"])
+            .unwrap();
         let Command::Journal { command } = cli.command.unwrap() else {
             panic!("expected Journal");
         };
@@ -13900,8 +14043,8 @@ mod tests {
     #[test]
     fn journal_entry_add_no_value_no_content_parses() {
         // Clap allows this since value is now optional; main.rs handles the error
-        let cli = Cli::try_parse_from(["pftui", "journal", "entry", "add", "--tag", "macro"])
-            .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "journal", "entry", "add", "--tag", "macro"]).unwrap();
         let Command::Journal { command } = cli.command.unwrap() else {
             panic!("expected Journal");
         };
@@ -13942,15 +14085,7 @@ mod tests {
     #[test]
     fn journal_entry_add_accepts_repeated_tag_flags() {
         let cli = Cli::try_parse_from([
-            "pftui",
-            "journal",
-            "entry",
-            "add",
-            "note",
-            "--tag",
-            "macro",
-            "--tag",
-            "oil",
+            "pftui", "journal", "entry", "add", "note", "--tag", "macro", "--tag", "oil",
         ])
         .unwrap();
         let Command::Journal { command } = cli.command.unwrap() else {
@@ -13968,11 +14103,11 @@ mod tests {
     #[test]
     fn journal_entry_add_help_shows_content_flag() -> Result<()> {
         let help = subcommand_help(&["journal", "entry", "add"])?;
-        assert!(help.contains("--content"), "help should show --content flag");
         assert!(
-            help.contains("--date"),
-            "help should show --date flag"
+            help.contains("--content"),
+            "help should show --content flag"
         );
+        assert!(help.contains("--date"), "help should show --date flag");
         assert!(
             help.contains("YYYY-MM-DD"),
             "help should describe date format"
@@ -14093,15 +14228,8 @@ mod tests {
 
     #[test]
     fn parse_data_fear_greed_history_json() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "data",
-            "fear-greed",
-            "--history",
-            "14",
-            "--json",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "data", "fear-greed", "--history", "14", "--json"])
+            .unwrap();
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data command");
         };
@@ -14114,12 +14242,17 @@ mod tests {
 
     #[test]
     fn parse_data_prices_market_flag() {
-        let cli =
-            Cli::try_parse_from(["pftui", "data", "prices", "--market", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "data", "prices", "--market", "--json"]).unwrap();
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json, auto_refresh: _, command: _ } = command else {
+        let DataCommand::Prices {
+            market,
+            json,
+            auto_refresh: _,
+            command: _,
+        } = command
+        else {
             panic!("expected Prices");
         };
         assert!(market);
@@ -14132,7 +14265,13 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json, auto_refresh: _, command: _ } = command else {
+        let DataCommand::Prices {
+            market,
+            json,
+            auto_refresh: _,
+            command: _,
+        } = command
+        else {
             panic!("expected Prices");
         };
         assert!(!market);
@@ -14141,12 +14280,17 @@ mod tests {
 
     #[test]
     fn parse_data_quotes_alias_resolves_to_prices() {
-        let cli =
-            Cli::try_parse_from(["pftui", "data", "quotes", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "data", "quotes", "--json"]).unwrap();
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json, auto_refresh: _, command: _ } = command else {
+        let DataCommand::Prices {
+            market,
+            json,
+            auto_refresh: _,
+            command: _,
+        } = command
+        else {
             panic!("expected Prices via quotes alias");
         };
         assert!(!market);
@@ -14155,12 +14299,17 @@ mod tests {
 
     #[test]
     fn parse_data_quotes_alias_with_market_flag() {
-        let cli =
-            Cli::try_parse_from(["pftui", "data", "quotes", "--market", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "data", "quotes", "--market", "--json"]).unwrap();
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json, auto_refresh: _, command: _ } = command else {
+        let DataCommand::Prices {
+            market,
+            json,
+            auto_refresh: _,
+            command: _,
+        } = command
+        else {
             panic!("expected Prices via quotes alias");
         };
         assert!(market);
@@ -14173,7 +14322,13 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { market, json, auto_refresh: _, command: _ } = command else {
+        let DataCommand::Prices {
+            market,
+            json,
+            auto_refresh: _,
+            command: _,
+        } = command
+        else {
             panic!("expected Prices via quotes alias");
         };
         assert!(!market);
@@ -14189,8 +14344,10 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { command: Some(DataPricesCommand::Audit { symbol, json }), .. } =
-            command
+        let DataCommand::Prices {
+            command: Some(DataPricesCommand::Audit { symbol, json }),
+            ..
+        } = command
         else {
             panic!("expected Prices audit subcommand");
         };
@@ -14204,8 +14361,10 @@ mod tests {
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
-        let DataCommand::Prices { command: Some(DataPricesCommand::Audit { symbol, json }), .. } =
-            command
+        let DataCommand::Prices {
+            command: Some(DataPricesCommand::Audit { symbol, json }),
+            ..
+        } = command
         else {
             panic!("expected Prices audit subcommand");
         };
@@ -14303,14 +14462,8 @@ mod tests {
 
     #[test]
     fn parse_data_prices_auto_refresh_flag() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "data",
-            "prices",
-            "--auto-refresh",
-            "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "prices", "--auto-refresh", "--json"]).unwrap();
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
@@ -14330,14 +14483,8 @@ mod tests {
 
     #[test]
     fn parse_data_quotes_auto_refresh_flag() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "data",
-            "quotes",
-            "--auto-refresh",
-            "--market",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "quotes", "--auto-refresh", "--market"]).unwrap();
         let Command::Data { command, .. } = cli.command.unwrap() else {
             panic!("expected Data");
         };
@@ -14416,15 +14563,11 @@ mod tests {
 
     #[test]
     fn parse_analytics_cross_timeframe_no_resolve() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "cross-timeframe", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "cross-timeframe", "--json"]).unwrap();
         let Command::Analytics { command } = cli.command.unwrap() else {
             panic!("expected Analytics");
         };
-        let AnalyticsCommand::CrossTimeframe {
-            resolve, json, ..
-        } = command
-        else {
+        let AnalyticsCommand::CrossTimeframe { resolve, json, .. } = command else {
             panic!("expected CrossTimeframe");
         };
         assert!(!resolve);
@@ -14458,27 +14601,19 @@ mod tests {
 
     #[test]
     fn parse_journal_prediction_lessons_list() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "journal",
-            "prediction",
-            "lessons",
-            "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "journal", "prediction", "lessons", "--json"]).unwrap();
         let Command::Journal { command } = cli.command.unwrap() else {
             panic!("expected Journal");
         };
         match command {
-            Some(JournalCommand::Prediction { command }) => {
-                match command {
-                    JournalPredictionCommand::Lessons { command, json, .. } => {
-                        assert!(command.is_none());
-                        assert!(json);
-                    }
-                    _ => panic!("expected Lessons"),
+            Some(JournalCommand::Prediction { command }) => match command {
+                JournalPredictionCommand::Lessons { command, json, .. } => {
+                    assert!(command.is_none());
+                    assert!(json);
                 }
-            }
+                _ => panic!("expected Lessons"),
+            },
             _ => panic!("expected Prediction"),
         }
     }
@@ -14501,16 +14636,19 @@ mod tests {
             panic!("expected Journal");
         };
         match command {
-            Some(JournalCommand::Prediction { command }) => {
-                match command {
-                    JournalPredictionCommand::Lessons { miss_type, limit, json, .. } => {
-                        assert_eq!(miss_type.as_deref(), Some("timing"));
-                        assert_eq!(limit, Some(5));
-                        assert!(json);
-                    }
-                    _ => panic!("expected Lessons"),
+            Some(JournalCommand::Prediction { command }) => match command {
+                JournalPredictionCommand::Lessons {
+                    miss_type,
+                    limit,
+                    json,
+                    ..
+                } => {
+                    assert_eq!(miss_type.as_deref(), Some("timing"));
+                    assert_eq!(limit, Some(5));
+                    assert!(json);
                 }
-            }
+                _ => panic!("expected Lessons"),
+            },
             _ => panic!("expected Prediction"),
         }
     }
@@ -14540,41 +14678,38 @@ mod tests {
             panic!("expected Journal");
         };
         match command {
-            Some(JournalCommand::Prediction { command }) => {
-                match command {
-                    JournalPredictionCommand::Lessons { command, .. } => {
-                        match command {
-                            Some(JournalPredictionLessonsCommand::Add {
-                                prediction_id,
-                                miss_type,
-                                what_happened,
-                                why_wrong,
-                                signal_misread,
-                                json,
-                            }) => {
-                                assert_eq!(prediction_id, 42);
-                                assert_eq!(miss_type, "directional");
-                                assert_eq!(what_happened, "BTC dropped to 60k");
-                                assert_eq!(why_wrong, "Ignored macro headwinds");
-                                assert_eq!(signal_misread.as_deref(), Some("Volume divergence was bearish"));
-                                assert!(json);
-                            }
-                            _ => panic!("expected Add"),
-                        }
+            Some(JournalCommand::Prediction { command }) => match command {
+                JournalPredictionCommand::Lessons { command, .. } => match command {
+                    Some(JournalPredictionLessonsCommand::Add {
+                        prediction_id,
+                        miss_type,
+                        what_happened,
+                        why_wrong,
+                        signal_misread,
+                        json,
+                    }) => {
+                        assert_eq!(prediction_id, 42);
+                        assert_eq!(miss_type, "directional");
+                        assert_eq!(what_happened, "BTC dropped to 60k");
+                        assert_eq!(why_wrong, "Ignored macro headwinds");
+                        assert_eq!(
+                            signal_misread.as_deref(),
+                            Some("Volume divergence was bearish")
+                        );
+                        assert!(json);
                     }
-                    _ => panic!("expected Lessons"),
-                }
-            }
+                    _ => panic!("expected Add"),
+                },
+                _ => panic!("expected Lessons"),
+            },
             _ => panic!("expected Prediction"),
         }
     }
 
     #[test]
     fn parse_situation_populate() {
-        let cli = Cli::try_parse_from([
-            "pftui", "analytics", "situation", "populate", "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "situation", "populate", "--json"]).unwrap();
         let Some(Command::Analytics {
             command: AnalyticsCommand::Situation { command, .. },
         }) = cli.command
@@ -14589,10 +14724,7 @@ mod tests {
 
     #[test]
     fn parse_situation_populate_no_json() {
-        let cli = Cli::try_parse_from([
-            "pftui", "analytics", "situation", "populate",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "situation", "populate"]).unwrap();
         let Some(Command::Analytics {
             command: AnalyticsCommand::Situation { command, .. },
         }) = cli.command
@@ -14616,11 +14748,12 @@ mod tests {
         ])
         .unwrap();
         let Some(Command::Portfolio {
-            command: Some(PortfolioCommand::StressTest {
-                scenario,
-                list_scenarios,
-                json,
-            }),
+            command:
+                Some(PortfolioCommand::StressTest {
+                    scenario,
+                    list_scenarios,
+                    json,
+                }),
         }) = cli.command
         else {
             panic!("expected portfolio stress-test command");
@@ -14632,20 +14765,15 @@ mod tests {
 
     #[test]
     fn parse_stress_test_with_scenario() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "portfolio",
-            "stress-test",
-            "2008 GFC",
-            "--json",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "portfolio", "stress-test", "2008 GFC", "--json"])
+            .unwrap();
         let Some(Command::Portfolio {
-            command: Some(PortfolioCommand::StressTest {
-                scenario,
-                list_scenarios,
-                json,
-            }),
+            command:
+                Some(PortfolioCommand::StressTest {
+                    scenario,
+                    list_scenarios,
+                    json,
+                }),
         }) = cli.command
         else {
             panic!("expected portfolio stress-test command");
@@ -14657,7 +14785,14 @@ mod tests {
 
     #[test]
     fn parse_analytics_trends_list_verbose() -> Result<()> {
-        let cli = Cli::parse_from(["pftui", "analytics", "trends", "list", "--verbose", "--json"]);
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "trends",
+            "list",
+            "--verbose",
+            "--json",
+        ]);
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
@@ -14674,14 +14809,24 @@ mod tests {
 
     #[test]
     fn parse_analytics_trends_list_no_verbose() -> Result<()> {
-        let cli = Cli::parse_from(["pftui", "analytics", "trends", "list", "--timeframe", "high"]);
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "trends",
+            "list",
+            "--timeframe",
+            "high",
+        ]);
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
         let AnalyticsCommand::Trends { command } = command else {
             panic!("expected trends");
         };
-        let AnalyticsTrendsCommand::List { verbose, timeframe, .. } = command else {
+        let AnalyticsTrendsCommand::List {
+            verbose, timeframe, ..
+        } = command
+        else {
             panic!("expected list");
         };
         assert!(!verbose);
@@ -14692,13 +14837,22 @@ mod tests {
     #[test]
     fn parse_analytics_trends_list_all_filters() -> Result<()> {
         let cli = Cli::parse_from([
-            "pftui", "analytics", "trends", "list",
-            "--timeframe", "high",
-            "--direction", "accelerating",
-            "--conviction", "high",
-            "--category", "energy",
-            "--status", "active",
-            "--limit", "5",
+            "pftui",
+            "analytics",
+            "trends",
+            "list",
+            "--timeframe",
+            "high",
+            "--direction",
+            "accelerating",
+            "--conviction",
+            "high",
+            "--category",
+            "energy",
+            "--status",
+            "active",
+            "--limit",
+            "5",
             "--json",
         ]);
         let Some(Command::Analytics { command }) = cli.command else {
@@ -14708,8 +14862,16 @@ mod tests {
             panic!("expected trends");
         };
         let AnalyticsTrendsCommand::List {
-            timeframe, direction, conviction, category, status, limit, json, ..
-        } = command else {
+            timeframe,
+            direction,
+            conviction,
+            category,
+            status,
+            limit,
+            json,
+            ..
+        } = command
+        else {
             panic!("expected list");
         };
         assert_eq!(timeframe.as_deref(), Some("high"));
@@ -14724,14 +14886,22 @@ mod tests {
 
     #[test]
     fn parse_calendar_list() -> Result<()> {
-        let cli = Cli::parse_from(["pftui", "data", "calendar", "list", "--days", "14", "--impact", "high", "--json"]);
+        let cli = Cli::parse_from([
+            "pftui", "data", "calendar", "list", "--days", "14", "--impact", "high", "--json",
+        ]);
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
         let DataCommand::Calendar { command, .. } = command else {
             panic!("expected calendar");
         };
-        let Some(CalendarCommand::List { days, impact, event_type, json }) = command else {
+        let Some(CalendarCommand::List {
+            days,
+            impact,
+            event_type,
+            json,
+        }) = command
+        else {
             panic!("expected list");
         };
         assert_eq!(days, 14);
@@ -14748,7 +14918,14 @@ mod tests {
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Calendar { command, days, impact, event_type, json } = command else {
+        let DataCommand::Calendar {
+            command,
+            days,
+            impact,
+            event_type,
+            json,
+        } = command
+        else {
             panic!("expected calendar");
         };
         assert!(command.is_none());
@@ -14763,13 +14940,28 @@ mod tests {
     fn parse_calendar_default_list_with_filters() -> Result<()> {
         // `pftui data calendar --days 14 --impact high --type geopolitical --json`
         let cli = Cli::parse_from([
-            "pftui", "data", "calendar",
-            "--days", "14", "--impact", "high", "--type", "geopolitical", "--json",
+            "pftui",
+            "data",
+            "calendar",
+            "--days",
+            "14",
+            "--impact",
+            "high",
+            "--type",
+            "geopolitical",
+            "--json",
         ]);
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
-        let DataCommand::Calendar { command, days, impact, event_type, json } = command else {
+        let DataCommand::Calendar {
+            command,
+            days,
+            impact,
+            event_type,
+            json,
+        } = command
+        else {
             panic!("expected calendar");
         };
         assert!(command.is_none());
@@ -14783,11 +14975,18 @@ mod tests {
     #[test]
     fn parse_calendar_add_geopolitical() -> Result<()> {
         let cli = Cli::parse_from([
-            "pftui", "data", "calendar", "add",
-            "--date", "2026-04-06",
-            "--name", "Iran Hormuz Deadline",
-            "--impact", "high",
-            "--type", "geopolitical",
+            "pftui",
+            "data",
+            "calendar",
+            "add",
+            "--date",
+            "2026-04-06",
+            "--name",
+            "Iran Hormuz Deadline",
+            "--impact",
+            "high",
+            "--type",
+            "geopolitical",
             "--json",
         ]);
         let Some(Command::Data { command }) = cli.command else {
@@ -14796,7 +14995,15 @@ mod tests {
         let DataCommand::Calendar { command, .. } = command else {
             panic!("expected calendar");
         };
-        let Some(CalendarCommand::Add { date, name, impact, event_type, symbol, json }) = command else {
+        let Some(CalendarCommand::Add {
+            date,
+            name,
+            impact,
+            event_type,
+            symbol,
+            json,
+        }) = command
+        else {
             panic!("expected add");
         };
         assert_eq!(date, "2026-04-06");
@@ -14811,9 +15018,14 @@ mod tests {
     #[test]
     fn parse_calendar_remove() -> Result<()> {
         let cli = Cli::parse_from([
-            "pftui", "data", "calendar", "remove",
-            "--date", "2026-04-06",
-            "--name", "Iran Hormuz Deadline",
+            "pftui",
+            "data",
+            "calendar",
+            "remove",
+            "--date",
+            "2026-04-06",
+            "--name",
+            "Iran Hormuz Deadline",
         ]);
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
@@ -14833,12 +15045,20 @@ mod tests {
     #[test]
     fn parse_calendar_add_with_symbol() -> Result<()> {
         let cli = Cli::parse_from([
-            "pftui", "data", "calendar", "add",
-            "--date", "2026-04-15",
-            "--name", "AAPL Earnings",
-            "--impact", "high",
-            "--type", "earnings",
-            "--symbol", "AAPL",
+            "pftui",
+            "data",
+            "calendar",
+            "add",
+            "--date",
+            "2026-04-15",
+            "--name",
+            "AAPL Earnings",
+            "--impact",
+            "high",
+            "--type",
+            "earnings",
+            "--symbol",
+            "AAPL",
         ]);
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
@@ -14846,7 +15066,14 @@ mod tests {
         let DataCommand::Calendar { command, .. } = command else {
             panic!("expected calendar");
         };
-        let Some(CalendarCommand::Add { date, name, event_type, symbol, .. }) = command else {
+        let Some(CalendarCommand::Add {
+            date,
+            name,
+            event_type,
+            symbol,
+            ..
+        }) = command
+        else {
             panic!("expected add");
         };
         assert_eq!(date, "2026-04-15");
@@ -14858,14 +15085,25 @@ mod tests {
 
     #[test]
     fn parse_calendar_list_with_type_filter() -> Result<()> {
-        let cli = Cli::parse_from(["pftui", "data", "calendar", "list", "--type", "geopolitical", "--json"]);
+        let cli = Cli::parse_from([
+            "pftui",
+            "data",
+            "calendar",
+            "list",
+            "--type",
+            "geopolitical",
+            "--json",
+        ]);
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
         let DataCommand::Calendar { command, .. } = command else {
             panic!("expected calendar");
         };
-        let Some(CalendarCommand::List { event_type, json, .. }) = command else {
+        let Some(CalendarCommand::List {
+            event_type, json, ..
+        }) = command
+        else {
             panic!("expected list");
         };
         assert_eq!(event_type.as_deref(), Some("geopolitical"));
@@ -14880,7 +15118,10 @@ mod tests {
             panic!("expected data");
         };
         let DataCommand::Refresh {
-            only, skip, timeout, ..
+            only,
+            skip,
+            timeout,
+            ..
         } = command
         else {
             panic!("expected refresh");
@@ -14894,13 +15135,20 @@ mod tests {
     #[test]
     fn parse_refresh_only_multiple_sources() -> Result<()> {
         let cli = Cli::parse_from([
-            "pftui", "data", "refresh", "--only", "prices,news_rss,sentiment",
+            "pftui",
+            "data",
+            "refresh",
+            "--only",
+            "prices,news_rss,sentiment",
         ]);
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
         let DataCommand::Refresh {
-            only, skip, timeout, ..
+            only,
+            skip,
+            timeout,
+            ..
         } = command
         else {
             panic!("expected refresh");
@@ -14913,14 +15161,15 @@ mod tests {
 
     #[test]
     fn parse_refresh_skip_sources() -> Result<()> {
-        let cli = Cli::parse_from([
-            "pftui", "data", "refresh", "--skip", "worldbank,bls",
-        ]);
+        let cli = Cli::parse_from(["pftui", "data", "refresh", "--skip", "worldbank,bls"]);
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
         let DataCommand::Refresh {
-            only, skip, timeout, ..
+            only,
+            skip,
+            timeout,
+            ..
         } = command
         else {
             panic!("expected refresh");
@@ -14964,17 +15213,14 @@ mod tests {
 
     #[test]
     fn parse_refresh_stale_and_only_conflict() {
-        let result = Cli::try_parse_from([
-            "pftui", "data", "refresh", "--stale", "--only", "prices",
-        ]);
+        let result =
+            Cli::try_parse_from(["pftui", "data", "refresh", "--stale", "--only", "prices"]);
         assert!(result.is_err(), "--stale and --only should conflict");
     }
 
     #[test]
     fn parse_refresh_only_with_json() -> Result<()> {
-        let cli = Cli::parse_from([
-            "pftui", "data", "refresh", "--only", "prices", "--json",
-        ]);
+        let cli = Cli::parse_from(["pftui", "data", "refresh", "--only", "prices", "--json"]);
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
@@ -14995,14 +15241,7 @@ mod tests {
 
     #[test]
     fn parse_refresh_timeout_flag() -> Result<()> {
-        let cli = Cli::parse_from([
-            "pftui",
-            "data",
-            "refresh",
-            "--timeout",
-            "90",
-            "--json",
-        ]);
+        let cli = Cli::parse_from(["pftui", "data", "refresh", "--timeout", "90", "--json"]);
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
@@ -15054,11 +15293,12 @@ mod tests {
             panic!("expected analytics");
         };
         let AnalyticsCommand::Correlations {
-            command: Some(AnalyticsCorrelationsCommand::Breaks {
-                severity,
-                threshold,
-                ..
-            }),
+            command:
+                Some(AnalyticsCorrelationsCommand::Breaks {
+                    severity,
+                    threshold,
+                    ..
+                }),
             ..
         } = command
         else {
@@ -15085,12 +15325,13 @@ mod tests {
             panic!("expected analytics");
         };
         let AnalyticsCommand::Correlations {
-            command: Some(AnalyticsCorrelationsCommand::Breaks {
-                verbose,
-                history_depth,
-                json,
-                ..
-            }),
+            command:
+                Some(AnalyticsCorrelationsCommand::Breaks {
+                    verbose,
+                    history_depth,
+                    json,
+                    ..
+                }),
             ..
         } = command
         else {
@@ -15104,21 +15345,17 @@ mod tests {
 
     #[test]
     fn parse_correlations_breaks_verbose_defaults() -> Result<()> {
-        let cli = Cli::parse_from([
-            "pftui",
-            "analytics",
-            "correlations",
-            "breaks",
-        ]);
+        let cli = Cli::parse_from(["pftui", "analytics", "correlations", "breaks"]);
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
         let AnalyticsCommand::Correlations {
-            command: Some(AnalyticsCorrelationsCommand::Breaks {
-                verbose,
-                history_depth,
-                ..
-            }),
+            command:
+                Some(AnalyticsCorrelationsCommand::Breaks {
+                    verbose,
+                    history_depth,
+                    ..
+                }),
             ..
         } = command
         else {
@@ -15135,7 +15372,11 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
-        let AnalyticsCommand::MarketSnapshot { json, auto_refresh: _ } = command else {
+        let AnalyticsCommand::MarketSnapshot {
+            json,
+            auto_refresh: _,
+        } = command
+        else {
             panic!("expected market-snapshot");
         };
         assert!(json);
@@ -15148,7 +15389,11 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
-        let AnalyticsCommand::MarketSnapshot { json, auto_refresh: _ } = command else {
+        let AnalyticsCommand::MarketSnapshot {
+            json,
+            auto_refresh: _,
+        } = command
+        else {
             panic!("expected market-snapshot");
         };
         assert!(!json);
@@ -15167,11 +15412,7 @@ mod tests {
         let Some(Command::Analytics { command }) = cli.command else {
             panic!("expected analytics");
         };
-        let AnalyticsCommand::MarketSnapshot {
-            json,
-            auto_refresh,
-        } = command
-        else {
+        let AnalyticsCommand::MarketSnapshot { json, auto_refresh } = command else {
             panic!("expected market-snapshot");
         };
         assert!(json);
@@ -15324,12 +15565,13 @@ mod tests {
             panic!("expected data");
         };
         let DataCommand::Alerts {
-            command: Some(DataAlertsRedirect::Check {
-                newly_triggered,
-                condition,
-                json,
-                ..
-            }),
+            command:
+                Some(DataAlertsRedirect::Check {
+                    newly_triggered,
+                    condition,
+                    json,
+                    ..
+                }),
         } = command
         else {
             panic!("expected data alerts check");
@@ -15357,12 +15599,7 @@ mod tests {
         let AnalyticsCommand::Alerts { command } = command else {
             panic!("expected alerts");
         };
-        let AnalyticsAlertsCommand::Check {
-            status,
-            json,
-            ..
-        } = command
-        else {
+        let AnalyticsAlertsCommand::Check { status, json, .. } = command else {
             panic!("expected check");
         };
         assert_eq!(status.as_deref(), Some("triggered"));
@@ -15373,23 +15610,13 @@ mod tests {
     #[test]
     fn parse_data_alerts_check_status_filter() -> Result<()> {
         let cli = Cli::parse_from([
-            "pftui",
-            "data",
-            "alerts",
-            "check",
-            "--status",
-            "armed",
-            "--json",
+            "pftui", "data", "alerts", "check", "--status", "armed", "--json",
         ]);
         let Some(Command::Data { command }) = cli.command else {
             panic!("expected data");
         };
         let DataCommand::Alerts {
-            command: Some(DataAlertsRedirect::Check {
-                status,
-                json,
-                ..
-            }),
+            command: Some(DataAlertsRedirect::Check { status, json, .. }),
         } = command
         else {
             panic!("expected data alerts check");
@@ -15419,10 +15646,7 @@ mod tests {
             panic!("expected alerts");
         };
         let AnalyticsAlertsCommand::Check {
-            status,
-            kind,
-            json,
-            ..
+            status, kind, json, ..
         } = command
         else {
             panic!("expected check");
@@ -15450,12 +15674,7 @@ mod tests {
         let AnalyticsCommand::Alerts { command } = command else {
             panic!("expected alerts");
         };
-        let AnalyticsAlertsCommand::Check {
-            urgency,
-            json,
-            ..
-        } = command
-        else {
+        let AnalyticsAlertsCommand::Check { urgency, json, .. } = command else {
             panic!("expected check");
         };
         assert_eq!(urgency.as_deref(), Some("critical"));
@@ -15478,11 +15697,7 @@ mod tests {
             panic!("expected data");
         };
         let DataCommand::Alerts {
-            command: Some(DataAlertsRedirect::Check {
-                urgency,
-                json,
-                ..
-            }),
+            command: Some(DataAlertsRedirect::Check { urgency, json, .. }),
         } = command
         else {
             panic!("expected data alerts check");
@@ -15791,15 +16006,15 @@ mod tests {
 
     #[test]
     fn parse_analytics_lessons_rules_list_retire_cite() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "lessons", "rules", "list", "--all"])
-                .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "lessons", "rules", "list", "--all"])
+            .unwrap();
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::Lessons {
-                    command: AnalyticsLessonsCommand::Rules {
-                        command: AnalyticsLessonsRulesCommand::List { all, json },
-                    },
+                    command:
+                        AnalyticsLessonsCommand::Rules {
+                            command: AnalyticsLessonsRulesCommand::List { all, json },
+                        },
                 },
         }) = cli.command
         else {
@@ -15813,9 +16028,10 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::Lessons {
-                    command: AnalyticsLessonsCommand::Rules {
-                        command: AnalyticsLessonsRulesCommand::Retire { id, .. },
-                    },
+                    command:
+                        AnalyticsLessonsCommand::Rules {
+                            command: AnalyticsLessonsRulesCommand::Retire { id, .. },
+                        },
                 },
         }) = cli.command
         else {
@@ -15823,15 +16039,23 @@ mod tests {
         };
         assert_eq!(id, 7);
 
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "lessons", "rules", "cite", "3", "--json"])
-                .unwrap();
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "lessons",
+            "rules",
+            "cite",
+            "3",
+            "--json",
+        ])
+        .unwrap();
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::Lessons {
-                    command: AnalyticsLessonsCommand::Rules {
-                        command: AnalyticsLessonsRulesCommand::Cite { id, json },
-                    },
+                    command:
+                        AnalyticsLessonsCommand::Rules {
+                            command: AnalyticsLessonsRulesCommand::Cite { id, json },
+                        },
                 },
         }) = cli.command
         else {
@@ -15856,7 +16080,12 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::Thesis {
-                    command: AnalyticsThesisCommand::SetReview { section, date, json },
+                    command:
+                        AnalyticsThesisCommand::SetReview {
+                            section,
+                            date,
+                            json,
+                        },
                 },
         }) = cli.command
         else {
@@ -15897,7 +16126,12 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::Views {
-                    command: AnalyticsViewsCommand::Stale { days, move_pct, json },
+                    command:
+                        AnalyticsViewsCommand::Stale {
+                            days,
+                            move_pct,
+                            json,
+                        },
                 },
         }) = cli.command
         else {
@@ -15912,7 +16146,12 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::Views {
-                    command: AnalyticsViewsCommand::Stale { days, move_pct, json },
+                    command:
+                        AnalyticsViewsCommand::Stale {
+                            days,
+                            move_pct,
+                            json,
+                        },
                 },
         }) = cli.command
         else {
@@ -15949,17 +16188,18 @@ mod tests {
         let Some(Command::Data {
             command:
                 DataCommand::Predictions {
-                    command: Some(DataPredictionsCommand::Add {
-                        claim,
-                        falsify,
-                        override_confidence_cap,
-                        cap_rationale,
-                        skip_preflight,
-                        accept_preflight,
-                        with_adversary,
-                        json,
-                        ..
-                    }),
+                    command:
+                        Some(DataPredictionsCommand::Add {
+                            claim,
+                            falsify,
+                            override_confidence_cap,
+                            cap_rationale,
+                            skip_preflight,
+                            accept_preflight,
+                            with_adversary,
+                            json,
+                            ..
+                        }),
                     ..
                 },
         }) = cli.command
@@ -15999,13 +16239,14 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::Predictions {
-                    command: Some(DataPredictionsCommand::Add {
-                        falsify,
-                        override_confidence_cap,
-                        cap_rationale,
-                        skip_preflight,
-                        ..
-                    }),
+                    command:
+                        Some(DataPredictionsCommand::Add {
+                            falsify,
+                            override_confidence_cap,
+                            cap_rationale,
+                            skip_preflight,
+                            ..
+                        }),
                     ..
                 },
         }) = cli.command
@@ -16015,18 +16256,21 @@ mod tests {
         assert!(falsify.is_none());
         assert!(!override_confidence_cap);
         assert!(cap_rationale.is_none());
-        assert!(!skip_preflight, "preflight must be ON by default, like journal add");
+        assert!(
+            !skip_preflight,
+            "preflight must be ON by default, like journal add"
+        );
     }
     // ── Research harness (R1a) ──────────────────────────────────────────
 
     #[test]
     fn parse_research_signals_list() {
-        let cli =
-            Cli::try_parse_from(["pftui", "research", "signals", "list", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "research", "signals", "list", "--json"]).unwrap();
         let Some(Command::Research {
-            command: ResearchCommand::Signals {
-                command: ResearchSignalsCommand::List { json },
-            },
+            command:
+                ResearchCommand::Signals {
+                    command: ResearchSignalsCommand::List { json },
+                },
         }) = cli.command
         else {
             panic!("expected research signals list");
@@ -16136,8 +16380,6 @@ mod tests {
     #[test]
     fn parse_research_events_requires_signal_and_asset() {
         assert!(Cli::try_parse_from(["pftui", "research", "events"]).is_err());
-        assert!(
-            Cli::try_parse_from(["pftui", "research", "events", "--signal", "x"]).is_err()
-        );
+        assert!(Cli::try_parse_from(["pftui", "research", "events", "--signal", "x"]).is_err());
     }
 }

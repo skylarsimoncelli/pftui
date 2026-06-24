@@ -325,9 +325,7 @@ fn run_list(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
                 "No recently triggered/acknowledged alerts in the last {} hours.",
                 args.recent_hours
             );
-            println!(
-                "Hint: Use --recent-hours N to adjust the lookback window (default: 24)."
-            );
+            println!("Hint: Use --recent-hours N to adjust the lookback window (default: 24).");
         } else {
             println!(
                 "Recent alerts (last {} hours) — {}:\n",
@@ -605,7 +603,7 @@ fn default_label(kind: &AlertKind, symbol: &str, condition: &str) -> String {
 /// Friendly, name-free default label for a cycle-bottom signal alert.
 fn cycle_signal_label(symbol: &str, condition: &str) -> String {
     use crate::alerts::cycle_signal_alert::{
-        criterion_label, friendly_asset, parse_condition, CycleSignalCondition,
+        component_label, criterion_label, friendly_asset, parse_condition, CycleSignalCondition,
     };
     let asset = friendly_asset(symbol);
     match parse_condition(condition) {
@@ -623,6 +621,15 @@ fn cycle_signal_label(symbol: &str, condition: &str) -> String {
             asset,
             timeframe.label(),
             criterion_label(&criterion_key)
+        ),
+        Ok(CycleSignalCondition::Component {
+            timeframe,
+            component_key,
+        }) => format!(
+            "{} {} {}",
+            asset,
+            timeframe.label(),
+            component_label(&component_key)
         ),
         Err(_) => format!("{} {}", symbol, condition.replace('_', " ")),
     }
@@ -788,8 +795,7 @@ fn run_ack(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
 
 /// Bulk-acknowledge all triggered alerts, optionally filtered by kind/condition/symbol.
 fn run_ack_bulk(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
-    let triggered =
-        alerts_db::list_alerts_by_status_backend(backend, AlertStatus::Triggered)?;
+    let triggered = alerts_db::list_alerts_by_status_backend(backend, AlertStatus::Triggered)?;
 
     // Apply optional filters (case-insensitive).
     let filtered: Vec<_> = triggered
@@ -1185,8 +1191,7 @@ fn build_allocation_map(backend: &BackendConnection) -> HashMap<String, Decimal>
     let txs = crate::db::transactions::list_transactions_backend(backend).unwrap_or_default();
     if txs.is_empty() {
         // Try percentage-mode allocations
-        let allocs =
-            crate::db::allocations::list_allocations_backend(backend).unwrap_or_default();
+        let allocs = crate::db::allocations::list_allocations_backend(backend).unwrap_or_default();
         return allocs
             .into_iter()
             .filter(|a| a.category != AssetCategory::Cash)
@@ -1226,10 +1231,8 @@ pub fn build_triage(backend: &BackendConnection) -> Result<TriageDashboard> {
 
     let mut entries: Vec<TriageEntry> = Vec::new();
     let mut acknowledged_count: usize = 0;
-    let mut kind_counts: std::collections::BTreeMap<
-        String,
-        (usize, usize, usize, usize, usize),
-    > = std::collections::BTreeMap::new();
+    let mut kind_counts: std::collections::BTreeMap<String, (usize, usize, usize, usize, usize)> =
+        std::collections::BTreeMap::new();
 
     for r in &results {
         let urgency = match classify_urgency(r) {
@@ -1457,7 +1460,10 @@ pub fn run_triage(backend: &BackendConnection, json: bool) -> Result<()> {
         for e in &critical {
             let current = e.current_value.as_deref().unwrap_or("N/A");
             let impact = format_impact_tag(e);
-            println!("  🔴 [#{}] {} — current: {}{}", e.id, e.rule_text, current, impact);
+            println!(
+                "  🔴 [#{}] {} — current: {}{}",
+                e.id, e.rule_text, current, impact
+            );
         }
         println!();
     }
@@ -1469,10 +1475,7 @@ pub fn run_triage(backend: &BackendConnection, json: bool) -> Result<()> {
         .filter(|e| e.urgency == TriageUrgency::High)
         .collect();
     if !high.is_empty() {
-        println!(
-            "🟠 HIGH — Triggered, Unacknowledged ({}):\n",
-            high.len()
-        );
+        println!("🟠 HIGH — Triggered, Unacknowledged ({}):\n", high.len());
         for e in &high {
             let current = e.current_value.as_deref().unwrap_or("N/A");
             let triggered = e.triggered_at.as_deref().unwrap_or("unknown");
@@ -1537,7 +1540,9 @@ pub fn run_triage(backend: &BackendConnection, json: bool) -> Result<()> {
     }
 
     if dashboard.total == 0 {
-        println!("No active alerts. Run `analytics alerts seed-defaults` to create smart defaults.");
+        println!(
+            "No active alerts. Run `analytics alerts seed-defaults` to create smart defaults."
+        );
     }
 
     Ok(())
@@ -2781,13 +2786,28 @@ mod tests {
         assert!(alerts.iter().any(|alert| alert.kind == AlertKind::Macro
             && alert.condition.as_deref() == Some("scenario_probability_shift")));
         // Verify correlation_regime_break has configurable threshold
-        let corr_alert = alerts.iter().find(|alert| alert.condition.as_deref() == Some("correlation_regime_break"));
-        assert!(corr_alert.is_some(), "correlation_regime_break should be seeded");
-        assert_eq!(corr_alert.unwrap().threshold, "0.3", "default correlation threshold should be 0.3");
+        let corr_alert = alerts
+            .iter()
+            .find(|alert| alert.condition.as_deref() == Some("correlation_regime_break"));
+        assert!(
+            corr_alert.is_some(),
+            "correlation_regime_break should be seeded"
+        );
+        assert_eq!(
+            corr_alert.unwrap().threshold,
+            "0.3",
+            "default correlation threshold should be 0.3"
+        );
         // Verify scenario_probability_shift has configurable threshold
-        let scenario_alert = alerts.iter().find(|alert| alert.condition.as_deref() == Some("scenario_probability_shift"));
+        let scenario_alert = alerts
+            .iter()
+            .find(|alert| alert.condition.as_deref() == Some("scenario_probability_shift"));
         assert!(scenario_alert.is_some());
-        assert_eq!(scenario_alert.unwrap().threshold, "10", "default scenario threshold should be 10pp");
+        assert_eq!(
+            scenario_alert.unwrap().threshold,
+            "10",
+            "default scenario threshold should be 10pp"
+        );
     }
 
     #[test]
@@ -3038,16 +3058,8 @@ mod tests {
         let backend = BackendConnection::Sqlite { conn };
 
         // Add cached prices
-        price_cache::upsert_price(
-            backend.sqlite(),
-            &make_price_quote("BTC", 85000),
-        )
-        .unwrap();
-        price_cache::upsert_price(
-            backend.sqlite(),
-            &make_price_quote("GC=F", 3050),
-        )
-        .unwrap();
+        price_cache::upsert_price(backend.sqlite(), &make_price_quote("BTC", 85000)).unwrap();
+        price_cache::upsert_price(backend.sqlite(), &make_price_quote("GC=F", 3050)).unwrap();
 
         // Add price alerts
         alerts_db::add_alert_backend(
@@ -3237,12 +3249,10 @@ mod tests {
 
     #[test]
     fn test_portfolio_exposure_deduplicates_symbols() {
-        let alloc_map: HashMap<String, Decimal> = vec![(
-            "BTC-USD".to_string(),
-            Decimal::from_str("20.00").unwrap(),
-        )]
-        .into_iter()
-        .collect();
+        let alloc_map: HashMap<String, Decimal> =
+            vec![("BTC-USD".to_string(), Decimal::from_str("20.00").unwrap())]
+                .into_iter()
+                .collect();
 
         // Two alerts for the same symbol in the same tier
         let entries = vec![
