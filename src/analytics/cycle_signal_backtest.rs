@@ -65,6 +65,9 @@ pub fn eval_stride_days(timeframe: SignalTimeframe) -> usize {
 pub struct Firing {
     /// Date of the bar on which the criterion newly became true.
     pub fired_on: String,
+    /// Matched anchor date, when a cycle low/high fell within the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matched_anchor: Option<String>,
     /// Matched verified-low date, when a low fell within the window.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matched_low: Option<String>,
@@ -185,12 +188,51 @@ fn documented_anchors(series: &str) -> Vec<&'static str> {
     }
 }
 
+/// Verified cycle-high anchors derived from completed native low-to-low
+/// cycles. For each pair of verified lows, the cycle high is the maximum close
+/// between those two lows. The open current cycle is intentionally excluded so
+/// the ground truth never depends on an unfinished future interval.
+fn derived_high_anchors(history: &[HistoryRecord], series: &str) -> (Vec<String>, Vec<String>) {
+    let documented = documented_anchors(series);
+    let mut lows = Vec::new();
+    let mut unverified = Vec::new();
+    for d in &documented {
+        match verify_anchor_date(history, d, 270) {
+            Some(v) => lows.push(v),
+            None => unverified.push((*d).to_string()),
+        }
+    }
+    lows.sort();
+    lows.dedup();
+    let mut highs = Vec::new();
+    for pair in lows.windows(2) {
+        let Some(start) = parse(&pair[0]) else { continue };
+        let Some(end) = parse(&pair[1]) else { continue };
+        let mut max_bar: Option<(NaiveDate, rust_decimal::Decimal)> = None;
+        for r in history {
+            let Some(d) = parse(&r.date) else { continue };
+            if d <= start || d >= end {
+                continue;
+            }
+            if max_bar.map(|(_, c)| r.close > c).unwrap_or(true) {
+                max_bar = Some((d, r.close));
+            }
+        }
+        if let Some((d, _)) = max_bar {
+            highs.push(d.format("%Y-%m-%d").to_string());
+        }
+    }
+    highs.sort();
+    highs.dedup();
+    (highs, unverified)
+}
+
 fn parse(d: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()
 }
 
 /// Match a firing date to the nearest verified-low date, returning
-/// `(matched_low, signed_days)` when within `window_days`.
+/// `(matched_anchor, signed_days)` when within `window_days`.
 fn match_firing(fired_on: &str, anchors: &[NaiveDate], window_days: i64) -> Option<(String, i64)> {
     let f = parse(fired_on)?;
     let mut best: Option<(NaiveDate, i64)> = None;
@@ -218,7 +260,7 @@ fn median(mut v: Vec<i64>) -> Option<i64> {
     }
 }
 
-fn friendly_days(d: i64) -> String {
+fn friendly_days(d: i64, anchor_label: &str) -> String {
     let mag = d.abs();
     let when = if d < 0 {
         "before"
@@ -228,9 +270,9 @@ fn friendly_days(d: i64) -> String {
         "at"
     };
     if mag == 0 {
-        "at the low".to_string()
+        format!("at the {anchor_label}")
     } else {
-        format!("{mag}d {when} the low")
+        format!("{mag}d {when} the {anchor_label}")
     }
 }
 
@@ -241,6 +283,16 @@ fn build_reliability(
     firings: Vec<Firing>,
     total_anchors: usize,
 ) -> CriterionReliability {
+    build_reliability_for_anchor(key, label, firings, total_anchors, "low")
+}
+
+fn build_reliability_for_anchor(
+    key: &str,
+    label: &str,
+    firings: Vec<Firing>,
+    total_anchors: usize,
+    anchor_label: &str,
+) -> CriterionReliability {
     let n = firings.len();
     let hits = firings.iter().filter(|f| f.hit).count();
     let false_positives = n - hits;
@@ -249,11 +301,11 @@ fn build_reliability(
     } else {
         None
     };
-    let lows: BTreeSet<String> = firings
+    let matched_anchors: BTreeSet<String> = firings
         .iter()
-        .filter_map(|f| f.matched_low.clone())
+        .filter_map(|f| f.matched_anchor.clone().or_else(|| f.matched_low.clone()))
         .collect();
-    let lows_covered = lows.len();
+    let lows_covered = matched_anchors.len();
     let coverage = if total_anchors > 0 {
         Some(lows_covered as f64 / total_anchors as f64)
     } else {
@@ -274,7 +326,7 @@ fn build_reliability(
             .map(|c| format!("{:.0}%", c * 100.0))
             .unwrap_or_default();
         let lead = match median_lead_lag_days {
-            Some(d) => format!("median {}", friendly_days(d)),
+            Some(d) => format!("median {}", friendly_days(d, anchor_label)),
             None => "no in-window hits".to_string(),
         };
         format!(
@@ -372,6 +424,7 @@ pub fn run_backtest(
                         let hit = m.is_some();
                         crit_firings[ci].push(Firing {
                             fired_on: fired_on.clone(),
+                            matched_anchor: m.as_ref().map(|(l, _)| l.clone()),
                             matched_low: m.as_ref().map(|(l, _)| l.clone()),
                             lead_lag_days: m.as_ref().map(|(_, d)| *d),
                             hit,
@@ -386,6 +439,7 @@ pub fn run_backtest(
                         let hit = m.is_some();
                         conf_firings[ti].push(Firing {
                             fired_on: fired_on.clone(),
+                            matched_anchor: m.as_ref().map(|(l, _)| l.clone()),
                             matched_low: m.as_ref().map(|(l, _)| l.clone()),
                             lead_lag_days: m.as_ref().map(|(_, d)| *d),
                             hit,
@@ -454,6 +508,148 @@ pub fn run_backtest(
     })
 }
 
+/// Run the symmetric cycle-high / exhaustion reliability backtest. Ground
+/// truth highs are derived mechanically from completed native low-to-low
+/// cycles: max close between each pair of verified cycle lows.
+pub fn run_top_backtest(
+    symbol: &str,
+    series: &str,
+    history: &[HistoryRecord],
+    timeframe: SignalTimeframe,
+    window_days: Option<i64>,
+    thresholds: &[usize],
+) -> Option<CycleSignalBacktest> {
+    let window_days = window_days.unwrap_or(DEFAULT_WINDOW_BARS).max(1);
+    if history.len() < cycle_signals::min_daily_bars() {
+        return None;
+    }
+    let as_of = history.last()?.date.clone();
+    let eval_stride_days = eval_stride_days(timeframe);
+
+    let (anchors, unverified) = derived_high_anchors(history, series);
+    let anchor_dates: Vec<NaiveDate> = anchors.iter().filter_map(|d| parse(d)).collect();
+    let total_anchors = anchor_dates.len();
+    let small_n = total_anchors < SMALL_N_THRESHOLD;
+
+    let n_criteria = 7usize;
+    let mut prev_met: Vec<bool> = vec![false; n_criteria];
+    let mut prev_count: usize = 0;
+    let mut have_prev = false;
+    let mut keys_labels: Vec<(String, String)> = Vec::new();
+    let mut crit_firings: Vec<Vec<Firing>> = vec![Vec::new(); n_criteria];
+    let mut conf_firings: Vec<Vec<Firing>> = thresholds.iter().map(|_| Vec::new()).collect();
+
+    let start = cycle_signals::min_daily_bars().saturating_sub(1);
+    let mut i = start;
+    while i < history.len() {
+        if let Some(read) = cycle_signals::cycle_top_signals(symbol, &history[..=i], timeframe) {
+            if keys_labels.is_empty() {
+                keys_labels = read
+                    .criteria
+                    .iter()
+                    .map(|c| (c.key.clone(), c.label.clone()))
+                    .collect();
+            }
+            let fired_on = read.as_of.clone();
+            let cur_met: Vec<bool> = read.criteria.iter().map(|c| c.met).collect();
+            let cur_count = read.met_count;
+
+            if have_prev {
+                for (ci, &met) in cur_met.iter().enumerate().take(n_criteria) {
+                    if met && !prev_met[ci] {
+                        let m = match_firing(&fired_on, &anchor_dates, window_days);
+                        let hit = m.is_some();
+                        crit_firings[ci].push(Firing {
+                            fired_on: fired_on.clone(),
+                            matched_anchor: m.as_ref().map(|(l, _)| l.clone()),
+                            matched_low: None,
+                            lead_lag_days: m.as_ref().map(|(_, d)| *d),
+                            hit,
+                        });
+                    }
+                }
+                for (ti, &thr) in thresholds.iter().enumerate() {
+                    let now_at = cur_count >= thr;
+                    let was_at = prev_count >= thr;
+                    if now_at && !was_at {
+                        let m = match_firing(&fired_on, &anchor_dates, window_days);
+                        let hit = m.is_some();
+                        conf_firings[ti].push(Firing {
+                            fired_on: fired_on.clone(),
+                            matched_anchor: m.as_ref().map(|(l, _)| l.clone()),
+                            matched_low: None,
+                            lead_lag_days: m.as_ref().map(|(_, d)| *d),
+                            hit,
+                        });
+                    }
+                }
+            }
+            prev_met = cur_met;
+            prev_count = cur_count;
+            have_prev = true;
+        }
+        if i + eval_stride_days >= history.len() && i + 1 < history.len() {
+            i = history.len() - 1;
+        } else {
+            i += eval_stride_days;
+        }
+    }
+
+    if keys_labels.is_empty() {
+        return None;
+    }
+
+    let criteria: Vec<CriterionReliability> = keys_labels
+        .iter()
+        .enumerate()
+        .map(|(ci, (k, l))| {
+            build_reliability_for_anchor(
+                k,
+                l,
+                std::mem::take(&mut crit_firings[ci]),
+                total_anchors,
+                "high",
+            )
+        })
+        .collect();
+
+    let confluence: Vec<CriterionReliability> = thresholds
+        .iter()
+        .enumerate()
+        .map(|(ti, &thr)| {
+            let mut row = build_reliability_for_anchor(
+                &format!("confluence_ge_{thr}"),
+                &format!("Confluence ≥{thr}/7 criteria firing"),
+                std::mem::take(&mut conf_firings[ti]),
+                total_anchors,
+                "high",
+            );
+            row.threshold = Some(thr);
+            row
+        })
+        .collect();
+
+    let headline = build_top_headline(&criteria, &confluence, total_anchors);
+    let caveat = build_top_caveat(total_anchors, small_n, window_days);
+
+    Some(CycleSignalBacktest {
+        symbol: symbol.to_string(),
+        series: series.to_string(),
+        timeframe,
+        as_of,
+        bars: history.len(),
+        window_days,
+        eval_stride_days,
+        anchors,
+        unverified_anchors: unverified,
+        small_n,
+        criteria,
+        confluence,
+        headline,
+        caveat,
+    })
+}
+
 /// Rank criteria by reliability as leading indicators and describe what
 /// confluence buys over the best single criterion.
 fn build_headline(
@@ -490,7 +686,7 @@ fn build_headline(
 
     let lead = |c: &CriterionReliability| -> String {
         match c.median_lead_lag_days {
-            Some(d) => friendly_days(d),
+            Some(d) => friendly_days(d, "low"),
             None => "timing n/a".to_string(),
         }
     };
@@ -521,6 +717,66 @@ fn build_headline(
     }
 }
 
+fn build_top_headline(
+    criteria: &[CriterionReliability],
+    confluence: &[CriterionReliability],
+    total_anchors: usize,
+) -> String {
+    if total_anchors == 0 {
+        return "no completed native cycle-high anchors for this series — reliability cannot be measured"
+            .to_string();
+    }
+    let mut ranked: Vec<&CriterionReliability> = criteria.iter().filter(|c| c.hits > 0).collect();
+    ranked.sort_by(|a, b| {
+        let pa = a.precision.unwrap_or(0.0);
+        let pb = b.precision.unwrap_or(0.0);
+        pb.partial_cmp(&pa)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                b.coverage
+                    .unwrap_or(0.0)
+                    .partial_cmp(&a.coverage.unwrap_or(0.0))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+    });
+    let best = ranked.first();
+    let best_conf = confluence.iter().filter(|c| c.hits > 0).max_by(|a, b| {
+        a.precision
+            .unwrap_or(0.0)
+            .partial_cmp(&b.precision.unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let lead = |c: &CriterionReliability| -> String {
+        match c.median_lead_lag_days {
+            Some(d) => friendly_days(d, "high"),
+            None => "timing n/a".to_string(),
+        }
+    };
+    match (best, best_conf) {
+        (Some(b), Some(cf)) => format!(
+            "Most reliable single exhaustion criterion: {} (precision {:.0}%, coverage {:.0}%, {}). \
+             Best confluence: {} (precision {:.0}%, coverage {:.0}%).",
+            b.label,
+            b.precision.unwrap_or(0.0) * 100.0,
+            b.coverage.unwrap_or(0.0) * 100.0,
+            lead(b),
+            cf.label,
+            cf.precision.unwrap_or(0.0) * 100.0,
+            cf.coverage.unwrap_or(0.0) * 100.0,
+        ),
+        (Some(b), None) => format!(
+            "Most reliable single exhaustion criterion: {} (precision {:.0}%, coverage {:.0}%, {}). \
+             No confluence threshold fired near a completed native cycle high.",
+            b.label,
+            b.precision.unwrap_or(0.0) * 100.0,
+            b.coverage.unwrap_or(0.0) * 100.0,
+            lead(b),
+        ),
+        _ => "no criterion fired within the match window of a completed native cycle high over the \
+              available history".to_string(),
+    }
+}
+
 fn build_caveat(total_anchors: usize, small_n: bool, window_days: i64) -> String {
     if total_anchors == 0 {
         return "insufficient_anchors: this series has no documented cycle-low anchors to \
@@ -536,6 +792,27 @@ fn build_caveat(total_anchors: usize, small_n: bool, window_days: i64) -> String
             "{base} small_n: with only {total_anchors} anchor(s) these rates are NOT statistically \
              robust — read them as directional, not as probabilities. A single coincidence moves \
              a 3-sample hit-rate by 33 points."
+        )
+    } else {
+        base
+    }
+}
+
+fn build_top_caveat(total_anchors: usize, small_n: bool, window_days: i64) -> String {
+    if total_anchors == 0 {
+        return "insufficient_anchors: this series has no completed native cycle-high anchors to \
+                measure against — treat every number here as unverified."
+            .to_string();
+    }
+    let base = format!(
+        "Hit-rates are measured against {total_anchors} completed native cycle high(s) with a \
+         ±{window_days}-day match window. High anchors are derived mechanically as the maximum \
+         close between verified cycle lows; the unfinished current cycle is excluded."
+    );
+    if small_n {
+        format!(
+            "{base} small_n: with only {total_anchors} anchor(s) these rates are NOT statistically \
+             robust — read them as directional, not as probabilities."
         )
     } else {
         base

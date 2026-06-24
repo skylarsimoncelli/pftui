@@ -44,6 +44,11 @@ impl SignalTimeframe {
             "daily" | "1d" | "d" => Ok(SignalTimeframe::Daily),
             "weekly" | "1w" | "w" => Ok(SignalTimeframe::Weekly),
             "monthly" | "1mo" | "m" => Ok(SignalTimeframe::Monthly),
+            "hourly" | "1h" | "h" => {
+                anyhow::bail!(
+                    "hourly timeframe requires intraday cached bars; pftui currently supports daily, weekly, or monthly for cycle signals and will not fake hourly from daily history"
+                )
+            }
             other => {
                 anyhow::bail!("unknown timeframe '{other}' — expected daily, weekly, or monthly")
             }
@@ -126,7 +131,7 @@ pub struct WatchItem {
     pub components: Vec<Component>,
 }
 
-/// The non-counted bonus signal (Pi-Cycle bottom on daily).
+/// The non-counted bonus signal (Pi-Cycle top/bottom on daily).
 #[derive(Debug, Clone, Serialize)]
 pub struct BonusSignal {
     pub key: String,
@@ -135,6 +140,8 @@ pub struct BonusSignal {
     pub detail: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_bottom: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_top: Option<String>,
 }
 
 /// Full cycle-bottom signal read.
@@ -196,6 +203,53 @@ pub struct CycleBottomSignals {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bonus: Option<BonusSignal>,
     /// One-line plain-language verdict.
+    pub verdict: String,
+}
+
+/// Full cycle-high / exhaustion signal read. This mirrors the bottom suite's
+/// JSON shape but inverts each criterion toward top/exhaustion semantics.
+#[derive(Debug, Clone, Serialize)]
+pub struct CycleTopSignals {
+    pub symbol: String,
+    pub timeframe: SignalTimeframe,
+    pub as_of: String,
+
+    pub rsi: Option<f64>,
+    pub rsi_ma: Option<f64>,
+    pub rsi_ma_turned_down: bool,
+    pub rsi_ma_cross_below_rsi: bool,
+
+    pub dss: Option<f64>,
+    pub dss_trigger: Option<f64>,
+    pub dss_turned_down: bool,
+    pub dss_cross_below_trigger: bool,
+    pub dss_overbought: bool,
+
+    pub erf: Option<f64>,
+    pub erf_positive: bool,
+    pub erf_top_zone: bool,
+    pub erf_turned_down: bool,
+
+    pub cyberbands_state: Option<String>,
+    pub cyberbands_bearish: bool,
+
+    pub cyberdots_weekly_strength: Option<u8>,
+    pub cyberdots_monthly_strength: Option<u8>,
+    pub cyberdots_bearish: bool,
+
+    pub cyberline_value: Option<f64>,
+    pub cyberline_price_above: Option<bool>,
+    pub cyberline_lost: bool,
+
+    pub pi_cycle_top: bool,
+    pub pi_cycle_last_top: Option<String>,
+
+    pub criteria: Vec<Criterion>,
+    pub core_watch: Vec<WatchItem>,
+    pub met_count: usize,
+    pub total: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bonus: Option<BonusSignal>,
     pub verdict: String,
 }
 
@@ -630,6 +684,7 @@ pub fn cycle_bottom_signals(
             None => "no bottom in window".into(),
         },
         last_bottom: pi_cycle_last_bottom.clone(),
+        last_top: None,
     });
 
     let verdict = build_verdict(timeframe, met_count, core_total, &criteria);
@@ -662,6 +717,344 @@ pub fn cycle_bottom_signals(
         cyberline_reclaim,
         pi_cycle_bottom,
         pi_cycle_last_bottom,
+        criteria,
+        core_watch,
+        met_count,
+        total: core_total,
+        bonus,
+        verdict,
+    })
+}
+
+/// Compute the symmetric cycle-high / exhaustion signal suite for `symbol`.
+/// This is the top-side mirror of [`cycle_bottom_signals`]: the same seven
+/// composite families, inverted toward exhaustion and trend loss.
+pub fn cycle_top_signals(
+    symbol: &str,
+    history: &[HistoryRecord],
+    timeframe: SignalTimeframe,
+) -> Option<CycleTopSignals> {
+    if history.len() < MIN_DAILY_BARS {
+        return None;
+    }
+    let daily = build_daily_ohlc(history);
+    if daily.dates.is_empty() {
+        return None;
+    }
+    let as_of = daily.dates.last().cloned().unwrap_or_default();
+    let last_close = *daily.close.last()?;
+    let tf_bars = aggregate_ohlc(&daily, timeframe);
+    let weekly = aggregate_ohlc(&daily, SignalTimeframe::Weekly);
+    let monthly = aggregate_ohlc(&daily, SignalTimeframe::Monthly);
+
+    let rsi_state = rsi_ma::compute_rsi_ma_default(&tf_bars.close);
+    let rsi = rsi_state.as_ref().and_then(rsi_ma::current_rsi);
+    let rsi_ma_v = rsi_state.as_ref().and_then(rsi_ma::current_rsi_ma);
+    let rsi_pair = rsi_state.as_ref().and_then(|s| last_two_opt(&s.rsi));
+    let rsi_ma_pair = rsi_state.as_ref().and_then(|s| last_two_opt(&s.rsi_ma));
+    let rsi_ma_turned_down = rsi_state
+        .as_ref()
+        .and_then(rsi_ma::ma_turned_down)
+        .unwrap_or(false);
+    let rsi_ma_cross_below_rsi = rsi_state
+        .as_ref()
+        .and_then(rsi_ma::ma_crossed_below_rsi)
+        .unwrap_or(false);
+
+    let dss_state = dss_bressert::compute_dss_default(&tf_bars.close, &tf_bars.high, &tf_bars.low);
+    let dss = dss_state.as_ref().and_then(dss_bressert::current_dss);
+    let dss_trigger = dss_state.as_ref().and_then(dss_bressert::current_trigger);
+    let dss_pair = dss_state.as_ref().and_then(|s| last_two_opt(&s.dss));
+    let dss_trigger_pair = dss_state.as_ref().and_then(|s| last_two_opt(&s.trigger));
+    let dss_turned_down = dss_state
+        .as_ref()
+        .and_then(dss_bressert::turned_down)
+        .unwrap_or(false);
+    let dss_cross_below_trigger = dss_state
+        .as_ref()
+        .and_then(dss_bressert::crossed_below_trigger)
+        .unwrap_or(false);
+    let dss_overbought = dss_state
+        .as_ref()
+        .and_then(|s| dss_bressert::is_overbought(s, 80.0))
+        .unwrap_or(false);
+
+    let erf_series = ehlers_roofing::compute_erf_default(&tf_bars.close);
+    let erf = erf_series.as_ref().and_then(|s| ehlers_roofing::current(s));
+    let erf_pair = erf_series.as_ref().and_then(|s| last_two_f64(s));
+    let erf_positive = erf_series
+        .as_ref()
+        .and_then(|s| ehlers_roofing::is_green(s))
+        .unwrap_or(false);
+    let erf_top_zone = erf.map(|v| v > 0.0).unwrap_or(false);
+    let erf_turned_down = erf_series
+        .as_ref()
+        .and_then(|s| ehlers_roofing::turned_down(s))
+        .unwrap_or(false);
+
+    let bands = cyber::bands::compute_gaussian_bands(&daily.close, &daily.dates, 5);
+    let cyberbands_state = bands.as_ref().map(|b| b.qb.label().to_string());
+    let cyberbands_bearish = bands
+        .as_ref()
+        .map(|b| b.qb == QbState::Bearish)
+        .unwrap_or(false);
+
+    let dots_weekly =
+        cyber::dots::compute_dots(&weekly.close, &weekly.high, &weekly.low, &weekly.dates, 5);
+    let dots_monthly = cyber::dots::compute_dots(
+        &monthly.close,
+        &monthly.high,
+        &monthly.low,
+        &monthly.dates,
+        5,
+    );
+    let dot_bearish = |d: &cyber::dots::DotsRead| d.down_dot && d.down_strength >= d.up_strength;
+    let cyberdots_weekly_strength = dots_weekly.as_ref().map(|d| d.down_strength);
+    let cyberdots_monthly_strength = dots_monthly.as_ref().map(|d| d.down_strength);
+    let cyberdots_bearish = dots_weekly.as_ref().map(dot_bearish).unwrap_or(false)
+        || dots_monthly.as_ref().map(dot_bearish).unwrap_or(false);
+
+    let line = cyber::line::compute_line(&weekly.close, &weekly.high, &weekly.low, &weekly.dates);
+    let cyberline_value = line.as_ref().map(|l| l.value);
+    let cyberline_price_above = line.as_ref().map(|l| l.price_above);
+    let line_crosses = cyber::line::compute_line_crosses(&weekly.close, &weekly.dates);
+    let fresh_below_cross = line_crosses
+        .last()
+        .map(|c| c.direction == "below" && weekly.dates.last() == Some(&c.date))
+        .unwrap_or(false);
+    let cyberline_lost =
+        line.as_ref().map(|l| !l.price_above).unwrap_or(false) || fresh_below_cross;
+
+    let pi = cyber::pi_cycle::compute_pi_cycle(&daily.close, &daily.dates);
+    let pi_cycle_last_top = pi.as_ref().and_then(|p| p.last_top.clone());
+    let pi_cycle_top = pi
+        .as_ref()
+        .and_then(|p| p.last_top.as_ref())
+        .map(|d| within_recent(&daily.dates, d, 120))
+        .unwrap_or(false);
+
+    let tf_label = timeframe.label();
+    let mut criteria: Vec<Criterion> = Vec::new();
+    criteria.push(Criterion {
+        key: "momentum_turning_down".into(),
+        label: "Momentum line turning down".into(),
+        met: rsi_ma_turned_down,
+        detail: format!("{tf_label} RSI {} · RSI-avg {}", fmt(rsi), fmt(rsi_ma_v)),
+        components: vec![Component {
+            key: "rsi_ma_turned_down".into(),
+            label: "RSI average ticked down".into(),
+            met: rsi_ma_turned_down,
+            value: rsi_ma_v,
+            previous_value: rsi_ma_pair.map(|(prev, _)| prev),
+            comparison_value: None,
+            previous_comparison_value: None,
+            distance_to_trigger: rsi_ma_pair.map(|(prev, cur)| prev - cur),
+        }],
+    });
+    criteria.push(Criterion {
+        key: "momentum_below_price".into(),
+        label: "Momentum line crossed below price momentum".into(),
+        met: rsi_ma_cross_below_rsi,
+        detail: format!("{tf_label} RSI-avg {} vs RSI {}", fmt(rsi_ma_v), fmt(rsi)),
+        components: vec![Component {
+            key: "rsi_ma_cross_below_rsi".into(),
+            label: "RSI average lost the RSI".into(),
+            met: rsi_ma_cross_below_rsi,
+            value: rsi_ma_v,
+            previous_value: rsi_ma_pair.map(|(prev, _)| prev),
+            comparison_value: rsi,
+            previous_comparison_value: rsi_pair.map(|(prev, _)| prev),
+            distance_to_trigger: rsi_ma_v.zip(rsi).map(|(ma, r)| r - ma),
+        }],
+    });
+    let dss_topping = dss_turned_down && dss_cross_below_trigger;
+    criteria.push(Criterion {
+        key: "dss_topping".into(),
+        label: "Double-smoothed stochastic topping".into(),
+        met: dss_topping,
+        detail: format!(
+            "{tf_label} value {} vs trigger {}{}",
+            fmt(dss),
+            fmt(dss_trigger),
+            if dss_overbought { " (overbought)" } else { "" }
+        ),
+        components: vec![
+            Component {
+                key: "dss_turned_down".into(),
+                label: "DSS ticked down".into(),
+                met: dss_turned_down,
+                value: dss,
+                previous_value: dss_pair.map(|(prev, _)| prev),
+                comparison_value: None,
+                previous_comparison_value: None,
+                distance_to_trigger: dss_pair.map(|(prev, cur)| prev - cur),
+            },
+            Component {
+                key: "dss_cross_below_trigger".into(),
+                label: "DSS crossed below trigger".into(),
+                met: dss_cross_below_trigger,
+                value: dss,
+                previous_value: dss_pair.map(|(prev, _)| prev),
+                comparison_value: dss_trigger,
+                previous_comparison_value: dss_trigger_pair.map(|(prev, _)| prev),
+                distance_to_trigger: dss.zip(dss_trigger).map(|(d, t)| t - d),
+            },
+            Component {
+                key: "dss_overbought".into(),
+                label: "DSS overbought (>80) — context".into(),
+                met: dss_overbought,
+                value: dss,
+                previous_value: dss_pair.map(|(prev, _)| prev),
+                comparison_value: Some(80.0),
+                previous_comparison_value: Some(80.0),
+                distance_to_trigger: dss.map(|d| d - 80.0),
+            },
+        ],
+    });
+    let erf_confirming_down = erf_top_zone && erf_turned_down;
+    criteria.push(Criterion {
+        key: "roofing_confirming_down".into(),
+        label: "Roofing filter confirming down".into(),
+        met: erf_confirming_down,
+        detail: format!("{tf_label} value {}", fmt(erf)),
+        components: vec![
+            Component {
+                key: "erf_top_zone".into(),
+                label: "Roofing filter in top zone (>0)".into(),
+                met: erf_top_zone,
+                value: erf,
+                previous_value: erf_pair.map(|(prev, _)| prev),
+                comparison_value: Some(0.0),
+                previous_comparison_value: Some(0.0),
+                distance_to_trigger: erf,
+            },
+            Component {
+                key: "erf_turned_down".into(),
+                label: "Roofing filter ticked down".into(),
+                met: erf_turned_down,
+                value: erf,
+                previous_value: erf_pair.map(|(prev, _)| prev),
+                comparison_value: None,
+                previous_comparison_value: None,
+                distance_to_trigger: erf_pair.map(|(prev, cur)| prev - cur),
+            },
+        ],
+    });
+    criteria.push(Criterion {
+        key: "volatility_bands_bearish".into(),
+        label: "Volatility bands bearish (daily)".into(),
+        met: cyberbands_bearish,
+        detail: format!(
+            "daily band state: {}",
+            cyberbands_state.as_deref().unwrap_or("n/a")
+        ),
+        components: vec![Component {
+            key: "cyberbands_bearish".into(),
+            label: "Daily momentum bands in bearish state".into(),
+            met: cyberbands_bearish,
+            value: None,
+            previous_value: None,
+            comparison_value: None,
+            previous_comparison_value: None,
+            distance_to_trigger: None,
+        }],
+    });
+    criteria.push(Criterion {
+        key: "exhaustion_dots".into(),
+        label: "Significant exhaustion dots (weekly/monthly)".into(),
+        met: cyberdots_bearish,
+        detail: format!(
+            "weekly down {} · monthly down {}",
+            cyberdots_weekly_strength
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "n/a".into()),
+            cyberdots_monthly_strength
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "n/a".into())
+        ),
+        components: vec![Component {
+            key: "cyberdots_bearish".into(),
+            label: "Higher-timeframe strength dots net-bearish".into(),
+            met: cyberdots_bearish,
+            value: cyberdots_weekly_strength
+                .or(cyberdots_monthly_strength)
+                .map(|s| s as f64),
+            previous_value: None,
+            comparison_value: None,
+            previous_comparison_value: None,
+            distance_to_trigger: None,
+        }],
+    });
+    criteria.push(Criterion {
+        key: "trend_line_lost".into(),
+        label: "Trend line lost (weekly)".into(),
+        met: cyberline_lost,
+        detail: format!(
+            "weekly line {} · price {} ({})",
+            fmt(cyberline_value),
+            fmt(Some(last_close)),
+            match cyberline_price_above {
+                Some(true) => "above",
+                Some(false) => "below",
+                None => "n/a",
+            }
+        ),
+        components: vec![Component {
+            key: "cyberline_lost".into(),
+            label: "Price lost the weekly trackline".into(),
+            met: cyberline_lost,
+            value: cyberline_value,
+            previous_value: None,
+            comparison_value: Some(last_close),
+            previous_comparison_value: None,
+            distance_to_trigger: cyberline_value.map(|line| line - last_close),
+        }],
+    });
+
+    let core_total = 7usize;
+    debug_assert_eq!(criteria.len(), core_total, "must emit exactly 7 composites");
+    let core_watch = build_top_core_watch(&criteria);
+    let met_count = criteria.iter().filter(|c| c.met).count();
+    let bonus = pi.as_ref().map(|_| BonusSignal {
+        key: "pi_cycle_top".into(),
+        label: "Pi-cycle top fired recently (bonus)".into(),
+        met: pi_cycle_top,
+        detail: match &pi_cycle_last_top {
+            Some(d) => format!("last top {d}"),
+            None => "no top in window".into(),
+        },
+        last_bottom: None,
+        last_top: pi_cycle_last_top.clone(),
+    });
+    let verdict = build_top_verdict(timeframe, met_count, core_total, &criteria);
+
+    Some(CycleTopSignals {
+        symbol: symbol.to_string(),
+        timeframe,
+        as_of,
+        rsi,
+        rsi_ma: rsi_ma_v,
+        rsi_ma_turned_down,
+        rsi_ma_cross_below_rsi,
+        dss,
+        dss_trigger,
+        dss_turned_down,
+        dss_cross_below_trigger,
+        dss_overbought,
+        erf,
+        erf_positive,
+        erf_top_zone,
+        erf_turned_down,
+        cyberbands_state,
+        cyberbands_bearish,
+        cyberdots_weekly_strength,
+        cyberdots_monthly_strength,
+        cyberdots_bearish,
+        cyberline_value,
+        cyberline_price_above,
+        cyberline_lost,
+        pi_cycle_top,
+        pi_cycle_last_top,
         criteria,
         core_watch,
         met_count,
@@ -727,6 +1120,40 @@ fn build_core_watch(criteria: &[Criterion]) -> Vec<WatchItem> {
         .collect()
 }
 
+fn build_top_core_watch(criteria: &[Criterion]) -> Vec<WatchItem> {
+    const CORE_KEYS: [&str; 4] = [
+        "momentum_turning_down",
+        "momentum_below_price",
+        "dss_topping",
+        "roofing_confirming_down",
+    ];
+    criteria
+        .iter()
+        .filter(|c| CORE_KEYS.contains(&c.key.as_str()))
+        .map(|c| {
+            let required_components: Vec<Component> = c
+                .components
+                .iter()
+                .filter(|component| component.key != "dss_overbought")
+                .cloned()
+                .collect();
+            let met_components = required_components
+                .iter()
+                .filter(|component| component.met)
+                .count();
+            WatchItem {
+                key: c.key.clone(),
+                label: c.label.clone(),
+                met: c.met,
+                met_components,
+                total_components: required_components.len(),
+                detail: c.detail.clone(),
+                components: required_components,
+            }
+        })
+        .collect()
+}
+
 fn fmt(v: Option<f64>) -> String {
     v.map(|x| format!("{x:.2}")).unwrap_or_else(|| "—".into())
 }
@@ -749,6 +1176,40 @@ fn build_verdict(tf: SignalTimeframe, met: usize, total: usize, criteria: &[Crit
         "strong cycle-bottom confluence"
     } else {
         "very strong cycle-bottom confluence (all 7)"
+    };
+    if firing.is_empty() {
+        format!("{} suite: {met}/{total} — {strength}", tf.label())
+    } else {
+        format!(
+            "{} suite: {met}/{total} — {strength} ({})",
+            tf.label(),
+            firing.join("; ")
+        )
+    }
+}
+
+fn build_top_verdict(
+    tf: SignalTimeframe,
+    met: usize,
+    total: usize,
+    criteria: &[Criterion],
+) -> String {
+    let firing: Vec<&str> = criteria
+        .iter()
+        .take(total)
+        .filter(|c| c.met)
+        .map(|c| c.label.as_str())
+        .collect();
+    let strength = if met == 0 {
+        "no cycle-high criteria firing"
+    } else if met <= 2 {
+        "early / weak cycle-high confluence"
+    } else if met <= 4 {
+        "building cycle-high confluence"
+    } else if met <= 6 {
+        "strong cycle-high confluence"
+    } else {
+        "very strong cycle-high confluence (all 7)"
     };
     if firing.is_empty() {
         format!("{} suite: {met}/{total} — {strength}", tf.label())
@@ -804,6 +1265,35 @@ mod tests {
                 .format("%Y-%m-%d")
                 .to_string();
             out.push(record(&date, p + noise));
+            day += 1;
+        }
+        out
+    }
+
+    /// Long rally into a sharp rollover — the regime where top/exhaustion
+    /// criteria should start firing.
+    fn blowoff_top_history(n_rally: usize, n_decline: usize) -> Vec<HistoryRecord> {
+        let start = NaiveDate::from_ymd_opt(2019, 1, 1).unwrap();
+        let mut out = Vec::new();
+        let mut day = 0u64;
+        let mut price = 300.0;
+        for i in 0..n_rally {
+            price = 300.0 + i as f64 * (900.0 / n_rally as f64);
+            let noise = 8.0 * (i as f64 / 13.0).sin();
+            let date = (start + chrono::Days::new(day))
+                .format("%Y-%m-%d")
+                .to_string();
+            out.push(record(&date, price + noise));
+            day += 1;
+        }
+        let peak = price;
+        for j in 1..=n_decline {
+            let p = peak - j as f64 * (450.0 / n_decline as f64);
+            let noise = 6.0 * (j as f64 / 7.0).sin();
+            let date = (start + chrono::Days::new(day))
+                .format("%Y-%m-%d")
+                .to_string();
+            out.push(record(&date, (p + noise).max(50.0)));
             day += 1;
         }
         out
@@ -889,6 +1379,46 @@ mod tests {
         let ja = serde_json::to_string(&a).unwrap();
         let jb = serde_json::to_string(&b).unwrap();
         assert_eq!(ja, jb, "engine must be deterministic");
+    }
+
+    #[test]
+    fn blowoff_top_fires_multiple_criteria() {
+        let h = blowoff_top_history(750, 250);
+        let sig =
+            cycle_top_signals("TEST", &h, SignalTimeframe::Monthly).expect("top signals");
+        assert_eq!(sig.timeframe, SignalTimeframe::Monthly);
+        assert_eq!(sig.total, 7);
+        assert_eq!(sig.criteria.len(), 7);
+        assert_eq!(sig.criteria.iter().filter(|c| c.met).count(), sig.met_count);
+        assert!(sig.criteria.iter().all(|c| !c.components.is_empty()));
+        assert!(
+            sig.met_count >= 3,
+            "expected ≥3/7 at a clean top rollover, got {}: {:?}",
+            sig.met_count,
+            sig.criteria
+                .iter()
+                .filter(|c| c.met)
+                .map(|c| c.key.clone())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            sig.rsi_ma_turned_down,
+            "RSI average should be falling after a rollover"
+        );
+        assert_eq!(sig.core_watch.len(), 4);
+        assert!(sig
+            .core_watch
+            .iter()
+            .all(|item| item.met_components <= item.total_components));
+        let ma_component = sig
+            .criteria
+            .iter()
+            .flat_map(|c| c.components.iter())
+            .find(|c| c.key == "rsi_ma_turned_down")
+            .expect("rsi ma top component");
+        assert!(ma_component.previous_value.is_some());
+        assert!(ma_component.distance_to_trigger.is_some());
+        assert!(sig.verdict.contains("cycle-high"));
     }
 
     #[test]

@@ -91,6 +91,50 @@ pub fn run(
     Ok(())
 }
 
+pub fn run_top(
+    backend: &BackendConnection,
+    symbol: &str,
+    timeframe: &str,
+    json_output: bool,
+) -> Result<()> {
+    let tf = SignalTimeframe::parse(timeframe)?;
+    let (series, history) = load_deep_history(backend, symbol)?;
+    if history.is_empty() {
+        return Err(anyhow::anyhow!(
+            "no price history for {} — run `pftui data refresh` or check the symbol",
+            symbol.to_uppercase()
+        ))
+        .context(ErrorDetail::new("no_history"));
+    }
+    let Some(sig) = cycle_signals::cycle_top_signals(&series, &history, tf) else {
+        return Err(anyhow::anyhow!(
+            "insufficient history for a {} cycle-high read on {} ({} daily rows; need {})",
+            tf.label(),
+            series,
+            history.len(),
+            cycle_signals::min_daily_bars()
+        ))
+        .context(ErrorDetail::with_bars(
+            "insufficient_history",
+            history.len(),
+        ));
+    };
+
+    if json_output {
+        let payload = serde_json::to_value(&sig)?;
+        let payload = cli_json::envelope(
+            payload,
+            "analytics cycles top-signals",
+            &sig.as_of,
+            Some(&series),
+        );
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_top_text(&sig, &series);
+    }
+    Ok(())
+}
+
 /// Reliability backtest: measure each criterion's lead/lag + hit-rate against
 /// the verified cycle-low anchors over the full available history. Compute-only
 /// — nothing is persisted.
@@ -158,6 +202,66 @@ pub fn run_backtest(
     Ok(())
 }
 
+pub fn run_top_backtest(
+    backend: &BackendConnection,
+    symbol: &str,
+    timeframe: &str,
+    window: Option<i64>,
+    json_output: bool,
+) -> Result<()> {
+    if window == Some(0) {
+        bail!(
+            "--window 0 is not meaningful (a firing would have to land exactly on \
+             the verified-high date); use a positive day count or omit --window for \
+             the default ±{}-day window",
+            cycle_signal_backtest::DEFAULT_WINDOW_BARS
+        );
+    }
+    let tf = SignalTimeframe::parse(timeframe)?;
+    let (series, history) = load_deep_history(backend, symbol)?;
+    if history.is_empty() {
+        return Err(anyhow::anyhow!(
+            "no price history for {} — run `pftui data refresh` or check the symbol",
+            symbol.to_uppercase()
+        ))
+        .context(ErrorDetail::new("no_history"));
+    }
+    let Some(bt) = cycle_signal_backtest::run_top_backtest(
+        symbol,
+        &series,
+        &history,
+        tf,
+        window,
+        &DEFAULT_CONFLUENCE_THRESHOLDS,
+    ) else {
+        return Err(anyhow::anyhow!(
+            "insufficient history for a {} cycle-high backtest on {} ({} daily rows; need {})",
+            tf.label(),
+            series,
+            history.len(),
+            cycle_signals::min_daily_bars()
+        ))
+        .context(ErrorDetail::with_bars(
+            "insufficient_history",
+            history.len(),
+        ));
+    };
+
+    if json_output {
+        let payload = serde_json::to_value(&bt)?;
+        let payload = cli_json::envelope(
+            payload,
+            "analytics cycles top-signals backtest",
+            &bt.as_of,
+            Some(&series),
+        );
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_top_backtest(&bt);
+    }
+    Ok(())
+}
+
 fn print_backtest(bt: &cycle_signal_backtest::CycleSignalBacktest) {
     println!(
         "Cycle-Bottom Signal Reliability — {} ({} timeframe, series {})",
@@ -200,6 +304,47 @@ fn print_backtest(bt: &cycle_signal_backtest::CycleSignalBacktest) {
     }
 }
 
+fn print_top_backtest(bt: &cycle_signal_backtest::CycleSignalBacktest) {
+    println!(
+        "Cycle-High Signal Reliability — {} ({} timeframe, series {})",
+        bt.symbol,
+        bt.timeframe.label(),
+        bt.series
+    );
+    println!(
+        "  {} daily bars · as of {} · ±{}-day match window",
+        bt.bars, bt.as_of, bt.window_days
+    );
+    if bt.anchors.is_empty() {
+        println!("  completed native cycle-high anchors: none");
+    } else {
+        println!(
+            "  completed native cycle-high anchors: {}",
+            bt.anchors.join(", ")
+        );
+    }
+    if !bt.unverified_anchors.is_empty() {
+        println!(
+            "  (unverified documented low anchors used to derive highs: {})",
+            bt.unverified_anchors.join(", ")
+        );
+    }
+    println!();
+    println!("  Per-criterion reliability:");
+    for c in &bt.criteria {
+        println!("    {:<46} {}", c.label, c.summary);
+    }
+    println!();
+    println!("  Confluence (N/7):");
+    for c in &bt.confluence {
+        println!("    {:<46} {}", c.label, c.summary);
+    }
+    println!();
+    println!("  {}", bt.headline);
+    println!();
+    println!("  {}", bt.caveat);
+}
+
 fn print_text(sig: &cycle_signals::CycleBottomSignals, series: &str) {
     println!(
         "Cycle-Bottom Signals — {} ({} timeframe, series {})",
@@ -210,6 +355,53 @@ fn print_text(sig: &cycle_signals::CycleBottomSignals, series: &str) {
     println!("  as of {}", sig.as_of);
     println!();
     println!("  Core cycle-watch progress:");
+    for item in &sig.core_watch {
+        let mark = if item.met { "✓" } else { "·" };
+        println!(
+            "  {mark} {:<48} {}/{}  {}",
+            item.label, item.met_components, item.total_components, item.detail
+        );
+        for component in &item.components {
+            let sub_mark = if component.met { "✓" } else { "·" };
+            println!(
+                "      {sub_mark} {:<44} {}",
+                component.label,
+                component
+                    .value
+                    .map(|v| format!("{v:.2}"))
+                    .unwrap_or_else(|| "—".into())
+            );
+        }
+    }
+    println!();
+    println!("  Full confluence suite:");
+    for c in &sig.criteria {
+        let mark = if c.met { "✓" } else { "✗" };
+        println!("  {mark} {:<48} {}", c.label, c.detail);
+    }
+    if let Some(b) = &sig.bonus {
+        let mark = if b.met { "✓" } else { "✗" };
+        println!(
+            "  {mark} {:<48} {}  (bonus — not counted)",
+            b.label, b.detail
+        );
+    }
+    println!();
+    println!("  {}/{} confluence", sig.met_count, sig.total);
+    println!();
+    println!("  {}", sig.verdict);
+}
+
+fn print_top_text(sig: &cycle_signals::CycleTopSignals, series: &str) {
+    println!(
+        "Cycle-High Signals — {} ({} timeframe, series {})",
+        sig.symbol,
+        sig.timeframe.label(),
+        series
+    );
+    println!("  as of {}", sig.as_of);
+    println!();
+    println!("  Core exhaustion-watch progress:");
     for item in &sig.core_watch {
         let mark = if item.met { "✓" } else { "·" };
         println!(

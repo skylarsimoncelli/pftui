@@ -98,12 +98,24 @@ pftui analytics cycles bottom-signals --asset BTC --timeframe monthly --json   #
 pftui analytics cycles bottom-signals --asset BTC --timeframe daily   --json   # tactical read
 pftui analytics cycles bottom-signals --asset GC=F --timeframe monthly --json  # gold
 pftui analytics cycles bottom-signals BTC --json                               # positional symbol; BTC falls back to the deep BTC-USD series
+
+pftui analytics cycles top-signals --asset BTC --timeframe monthly --json      # cycle-high / exhaustion read
+pftui analytics cycles top-signals backtest --asset BTC --json                 # high-side reliability
 ```
 
 `--asset` is an alias for the positional `SYMBOL`. Deep history is required —
 the engine returns `null`/no-data below ~120 daily bars (monthly needs years of
 history for the smoothing chains). `BTC` auto-falls-back to the deep `BTC-USD`
 series; `gold`/`GC=F` resolve to the gold series.
+
+`top-signals` is the symmetric exhaustion suite. It uses the same N-of-7 shape
+and the same requested timeframe for RSI/stochastic/roofing, but inverts the
+criteria: momentum average turning down / losing RSI, stochastic topping,
+roofing filter in top zone and turning down, bearish daily bands,
+higher-timeframe exhaustion dots, weekly trackline loss, and a non-counted
+pi-cycle top bonus. Its reliability backtest derives completed cycle-high
+anchors mechanically as the maximum close between verified cycle lows and
+excludes the unfinished current cycle.
 
 ### JSON shape
 
@@ -237,6 +249,12 @@ pftui analytics strategy explain --asset BTC --entry "..." --json
 > `cycle_component_monthly_dss_cross_above_trigger`,
 > `cycle_component_monthly_erf_bottom_zone`, or
 > `cycle_component_monthly_erf_turned_up`. The composite
+> High-side conditions use the parallel grammar `cycle_top_<tf>_<N>`,
+> `cycle_top_criterion_<tf>_<key>`, and `cycle_top_component_<tf>_<key>`; for
+> example `cycle_top_monthly_4`,
+> `cycle_top_criterion_monthly_dss_topping`, or
+> `cycle_top_component_monthly_erf_turned_down`.
+> The composite
 > hit-rate-at-historic-lows backtest is also merged — it scores the *whole
 > suite's* lead/lag and coverage versus verified cycle lows. The per-criterion
 > `analytics strategy` path above remains available for single-indicator drills.
@@ -246,6 +264,7 @@ pftui analytics strategy explain --asset BTC --entry "..." --json
 ```bash
 pftui analytics cycles bottom-signals backtest --asset BTC --json
 pftui analytics cycles bottom-signals backtest --asset gold --timeframe weekly --window 120 --json
+pftui analytics cycles top-signals backtest --asset BTC --json
 ```
 
 Each confluence row reports `key` (`confluence_ge_3|4|5`), the numeric
@@ -266,6 +285,11 @@ measured in calendar days.
 of 1 (`--window 0` is rejected as meaningless, since a firing would then have to
 land exactly on the verified-low date). Omit `--window` for the default
 ±90-day window.
+
+For `top-signals backtest`, `anchors[]` are completed native cycle highs rather
+than lows: max closes between consecutive verified lows. This keeps the high
+side deterministic without hand-entered top dates, but it also means the
+current unfinished cycle is deliberately absent from the reliability math.
 
 ### Structured error reasons
 

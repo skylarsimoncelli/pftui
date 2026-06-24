@@ -5073,6 +5073,27 @@ pub enum AnalyticsCyclesCommand {
         #[command(subcommand)]
         sub: Option<BottomSignalsCommand>,
     },
+    /// Mechanical cycle-high / exhaustion signal suite: symmetric N-of-7
+    /// confluence of independent top-risk confirmations.
+    #[command(
+        after_help = "Scores 7 composite cycle-high criteria, each at its natural timeframe and\nchecked on the latest bar (N/7 confluence):\n  1. Momentum line turning down               the RSI's moving average ticked down\n  2. Momentum line below price momentum       the RSI average lost the RSI\n  3. Double-smoothed stochastic topping       stochastic ticked down AND crossed below its trigger (overbought = context)\n  4. Roofing filter confirming down           de-trended cycle filter in top zone (>0) AND ticked down\n  5. Volatility bands bearish (daily)         daily momentum bands in the bearish state\n  6. Significant exhaustion dots (wk/mo)      weekly/monthly strength dots net-bearish\n  7. Trend line lost (weekly)                 price lost the weekly trackline\n  bonus: pi-cycle top (daily)                 fired recently — reported, NOT counted in the 7\n\nExamples:\n  pftui analytics cycles top-signals --asset BTC\n  pftui analytics cycles top-signals --asset BTC --timeframe monthly --json\n  pftui analytics cycles top-signals backtest --asset BTC --json"
+    )]
+    TopSignals {
+        /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
+        symbol: Option<String>,
+        /// Asset (alias for the positional symbol; e.g. BTC, gold, GC=F)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Timeframe for the RSI/stochastic/roofing criteria: monthly (default), weekly, or daily
+        #[arg(long, default_value = "monthly")]
+        timeframe: String,
+        #[arg(long)]
+        json: bool,
+        /// Reliability backtest: measure each criterion's lead/lag + hit-rate
+        /// vs completed native cycle highs (no-lookahead, point-in-time).
+        #[command(subcommand)]
+        sub: Option<TopSignalsCommand>,
+    },
     /// Translation ledger for one degree: per completed cycle the length,
     /// top position, LT/MID/RT class, and failed flag
     #[command(
@@ -5112,6 +5133,32 @@ pub enum BottomSignalsCommand {
         #[arg(long, default_value = "monthly")]
         timeframe: String,
         /// Match window in DAYS (+/-) around a verified low for a firing to count as a hit
+        #[arg(long)]
+        window: Option<i64>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TopSignalsCommand {
+    /// Reliability backtest of the 7 cycle-high criteria (+ N/7 confluence)
+    /// against completed native cycle highs derived from verified low-to-low
+    /// intervals. Point-in-time (no lookahead). Honest about the tiny anchor
+    /// count.
+    #[command(
+        after_help = "Measures each top/exhaustion criterion and N/7 confluence against completed\nnative cycle highs. A cycle high is derived mechanically as the maximum close\nbetween two verified cycle lows; the unfinished current cycle is excluded.\n\nExamples:\n  pftui analytics cycles top-signals backtest --asset BTC --json\n  pftui analytics cycles top-signals backtest --asset gold --timeframe weekly --window 120"
+    )]
+    Backtest {
+        /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
+        symbol: Option<String>,
+        /// Asset (alias for the positional symbol; e.g. BTC, gold, GC=F)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Timeframe for the RSI/stochastic/roofing criteria: monthly (default), weekly, or daily
+        #[arg(long, default_value = "monthly")]
+        timeframe: String,
+        /// Match window in DAYS (+/-) around a completed high for a firing to count as a hit
         #[arg(long)]
         window: Option<i64>,
         #[arg(long)]

@@ -603,7 +603,8 @@ fn default_label(kind: &AlertKind, symbol: &str, condition: &str) -> String {
 /// Friendly, name-free default label for a cycle-bottom signal alert.
 fn cycle_signal_label(symbol: &str, condition: &str) -> String {
     use crate::alerts::cycle_signal_alert::{
-        component_label, criterion_label, friendly_asset, parse_condition, CycleSignalCondition,
+        component_label, criterion_label, friendly_asset, parse_condition, top_component_label,
+        top_criterion_label, CycleSignalCondition,
     };
     let asset = friendly_asset(symbol);
     match parse_condition(condition) {
@@ -631,12 +632,40 @@ fn cycle_signal_label(symbol: &str, condition: &str) -> String {
             timeframe.label(),
             component_label(&component_key)
         ),
+        Ok(CycleSignalCondition::TopConfluence { timeframe, target }) => format!(
+            "{} {} cycle-high signals ≥ {}/7",
+            asset,
+            timeframe.label(),
+            target
+        ),
+        Ok(CycleSignalCondition::TopCriterion {
+            timeframe,
+            criterion_key,
+        }) => format!(
+            "{} {} {}",
+            asset,
+            timeframe.label(),
+            top_criterion_label(&criterion_key)
+        ),
+        Ok(CycleSignalCondition::TopComponent {
+            timeframe,
+            component_key,
+        }) => format!(
+            "{} {} {}",
+            asset,
+            timeframe.label(),
+            top_component_label(&component_key)
+        ),
         Err(_) => format!("{} {}", symbol, condition.replace('_', " ")),
     }
 }
 
 fn inferred_direction(condition: &str) -> AlertDirection {
-    if condition.contains("below") || condition.contains("bearish") || condition.contains("lower") {
+    if condition.starts_with("cycle_top_")
+        || condition.contains("below")
+        || condition.contains("bearish")
+        || condition.contains("lower")
+    {
         AlertDirection::Below
     } else {
         AlertDirection::Above

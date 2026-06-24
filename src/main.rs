@@ -2786,6 +2786,47 @@ fn run_cli(cli: Cli) -> Result<()> {
                         },
                     ),
                 },
+                cli::AnalyticsCyclesCommand::TopSignals {
+                    symbol,
+                    asset,
+                    timeframe,
+                    json,
+                    sub,
+                } => match sub {
+                    Some(cli::TopSignalsCommand::Backtest {
+                        symbol: bt_symbol,
+                        asset: bt_asset,
+                        timeframe: bt_tf,
+                        window,
+                        json: bt_json,
+                    }) => commands::cli_json::or_json_error(
+                        "analytics cycles top-signals backtest",
+                        bt_json,
+                        match bt_symbol.or(bt_asset).or(symbol).or(asset) {
+                            Some(sym) => commands::cycle_signals_cmd::run_top_backtest(
+                                &backend, &sym, &bt_tf, window, bt_json,
+                            ),
+                            None => Err(anyhow::anyhow!(
+                                "provide a symbol (positional) or --asset, e.g. `cycles top-signals backtest --asset BTC`"
+                            )),
+                        },
+                    ),
+                    None => commands::cli_json::or_json_error(
+                        "analytics cycles top-signals",
+                        json,
+                        match symbol.or(asset) {
+                            Some(sym) => commands::cycle_signals_cmd::run_top(
+                                &backend,
+                                &sym,
+                                &timeframe,
+                                json,
+                            ),
+                            None => Err(anyhow::anyhow!(
+                                "provide a symbol (positional) or --asset, e.g. `cycles top-signals --asset BTC`"
+                            )),
+                        },
+                    ),
+                },
                 cli::AnalyticsCyclesCommand::Ledger {
                     symbol,
                     asset,
