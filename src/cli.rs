@@ -5006,8 +5006,8 @@ pub enum AnalyticsTechnicalsCommand {
         /// Symbol to analyze (e.g. BTC, GC=F, SPY). `BTC` falls back to the
         /// deep `BTC-USD` series automatically.
         symbol: String,
-        /// Bar timeframe: daily or weekly (weekly bars aggregated from
-        /// daily history; Pi Cycle always runs on daily closes)
+        /// Bar timeframe: daily, weekly, or monthly (weekly/monthly bars
+        /// aggregated from daily history; Pi Cycle always runs on daily closes)
         #[arg(long, default_value = "daily")]
         timeframe: String,
         /// Number of most-recent dated signal events to list
@@ -5055,7 +5055,7 @@ pub enum AnalyticsCyclesCommand {
     /// independent cycle-low confirmations, each at its natural timeframe.
     /// Position/measurement only — never a price prediction.
     #[command(
-        after_help = "Scores 7 composite cycle-bottom criteria, each at its natural timeframe and\nchecked on the latest bar (N/7 confluence):\n  1. Momentum line turning up                 the RSI's moving average ticked up\n  2. Momentum line above price momentum       the RSI average reclaimed the RSI\n  3. Double-smoothed stochastic bottoming     stochastic ticked up AND crossed its trigger (oversold = context)\n  4. Roofing filter confirming up             de-trended cycle filter in bottom zone (<0) AND ticked up\n  5. Volatility bands bullish (daily)         daily momentum bands in the bullish state\n  6. Significant reversal dots (wk/mo)        weekly/monthly strength dots net-bullish\n  7. Trend line reclaimed (weekly)            price reclaimed the weekly trackline\n  bonus: pi-cycle bottom (daily)              fired recently — reported, NOT counted in the 7\n\nThe momentum/stochastic/roofing criteria run on the --timeframe (default monthly);\nthe band/dot/line/pi criteria always run on their own natural aggregation. The\nJSON includes `core_watch[]` for the four monthly cycle-watch items, plus every\ncomposite's atomic `components[]`.\n\nExamples:\n  pftui analytics cycles bottom-signals --asset BTC\n  pftui analytics cycles bottom-signals --asset BTC --timeframe monthly --json\n  pftui analytics cycles bottom-signals --asset gold --timeframe weekly"
+        after_help = "Scores 7 composite cycle-bottom criteria, each at its natural timeframe and\nchecked on the latest bar (N/7 confluence):\n  1. Momentum line turning up                 the RSI's moving average ticked up\n  2. Momentum line above price momentum       the RSI average reclaimed the RSI\n  3. Double-smoothed stochastic bottoming     stochastic ticked up AND crossed its trigger (oversold = context)\n  4. Roofing filter confirming up             de-trended cycle filter in bottom zone (<0) AND ticked up\n  5. Volatility bands bullish (daily)         daily momentum bands in the bullish state\n  6. Significant reversal dots (wk/mo)        weekly/monthly strength dots net-bullish\n  7. Trend line reclaimed (weekly)            price reclaimed the weekly trackline\n  bonus: pi-cycle bottom (daily)              fired recently — reported, NOT counted in the 7\n\nThe momentum/stochastic/roofing criteria run on the --timeframe (default monthly);\nthe band/dot/line/pi criteria always run on their own natural aggregation. The\nJSON includes `core_watch[]` for the four monthly cycle-watch items, plus every\ncomposite's atomic `components[]`. Numeric components include previous/current\ncomparison fields and signed `distance_to_trigger` when available.\n\nExamples:\n  pftui analytics cycles bottom-signals --asset BTC\n  pftui analytics cycles bottom-signals --asset BTC --timeframe monthly --json\n  pftui analytics cycles bottom-signals --asset gold --timeframe weekly"
     )]
     BottomSignals {
         /// Symbol/asset, positional (BTC falls back to deep BTC-USD).

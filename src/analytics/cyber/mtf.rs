@@ -14,7 +14,8 @@
 //! position (computed for display, never gating). Effective gate at daily:
 //! `RSI6(daily) AND RSI6(weekly)`. For weekly runs the Pine ladder is
 //! `[1D, 1M, 3M, 12M]` with both skips active ⇒ effective gate:
-//! `RSI6(weekly) AND RSI6(daily) AND RSI6(monthly)`.
+//! `RSI6(weekly) AND RSI6(daily) AND RSI6(monthly)`. Monthly runs use the
+//! same available daily/weekly/monthly ladder, anchored on monthly as current.
 //!
 //! Higher-timeframe RSI mirrors `request.security` developing-bar semantics:
 //! at daily bar `t`, the weekly RSI is computed over completed weekly closes
@@ -181,14 +182,34 @@ pub fn compute_mtf(
             vec![LadderTf::Weekly, LadderTf::Daily, LadderTf::Monthly],
             vec!["weekly".into(), "daily".into(), "monthly".into()],
         ),
+        CyberTimeframe::Monthly => (
+            vec![LadderTf::Monthly, LadderTf::Weekly, LadderTf::Daily],
+            vec!["monthly".into(), "weekly".into(), "daily".into()],
+        ),
     };
 
     // RSI(6) + RSI(14) per gating TF, plus display TFs.
-    let rsi6_daily = ladder_rsi_per_bar(&daily_dates, daily_closes, &bar_dates, LadderTf::Daily, RSI_LEN);
-    let rsi6_weekly =
-        ladder_rsi_per_bar(&daily_dates, daily_closes, &bar_dates, LadderTf::Weekly, RSI_LEN);
-    let rsi6_monthly =
-        ladder_rsi_per_bar(&daily_dates, daily_closes, &bar_dates, LadderTf::Monthly, RSI_LEN);
+    let rsi6_daily = ladder_rsi_per_bar(
+        &daily_dates,
+        daily_closes,
+        &bar_dates,
+        LadderTf::Daily,
+        RSI_LEN,
+    );
+    let rsi6_weekly = ladder_rsi_per_bar(
+        &daily_dates,
+        daily_closes,
+        &bar_dates,
+        LadderTf::Weekly,
+        RSI_LEN,
+    );
+    let rsi6_monthly = ladder_rsi_per_bar(
+        &daily_dates,
+        daily_closes,
+        &bar_dates,
+        LadderTf::Monthly,
+        RSI_LEN,
+    );
     let series6_for = |tf: LadderTf| -> &Vec<Option<f64>> {
         match tf {
             LadderTf::Daily => &rsi6_daily,
@@ -202,7 +223,9 @@ pub fn compute_mtf(
     for t in 0..n {
         let vals: Vec<Option<f64>> = gating_tfs.iter().map(|tf| series6_for(*tf)[t]).collect();
         // Pine na comparisons are false: any undefined RSI ⇒ no zone.
-        red[t] = vals.iter().all(|v| v.map(|x| x > RSI_HIGH).unwrap_or(false));
+        red[t] = vals
+            .iter()
+            .all(|v| v.map(|x| x > RSI_HIGH).unwrap_or(false));
         green[t] = vals.iter().all(|v| v.map(|x| x < RSI_LOW).unwrap_or(false));
     }
 
@@ -253,8 +276,8 @@ pub fn compute_mtf(
         let mut hi = true;
         let mut lo = true;
         for tf in &gating_tfs {
-            let v = ladder_rsi_per_bar(&daily_dates, daily_closes, last_bar_slice, *tf, EXTREME_LEN)
-                [0];
+            let v =
+                ladder_rsi_per_bar(&daily_dates, daily_closes, last_bar_slice, *tf, EXTREME_LEN)[0];
             hi &= v.map(|x| x > EXTREME_HIGH).unwrap_or(false);
             lo &= v.map(|x| x < EXTREME_LOW).unwrap_or(false);
         }
@@ -277,6 +300,7 @@ pub fn compute_mtf(
     let current = match timeframe {
         CyberTimeframe::Daily => rsi6_daily[last],
         CyberTimeframe::Weekly => rsi6_weekly[last],
+        CyberTimeframe::Monthly => rsi6_monthly[last],
     };
     let round1 = |v: Option<f64>| v.map(|x| (x * 10.0).round() / 10.0);
 
@@ -318,8 +342,8 @@ mod tests {
         let n = 120;
         let closes: Vec<f64> = (0..n).map(|i| 100.0 + i as f64).collect();
         let dates = day_dates(n);
-        let read = compute_mtf(&dates, &closes, &dates, CyberTimeframe::Daily, 10)
-            .expect("mtf computes");
+        let read =
+            compute_mtf(&dates, &closes, &dates, CyberTimeframe::Daily, 10).expect("mtf computes");
         assert_eq!(read.zone, "red");
         assert!(read.rsi6_daily.unwrap_or_default() > 99.0);
         assert!(read.rsi6_weekly.unwrap_or_default() > 99.0);
@@ -337,8 +361,8 @@ mod tests {
         closes.push(430.0);
         let n = closes.len();
         let dates = day_dates(n);
-        let read = compute_mtf(&dates, &closes, &dates, CyberTimeframe::Daily, 10)
-            .expect("mtf computes");
+        let read =
+            compute_mtf(&dates, &closes, &dates, CyberTimeframe::Daily, 10).expect("mtf computes");
         // The crash itself must register green-zone bars before the exit.
         assert!(
             read.recent_signals.iter().any(|s| s.direction == "up"),
@@ -385,7 +409,11 @@ mod tests {
         .expect("mtf computes");
         assert_eq!(
             read.gating,
-            vec!["weekly".to_string(), "daily".to_string(), "monthly".to_string()]
+            vec![
+                "weekly".to_string(),
+                "daily".to_string(),
+                "monthly".to_string()
+            ]
         );
         // Monotonic ramp: all three gates read 100 ⇒ red.
         assert_eq!(read.zone, "red");
@@ -400,8 +428,8 @@ mod tests {
             .map(|i| 100.0 + if i % 2 == 0 { 1.0 } else { -1.0 })
             .collect();
         let dates = day_dates(100);
-        let read = compute_mtf(&dates, &closes, &dates, CyberTimeframe::Daily, 10)
-            .expect("mtf computes");
+        let read =
+            compute_mtf(&dates, &closes, &dates, CyberTimeframe::Daily, 10).expect("mtf computes");
         assert_eq!(read.zone, "neutral");
         assert!(read.recent_signals.is_empty());
         assert_eq!(read.extreme, "none");

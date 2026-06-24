@@ -495,6 +495,10 @@ mod tests {
                 label: (*key).to_string(),
                 met: met_keys.contains(key),
                 value: None,
+                previous_value: None,
+                comparison_value: None,
+                previous_comparison_value: None,
+                distance_to_trigger: None,
             })
             .collect()
     }
