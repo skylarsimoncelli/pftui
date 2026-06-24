@@ -6,9 +6,9 @@
 use anyhow::{bail, Context, Result};
 
 use crate::analytics::cycle_signal_backtest::{self, DEFAULT_CONFLUENCE_THRESHOLDS};
-use crate::commands::cli_json::ErrorDetail;
 use crate::analytics::cycle_signals::{self, SignalTimeframe};
 use crate::commands::cli_json;
+use crate::commands::cli_json::ErrorDetail;
 use crate::db::backend::BackendConnection;
 use crate::db::price_history;
 
@@ -70,7 +70,10 @@ pub fn run(
             history.len(),
             cycle_signals::min_daily_bars()
         ))
-        .context(ErrorDetail::with_bars("insufficient_history", history.len()));
+        .context(ErrorDetail::with_bars(
+            "insufficient_history",
+            history.len(),
+        ));
     };
 
     if json_output {
@@ -134,7 +137,10 @@ pub fn run_backtest(
             history.len(),
             cycle_signals::min_daily_bars()
         ))
-        .context(ErrorDetail::with_bars("insufficient_history", history.len()));
+        .context(ErrorDetail::with_bars(
+            "insufficient_history",
+            history.len(),
+        ));
     };
 
     if json_output {
@@ -169,7 +175,10 @@ fn print_backtest(bt: &cycle_signal_backtest::CycleSignalBacktest) {
         println!("  verified cycle-low anchors: {}", bt.anchors.join(", "));
     }
     if !bt.unverified_anchors.is_empty() {
-        println!("  (unverified documented dates: {})", bt.unverified_anchors.join(", "));
+        println!(
+            "  (unverified documented dates: {})",
+            bt.unverified_anchors.join(", ")
+        );
     }
     println!();
     println!("  Per-criterion reliability:");
@@ -200,13 +209,37 @@ fn print_text(sig: &cycle_signals::CycleBottomSignals, series: &str) {
     );
     println!("  as of {}", sig.as_of);
     println!();
+    println!("  Core cycle-watch progress:");
+    for item in &sig.core_watch {
+        let mark = if item.met { "✓" } else { "·" };
+        println!(
+            "  {mark} {:<48} {}/{}  {}",
+            item.label, item.met_components, item.total_components, item.detail
+        );
+        for component in &item.components {
+            let sub_mark = if component.met { "✓" } else { "·" };
+            println!(
+                "      {sub_mark} {:<44} {}",
+                component.label,
+                component
+                    .value
+                    .map(|v| format!("{v:.2}"))
+                    .unwrap_or_else(|| "—".into())
+            );
+        }
+    }
+    println!();
+    println!("  Full confluence suite:");
     for c in &sig.criteria {
         let mark = if c.met { "✓" } else { "✗" };
         println!("  {mark} {:<48} {}", c.label, c.detail);
     }
     if let Some(b) = &sig.bonus {
         let mark = if b.met { "✓" } else { "✗" };
-        println!("  {mark} {:<48} {}  (bonus — not counted)", b.label, b.detail);
+        println!(
+            "  {mark} {:<48} {}  (bonus — not counted)",
+            b.label, b.detail
+        );
     }
     println!();
     println!("  {}/{} confluence", sig.met_count, sig.total);

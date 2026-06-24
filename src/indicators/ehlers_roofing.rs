@@ -3,8 +3,9 @@
 //!
 //! Pipeline: a single-pole high-pass roofing filter removes the low-frequency
 //! trend, then a 2-pole (default) or 3-pole super-smoother removes the
-//! high-frequency noise. The output oscillates around zero; it is "green"
-//! (cycle-bottom colour in the Pine) when `erf >= 0`.
+//! high-frequency noise. The output oscillates around zero; `erf >= 0` is the
+//! positive zone, while the cycle-bottom watch in `cycle_signals` tracks
+//! turn-ups from the negative bottom zone.
 //!
 //! `PI = 2 * asin(1)` exactly as in the Pine. All math is `f64`; no money
 //! flows through this module (oscillator only). `nz(x[k])` (Pine's
@@ -144,7 +145,7 @@ pub fn current(erf: &[f64]) -> Option<f64> {
     erf.last().copied()
 }
 
-/// True when the latest ERF value is >= 0 (the Pine "green"/bottom colour).
+/// True when the latest ERF value is >= 0 (positive zone).
 pub fn is_green(erf: &[f64]) -> Option<bool> {
     erf.last().map(|&v| v >= 0.0)
 }
@@ -201,8 +202,9 @@ mod tests {
         // A clean sine wave (no trend) — the high-pass passes it through and
         // the smoothed output must oscillate, i.e. cross zero (sign flips).
         let n = 400usize;
-        let src: Vec<f64> =
-            (0..n).map(|i| 100.0 + 10.0 * (i as f64 / 8.0).sin()).collect();
+        let src: Vec<f64> = (0..n)
+            .map(|i| 100.0 + 10.0 * (i as f64 / 8.0).sin())
+            .collect();
         let erf = compute_erf_default(&src).expect("erf");
         // After warm-up the series must contain both signs.
         let tail = &erf[100..];
@@ -243,8 +245,9 @@ mod tests {
 
     #[test]
     fn three_pole_runs_and_differs_from_two() {
-        let src: Vec<f64> =
-            (0..300).map(|i| 100.0 + 5.0 * (i as f64 / 10.0).sin()).collect();
+        let src: Vec<f64> = (0..300)
+            .map(|i| 100.0 + 5.0 * (i as f64 / 10.0).sin())
+            .collect();
         let two = compute_erf(&src, 48, 10, Poles::Two).expect("two");
         let three = compute_erf(&src, 48, 10, Poles::Three).expect("three");
         // Distinct filters → distinct tails.

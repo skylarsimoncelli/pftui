@@ -52,7 +52,7 @@ non-counted bonus. Each composite carries its atomic `components[]` (raw boolean
 | 1 | **Momentum line turning up** | RSI's moving average ticked up off a low | requested | the RSI average's slope flips positive |
 | 2 | **Momentum line crossed above price momentum** | the RSI average reclaimed the raw RSI | requested | RSI-avg crosses above RSI (momentum re-leading) |
 | 3 | **Double-smoothed stochastic bottoming** | a heavily-smoothed stochastic turning up out of oversold | requested | DSS ticked up **AND** crossed its trigger (oversold = qualifying context, not a firing condition) |
-| 4 | **Roofing filter confirming up** | a de-trended cycle (band-pass) filter going constructive | requested | filter green (≥0) **AND** ticked up |
+| 4 | **Roofing filter confirming up** | a de-trended cycle (band-pass) filter turning from the lower cycle zone | requested | filter in bottom zone (<0) **AND** ticked up |
 | 5 | **Volatility bands bullish** | daily Gaussian volatility bands in their bullish state | **daily** | band state == bullish |
 | 6 | **Significant reversal dots** | higher-timeframe trend-strength "dots" net-bullish | **weekly + monthly** | an up-dot is active and ≥ any down-dot on either higher TF |
 | 7 | **Trend line reclaimed** | price back above the weekly volatility-weighted trackline | **weekly** | price above the weekly line, or a fresh bullish cross on the latest weekly bar |
@@ -129,6 +129,20 @@ series; `gold`/`GC=F` resolve to the gold series.
     }
     // ... 6 more composite criteria, in the order of the table above
   ],
+  "core_watch": [
+    {
+      "key": "roofing_confirming_up",
+      "label": "Roofing filter confirming up",
+      "met": true,
+      "met_components": 2,
+      "total_components": 2,
+      "detail": "monthly value -25006.78",
+      "components": [
+        { "key": "erf_bottom_zone", "label": "Roofing filter in bottom zone (<0)", "met": true, "value": -25006.78 },
+        { "key": "erf_turned_up", "label": "Roofing filter ticked up", "met": true, "value": -25006.78 }
+      ]
+    }
+  ],
   "bonus": {
     "key": "pi_cycle_bottom",
     "label": "Pi-cycle bottom fired recently (bonus)",
@@ -139,7 +153,7 @@ series; `gold`/`GC=F` resolve to the gold series.
   // flat backing fields are also surfaced for direct access:
   "rsi": 42.26, "rsi_ma": 56.90, "rsi_ma_turned_up": false, "rsi_ma_cross_above_rsi": false,
   "dss": 9.33, "dss_trigger": 16.44, "dss_turned_up": false, "dss_cross_above_trigger": false, "dss_oversold": true,
-  "erf": -25006.78, "erf_green": false, "erf_turned_up": true,
+  "erf": -25006.78, "erf_positive": false, "erf_green": false, "erf_bottom_zone": true, "erf_turned_up": true,
   "cyberbands_state": "bearish", "cyberbands_bullish": false,
   "cyberdots_weekly_strength": 0, "cyberdots_monthly_strength": 0, "cyberdots_bullish": false,
   "cyberline_value": 69907.42, "cyberline_price_above": false, "cyberline_reclaim": false,
@@ -147,8 +161,10 @@ series; `gold`/`GC=F` resolve to the gold series.
 }
 ```
 
-The `criteria[]` array is the canonical itemization for display; the flat fields
-are a convenience for callers that want one number without walking the array.
+The `core_watch[]` array is the focused four-item cycle-watch report for the
+monthly bottom checklist. `criteria[]` remains the canonical 7-of-7 confluence
+itemization; the flat fields are a convenience for callers that want one number
+without walking either array.
 
 ## Where it's wired
 
@@ -187,12 +203,17 @@ pftui analytics strategy segment --asset BTC --when "rsi(close,14) < 30 @monthly
 pftui analytics strategy explain --asset BTC --entry "..." --json
 ```
 
-> **Composite suite alerts (merged):** a rising N/7 (or any single criterion
-> firing) arms a notification through the cycle-signal alert engine in
+> **Cycle-signal alerts:** a rising N/7, any single criterion, or any atomic
+> component can arm a notification through the cycle-signal alert engine in
 > `src/alerts/cycle_signal_alert.rs`. Use the composite condition
 > `cycle_bottom_<tf>_<N>` (e.g. `cycle_bottom_monthly_5` fires when the monthly
 > suite reaches ≥ 5/7) or the per-criterion condition
-> `cycle_criterion_<tf>_<key>` to watch a single signal. The composite
+> `cycle_criterion_<tf>_<key>` to watch a single composite. Use
+> `cycle_component_<tf>_<key>` for atomic subconditions such as
+> `cycle_component_monthly_dss_turned_up`,
+> `cycle_component_monthly_dss_cross_above_trigger`,
+> `cycle_component_monthly_erf_bottom_zone`, or
+> `cycle_component_monthly_erf_turned_up`. The composite
 > hit-rate-at-historic-lows backtest is also merged — it scores the *whole
 > suite's* lead/lag and coverage versus verified cycle lows. The per-criterion
 > `analytics strategy` path above remains available for single-indicator drills.

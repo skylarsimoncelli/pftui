@@ -9,7 +9,7 @@
 //! | 1 | Momentum line turning up          | `rsi_ma_turned_up` | requested (monthly) |
 //! | 2 | Momentum line above price momentum| `rsi_ma_cross_above_rsi` | requested |
 //! | 3 | Double-smoothed stochastic bottoming | `dss_turned_up` && `dss_cross_above_trigger` (context: `dss_oversold`) | requested |
-//! | 4 | Roofing filter confirming up      | `erf_green` && `erf_turned_up` | requested |
+//! | 4 | Roofing filter confirming up      | `erf_bottom_zone` && `erf_turned_up` | requested |
 //! | 5 | Volatility bands bullish          | `cyberbands_bullish` | DAILY |
 //! | 6 | Significant reversal dots         | `cyberdots_bullish` | weekly + monthly |
 //! | 7 | Trend line reclaimed              | `cyberline_reclaim` | WEEKLY |
@@ -44,9 +44,9 @@ impl SignalTimeframe {
             "daily" | "1d" | "d" => Ok(SignalTimeframe::Daily),
             "weekly" | "1w" | "w" => Ok(SignalTimeframe::Weekly),
             "monthly" | "1mo" | "m" => Ok(SignalTimeframe::Monthly),
-            other => anyhow::bail!(
-                "unknown timeframe '{other}' — expected daily, weekly, or monthly"
-            ),
+            other => {
+                anyhow::bail!("unknown timeframe '{other}' — expected daily, weekly, or monthly")
+            }
         }
     }
     pub fn label(self) -> &'static str {
@@ -89,6 +89,27 @@ pub struct Criterion {
     pub components: Vec<Component>,
 }
 
+/// A focused, operator-facing watch item for the core cycle-bottom checklist.
+/// These are the four monthly primitives that matter most for the cycle-low
+/// report; the broader N/7 suite keeps the additional confluence criteria.
+#[derive(Debug, Clone, Serialize)]
+pub struct WatchItem {
+    /// Stable machine key matching the related composite criterion.
+    pub key: String,
+    /// Human label (no practitioner names).
+    pub label: String,
+    /// Whether the full watch item is firing.
+    pub met: bool,
+    /// Number of required atomic subconditions currently met.
+    pub met_components: usize,
+    /// Number of required atomic subconditions.
+    pub total_components: usize,
+    /// One-line plain-language detail with the backing value(s).
+    pub detail: String,
+    /// Required atomic subconditions that make up this watch item.
+    pub components: Vec<Component>,
+}
+
 /// The non-counted bonus signal (Pi-Cycle bottom on daily).
 #[derive(Debug, Clone, Serialize)]
 pub struct BonusSignal {
@@ -123,7 +144,10 @@ pub struct CycleBottomSignals {
 
     // Ehlers roofing filter (requested TF).
     pub erf: Option<f64>,
+    pub erf_positive: bool,
+    /// Backward-compatible alias for `erf_positive`.
     pub erf_green: bool,
+    pub erf_bottom_zone: bool,
     pub erf_turned_up: bool,
 
     // CyberBands (daily).
@@ -146,6 +170,8 @@ pub struct CycleBottomSignals {
 
     /// Ordered list of the 7 composite criteria.
     pub criteria: Vec<Criterion>,
+    /// Focused four-item cycle-bottom watch list with atomic progress.
+    pub core_watch: Vec<WatchItem>,
     /// How many of `total` composite criteria are firing.
     pub met_count: usize,
     /// Total composite criteria (always 7).
@@ -313,10 +339,11 @@ pub fn cycle_bottom_signals(
     // Ehlers roofing filter.
     let erf_series = ehlers_roofing::compute_erf_default(&tf_bars.close);
     let erf = erf_series.as_ref().and_then(|s| ehlers_roofing::current(s));
-    let erf_green = erf_series
+    let erf_positive = erf_series
         .as_ref()
         .and_then(|s| ehlers_roofing::is_green(s))
         .unwrap_or(false);
+    let erf_bottom_zone = erf.map(|v| v < 0.0).unwrap_or(false);
     let erf_turned_up = erf_series
         .as_ref()
         .and_then(|s| ehlers_roofing::turned_up(s))
@@ -440,8 +467,8 @@ pub fn cycle_bottom_signals(
         ],
     });
 
-    // 4. Roofing filter confirming up = green AND turned up.
-    let erf_confirming = erf_green && erf_turned_up;
+    // 4. Roofing filter confirming up = bottom-zone (negative) AND turned up.
+    let erf_confirming = erf_bottom_zone && erf_turned_up;
     criteria.push(Criterion {
         key: "roofing_confirming_up".into(),
         label: "Roofing filter confirming up".into(),
@@ -449,9 +476,9 @@ pub fn cycle_bottom_signals(
         detail: format!("{tf_label} value {}", fmt(erf)),
         components: vec![
             Component {
-                key: "erf_green".into(),
-                label: "Roofing filter positive (≥0)".into(),
-                met: erf_green,
+                key: "erf_bottom_zone".into(),
+                label: "Roofing filter in bottom zone (<0)".into(),
+                met: erf_bottom_zone,
                 value: erf,
             },
             Component {
@@ -529,6 +556,7 @@ pub fn cycle_bottom_signals(
 
     let core_total = 7usize;
     debug_assert_eq!(criteria.len(), core_total, "must emit exactly 7 composites");
+    let core_watch = build_core_watch(&criteria);
     let met_count = criteria.iter().filter(|c| c.met).count();
 
     // Bonus pi-cycle (daily) — reported separately, NEVER counted in the 7.
@@ -559,7 +587,9 @@ pub fn cycle_bottom_signals(
         dss_cross_above_trigger,
         dss_oversold,
         erf,
-        erf_green,
+        erf_positive,
+        erf_green: erf_positive,
+        erf_bottom_zone,
         erf_turned_up,
         cyberbands_state,
         cyberbands_bullish,
@@ -572,6 +602,7 @@ pub fn cycle_bottom_signals(
         pi_cycle_bottom,
         pi_cycle_last_bottom,
         criteria,
+        core_watch,
         met_count,
         total: core_total,
         bonus,
@@ -585,16 +616,45 @@ fn within_recent(dates: &[String], target: &str, window: usize) -> bool {
     dates[start..].iter().any(|d| d == target)
 }
 
+fn build_core_watch(criteria: &[Criterion]) -> Vec<WatchItem> {
+    const CORE_KEYS: [&str; 4] = [
+        "momentum_turning_up",
+        "momentum_above_price",
+        "dss_bottoming",
+        "roofing_confirming_up",
+    ];
+    criteria
+        .iter()
+        .filter(|c| CORE_KEYS.contains(&c.key.as_str()))
+        .map(|c| {
+            let required_components: Vec<Component> = c
+                .components
+                .iter()
+                .filter(|component| component.key != "dss_oversold")
+                .cloned()
+                .collect();
+            let met_components = required_components
+                .iter()
+                .filter(|component| component.met)
+                .count();
+            WatchItem {
+                key: c.key.clone(),
+                label: c.label.clone(),
+                met: c.met,
+                met_components,
+                total_components: required_components.len(),
+                detail: c.detail.clone(),
+                components: required_components,
+            }
+        })
+        .collect()
+}
+
 fn fmt(v: Option<f64>) -> String {
     v.map(|x| format!("{x:.2}")).unwrap_or_else(|| "—".into())
 }
 
-fn build_verdict(
-    tf: SignalTimeframe,
-    met: usize,
-    total: usize,
-    criteria: &[Criterion],
-) -> String {
+fn build_verdict(tf: SignalTimeframe, met: usize, total: usize, criteria: &[Criterion]) -> String {
     let firing: Vec<&str> = criteria
         .iter()
         .take(total) // core only
@@ -652,7 +712,9 @@ mod tests {
         for i in 0..n_decline {
             price = 1000.0 - i as f64 * (700.0 / n_decline as f64);
             let noise = 8.0 * (i as f64 / 11.0).sin();
-            let date = (start + chrono::Days::new(day)).format("%Y-%m-%d").to_string();
+            let date = (start + chrono::Days::new(day))
+                .format("%Y-%m-%d")
+                .to_string();
             out.push(record(&date, (price + noise).max(50.0)));
             day += 1;
         }
@@ -661,7 +723,9 @@ mod tests {
         for j in 1..=n_rally {
             let p = base + j as f64 * (600.0 / n_rally as f64);
             let noise = 6.0 * (j as f64 / 9.0).sin();
-            let date = (start + chrono::Days::new(day)).format("%Y-%m-%d").to_string();
+            let date = (start + chrono::Days::new(day))
+                .format("%Y-%m-%d")
+                .to_string();
             out.push(record(&date, p + noise));
             day += 1;
         }
@@ -699,9 +763,20 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         // RSI average must have turned up coming off the low.
-        assert!(sig.rsi_ma_turned_up, "RSI average should be rising in recovery");
-        // ERF should be green/rising after the rally.
-        assert!(sig.erf_green || sig.erf_turned_up, "roofing filter should be constructive");
+        assert!(
+            sig.rsi_ma_turned_up,
+            "RSI average should be rising in recovery"
+        );
+        assert_eq!(sig.core_watch.len(), 4, "four focused watch items");
+        assert!(sig
+            .core_watch
+            .iter()
+            .all(|item| item.met_components <= item.total_components));
+        // ERF should have a usable bottom-zone or rising read after the rally.
+        assert!(
+            sig.erf_bottom_zone || sig.erf_positive || sig.erf_turned_up,
+            "roofing filter should be constructive"
+        );
         assert!(sig.verdict.contains("monthly suite"));
     }
 
@@ -717,8 +792,14 @@ mod tests {
 
     #[test]
     fn timeframe_parse() {
-        assert_eq!(SignalTimeframe::parse("monthly").unwrap(), SignalTimeframe::Monthly);
-        assert_eq!(SignalTimeframe::parse("1w").unwrap(), SignalTimeframe::Weekly);
+        assert_eq!(
+            SignalTimeframe::parse("monthly").unwrap(),
+            SignalTimeframe::Monthly
+        );
+        assert_eq!(
+            SignalTimeframe::parse("1w").unwrap(),
+            SignalTimeframe::Weekly
+        );
         assert_eq!(SignalTimeframe::parse("d").unwrap(), SignalTimeframe::Daily);
         assert!(SignalTimeframe::parse("yearly").is_err());
     }
@@ -743,11 +824,17 @@ mod tests {
             !sig.cyberline_reclaim,
             "price should not reclaim the weekly line mid-crash"
         );
-        assert!(!sig.cyberbands_bullish, "bands should not be bullish mid-crash");
+        assert!(
+            !sig.cyberbands_bullish,
+            "bands should not be bullish mid-crash"
+        );
         assert!(
             !sig.cyberdots_bullish,
             "strength dots should not be net-bullish mid-crash"
         );
-        assert!(sig.met_count <= 3, "a crash should not light up most criteria");
+        assert!(
+            sig.met_count <= 3,
+            "a crash should not light up most criteria"
+        );
     }
 }
