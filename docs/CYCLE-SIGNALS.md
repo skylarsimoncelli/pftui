@@ -256,6 +256,12 @@ own armed→fired state machine, so the met-count repeatedly crossing up through
 higher line (e.g. 4→5→4→5) produces a separate firing every time it re-crosses,
 which can exceed the number of distinct times it first crossed a lower line.
 
+Backtest JSON includes `eval_stride_days`, the daily-bar cadence used for
+point-in-time evaluation. Daily timeframe backtests evaluate every bar so
+one-day rising edges are not skipped; weekly and monthly backtests evaluate on a
+weekly cadence because their underlying bars are broader and the match window is
+measured in calendar days.
+
 `--window` is the ± match window in **days** around a verified low; it has a floor
 of 1 (`--window 0` is rejected as meaningless, since a firing would then have to
 land exactly on the verified-low date). Omit `--window` for the default
