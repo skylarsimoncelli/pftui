@@ -28,7 +28,6 @@
 //!   inner/outer zone scales (×2 inner, ÷2 outer), `band_th`/`band_lum`/
 //!   `multiScaleEMA` logic, and the timeframe-adaptation multiplier from the
 //!   Pine table (≤60min → 1.0, daily → 0.7, weekly → 0.4, monthly+ → 0.2).
-//!   Daily runs use 0.7, weekly runs 0.4.
 
 use serde::Serialize;
 
@@ -296,7 +295,8 @@ pub struct ZoneBandsRead {
     /// Timeframe-adapted MA lengths (Pine `adaptedMA1`/`adaptedMA2`).
     pub adapted_ma1: usize,
     pub adapted_ma2: usize,
-    /// Timeframe adaptation multiplier applied (0.7 daily / 0.4 weekly).
+    /// Timeframe adaptation multiplier applied (0.7 daily / 0.4 weekly /
+    /// 0.2 monthly).
     pub tf_multiplier: f64,
     pub inner_upper: f64,
     pub inner_lower: f64,
@@ -332,7 +332,8 @@ fn multi_scale_ema(closes: &[f64], r: f64, b: f64, ma1: f64, ma2: f64) -> (f64, 
 /// Compute the Zone Based bands + zone state for the latest bar.
 ///
 /// Defaults: MA 144/233, inner/outer scale 2.0, R/B extension 3, timeframe
-/// adaptation enabled (daily ⇒ ×0.7, weekly ⇒ ×0.4 per the Pine table).
+/// adaptation enabled (daily ⇒ ×0.7, weekly ⇒ ×0.4, monthly+ ⇒ ×0.2 per
+/// the Pine table).
 pub fn compute_zone_bands(closes: &[f64], timeframe: CyberTimeframe) -> Option<ZoneBandsRead> {
     const ZONE_MA1: f64 = 144.0;
     const ZONE_MA2: f64 = 233.0;
@@ -344,6 +345,7 @@ pub fn compute_zone_bands(closes: &[f64], timeframe: CyberTimeframe) -> Option<Z
     let tf_multiplier = match timeframe {
         CyberTimeframe::Daily => 0.7,
         CyberTimeframe::Weekly => 0.4,
+        CyberTimeframe::Monthly => 0.2,
     };
     let adapted_ma1 = ((ZONE_MA1 * tf_multiplier).round() as usize).max(5);
     let adapted_ma2 = ((ZONE_MA2 * tf_multiplier).round() as usize).max(8);
@@ -419,7 +421,9 @@ mod tests {
     use super::*;
 
     fn dates(n: usize) -> Vec<String> {
-        (0..n).map(|i| format!("2025-{:02}-{:02}", 1 + i / 28, 1 + i % 28)).collect()
+        (0..n)
+            .map(|i| format!("2025-{:02}-{:02}", 1 + i / 28, 1 + i % 28))
+            .collect()
     }
 
     #[test]
@@ -488,7 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn zone_bands_adapted_lengths_daily_and_weekly() {
+    fn zone_bands_adapted_lengths_daily_weekly_and_monthly() {
         let closes: Vec<f64> = (0..700).map(|i| 100.0 + (i as f64) * 0.1).collect();
         let daily = compute_zone_bands(&closes, CyberTimeframe::Daily).expect("daily");
         assert_eq!(daily.adapted_ma1, 101); // round(144·0.7)
@@ -497,9 +501,12 @@ mod tests {
         let weekly = compute_zone_bands(&closes, CyberTimeframe::Weekly).expect("weekly");
         assert_eq!(weekly.adapted_ma1, 58); // round(144·0.4)
         assert_eq!(weekly.adapted_ma2, 93); // round(233·0.4)
-        // Steady uptrend: fast EMA above slow on both pairs ⇒ bullish bias,
-        // outer band above the inner upper threshold? At minimum the zone is
-        // a legal upper-side / between value and bias is bullish.
+        let monthly = compute_zone_bands(&closes, CyberTimeframe::Monthly).expect("monthly");
+        assert_eq!(monthly.adapted_ma1, 29); // round(144·0.2)
+        assert_eq!(monthly.adapted_ma2, 47); // round(233·0.2)
+                                             // Steady uptrend: fast EMA above slow on both pairs ⇒ bullish bias,
+                                             // outer band above the inner upper threshold? At minimum the zone is
+                                             // a legal upper-side / between value and bias is bullish.
         assert!(daily.ema_bias_bullish);
         assert!(matches!(
             daily.zone,

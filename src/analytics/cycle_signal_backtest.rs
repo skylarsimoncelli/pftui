@@ -48,11 +48,17 @@ pub const DEFAULT_WINDOW_BARS: i64 = 90;
 /// Default confluence thresholds to report (N-of-7).
 pub const DEFAULT_CONFLUENCE_THRESHOLDS: [usize; 3] = [3, 4, 5];
 
-/// Evaluation stride in DAILY bars. The engine aggregates internally to the
-/// requested timeframe, so daily-granular evaluation is wasteful; a weekly
-/// stride keeps the no-lookahead edge detection honest while bounding the
-/// O(N) re-evaluations to a few hundred per asset.
-const EVAL_STRIDE_DAYS: usize = 7;
+/// Evaluation cadence in DAILY bars. Daily signals must be sampled every bar
+/// so one-day rising edges cannot disappear between evaluations. Weekly and
+/// monthly signals can use a weekly cadence because their underlying bars are
+/// aggregated from daily history and the backtest is already matching broad
+/// cycle-low windows.
+pub fn eval_stride_days(timeframe: SignalTimeframe) -> usize {
+    match timeframe {
+        SignalTimeframe::Daily => 1,
+        SignalTimeframe::Weekly | SignalTimeframe::Monthly => 7,
+    }
+}
 
 /// One matched firing of a criterion (or confluence threshold).
 #[derive(Debug, Clone, Serialize)]
@@ -118,6 +124,10 @@ pub struct CycleSignalBacktest {
     pub bars: usize,
     /// Match window in days (±).
     pub window_days: i64,
+    /// Evaluation cadence in daily bars. Daily timeframe evaluates every bar;
+    /// weekly/monthly evaluate weekly to keep the historical point-in-time
+    /// backtest bounded.
+    pub eval_stride_days: usize,
     /// Verified cycle-low anchor dates used as ground truth (price-minimum
     /// resolved within the documented window).
     pub anchors: Vec<String>,
@@ -138,7 +148,11 @@ pub struct CycleSignalBacktest {
 
 /// Resolve a documented anchor date to the verified price-minimum date within
 /// the documented window. Mirrors `cycle_clock::verify_anchor`'s policy.
-fn verify_anchor_date(history: &[HistoryRecord], documented: &str, window_days: i64) -> Option<String> {
+fn verify_anchor_date(
+    history: &[HistoryRecord],
+    documented: &str,
+    window_days: i64,
+) -> Option<String> {
     let doc = NaiveDate::parse_from_str(documented, "%Y-%m-%d").ok()?;
     let lo = doc - chrono::Duration::days(window_days);
     let hi = doc + chrono::Duration::days(window_days);
@@ -182,8 +196,7 @@ fn match_firing(fired_on: &str, anchors: &[NaiveDate], window_days: i64) -> Opti
     let mut best: Option<(NaiveDate, i64)> = None;
     for &a in anchors {
         let signed = (f - a).num_days(); // negative = fired before low (leads)
-        if signed.abs() <= window_days
-            && best.map(|(_, b)| signed.abs() < b.abs()).unwrap_or(true)
+        if signed.abs() <= window_days && best.map(|(_, b)| signed.abs() < b.abs()).unwrap_or(true)
         {
             best = Some((a, signed));
         }
@@ -254,8 +267,12 @@ fn build_reliability(
     let summary = if n == 0 {
         "never fired over the available history".to_string()
     } else {
-        let prec = precision.map(|p| format!("{:.0}%", p * 100.0)).unwrap_or_default();
-        let cov = coverage.map(|c| format!("{:.0}%", c * 100.0)).unwrap_or_default();
+        let prec = precision
+            .map(|p| format!("{:.0}%", p * 100.0))
+            .unwrap_or_default();
+        let cov = coverage
+            .map(|c| format!("{:.0}%", c * 100.0))
+            .unwrap_or_default();
         let lead = match median_lead_lag_days {
             Some(d) => format!("median {}", friendly_days(d)),
             None => "no in-window hits".to_string(),
@@ -299,6 +316,7 @@ pub fn run_backtest(
         return None;
     }
     let as_of = history.last()?.date.clone();
+    let eval_stride_days = eval_stride_days(timeframe);
 
     // --- Resolve verified anchors (ground truth) ---
     let documented = documented_anchors(series);
@@ -330,8 +348,7 @@ pub fn run_backtest(
     // criterion key/label captured from the first successful read.
     let mut keys_labels: Vec<(String, String)> = Vec::new();
     let mut crit_firings: Vec<Vec<Firing>> = vec![Vec::new(); n_criteria];
-    let mut conf_firings: Vec<Vec<Firing>> =
-        thresholds.iter().map(|_| Vec::new()).collect();
+    let mut conf_firings: Vec<Vec<Firing>> = thresholds.iter().map(|_| Vec::new()).collect();
 
     let start = cycle_signals::min_daily_bars().saturating_sub(1);
     let mut i = start;
@@ -380,11 +397,11 @@ pub fn run_backtest(
             prev_count = cur_count;
             have_prev = true;
         }
-        if i + EVAL_STRIDE_DAYS >= history.len() && i + 1 < history.len() {
+        if i + eval_stride_days >= history.len() && i + 1 < history.len() {
             // ensure the final bar is always evaluated
             i = history.len() - 1;
         } else {
-            i += EVAL_STRIDE_DAYS;
+            i += eval_stride_days;
         }
     }
 
@@ -426,6 +443,7 @@ pub fn run_backtest(
         as_of,
         bars: history.len(),
         window_days,
+        eval_stride_days,
         anchors,
         unverified_anchors: unverified,
         small_n,
@@ -449,24 +467,26 @@ fn build_headline(
     }
     // Rank by precision (then coverage) among criteria that fired at least once
     // and lead the low (median lead/lag <= window, i.e. any hit).
-    let mut ranked: Vec<&CriterionReliability> = criteria
-        .iter()
-        .filter(|c| c.hits > 0)
-        .collect();
+    let mut ranked: Vec<&CriterionReliability> = criteria.iter().filter(|c| c.hits > 0).collect();
     ranked.sort_by(|a, b| {
         let pa = a.precision.unwrap_or(0.0);
         let pb = b.precision.unwrap_or(0.0);
         pb.partial_cmp(&pa)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.coverage.unwrap_or(0.0).partial_cmp(&a.coverage.unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| {
+                b.coverage
+                    .unwrap_or(0.0)
+                    .partial_cmp(&a.coverage.unwrap_or(0.0))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     });
     let best = ranked.first();
-    let best_conf = confluence
-        .iter()
-        .filter(|c| c.hits > 0)
-        .max_by(|a, b| {
-            a.precision.unwrap_or(0.0).partial_cmp(&b.precision.unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal)
-        });
+    let best_conf = confluence.iter().filter(|c| c.hits > 0).max_by(|a, b| {
+        a.precision
+            .unwrap_or(0.0)
+            .partial_cmp(&b.precision.unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let lead = |c: &CriterionReliability| -> String {
         match c.median_lead_lag_days {
@@ -548,7 +568,9 @@ mod tests {
         for i in 0..n_decline {
             price = 1000.0 - i as f64 * (700.0 / n_decline as f64);
             let noise = 8.0 * (i as f64 / 11.0).sin();
-            let date = (start + chrono::Days::new(day)).format("%Y-%m-%d").to_string();
+            let date = (start + chrono::Days::new(day))
+                .format("%Y-%m-%d")
+                .to_string();
             out.push(record(&date, (price + noise).max(50.0)));
             day += 1;
         }
@@ -556,7 +578,9 @@ mod tests {
         for j in 1..=n_rally {
             let p = base + j as f64 * (600.0 / n_rally as f64);
             let noise = 6.0 * (j as f64 / 9.0).sin();
-            let date = (start + chrono::Days::new(day)).format("%Y-%m-%d").to_string();
+            let date = (start + chrono::Days::new(day))
+                .format("%Y-%m-%d")
+                .to_string();
             out.push(record(&date, p + noise));
             day += 1;
         }
@@ -583,6 +607,13 @@ mod tests {
         assert_eq!(median(vec![5]), Some(5));
         assert_eq!(median(vec![-10, 0, 10]), Some(0));
         assert_eq!(median(vec![-10, -2, 2, 10]), Some(0));
+    }
+
+    #[test]
+    fn eval_stride_matches_timeframe_granularity() {
+        assert_eq!(eval_stride_days(SignalTimeframe::Daily), 1);
+        assert_eq!(eval_stride_days(SignalTimeframe::Weekly), 7);
+        assert_eq!(eval_stride_days(SignalTimeframe::Monthly), 7);
     }
 
     #[test]
@@ -630,6 +661,7 @@ mod tests {
             &DEFAULT_CONFLUENCE_THRESHOLDS,
         )
         .expect("backtest");
+        assert_eq!(bt.eval_stride_days, 7);
         assert_eq!(bt.criteria.len(), 7);
         assert_eq!(bt.confluence.len(), 3);
         // Confluence rows carry the numeric threshold (matching DEFAULT_CONFLUENCE_THRESHOLDS)
@@ -639,7 +671,9 @@ mod tests {
         for c in &bt.confluence {
             assert_eq!(
                 c.threshold,
-                c.key.strip_prefix("confluence_ge_").and_then(|n| n.parse().ok()),
+                c.key
+                    .strip_prefix("confluence_ge_")
+                    .and_then(|n| n.parse().ok()),
                 "threshold field must match the key for {}",
                 c.key
             );
@@ -652,7 +686,10 @@ mod tests {
         assert!(bt.caveat.contains("insufficient_anchors"));
         // Criteria still fired over the rally (firings counted even w/o anchors).
         let total_firings: usize = bt.criteria.iter().map(|c| c.firings).sum();
-        assert!(total_firings > 0, "expected some firings on a deep V-bottom");
+        assert!(
+            total_firings > 0,
+            "expected some firings on a deep V-bottom"
+        );
     }
 
     #[test]
@@ -680,24 +717,54 @@ mod tests {
             bt.anchors
         );
         // Some criterion fired in-window of that low (a hit) with a lead/lag.
-        let any_hit = bt.criteria.iter().any(|c| c.hits > 0)
-            || bt.confluence.iter().any(|c| c.hits > 0);
-        assert!(any_hit, "expected at least one firing to hit the verified low");
+        let any_hit =
+            bt.criteria.iter().any(|c| c.hits > 0) || bt.confluence.iter().any(|c| c.hits > 0);
+        assert!(
+            any_hit,
+            "expected at least one firing to hit the verified low"
+        );
     }
 
     #[test]
     fn shallow_history_returns_none() {
         let start = NaiveDate::from_ymd_opt(2022, 1, 1).unwrap();
         let h = planted_v_bottom(start, 40, 10);
-        assert!(run_backtest("BTC", "BTC-USD", &h, SignalTimeframe::Monthly, None, &DEFAULT_CONFLUENCE_THRESHOLDS).is_none());
+        assert!(run_backtest(
+            "BTC",
+            "BTC-USD",
+            &h,
+            SignalTimeframe::Monthly,
+            None,
+            &DEFAULT_CONFLUENCE_THRESHOLDS
+        )
+        .is_none());
     }
 
     #[test]
     fn determinism_identical_output() {
         let start = NaiveDate::from_ymd_opt(2019, 1, 1).unwrap();
         let h = planted_v_bottom(start, 600, 200);
-        let a = run_backtest("BTC", "BTC-USD", &h, SignalTimeframe::Monthly, None, &DEFAULT_CONFLUENCE_THRESHOLDS).unwrap();
-        let b = run_backtest("BTC", "BTC-USD", &h, SignalTimeframe::Monthly, None, &DEFAULT_CONFLUENCE_THRESHOLDS).unwrap();
-        assert_eq!(serde_json::to_string(&a).unwrap(), serde_json::to_string(&b).unwrap());
+        let a = run_backtest(
+            "BTC",
+            "BTC-USD",
+            &h,
+            SignalTimeframe::Monthly,
+            None,
+            &DEFAULT_CONFLUENCE_THRESHOLDS,
+        )
+        .unwrap();
+        let b = run_backtest(
+            "BTC",
+            "BTC-USD",
+            &h,
+            SignalTimeframe::Monthly,
+            None,
+            &DEFAULT_CONFLUENCE_THRESHOLDS,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap()
+        );
     }
 }

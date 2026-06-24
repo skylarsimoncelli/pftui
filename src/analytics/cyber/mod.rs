@@ -25,7 +25,9 @@
 //!    3M]`; 240-minute bars don't exist on daily history, so the 240min slot
 //!    degrades to the current (daily) RSI. With Pine's own skip rules
 //!    (tf3/tf4 auto-pass at ≥240min charts) the effective daily gate is
-//!    `daily AND weekly`; weekly runs gate `weekly AND daily AND monthly`.
+//!    `daily AND weekly`; weekly runs gate `weekly AND daily AND monthly`;
+//!    monthly runs gate `monthly AND weekly AND daily` as a daily-history
+//!    adaptation of the higher-timeframe ladder.
 //!    See `mtf.rs`.
 //! 2. **SuperTrend direction seed** — the Pine's `dir := nz(dir[1])` (no
 //!    default) evaluates to 0 on bar 0 and the transitions only fire from
@@ -81,6 +83,7 @@ use crate::models::price::HistoryRecord;
 pub enum CyberTimeframe {
     Daily,
     Weekly,
+    Monthly,
 }
 
 impl CyberTimeframe {
@@ -88,13 +91,17 @@ impl CyberTimeframe {
         match s.to_lowercase().as_str() {
             "daily" | "1d" | "d" => Ok(CyberTimeframe::Daily),
             "weekly" | "1w" | "w" => Ok(CyberTimeframe::Weekly),
-            other => anyhow::bail!("unknown timeframe '{other}' — expected daily or weekly"),
+            "monthly" | "1mo" | "m" => Ok(CyberTimeframe::Monthly),
+            other => {
+                anyhow::bail!("unknown timeframe '{other}' — expected daily, weekly, or monthly")
+            }
         }
     }
     pub fn label(self) -> &'static str {
         match self {
             CyberTimeframe::Daily => "daily",
             CyberTimeframe::Weekly => "weekly",
+            CyberTimeframe::Monthly => "monthly",
         }
     }
 }
@@ -159,11 +166,7 @@ fn build_daily_series(history: &[HistoryRecord]) -> Series {
     let mut prev_close: Option<f64> = None;
     for r in history {
         let close = to_f64(r.close);
-        let open = r
-            .open
-            .map(to_f64)
-            .or(prev_close)
-            .unwrap_or(close);
+        let open = r.open.map(to_f64).or(prev_close).unwrap_or(close);
         let high = r.high.map(to_f64).unwrap_or_else(|| open.max(close));
         let low = r.low.map(to_f64).unwrap_or_else(|| open.min(close));
         s.dates.push(r.date.clone());
@@ -176,9 +179,15 @@ fn build_daily_series(history: &[HistoryRecord]) -> Series {
     s
 }
 
-/// Aggregate the daily series into ISO-week bars (open = first open,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AggregatePeriod {
+    Weekly,
+    Monthly,
+}
+
+/// Aggregate the daily series into weekly/monthly bars (open = first open,
 /// high = max, low = min, close/date = last).
-fn aggregate_weekly(daily: &Series) -> Series {
+fn aggregate_period(daily: &Series, period: AggregatePeriod) -> Series {
     let mut s = Series {
         dates: Vec::new(),
         open: Vec::new(),
@@ -191,8 +200,13 @@ fn aggregate_weekly(daily: &Series) -> Series {
         let Ok(date) = NaiveDate::parse_from_str(&daily.dates[i], "%Y-%m-%d") else {
             continue;
         };
-        let iso = date.iso_week();
-        let key = (iso.year(), iso.week());
+        let key = match period {
+            AggregatePeriod::Weekly => {
+                let iso = date.iso_week();
+                (iso.year(), iso.week())
+            }
+            AggregatePeriod::Monthly => (date.year(), date.month()),
+        };
         if current == Some(key) {
             let last = s.dates.len() - 1;
             s.dates[last] = daily.dates[i].clone();
@@ -232,7 +246,11 @@ pub fn analyze(
     let bars: &Series = match timeframe {
         CyberTimeframe::Daily => &daily,
         CyberTimeframe::Weekly => {
-            bars_owned = aggregate_weekly(&daily);
+            bars_owned = aggregate_period(&daily, AggregatePeriod::Weekly);
+            &bars_owned
+        }
+        CyberTimeframe::Monthly => {
+            bars_owned = aggregate_period(&daily, AggregatePeriod::Monthly);
             &bars_owned
         }
     };
@@ -246,7 +264,8 @@ pub fn analyze(
     let bands_zone = bands::compute_zone_bands(&bars.close, timeframe);
     let line = line::compute_line(&bars.close, &bars.high, &bars.low, &bars.dates);
     let dots = dots::compute_dots(&bars.close, &bars.high, &bars.low, &bars.dates, cap);
-    let reversal = reversal::compute_reversals(&bars.close, &bars.high, &bars.low, &bars.dates, cap);
+    let reversal =
+        reversal::compute_reversals(&bars.close, &bars.high, &bars.low, &bars.dates, cap);
     let pi = pi_cycle::compute_pi_cycle(&daily.close, &daily.dates);
     let mtf = mtf::compute_mtf(&daily.dates, &daily.close, &bars.dates, timeframe, cap);
 
@@ -368,7 +387,11 @@ fn merge_signals(
                 date: e.date.clone(),
                 component: "reversal".into(),
                 kind: format!("{}-reversal", e.kind),
-                direction: Some(if e.kind == "top" { "bearish".into() } else { "bullish".into() }),
+                direction: Some(if e.kind == "top" {
+                    "bearish".into()
+                } else {
+                    "bullish".into()
+                }),
                 detail: format!(
                     "{} reversal ({}) — trigger {}",
                     e.kind, e.status, e.trigger_level
@@ -403,7 +426,10 @@ fn merge_signals(
                 component: "mtf-rsi".into(),
                 kind: "zone-exit".into(),
                 direction: Some(e.direction.clone()),
-                detail: format!("RSI {} zone exited", if e.direction == "up" { "green" } else { "red" }),
+                detail: format!(
+                    "RSI {} zone exited",
+                    if e.direction == "up" { "green" } else { "red" }
+                ),
             });
         }
     }
@@ -481,7 +507,10 @@ fn build_verdict(
         parts.push(format!("Pi top {top} / bottom {bottom} of trigger"));
     }
     if let Some(s) = latest_signal {
-        parts.push(format!("last signal: {} {} {}", s.date, s.component, s.kind));
+        parts.push(format!(
+            "last signal: {} {} {}",
+            s.date, s.component, s.kind
+        ));
     }
     format!("CYBER ({}): {}", timeframe.label(), parts.join(" | "))
 }
@@ -540,18 +569,44 @@ mod tests {
         let history = synthetic_history(700);
         let snap = analyze("TEST", CyberTimeframe::Weekly, &history, 10).expect("snapshot");
         assert_eq!(snap.timeframe, CyberTimeframe::Weekly);
-        assert!(snap.bars >= 60 && snap.bars <= 110, "≈100 ISO weeks, got {}", snap.bars);
+        assert!(
+            snap.bars >= 60 && snap.bars <= 110,
+            "≈100 ISO weeks, got {}",
+            snap.bars
+        );
         // Pi Cycle still runs on the DAILY series regardless of timeframe.
         assert!(snap.pi_cycle.is_some());
-        assert_eq!(
-            snap.pi_cycle.as_ref().map(|p| p.daily_bars),
-            Some(700)
-        );
+        assert_eq!(snap.pi_cycle.as_ref().map(|p| p.daily_bars), Some(700));
         // Weekly MTF gates on three timeframes.
-        assert_eq!(
-            snap.mtf_rsi.as_ref().map(|m| m.gating.len()),
-            Some(3)
+        assert_eq!(snap.mtf_rsi.as_ref().map(|m| m.gating.len()), Some(3));
+    }
+
+    #[test]
+    fn monthly_aggregation_runs_components_on_monthly_bars() {
+        let history = synthetic_history(3200);
+        let snap = analyze("TEST", CyberTimeframe::Monthly, &history, 10).expect("snapshot");
+        assert_eq!(snap.timeframe, CyberTimeframe::Monthly);
+        assert!(
+            snap.bars >= 100 && snap.bars <= 110,
+            "≈105 calendar months, got {}",
+            snap.bars
         );
+        assert!(snap.bands_gaussian.is_some());
+        assert!(snap.bands_zone.is_some());
+        assert!(snap.line.is_some());
+        assert!(snap.dots.is_some());
+        assert!(snap.reversal.is_some());
+        assert!(snap.pi_cycle.is_some());
+        assert_eq!(snap.pi_cycle.as_ref().map(|p| p.daily_bars), Some(3200));
+        assert_eq!(
+            snap.mtf_rsi.as_ref().map(|m| m.gating.clone()),
+            Some(vec![
+                "monthly".to_string(),
+                "weekly".to_string(),
+                "daily".to_string()
+            ])
+        );
+        assert!(snap.verdict.starts_with("CYBER (monthly):"));
     }
 
     #[test]

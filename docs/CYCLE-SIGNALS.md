@@ -138,8 +138,24 @@ series; `gold`/`GC=F` resolve to the gold series.
       "total_components": 2,
       "detail": "monthly value -25006.78",
       "components": [
-        { "key": "erf_bottom_zone", "label": "Roofing filter in bottom zone (<0)", "met": true, "value": -25006.78 },
-        { "key": "erf_turned_up", "label": "Roofing filter ticked up", "met": true, "value": -25006.78 }
+        {
+          "key": "erf_bottom_zone",
+          "label": "Roofing filter in bottom zone (<0)",
+          "met": true,
+          "value": -25006.78,
+          "previous_value": -27002.08,
+          "comparison_value": 0.0,
+          "previous_comparison_value": 0.0,
+          "distance_to_trigger": 25006.78
+        },
+        {
+          "key": "erf_turned_up",
+          "label": "Roofing filter ticked up",
+          "met": true,
+          "value": -25006.78,
+          "previous_value": -27002.08,
+          "distance_to_trigger": 1995.30
+        }
       ]
     }
   ],
@@ -165,6 +181,13 @@ The `core_watch[]` array is the focused four-item cycle-watch report for the
 monthly bottom checklist. `criteria[]` remains the canonical 7-of-7 confluence
 itemization; the flat fields are a convenience for callers that want one number
 without walking either array.
+
+Each component may also carry `previous_value`, `comparison_value`,
+`previous_comparison_value`, and `distance_to_trigger`. The distance is signed:
+positive means the latest bar is on the met side of that component's trigger
+line/threshold. For example, a DSS cross component reports current/prior DSS,
+current/prior trigger, and `distance_to_trigger = DSS - trigger`; a turn-up
+component reports `current - previous`.
 
 ## Where it's wired
 
@@ -232,6 +255,12 @@ bug. Firings are counted as rising edges *per threshold*: each threshold has its
 own armed→fired state machine, so the met-count repeatedly crossing up through a
 higher line (e.g. 4→5→4→5) produces a separate firing every time it re-crosses,
 which can exceed the number of distinct times it first crossed a lower line.
+
+Backtest JSON includes `eval_stride_days`, the daily-bar cadence used for
+point-in-time evaluation. Daily timeframe backtests evaluate every bar so
+one-day rising edges are not skipped; weekly and monthly backtests evaluate on a
+weekly cadence because their underlying bars are broader and the match window is
+measured in calendar days.
 
 `--window` is the ± match window in **days** around a verified low; it has a floor
 of 1 (`--window 0` is rejected as meaningless, since a firing would then have to

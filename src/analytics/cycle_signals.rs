@@ -72,6 +72,22 @@ pub struct Component {
     /// Backing oscillator value, when this sub-signal has a numeric reading.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<f64>,
+    /// Previous-bar value for edge conditions. Present when the native series
+    /// can expose the latest two bars; lets agents quantify turn/cross distance
+    /// without recomputing indicators.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_value: Option<f64>,
+    /// Current comparison value (trigger, paired oscillator, zero-line, price,
+    /// or threshold depending on the component).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comparison_value: Option<f64>,
+    /// Previous comparison value for cross conditions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_comparison_value: Option<f64>,
+    /// Signed distance to the component's trigger on the latest bar. Positive
+    /// means the latest value is on the met side of the threshold/cross line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distance_to_trigger: Option<f64>,
 }
 
 /// One evaluated COMPOSITE criterion row (1 of 7) for display/itemization.
@@ -310,6 +326,8 @@ pub fn cycle_bottom_signals(
     let rsi_state = rsi_ma::compute_rsi_ma_default(&tf_bars.close);
     let rsi = rsi_state.as_ref().and_then(rsi_ma::current_rsi);
     let rsi_ma_v = rsi_state.as_ref().and_then(rsi_ma::current_rsi_ma);
+    let rsi_pair = rsi_state.as_ref().and_then(|s| last_two_opt(&s.rsi));
+    let rsi_ma_pair = rsi_state.as_ref().and_then(|s| last_two_opt(&s.rsi_ma));
     let rsi_ma_turned_up = rsi_state
         .as_ref()
         .and_then(rsi_ma::ma_turned_up)
@@ -323,6 +341,8 @@ pub fn cycle_bottom_signals(
     let dss_state = dss_bressert::compute_dss_default(&tf_bars.close, &tf_bars.high, &tf_bars.low);
     let dss = dss_state.as_ref().and_then(dss_bressert::current_dss);
     let dss_trigger = dss_state.as_ref().and_then(dss_bressert::current_trigger);
+    let dss_pair = dss_state.as_ref().and_then(|s| last_two_opt(&s.dss));
+    let dss_trigger_pair = dss_state.as_ref().and_then(|s| last_two_opt(&s.trigger));
     let dss_turned_up = dss_state
         .as_ref()
         .and_then(dss_bressert::turned_up)
@@ -339,6 +359,7 @@ pub fn cycle_bottom_signals(
     // Ehlers roofing filter.
     let erf_series = ehlers_roofing::compute_erf_default(&tf_bars.close);
     let erf = erf_series.as_ref().and_then(|s| ehlers_roofing::current(s));
+    let erf_pair = erf_series.as_ref().and_then(|s| last_two_f64(s));
     let erf_positive = erf_series
         .as_ref()
         .and_then(|s| ehlers_roofing::is_green(s))
@@ -415,6 +436,10 @@ pub fn cycle_bottom_signals(
             label: "RSI average ticked up".into(),
             met: rsi_ma_turned_up,
             value: rsi_ma_v,
+            previous_value: rsi_ma_pair.map(|(prev, _)| prev),
+            comparison_value: None,
+            previous_comparison_value: None,
+            distance_to_trigger: rsi_ma_pair.map(|(prev, cur)| cur - prev),
         }],
     });
 
@@ -429,6 +454,10 @@ pub fn cycle_bottom_signals(
             label: "RSI average reclaimed the RSI".into(),
             met: rsi_ma_cross_above_rsi,
             value: rsi_ma_v,
+            previous_value: rsi_ma_pair.map(|(prev, _)| prev),
+            comparison_value: rsi,
+            previous_comparison_value: rsi_pair.map(|(prev, _)| prev),
+            distance_to_trigger: rsi_ma_v.zip(rsi).map(|(ma, r)| ma - r),
         }],
     });
 
@@ -451,18 +480,30 @@ pub fn cycle_bottom_signals(
                 label: "DSS ticked up".into(),
                 met: dss_turned_up,
                 value: dss,
+                previous_value: dss_pair.map(|(prev, _)| prev),
+                comparison_value: None,
+                previous_comparison_value: None,
+                distance_to_trigger: dss_pair.map(|(prev, cur)| cur - prev),
             },
             Component {
                 key: "dss_cross_above_trigger".into(),
                 label: "DSS crossed above trigger".into(),
                 met: dss_cross_above_trigger,
-                value: dss_trigger,
+                value: dss,
+                previous_value: dss_pair.map(|(prev, _)| prev),
+                comparison_value: dss_trigger,
+                previous_comparison_value: dss_trigger_pair.map(|(prev, _)| prev),
+                distance_to_trigger: dss.zip(dss_trigger).map(|(d, t)| d - t),
             },
             Component {
                 key: "dss_oversold".into(),
                 label: "DSS oversold (<20) — context".into(),
                 met: dss_oversold,
                 value: dss,
+                previous_value: dss_pair.map(|(prev, _)| prev),
+                comparison_value: Some(20.0),
+                previous_comparison_value: Some(20.0),
+                distance_to_trigger: dss.map(|d| 20.0 - d),
             },
         ],
     });
@@ -480,12 +521,20 @@ pub fn cycle_bottom_signals(
                 label: "Roofing filter in bottom zone (<0)".into(),
                 met: erf_bottom_zone,
                 value: erf,
+                previous_value: erf_pair.map(|(prev, _)| prev),
+                comparison_value: Some(0.0),
+                previous_comparison_value: Some(0.0),
+                distance_to_trigger: erf.map(|v| -v),
             },
             Component {
                 key: "erf_turned_up".into(),
                 label: "Roofing filter ticked up".into(),
                 met: erf_turned_up,
                 value: erf,
+                previous_value: erf_pair.map(|(prev, _)| prev),
+                comparison_value: None,
+                previous_comparison_value: None,
+                distance_to_trigger: erf_pair.map(|(prev, cur)| cur - prev),
             },
         ],
     });
@@ -504,6 +553,10 @@ pub fn cycle_bottom_signals(
             label: "Daily momentum bands in bullish state".into(),
             met: cyberbands_bullish,
             value: None,
+            previous_value: None,
+            comparison_value: None,
+            previous_comparison_value: None,
+            distance_to_trigger: None,
         }],
     });
 
@@ -528,6 +581,10 @@ pub fn cycle_bottom_signals(
             value: cyberdots_weekly_strength
                 .or(cyberdots_monthly_strength)
                 .map(|s| s as f64),
+            previous_value: None,
+            comparison_value: None,
+            previous_comparison_value: None,
+            distance_to_trigger: None,
         }],
     });
 
@@ -551,6 +608,10 @@ pub fn cycle_bottom_signals(
             label: "Price reclaimed the weekly trackline".into(),
             met: cyberline_reclaim,
             value: cyberline_value,
+            previous_value: None,
+            comparison_value: Some(last_close),
+            previous_comparison_value: None,
+            distance_to_trigger: cyberline_value.map(|line| last_close - line),
         }],
     });
 
@@ -614,6 +675,22 @@ pub fn cycle_bottom_signals(
 fn within_recent(dates: &[String], target: &str, window: usize) -> bool {
     let start = dates.len().saturating_sub(window);
     dates[start..].iter().any(|d| d == target)
+}
+
+fn last_two_opt(series: &[Option<f64>]) -> Option<(f64, f64)> {
+    let n = series.len();
+    if n < 2 {
+        return None;
+    }
+    Some((series[n - 2]?, series[n - 1]?))
+}
+
+fn last_two_f64(series: &[f64]) -> Option<(f64, f64)> {
+    let n = series.len();
+    if n < 2 {
+        return None;
+    }
+    Some((series[n - 2], series[n - 1]))
 }
 
 fn build_core_watch(criteria: &[Criterion]) -> Vec<WatchItem> {
@@ -772,6 +849,30 @@ mod tests {
             .core_watch
             .iter()
             .all(|item| item.met_components <= item.total_components));
+        let ma_component = sig
+            .criteria
+            .iter()
+            .flat_map(|c| c.components.iter())
+            .find(|c| c.key == "rsi_ma_turned_up")
+            .expect("rsi ma component");
+        assert!(
+            ma_component.previous_value.is_some(),
+            "edge components expose previous-bar values"
+        );
+        assert!(
+            ma_component.distance_to_trigger.is_some(),
+            "edge components expose signed trigger distance"
+        );
+        let dss_cross = sig
+            .criteria
+            .iter()
+            .flat_map(|c| c.components.iter())
+            .find(|c| c.key == "dss_cross_above_trigger")
+            .expect("dss cross component");
+        assert!(
+            dss_cross.comparison_value.is_some() && dss_cross.previous_comparison_value.is_some(),
+            "cross components expose current and previous comparison values"
+        );
         // ERF should have a usable bottom-zone or rising read after the rally.
         assert!(
             sig.erf_bottom_zone || sig.erf_positive || sig.erf_turned_up,

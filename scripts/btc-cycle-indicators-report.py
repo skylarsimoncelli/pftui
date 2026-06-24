@@ -108,6 +108,8 @@ def progress_for(criterion: dict[str, Any]) -> tuple[int, int]:
 def closeness_notes(signals: dict[str, Any], criterion: dict[str, Any]) -> list[str]:
     key = criterion.get("key")
     notes: list[str] = []
+    comps = component_map([criterion])
+    component = lambda name: comps.get(name, {})
     rsi = signals.get("rsi")
     rsi_ma = signals.get("rsi_ma")
     dss = signals.get("dss")
@@ -116,27 +118,41 @@ def closeness_notes(signals: dict[str, Any], criterion: dict[str, Any]) -> list[
     cyberline = signals.get("cyberline_value")
 
     if key == "momentum_turning_up":
+        c = component("rsi_ma_turned_up")
         notes.append(
-            "edge condition: needs previous RSI-average value; current JSON exposes only latest "
-            f"RSI-average {num(rsi_ma)}"
+            f"RSI-average change vs prior bar: {signed(c.get('distance_to_trigger'))} "
+            f"(current {num(rsi_ma)}, previous {num(c.get('previous_value'))})"
         )
     elif key == "momentum_above_price":
-        gap = None
-        if rsi_ma is not None and rsi is not None:
-            gap = float(rsi_ma) - float(rsi)
-        notes.append(f"current RSI-average minus RSI: {signed(gap)}; edge/cross recency still needs prior bar")
+        c = component("rsi_ma_cross_above_rsi")
+        notes.append(
+            f"RSI-average minus RSI: {signed(c.get('distance_to_trigger'))} "
+            f"(current {num(rsi_ma)} vs {num(rsi)})"
+        )
+        notes.append(
+            f"prior spread: {signed(spread(c.get('previous_value'), c.get('previous_comparison_value')))}"
+        )
     elif key == "dss_bottoming":
-        gap = None
-        if dss is not None and dss_trigger is not None:
-            gap = float(dss) - float(dss_trigger)
-        notes.append(f"DSS minus trigger: {signed(gap)}; needs >0 and a latest-bar cross")
-        if dss is not None:
-            notes.append(f"DSS distance below oversold line: {signed(20.0 - float(dss))} points")
-        notes.append("turn-up recency needs previous DSS value")
+        turn = component("dss_turned_up")
+        cross = component("dss_cross_above_trigger")
+        oversold = component("dss_oversold")
+        notes.append(
+            f"DSS change vs prior bar: {signed(turn.get('distance_to_trigger'))} "
+            f"(current {num(dss)}, previous {num(turn.get('previous_value'))})"
+        )
+        notes.append(
+            f"DSS minus trigger: {signed(cross.get('distance_to_trigger'))} "
+            f"(trigger {num(dss_trigger)}, prior spread {signed(spread(cross.get('previous_value'), cross.get('previous_comparison_value')))})"
+        )
+        notes.append(f"oversold cushion below 20: {signed(oversold.get('distance_to_trigger'))} points")
     elif key == "roofing_confirming_up":
-        if erf is not None:
-            notes.append(f"bottom-zone depth below zero: {num(abs(min(float(erf), 0.0)))}")
-        notes.append("turn-up recency needs previous ERF value")
+        zone = component("erf_bottom_zone")
+        turn = component("erf_turned_up")
+        notes.append(f"bottom-zone distance below zero: {signed(zone.get('distance_to_trigger'))}")
+        notes.append(
+            f"ERF change vs prior bar: {signed(turn.get('distance_to_trigger'))} "
+            f"(current {num(erf)}, previous {num(turn.get('previous_value'))})"
+        )
     elif key == "volatility_bands_bullish":
         notes.append(f"daily band state: {signals.get('cyberbands_state') or 'n/a'}")
     elif key == "reversal_dots":
@@ -144,12 +160,22 @@ def closeness_notes(signals: dict[str, Any], criterion: dict[str, Any]) -> list[
         mo = signals.get("cyberdots_monthly_strength")
         notes.append(f"higher-timeframe dot strength: weekly {wk if wk is not None else 'n/a'}, monthly {mo if mo is not None else 'n/a'}")
     elif key == "trend_line_reclaimed":
+        c = component("cyberline_reclaim")
         price = signals.get("cyberline_price_above")
         latest = signals.get("cyberline_value")
         if latest is not None:
             notes.append(f"weekly trackline: {num(cyberline)}; price is {'above' if price else 'below'}")
-        notes.append("exact price-to-line gap is not exposed; add it to native JSON for better distance scoring")
+        notes.append(f"price minus weekly trackline: {signed(c.get('distance_to_trigger'))}")
     return notes
+
+
+def spread(a: Any, b: Any) -> float | None:
+    if a is None or b is None:
+        return None
+    try:
+        return float(a) - float(b)
+    except (TypeError, ValueError):
+        return None
 
 
 def native_cycle_lows(cycle: dict[str, Any]) -> list[str]:
@@ -255,7 +281,7 @@ def build_report(pftui: str, timeframe: str, window_days: int) -> dict[str, Any]
             "confluence": backtest.get("confluence") or [],
         },
         "limitations": [
-            "Several criteria are edge conditions; current pftui JSON does not expose previous-bar indicator values, so distance-to-trigger is partial.",
+            "Scalar distance is exact for oscillator/line criteria that expose a trigger; categorical criteria such as band state and dot state report state/progress instead.",
             "Reliability statistics are small-N for BTC cycle lows and should be read as directional diagnostics, not probabilities.",
             "This wrapper reports the existing bottom/low suite only; pftui does not yet have a symmetric cycle-high suite.",
         ],
