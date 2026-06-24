@@ -1058,6 +1058,19 @@ pub struct PrivateCycleWatchSummary {
     pub items: Vec<PrivateCycleWatchItem>,
     pub backtest_headline: Option<String>,
     pub caveat: Option<String>,
+    pub panels: Vec<PrivateCycleWatchPanel>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateCycleWatchPanel {
+    pub title: String,
+    pub as_of: String,
+    pub verdict: String,
+    pub met_count: usize,
+    pub total: usize,
+    pub items: Vec<PrivateCycleWatchItem>,
+    pub backtest_headline: Option<String>,
+    pub caveat: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -3525,21 +3538,21 @@ fn map_alert_rows(alerts: Vec<crate::alerts::AlertRule>) -> Vec<PrivateAlertRow>
 }
 
 fn load_private_cycle_watch(backend: &BackendConnection) -> Option<PrivateCycleWatchSummary> {
-    let mut history = crate::db::price_history::get_history_backend(backend, "BTC-USD", 9000)
-        .unwrap_or_default();
+    let mut history =
+        crate::db::price_history::get_history_backend(backend, "BTC-USD", 9000).unwrap_or_default();
     if history.is_empty() {
-        history = crate::db::price_history::get_history_backend(backend, "BTC", 9000)
-            .unwrap_or_default();
+        history =
+            crate::db::price_history::get_history_backend(backend, "BTC", 9000).unwrap_or_default();
     }
     if history.is_empty() {
         return None;
     }
-    let signals = crate::analytics::cycle_signals::cycle_bottom_signals(
+    let bottom_signals = crate::analytics::cycle_signals::cycle_bottom_signals(
         "BTC",
         &history,
         crate::analytics::cycle_signals::SignalTimeframe::Monthly,
     )?;
-    let backtest = crate::analytics::cycle_signal_backtest::run_backtest(
+    let bottom_backtest = crate::analytics::cycle_signal_backtest::run_backtest(
         "BTC",
         "BTC-USD",
         &history,
@@ -3547,8 +3560,23 @@ fn load_private_cycle_watch(backend: &BackendConnection) -> Option<PrivateCycleW
         None,
         &crate::analytics::cycle_signal_backtest::DEFAULT_CONFLUENCE_THRESHOLDS,
     );
+    let top_signals = crate::analytics::cycle_signals::cycle_top_signals(
+        "BTC",
+        &history,
+        crate::analytics::cycle_signals::SignalTimeframe::Monthly,
+    );
+    let top_backtest = top_signals.as_ref().and_then(|_| {
+        crate::analytics::cycle_signal_backtest::run_top_backtest(
+            "BTC",
+            "BTC-USD",
+            &history,
+            crate::analytics::cycle_signals::SignalTimeframe::Monthly,
+            None,
+            &crate::analytics::cycle_signal_backtest::DEFAULT_CONFLUENCE_THRESHOLDS,
+        )
+    });
 
-    let items = signals
+    let bottom_items = bottom_signals
         .core_watch
         .iter()
         .map(|item| PrivateCycleWatchItem {
@@ -3557,28 +3585,64 @@ fn load_private_cycle_watch(backend: &BackendConnection) -> Option<PrivateCycleW
             met_components: item.met_components,
             total_components: item.total_components,
             detail: item.detail.clone(),
-            distance_notes: distance_notes_for_cycle_item(&signals, &item.key),
+            distance_notes: distance_notes_for_cycle_item(&bottom_signals.criteria, &item.key),
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let bottom_panel = PrivateCycleWatchPanel {
+        title: "Cycle-low accumulation".to_string(),
+        as_of: bottom_signals.as_of.clone(),
+        verdict: bottom_signals.verdict.clone(),
+        met_count: bottom_signals.met_count,
+        total: bottom_signals.total,
+        items: bottom_items.clone(),
+        backtest_headline: bottom_backtest.as_ref().map(|b| b.headline.clone()),
+        caveat: bottom_backtest.as_ref().map(|b| b.caveat.clone()),
+    };
+
+    let mut panels = vec![bottom_panel];
+    if let Some(top) = top_signals {
+        let top_items = top
+            .core_watch
+            .iter()
+            .map(|item| PrivateCycleWatchItem {
+                label: item.label.clone(),
+                met: item.met,
+                met_components: item.met_components,
+                total_components: item.total_components,
+                detail: item.detail.clone(),
+                distance_notes: distance_notes_for_cycle_item(&top.criteria, &item.key),
+            })
+            .collect::<Vec<_>>();
+        panels.push(PrivateCycleWatchPanel {
+            title: "Cycle-high exhaustion".to_string(),
+            as_of: top.as_of,
+            verdict: top.verdict,
+            met_count: top.met_count,
+            total: top.total,
+            items: top_items,
+            backtest_headline: top_backtest.as_ref().map(|b| b.headline.clone()),
+            caveat: top_backtest.as_ref().map(|b| b.caveat.clone()),
+        });
+    }
 
     Some(PrivateCycleWatchSummary {
-        as_of: signals.as_of,
-        verdict: signals.verdict,
-        met_count: signals.met_count,
-        total: signals.total,
-        items,
-        backtest_headline: backtest.as_ref().map(|b| b.headline.clone()),
-        caveat: backtest.map(|b| b.caveat),
+        as_of: bottom_signals.as_of,
+        verdict: bottom_signals.verdict,
+        met_count: bottom_signals.met_count,
+        total: bottom_signals.total,
+        items: bottom_items,
+        backtest_headline: bottom_backtest.as_ref().map(|b| b.headline.clone()),
+        caveat: bottom_backtest.map(|b| b.caveat),
+        panels,
     })
 }
 
 fn distance_notes_for_cycle_item(
-    signals: &crate::analytics::cycle_signals::CycleBottomSignals,
+    criteria: &[crate::analytics::cycle_signals::Criterion],
     key: &str,
 ) -> Vec<String> {
     let component = |name: &str| {
-        signals
-            .criteria
+        criteria
             .iter()
             .flat_map(|c| c.components.iter())
             .find(|c| c.key == name)
@@ -3620,6 +3684,40 @@ fn distance_notes_for_cycle_item(
                 ));
             }
             if let Some(c) = component("erf_turned_up") {
+                notes.push(format!("filter change {}", fmt(c.distance_to_trigger)));
+            }
+            notes
+        }
+        "momentum_turning_down" => component("rsi_ma_turned_down")
+            .map(|c| vec![format!("RSI-average change {}", fmt(c.distance_to_trigger))])
+            .unwrap_or_default(),
+        "momentum_below_price" => component("rsi_ma_cross_below_rsi")
+            .map(|c| {
+                vec![format!(
+                    "RSI-average minus RSI {}",
+                    fmt(c.distance_to_trigger)
+                )]
+            })
+            .unwrap_or_default(),
+        "dss_topping" => {
+            let mut notes = Vec::new();
+            if let Some(c) = component("dss_turned_down") {
+                notes.push(format!("DSS change {}", fmt(c.distance_to_trigger)));
+            }
+            if let Some(c) = component("dss_cross_below_trigger") {
+                notes.push(format!("DSS-trigger spread {}", fmt(c.distance_to_trigger)));
+            }
+            if let Some(c) = component("dss_overbought") {
+                notes.push(format!("overbought margin {}", fmt(c.distance_to_trigger)));
+            }
+            notes
+        }
+        "roofing_confirming_down" => {
+            let mut notes = Vec::new();
+            if let Some(c) = component("erf_top_zone") {
+                notes.push(format!("top-zone distance {}", fmt(c.distance_to_trigger)));
+            }
+            if let Some(c) = component("erf_turned_down") {
                 notes.push(format!("filter change {}", fmt(c.distance_to_trigger)));
             }
             notes

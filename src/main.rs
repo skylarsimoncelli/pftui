@@ -201,9 +201,7 @@ fn run_agent_journal(
                          pftui journal prediction add \"BTC above 70k\" --timeframe low"
                     )
                 })?;
-                let effective_timeframe = timeframe
-                    .clone()
-                    .or_else(|| timeframe_pos.clone());
+                let effective_timeframe = timeframe.clone().or_else(|| timeframe_pos.clone());
                 let effective_layer = layer.clone().or_else(|| effective_timeframe.clone());
                 commands::predict::run_add_with_preflight(
                     backend,
@@ -352,55 +350,58 @@ fn run_agent_journal(
             } => commands::predict::run(
                 backend,
                 "stats",
-                None,                          // value
-                None,                          // id
-                None,                          // symbol
-                None,                          // conviction
-                timeframe.as_deref(),          // timeframe
-                None,                          // confidence
-                agent.as_deref(),              // source_agent
-                None,                          // target_date
-                None,                          // resolution_criteria
-                None,                          // lessons_applied
-                None,                          // outcome
-                None,                          // notes
-                None,                          // lesson
-                None,                          // filter
-                None,                          // date
-                None,                          // limit
-                false,                         // lesson_coverage
-                None,                          // topic
-                None,                          // source_article_id
-                false,                         // override_cap
+                None,                 // value
+                None,                 // id
+                None,                 // symbol
+                None,                 // conviction
+                timeframe.as_deref(), // timeframe
+                None,                 // confidence
+                agent.as_deref(),     // source_agent
+                None,                 // target_date
+                None,                 // resolution_criteria
+                None,                 // lessons_applied
+                None,                 // outcome
+                None,                 // notes
+                None,                 // lesson
+                None,                 // filter
+                None,                 // date
+                None,                 // limit
+                false,                // lesson_coverage
+                None,                 // topic
+                None,                 // source_article_id
+                false,                // override_cap
                 json,
             ),
-            cli::JournalPredictionCommand::Scorecard { date, limit, lesson_coverage, json } => {
-                commands::predict::run(
-                    backend,
-                    "scorecard",
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    date.as_deref(),
-                    limit,
-                    lesson_coverage,
-                    None,
-                    None,
-                    false,
-                    json,
-                )
-            }
+            cli::JournalPredictionCommand::Scorecard {
+                date,
+                limit,
+                lesson_coverage,
+                json,
+            } => commands::predict::run(
+                backend,
+                "scorecard",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                date.as_deref(),
+                limit,
+                lesson_coverage,
+                None,
+                None,
+                false,
+                json,
+            ),
             cli::JournalPredictionCommand::AutoScore {
                 since,
                 dry_run,
@@ -412,7 +413,14 @@ fn run_agent_journal(
                     cli::PredictionConfidenceFloorArg::Medium => "medium",
                     cli::PredictionConfidenceFloorArg::High => "high",
                 };
-                commands::predict::run_auto_score(backend, since.as_deref(), dry_run, floor, force, json)
+                commands::predict::run_auto_score(
+                    backend,
+                    since.as_deref(),
+                    dry_run,
+                    floor,
+                    force,
+                    json,
+                )
             }
             cli::JournalPredictionCommand::RescoreAudit {
                 apply_high_confidence,
@@ -525,7 +533,12 @@ fn run_agent_journal(
                 author.as_deref(),
                 json,
             ),
-            cli::JournalNotesCommand::List { since, limit, author, json } => commands::notes::run(
+            cli::JournalNotesCommand::List {
+                since,
+                limit,
+                author,
+                json,
+            } => commands::notes::run(
                 backend,
                 "list",
                 None,
@@ -932,26 +945,26 @@ fn dispatch_predictions(
             commands::predict::run(
                 backend,
                 "stats",
-                None,                          // value
-                None,                          // id
-                None,                          // symbol
-                None,                          // conviction
-                timeframe.as_deref(),          // timeframe
-                None,                          // confidence
-                agent.as_deref(),              // source_agent
-                None,                          // target_date
-                None,                          // resolution_criteria
-                None,                          // lessons_applied
-                None,                          // outcome
-                None,                          // notes
-                None,                          // lesson
-                None,                          // filter
-                None,                          // date
-                None,                          // limit
-                false,                         // lesson_coverage
-                None,                          // topic
-                None,                          // source_article_id
-                false,                         // override_cap
+                None,                 // value
+                None,                 // id
+                None,                 // symbol
+                None,                 // conviction
+                timeframe.as_deref(), // timeframe
+                None,                 // confidence
+                agent.as_deref(),     // source_agent
+                None,                 // target_date
+                None,                 // resolution_criteria
+                None,                 // lessons_applied
+                None,                 // outcome
+                None,                 // notes
+                None,                 // lesson
+                None,                 // filter
+                None,                 // date
+                None,                 // limit
+                false,                // lesson_coverage
+                None,                 // topic
+                None,                 // source_article_id
+                false,                // override_cap
                 j || json,
             )
         }
@@ -963,26 +976,26 @@ fn dispatch_predictions(
         }) => commands::predict::run(
             backend,
             "scorecard",
-            None,               // value
-            None,               // id
-            None,               // symbol
-            None,               // conviction
-            None,               // timeframe
-            None,               // confidence
-            None,               // source_agent
-            None,               // target_date
-            None,               // resolution_criteria
-            None,               // lessons_applied
-            None,               // outcome
-            None,               // notes
-            None,               // lesson
-            None,               // filter
-            date.as_deref(),    // date
-            lim,                // limit
+            None,            // value
+            None,            // id
+            None,            // symbol
+            None,            // conviction
+            None,            // timeframe
+            None,            // confidence
+            None,            // source_agent
+            None,            // target_date
+            None,            // resolution_criteria
+            None,            // lessons_applied
+            None,            // outcome
+            None,            // notes
+            None,            // lesson
+            None,            // filter
+            date.as_deref(), // date
+            lim,             // limit
             lesson_coverage,
-            None,               // topic
-            None,               // source_article_id
-            false,              // override_cap
+            None,  // topic
+            None,  // source_article_id
+            false, // override_cap
             j || json,
         ),
         Some(cli::DataPredictionsCommand::Unanswered {
@@ -993,26 +1006,26 @@ fn dispatch_predictions(
         }) => commands::predict::run(
             backend,
             "list",
-            None,                          // value
-            None,                          // id
-            symbol.as_deref(),             // symbol
-            None,                          // conviction
-            timeframe.as_deref(),          // timeframe
-            None,                          // confidence
-            None,                          // source_agent
-            None,                          // target_date
-            None,                          // resolution_criteria
-            None,                          // lessons_applied
-            None,                          // outcome
-            None,                          // notes
-            None,                          // lesson
-            Some("pending"),               // filter = pending
-            None,                          // date
-            lim,                           // limit
-            false,                         // lesson_coverage
-            None,                          // topic
-            None,                          // source_article_id
-            false,                         // override_cap
+            None,                 // value
+            None,                 // id
+            symbol.as_deref(),    // symbol
+            None,                 // conviction
+            timeframe.as_deref(), // timeframe
+            None,                 // confidence
+            None,                 // source_agent
+            None,                 // target_date
+            None,                 // resolution_criteria
+            None,                 // lessons_applied
+            None,                 // outcome
+            None,                 // notes
+            None,                 // lesson
+            Some("pending"),      // filter = pending
+            None,                 // date
+            lim,                  // limit
+            false,                // lesson_coverage
+            None,                 // topic
+            None,                 // source_article_id
+            false,                // override_cap
             j || json,
         ),
         Some(cli::DataPredictionsCommand::Map {
@@ -1045,12 +1058,9 @@ fn dispatch_predictions(
             scenario,
             contract,
             json: j,
-        }) => commands::predictions_map::run_unmap(
-            backend,
-            &scenario,
-            contract.as_deref(),
-            j || json,
-        ),
+        }) => {
+            commands::predictions_map::run_unmap(backend, &scenario, contract.as_deref(), j || json)
+        }
         Some(cli::DataPredictionsCommand::Add {
             claim,
             symbol,
@@ -1122,10 +1132,7 @@ fn main() -> Result<()> {
 
     if let Some(start) = start {
         let elapsed = start.elapsed();
-        eprintln!(
-            "[timing] elapsed_ms={:.3}",
-            elapsed.as_secs_f64() * 1000.0
-        );
+        eprintln!("[timing] elapsed_ms={:.3}", elapsed.as_secs_f64() * 1000.0);
     }
 
     result
@@ -2770,6 +2777,37 @@ fn run_cli(cli: Cli) -> Result<()> {
                             )),
                         },
                     ),
+                    Some(cli::BottomSignalsCommand::TriggerBacktest {
+                        symbol: bt_symbol,
+                        asset: bt_asset,
+                        triggers,
+                        mode,
+                        horizons,
+                        timeframe: bt_tf,
+                        window,
+                        json: bt_json,
+                    }) => commands::cli_json::or_json_error(
+                        "analytics cycles bottom-signals trigger-backtest",
+                        bt_json,
+                        match bt_symbol.or(bt_asset).or(symbol).or(asset) {
+                            Some(sym) => commands::cycle_signals_cmd::run_trigger_backtest(
+                                commands::cycle_signals_cmd::TriggerBacktestCommandOptions {
+                                    backend: &backend,
+                                    symbol: &sym,
+                                    side: crate::analytics::cycle_signal_backtest::TriggerSide::Bottom,
+                                    timeframe: &bt_tf,
+                                    triggers: &triggers,
+                                    mode: &mode,
+                                    horizons: &horizons,
+                                    window,
+                                    json_output: bt_json,
+                                },
+                            ),
+                            None => Err(anyhow::anyhow!(
+                                "provide a symbol (positional) or --asset, e.g. `cycles bottom-signals trigger-backtest --asset BTC --trigger rsi_ma_cross_above_rsi`"
+                            )),
+                        },
+                    ),
                     None => commands::cli_json::or_json_error(
                         "analytics cycles bottom-signals",
                         json,
@@ -2808,6 +2846,37 @@ fn run_cli(cli: Cli) -> Result<()> {
                             ),
                             None => Err(anyhow::anyhow!(
                                 "provide a symbol (positional) or --asset, e.g. `cycles top-signals backtest --asset BTC`"
+                            )),
+                        },
+                    ),
+                    Some(cli::TopSignalsCommand::TriggerBacktest {
+                        symbol: bt_symbol,
+                        asset: bt_asset,
+                        triggers,
+                        mode,
+                        horizons,
+                        timeframe: bt_tf,
+                        window,
+                        json: bt_json,
+                    }) => commands::cli_json::or_json_error(
+                        "analytics cycles top-signals trigger-backtest",
+                        bt_json,
+                        match bt_symbol.or(bt_asset).or(symbol).or(asset) {
+                            Some(sym) => commands::cycle_signals_cmd::run_trigger_backtest(
+                                commands::cycle_signals_cmd::TriggerBacktestCommandOptions {
+                                    backend: &backend,
+                                    symbol: &sym,
+                                    side: crate::analytics::cycle_signal_backtest::TriggerSide::Top,
+                                    timeframe: &bt_tf,
+                                    triggers: &triggers,
+                                    mode: &mode,
+                                    horizons: &horizons,
+                                    window,
+                                    json_output: bt_json,
+                                },
+                            ),
+                            None => Err(anyhow::anyhow!(
+                                "provide a symbol (positional) or --asset, e.g. `cycles top-signals trigger-backtest --asset BTC --trigger rsi_ma_cross_below_rsi`"
                             )),
                         },
                     ),

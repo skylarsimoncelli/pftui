@@ -221,22 +221,52 @@ component reports `current - previous`.
   as inline SVG. Token `<!--CYCLE_SIGNALS_VIZ:checklist:BTC-->` (auto-injected at
   the Bitcoin/Gold section headings by `viz/report_charts.py`).
 
-## How to backtest reliability
+## How to backtest reliability and trigger expectancy
 
 The claim "these criteria historically turn together at lows" is *measurable*,
 not folklore — and per the EPISTEMICS discipline, an asserted edge should be
-backtested, not assumed. Today, test the **individual** criteria with the
-existing `analytics strategy` engine, expressing a criterion as a trade rule and
-measuring forward returns:
+backtested, not assumed.
+
+Use the fixed suite reliability backtest for the doctrine question ("which of
+the 7 criteria fired near verified cycle lows/highs?"):
 
 ```bash
-# Forward returns after a monthly double-smoothed-stochastic turn-up out of oversold,
-# vs buy-and-hold — does criterion 3 actually precede recovery?
-pftui analytics strategy segment --asset BTC --when "rsi(close,14) < 30 @monthly" --json
-
-# Coverage/firings before committing to a rule (thin coverage = untrustworthy edge)
-pftui analytics strategy explain --asset BTC --entry "..." --json
+pftui analytics cycles bottom-signals backtest --asset BTC --json
+pftui analytics cycles top-signals backtest --asset BTC --json
 ```
+
+Use the native trigger event-study backtest for arbitrary single criteria,
+atomic components, and combinations. It reports every false→true firing, the
+nearest cycle anchor, signed days from that anchor, signed price distance from
+the anchor, and forward returns at custom horizons:
+
+```bash
+# One atomic monthly bottom trigger.
+pftui analytics cycles bottom-signals trigger-backtest --asset BTC \
+  --trigger rsi_ma_cross_above_rsi --horizons 7d,30d,365d --json
+
+# Combined trigger: all listed components must be true on the same evaluated bar.
+pftui analytics cycles bottom-signals trigger-backtest --asset BTC \
+  --trigger rsi_ma_cross_above_rsi,dss_cross_above_trigger,dss_turned_up \
+  --mode all --horizons 1w,1m,1y --json
+
+# Symmetric top/exhaustion event study. For top signals, `good` means the
+# forward return was negative after the firing.
+pftui analytics cycles top-signals trigger-backtest --asset BTC \
+  --trigger rsi_ma_cross_below_rsi --horizons 7d,30d,365d --json
+
+# Same machinery works on gold/silver anchors where the native cycle doctrine
+# has documented lows.
+pftui analytics cycles bottom-signals trigger-backtest --asset gold \
+  --trigger dss_bottoming --timeframe monthly --horizons 30d,180d,1y --json
+```
+
+Trigger keys can be either composite `criteria[].key` values or atomic
+`criteria[].components[].key` values from the corresponding
+`bottom-signals --json` / `top-signals --json` output. Multiple `--trigger`
+flags and comma-separated lists are equivalent. `--mode all` is the default;
+`--mode any` fires when any selected key is active. Horizons accept plain days
+or `d/w/m/y` suffixes (`1m = 30d`, `1y = 365d`).
 
 > **Cycle-signal alerts:** a rising N/7, any single criterion, or any atomic
 > component can arm a notification through the cycle-signal alert engine in
@@ -254,10 +284,9 @@ pftui analytics strategy explain --asset BTC --entry "..." --json
 > example `cycle_top_monthly_4`,
 > `cycle_top_criterion_monthly_dss_topping`, or
 > `cycle_top_component_monthly_erf_turned_down`.
-> The composite
-> hit-rate-at-historic-lows backtest is also merged — it scores the *whole
-> suite's* lead/lag and coverage versus verified cycle lows. The per-criterion
-> `analytics strategy` path above remains available for single-indicator drills.
+> The fixed suite backtest scores the *whole suite's* lead/lag and coverage
+> versus verified cycle lows/highs. The trigger event-study backtest scores
+> arbitrary single keys and combinations with forward returns.
 
 ### Running the suite backtest
 
