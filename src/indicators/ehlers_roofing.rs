@@ -253,4 +253,29 @@ mod tests {
         // Distinct filters → distinct tails.
         assert!((two.last().unwrap() - three.last().unwrap()).abs() > 1e-9);
     }
+
+    #[test]
+    fn default_erf_golden_tail_on_wave_trend_fixture() {
+        let src: Vec<f64> = (0..180)
+            .map(|i| {
+                let x = i as f64;
+                100.0 + 0.07 * x + 6.0 * (x / 5.0).sin() + 2.0 * (x / 17.0).cos()
+            })
+            .collect();
+        let erf = compute_erf_default(&src).expect("erf");
+        let expected = [
+            -3.396697171152,
+            -3.891982380551,
+            -4.212188536735,
+            -4.344206841211,
+            -4.282501104732,
+        ];
+        let tail = &erf[erf.len() - expected.len()..];
+        for (got, expected) in tail.iter().zip(expected) {
+            assert!(
+                (got - expected).abs() < 1e-9,
+                "golden ERF tail changed: got {got}, expected {expected}"
+            );
+        }
+    }
 }
