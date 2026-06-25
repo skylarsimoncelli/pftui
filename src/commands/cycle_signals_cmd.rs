@@ -533,7 +533,23 @@ fn print_top_backtest(bt: &cycle_signal_backtest::CycleSignalBacktest) {
         "  {} daily bars · as of {} · ±{}-day match window",
         bt.bars, bt.as_of, bt.window_days
     );
-    println!("  verified cycle-top anchors: none (tops are price-structure-only)");
+    // Anchor basis MUST agree with the body (build_top_headline / build_top_caveat):
+    // top reliability is graded against NATIVE CYCLE HIGHS — the maximum close
+    // between each verified low-to-low pair. Mirror the bottom renderer truthfully.
+    if bt.anchors.is_empty() {
+        println!("  native cycle-high anchors: none (no completed low-to-low cycle yet)");
+    } else {
+        println!(
+            "  native cycle-high anchors (max close between verified lows): {}",
+            bt.anchors.join(", ")
+        );
+    }
+    if !bt.unverified_anchors.is_empty() {
+        println!(
+            "  (unverified documented dates: {})",
+            bt.unverified_anchors.join(", ")
+        );
+    }
     println!();
     println!("  Per-criterion firings:");
     for c in &bt.criteria {
@@ -549,6 +565,16 @@ fn print_top_backtest(bt: &cycle_signal_backtest::CycleSignalBacktest) {
     println!();
     println!("  {}", bt.caveat);
     if let Some(exp) = &bt.expectancy {
+        // The two blocks grade against DIFFERENT ground truths: reliability vs
+        // native cycle highs, expectancy vs price-structure swing highs. Spell
+        // out the two counts so the operator never conflates the closeness numbers.
+        println!();
+        println!(
+            "  Note: reliability closeness is vs {} native cycle high(s); expectancy closeness \
+             is vs {} price-structure swing high(s) — two different ground truths.",
+            bt.anchors.len(),
+            exp.price_structure_anchors.len()
+        );
         print_top_expectancy(exp);
     }
 }
@@ -646,8 +672,19 @@ fn print_top_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
             ),
             _ => format!(" · {} firings, no in-window high match", r.firings),
         };
+        // On a sub-significance sample, detrended figures (e.g. "365d -310.6%")
+        // print to 1 decimal and read more authoritative than the count warrants.
+        // Don't touch the underlying values — just flag the excess basis explicitly
+        // so the operator reads the magnitude as directional excess, not a forecast.
         let warn = if r.low_firings {
-            format!(" (n={} — too few firings; directional only)", r.firings)
+            if exp.detrended {
+                format!(
+                    " (n={} — too few firings; excess, directional only)",
+                    r.firings
+                )
+            } else {
+                format!(" (n={} — too few firings; directional only)", r.firings)
+            }
         } else {
             String::new()
         };
@@ -791,8 +828,19 @@ fn print_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
             ),
             _ => format!(" · {} firings, no in-window low match", r.firings),
         };
+        // On a sub-significance sample, detrended figures (e.g. "365d -310.6%")
+        // print to 1 decimal and read more authoritative than the count warrants.
+        // Don't touch the underlying values — just flag the excess basis explicitly
+        // so the operator reads the magnitude as directional excess, not a forecast.
         let warn = if r.low_firings {
-            format!(" (n={} — too few firings; directional only)", r.firings)
+            if exp.detrended {
+                format!(
+                    " (n={} — too few firings; excess, directional only)",
+                    r.firings
+                )
+            } else {
+                format!(" (n={} — too few firings; directional only)", r.firings)
+            }
         } else {
             String::new()
         };

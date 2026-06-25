@@ -502,6 +502,15 @@ The block carries its own honest `small_n` / `insufficient_anchors` flags and
 }
 ```
 
+**Polarity-correct pivot keys.** The two swing-pivot parameter keys carry the
+block's polarity in their NAME. The bottom path (above) emits
+`price_low_pivot_window` / `price_low_prominence_pct`; the **top path**
+(`top-signals backtest --expectancy`) emits `price_high_pivot_window` /
+`price_high_prominence_pct` for the same values — so a top payload never
+advertises "low" field names. Every other key (`price_structure_anchors`,
+`anchors_used`, `doctrine_anchors_used`, `baseline`, `confluence`, `criteria`,
+…) is polarity-neutral and identical on both paths.
+
 ### Structured error reasons
 
 Under `--json`, a failed `bottom-signals` / backtest run emits

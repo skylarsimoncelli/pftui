@@ -461,15 +461,23 @@ pub struct ExpectancyRow {
 /// price-structure swing lows as anchors — so it works for ANY symbol with
 /// enough history, not just BTC/gold. Doctrine anchors, when they exist, are
 /// merged into the anchor set (stronger ground truth) but are not required.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct CycleSignalExpectancy {
+    /// Polarity of this block. `false` = cycle-bottom (swing LOWS), `true` =
+    /// cycle-top (swing HIGHS). Not serialized directly; instead it selects the
+    /// JSON key NAMES for the two swing-pivot params below (`price_low_*` for
+    /// bottoms, `price_high_*` for tops) so the payload never advertises "low"
+    /// names on the top path. See the manual `Serialize` impl.
+    pub is_top: bool,
     /// Price-structure swing anchor dates (asset-agnostic, prominence-filtered).
     /// Polarity-neutral: carries swing LOWS on the cycle-bottom path and swing
     /// HIGHS on the cycle-top path (the render labels them per-polarity).
     pub price_structure_anchors: Vec<String>,
-    /// Pivot half-width (daily bars) used for the swing-low scan.
+    /// Pivot half-width (daily bars) used for the swing-pivot scan. Serialized as
+    /// `price_low_pivot_window` (bottom) or `price_high_pivot_window` (top).
     pub price_low_pivot_window: usize,
-    /// Minimum post-low recovery (percent) required to retain a swing low.
+    /// Minimum reversal (percent) required to retain a swing pivot. Serialized as
+    /// `price_low_prominence_pct` (bottom) or `price_high_prominence_pct` (top).
     pub price_low_prominence_pct: Decimal,
     /// Whether doctrine anchors (BTC/gold) were merged into the anchor set.
     pub doctrine_anchors_used: bool,
@@ -485,13 +493,11 @@ pub struct CycleSignalExpectancy {
     /// raw price change. The per-horizon stat field NAMES are unchanged — this
     /// flag tells the reader how to interpret them. Additive honesty flag,
     /// omitted from JSON when false so the default (raw) payload is byte-for-byte
-    /// unchanged.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    /// unchanged. Omitted from JSON when false (see the manual `Serialize` impl).
     pub detrended: bool,
     /// Trailing window (calendar days) used for the local-drift estimate when
     /// `detrended` is true ([`DETREND_TRAILING_DAYS`]). `None` (omitted) in raw
-    /// mode.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// mode. Omitted from JSON when None (see the manual `Serialize` impl).
     pub detrend_trailing_days: Option<i64>,
     /// Unconditioned baseline forward returns (every evaluated bar) per horizon.
     pub baseline: Vec<HorizonBaseline>,
@@ -501,6 +507,47 @@ pub struct CycleSignalExpectancy {
     pub confluence: Vec<ExpectancyRow>,
     /// Honest trust caveat.
     pub caveat: String,
+}
+
+// Manual Serialize: the two swing-pivot param keys are polarity-correct —
+// `price_low_*` on the cycle-bottom path, `price_high_*` on the cycle-top path —
+// so the top JSON never advertises "low" field names. Every other field name is
+// fixed. `is_top` itself is not emitted (it only selects the two key names). The
+// raw (non-detrended) payload stays byte-for-byte identical to the old derive on
+// the bottom path: same keys, same order, `detrended`/`detrend_trailing_days`
+// omitted when false/none.
+impl Serialize for CycleSignalExpectancy {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let (pivot_key, prominence_key) = if self.is_top {
+            ("price_high_pivot_window", "price_high_prominence_pct")
+        } else {
+            ("price_low_pivot_window", "price_low_prominence_pct")
+        };
+        // Field count is a hint only for serde_json (capacity); upper bound is fine.
+        let mut s = serializer.serialize_struct("CycleSignalExpectancy", 13)?;
+        s.serialize_field("price_structure_anchors", &self.price_structure_anchors)?;
+        s.serialize_field(pivot_key, &self.price_low_pivot_window)?;
+        s.serialize_field(prominence_key, &self.price_low_prominence_pct)?;
+        s.serialize_field("doctrine_anchors_used", &self.doctrine_anchors_used)?;
+        s.serialize_field("anchors_used", &self.anchors_used)?;
+        s.serialize_field("insufficient_anchors", &self.insufficient_anchors)?;
+        s.serialize_field("small_n", &self.small_n)?;
+        if self.detrended {
+            s.serialize_field("detrended", &self.detrended)?;
+        }
+        if let Some(d) = self.detrend_trailing_days {
+            s.serialize_field("detrend_trailing_days", &d)?;
+        }
+        s.serialize_field("baseline", &self.baseline)?;
+        s.serialize_field("criteria", &self.criteria)?;
+        s.serialize_field("confluence", &self.confluence)?;
+        s.serialize_field("caveat", &self.caveat)?;
+        s.end()
+    }
 }
 
 /// Resolve a documented anchor date to the verified price-minimum date within
@@ -2258,6 +2305,7 @@ fn build_expectancy(
     };
 
     CycleSignalExpectancy {
+        is_top: false,
         price_structure_anchors: price_lows
             .iter()
             .map(|(_, d, _)| d.format("%Y-%m-%d").to_string())
@@ -2365,6 +2413,7 @@ fn build_top_expectancy(
     };
 
     CycleSignalExpectancy {
+        is_top: true,
         price_structure_anchors: price_highs
             .iter()
             .map(|(_, d, _)| d.format("%Y-%m-%d").to_string())
@@ -2979,6 +3028,76 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn top_expectancy_json_uses_high_named_pivot_keys() {
+        // The TOP expectancy JSON must advertise price_high_* keys (not price_low_*),
+        // while the BOTTOM path keeps price_low_*. Verifies the polarity-correct
+        // manual Serialize impl without changing any computed value.
+        let start = NaiveDate::from_ymd_opt(2016, 1, 1).unwrap();
+        let mut h = planted_inverted_v(start, 500, 400);
+        let next_start = NaiveDate::from_ymd_opt(2018, 6, 1).unwrap();
+        let mut h2 = planted_inverted_v(next_start, 500, 400);
+        h.append(&mut h2);
+        let bt = run_top_backtest(
+            "ACME",
+            "ACME",
+            &h,
+            SignalTimeframe::Monthly,
+            Some(120),
+            &DEFAULT_CONFLUENCE_THRESHOLDS,
+            true,
+            false,
+        )
+        .expect("backtest");
+        let exp = bt.expectancy.expect("expectancy populated");
+        let json = serde_json::to_string(&exp).expect("serialize top expectancy");
+        assert!(
+            json.contains("\"price_high_pivot_window\"")
+                && json.contains("\"price_high_prominence_pct\""),
+            "top JSON must carry high-named pivot keys: {json}"
+        );
+        assert!(
+            !json.contains("price_low_pivot_window") && !json.contains("price_low_prominence_pct"),
+            "top JSON must NOT advertise low-named pivot keys: {json}"
+        );
+        // Raw (non-detrended) mode omits the detrend flags.
+        assert!(!json.contains("detrended"), "raw mode omits detrended: {json}");
+        assert!(!json.contains("detrend_trailing_days"));
+    }
+
+    #[test]
+    fn bottom_expectancy_json_keeps_low_named_pivot_keys() {
+        // Regression guard: the bottom path must still emit price_low_* keys so
+        // the polarity rename never leaks onto bottoms.
+        let start = NaiveDate::from_ymd_opt(2016, 1, 1).unwrap();
+        let mut h = planted_v_bottom(start, 500, 400);
+        let next_start = NaiveDate::from_ymd_opt(2018, 6, 1).unwrap();
+        let mut h2 = planted_v_bottom(next_start, 500, 400);
+        h.append(&mut h2);
+        let bt = run_backtest(
+            "ACME",
+            "ACME",
+            &h,
+            SignalTimeframe::Monthly,
+            Some(120),
+            &DEFAULT_CONFLUENCE_THRESHOLDS,
+            true,
+            false,
+        )
+        .expect("backtest");
+        let exp = bt.expectancy.expect("expectancy populated");
+        let json = serde_json::to_string(&exp).expect("serialize bottom expectancy");
+        assert!(
+            json.contains("\"price_low_pivot_window\"")
+                && json.contains("\"price_low_prominence_pct\""),
+            "bottom JSON must keep low-named pivot keys: {json}"
+        );
+        assert!(
+            !json.contains("price_high_pivot_window"),
+            "bottom JSON must NOT carry high-named keys: {json}"
+        );
     }
 
     #[test]

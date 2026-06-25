@@ -5207,13 +5207,14 @@ pub enum BottomSignalsCommand {
 
 #[derive(Subcommand)]
 pub enum TopSignalsCommand {
-    /// Forward-return expectancy backtest of the 7 cycle-top criteria (+ N/7
-    /// confluence) vs asset-agnostic price-structure swing HIGHS. Point-in-time
-    /// (no lookahead). A good top signal precedes a DECLINE, so the headline
-    /// hit-rate is the NEGATIVE forward-return rate. Tops have NO doctrine
-    /// anchors — this is price-structure-only; honest about it.
+    /// Reliability backtest of the 7 cycle-top criteria (+ N/7 confluence)
+    /// against NATIVE CYCLE HIGHS — the maximum close between each pair of
+    /// verified cycle lows (the unfinished current cycle is excluded).
+    /// Point-in-time (no lookahead). Add `--expectancy` for the forward-return
+    /// lift block (vs price-structure swing highs), `--detrend` for
+    /// drift-excess. Honest about the tiny anchor count — emits a small_n caveat.
     #[command(
-        after_help = "Measures, for each of the 7 composite top criteria and the N/7 confluence at\nthresholds >=3 / >=4 / >=5, the forward-return expectancy after a top signal fires.\n\nMethod (no lookahead): at each historical bar i the engine reads ONLY\nhistory[..=i]; a criterion 'fires' on the rising edge (newly true). Forward\nreturns at 30/90/180/365d are measured AFTER each firing:\n  mean/median forward return   a good top precedes a decline (negative)\n  negative_rate_pct            fraction of firings followed by a DECLINE = top hit-rate\n  lift vs baseline             mean minus the unconditioned same-horizon baseline (negative = good)\n  closeness                    days + price-% to the nearest price-structure swing high\n\nUNLIKE bottom-signals there are NO documented doctrine TOP anchors (doctrine\nanchors are cycle LOWS), so the reliability section is empty and the expectancy\nblock (price-structure swing highs) carries the read. Honest small_n caveat.\n\nExamples:\n  pftui analytics cycles top-signals backtest --asset BTC --expectancy --json\n  pftui analytics cycles top-signals backtest --asset gold --timeframe weekly --window 120 --expectancy"
+        after_help = "Measures, for each of the 7 composite top criteria and the N/7 confluence at\nthresholds >=3 / >=4 / >=5, how reliably the signal marks a NATIVE CYCLE HIGH.\n\nDefault read is RELIABILITY vs native cycle highs (max close between two verified\ncycle lows). Method (no lookahead): at each historical bar i the engine reads ONLY\nhistory[..=i]; a criterion 'fires' on the rising edge (newly true). Each firing is\nmatched to the nearest native cycle high within +/- the match window:\n  precision (hit-rate)  fraction of firings near a native cycle high\n  lead/lag              signed days fired->high (negative = led the high); median + range\n  coverage (recall)     fraction of native highs the criterion flagged in-window\n  false positives       firings with no nearby high\n\nAdd --expectancy for the forward-return lift block (mean/median/negative-rate at\n30/90/180/365d, lift vs baseline, closeness to the nearest price-structure swing\nHIGH — a SECOND, independent ground truth). Add --detrend for drift-excess returns.\nA good top signal precedes a DECLINE, so the expectancy headline is the NEGATIVE\nforward-return rate.\n\nHONESTY: native cycle highs are derived mechanically and few; a small-sample\nhit-rate is NOT robust. The result carries small_n / insufficient_anchors flags.\n\nExamples:\n  pftui analytics cycles top-signals backtest --asset BTC --json\n  pftui analytics cycles top-signals backtest --asset BTC --expectancy --json\n  pftui analytics cycles top-signals backtest --asset gold --timeframe weekly --window 120 --expectancy"
     )]
     Backtest {
         /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
@@ -5246,7 +5247,7 @@ pub enum TopSignalsCommand {
     /// combinations, including forward returns at custom horizons.
     #[command(
         name = "trigger-backtest",
-        after_help = "Backtests arbitrary cycle-low trigger combinations. Keys can be either\ncomposite criteria (e.g. momentum_above_price, dss_bottoming) or atomic\ncomponents (e.g. rsi_ma_cross_above_rsi, dss_cross_above_trigger,\ndss_turned_up). The trigger fires on the false->true edge of the combined\ncondition, then reports timing and price distance to the nearest verified cycle\nlow plus forward returns at each requested horizon.\n\nExamples:\n  pftui analytics cycles bottom-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_above_rsi --horizons 7d,30d,365d --json\n  pftui analytics cycles bottom-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_above_rsi,dss_cross_above_trigger,dss_turned_up --mode all --json\n  pftui analytics cycles bottom-signals trigger-backtest --asset gold \\\n    --trigger dss_bottoming --timeframe monthly --horizons 30d,180d,365d"
+        after_help = "Backtests arbitrary cycle-high trigger combinations. Keys can be either\ncomposite criteria (e.g. momentum_below_price, dss_topping) or atomic\ncomponents (e.g. rsi_ma_cross_below_rsi, dss_cross_below_trigger,\ndss_turned_down). The trigger fires on the false->true edge of the combined\ncondition, then reports timing and price distance to the nearest verified cycle\nhigh plus forward returns at each requested horizon.\n\nExamples:\n  pftui analytics cycles top-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_below_rsi --horizons 7d,30d,365d --json\n  pftui analytics cycles top-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_below_rsi,dss_cross_below_trigger,dss_turned_down --mode all --json\n  pftui analytics cycles top-signals trigger-backtest --asset gold \\\n    --trigger dss_topping,roofing_confirming_down --timeframe monthly --horizons 30d,180d,365d"
     )]
     TriggerBacktest {
         /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
