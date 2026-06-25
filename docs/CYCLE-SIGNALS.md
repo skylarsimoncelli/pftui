@@ -382,7 +382,11 @@ astronomically unlikely on real return data.)
 trailing year (a regime that is bending within the window is mis-estimated, most
 visibly right at a regime change), and (b) **reduces the sample size** — bars
 without a full trailing year have no drift estimate and are dropped from the
-detrended path.
+detrended path. (c) Because the baseline is detrended too, the detrended
+`lift_vs_baseline_pct` is **not guaranteed to be smaller** than the raw lift — it
+can move either way depending on whether a row's firings clustered in a higher- or
+lower-drift era than the baseline. The drift-removal evidence is the per-firing
+**means** dropping toward excess-over-trend, not the lift shrinking.
 
 **Surfacing.** When detrended, the expectancy block carries a top-level
 `"detrended": true` flag and `"detrend_trailing_days": 365`, so a consumer knows
