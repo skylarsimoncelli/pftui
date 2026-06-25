@@ -42,7 +42,7 @@ CSS = """
 
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 11pt;
+    font-size: 12pt;
     line-height: 1.65;
     color: #c9d1d9;
     background: #0d1117;
@@ -116,7 +116,7 @@ h2 {
 }
 
 h3 {
-    font-size: 11pt;
+    font-size: 12.5pt;
     font-weight: 600;
     color: #a6e3a1;
     margin-top: 16px;
