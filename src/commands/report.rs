@@ -1414,6 +1414,109 @@ fn decimal_to_f64_2(value: Decimal) -> f64 {
     value.round_dp(2).to_string().parse::<f64>().unwrap_or(0.0)
 }
 
+/// Map a CLI mode to the archive's string tag. `Both` is not a single report and
+/// is rejected for import.
+fn archive_mode_str(mode: ReportBuildMode) -> Result<&'static str> {
+    match mode {
+        ReportBuildMode::Public => Ok("public"),
+        ReportBuildMode::Private => Ok("private"),
+        ReportBuildMode::Both => {
+            bail!("--mode both is invalid for archive import; import one report per (public|private)")
+        }
+    }
+}
+
+/// `pftui report archive import` — append one rendered report markdown into the
+/// report_archive ledger (the Reporting Loop), idempotent per (date, mode).
+pub fn run_archive_import(
+    backend: &BackendConnection,
+    file: &Path,
+    mode: ReportBuildMode,
+    date: &str,
+    title: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let mode_str = archive_mode_str(mode)?;
+    let content = fs::read_to_string(file)
+        .with_context(|| format!("failed to read report file {}", file.display()))?;
+    let default_title = format!("{mode_str} daily {date}");
+    let title = title.unwrap_or(default_title.as_str());
+    let created_at = Utc::now().to_rfc3339();
+    let id = crate::db::report_archive::insert_report_backend(
+        backend,
+        date,
+        mode_str,
+        Some(title),
+        &content,
+        None,
+        &created_at,
+    )?;
+    if json_output {
+        println!(
+            "{}",
+            serde_json::json!({
+                "id": id,
+                "report_date": date,
+                "mode": mode_str,
+                "bytes": content.len(),
+                "file": file.display().to_string(),
+            })
+        );
+    } else {
+        println!(
+            "Archived {} report for {} ({} bytes) — row {}",
+            mode_str,
+            date,
+            content.len(),
+            id
+        );
+    }
+    Ok(())
+}
+
+/// `pftui report archive list` — show the most recent archived reports.
+pub fn run_archive_list(
+    backend: &BackendConnection,
+    mode: Option<ReportBuildMode>,
+    limit: i64,
+    json_output: bool,
+) -> Result<()> {
+    let mode_str = match mode {
+        Some(m) => Some(archive_mode_str(m)?),
+        None => None,
+    };
+    let rows = crate::db::report_archive::latest_reports_backend(backend, mode_str, limit)?;
+    if json_output {
+        let arr: Vec<Value> = rows
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "report_date": r.report_date,
+                    "mode": r.mode,
+                    "title": r.title,
+                    "bytes": r.content.len(),
+                    "stance_json": r.stance_json,
+                    "created_at": r.created_at,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::json!({ "reports": arr }));
+    } else if rows.is_empty() {
+        println!("No archived reports yet.");
+    } else {
+        for r in &rows {
+            println!(
+                "{}  {:<7}  {:>7} bytes  {}",
+                r.report_date,
+                r.mode,
+                r.content.len(),
+                r.title.as_deref().unwrap_or("")
+            );
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -303,6 +303,33 @@ changed definition. Documented parameter-snapshot exceptions (cycle
 timing-band percentiles and FLD offset come from the engine's
 as-of-truncated full-sample stats) live in the `registry.rs` module docs.
 
+## The Reporting Loop (R6) — reports become L3 state
+
+Until now the reporting line of operation was write-only: the assembler read the
+ledgers, rendered a report, and the report itself vanished (markdown to `/tmp`,
+PDF to `~/Downloads`). Nothing in the mechanical layer remembered what the desk
+had *said*. The Reporting Loop closes that gap — generated reports are now
+first-class **L3 ledger artifacts**.
+
+- **Table:** `report_archive` (L3, append-only). One row per generated report:
+  `report_date`, `mode` (`public`/`private`), `title`, full `content` markdown, an
+  optional compact `stance_json` (`{symbol: net_conviction}`), and `created_at`.
+- **Writer:** the build path (`assemble_with_backend` in
+  `src/report/build/daily.rs`) inserts a row after each report's markdown is
+  produced. A same-day rebuild for the same `(report_date, mode)` replaces the
+  prior row — the single sanctioned mutation, documented on the catalog entry; no
+  historical row is ever rewritten.
+- **Reader / consumer:** the next build's `BuildContext::load` reads the most
+  recent prior report (`report_archive::latest_before`) to drive the
+  **since-last-report** section — a deterministic price-delta over the period plus
+  a synthesis reflection that holds the desk accountable to its prior calls.
+- **Backfill / manual append:** `pftui report archive import --file <md> --mode
+  <m> --date <d>` appends one rendered report; used to seed history from existing
+  `reports/*.md` (public) and text-extracted private PDFs.
+
+This is the first feedback edge from the reporting layer back into the mechanical
+layer: the system can now measure itself against what it previously published.
+
 ## Report integrity (R5) — the pipeline cannot mask
 
 The operator's only interaction with the system is the private PDF. A

@@ -5881,6 +5881,62 @@ pub fn render_dry_run(
 /// assembly persists each derived decision card to the `recommendations`
 /// table and inlines a `<!-- rec_id: N -->` marker per card. This is the
 /// mechanism that drives the Recommendation → action → outcome chain.
+/// Build the compact per-asset stance snapshot stored alongside an archived
+/// report: `{symbol: net_conviction}` (mean of non-probation layer convictions).
+/// This is a convenience for cheap programmatic since-last-report comparison;
+/// the full `content` markdown remains the source of truth.
+fn build_stance_json(ctx: &BuildContext) -> Option<String> {
+    if ctx.private_asset_convergence.is_empty() {
+        return None;
+    }
+    let mut map = serde_json::Map::new();
+    for row in &ctx.private_asset_convergence {
+        let voting: Vec<i64> = row
+            .views
+            .iter()
+            .filter(|v| !v.probation)
+            .map(|v| v.conviction)
+            .collect();
+        if voting.is_empty() {
+            continue;
+        }
+        let net = voting.iter().sum::<i64>() as f64 / voting.len() as f64;
+        map.insert(
+            row.symbol.clone(),
+            serde_json::json!({ "net_conviction": (net * 100.0).round() / 100.0 }),
+        );
+    }
+    if map.is_empty() {
+        return None;
+    }
+    serde_json::to_string(&serde_json::Value::Object(map)).ok()
+}
+
+/// Append a rendered report to the `report_archive` ledger (the Reporting Loop).
+/// Best-effort: an archive failure must never fail the build, so errors are
+/// swallowed after the markdown is already on disk. No-op on non-SQLite backends
+/// without the table — the lazy Postgres creator handles that path.
+fn persist_report_archive(
+    backend: &crate::db::backend::BackendConnection,
+    ctx: &BuildContext,
+    report_date: &str,
+    mode: &str,
+    body: &str,
+) {
+    let created_at = Utc::now().to_rfc3339();
+    let title = format!("{mode} daily {report_date}");
+    let stance = build_stance_json(ctx);
+    let _ = crate::db::report_archive::insert_report_backend(
+        backend,
+        report_date,
+        mode,
+        Some(title.as_str()),
+        body,
+        stance.as_deref(),
+        &created_at,
+    );
+}
+
 pub fn assemble_with_backend(
     ctx: &BuildContext,
     mode: BuildMode,
@@ -5905,6 +5961,9 @@ pub fn assemble_with_backend(
             .with_context(|| format!("failed to write {}", public_path.display()))?;
         outcome.bytes_written += body.len();
         outcome.public_written = Some(public_path.clone());
+        if let Some(b) = backend {
+            persist_report_archive(b, ctx, date, "public", &body);
+        }
     }
     if let Some(private_path) = plan.private_path.as_ref() {
         let body = match backend {
@@ -5920,6 +5979,9 @@ pub fn assemble_with_backend(
             .with_context(|| format!("failed to write {}", private_path.display()))?;
         outcome.bytes_written += body.len();
         outcome.private_written = Some(private_path.clone());
+        if let Some(b) = backend {
+            persist_report_archive(b, ctx, date, "private", &body);
+        }
     }
     Ok(outcome)
 }

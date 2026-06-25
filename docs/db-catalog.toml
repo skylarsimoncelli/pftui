@@ -312,6 +312,13 @@ writers = ["src/db/narrative_snapshots.rs"]
 readers = ["src/db/narrative_snapshots.rs"]
 append_only = true
 
+[tables.report_archive]
+layer = "L3"
+purpose = "Reporting Loop: full content of every generated report (mode-tagged public/private); each build reads the prior report for since-last-report accountability. Append-only except same-day (report_date,mode) rebuild which replaces."
+writers = ["src/db/report_archive.rs", "src/commands/report.rs"]
+readers = ["src/db/report_archive.rs", "src/report/build/daily.rs"]
+append_only = true
+
 [tables.news_cache]
 layer = "L0"
 purpose = "RSS/news headline ingest with topic tags"
