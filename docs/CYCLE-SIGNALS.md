@@ -470,3 +470,43 @@ Top component keys: `rsi_ma_turned_down`, `rsi_ma_cross_below_rsi`,
 pftui analytics alerts add --kind technical --symbol BTC-USD \
   --condition cycle_top_monthly_4
 ```
+
+## Tracked-signals dashboard (`analytics cycles tracked`)
+
+A single fast status view over **every armed cycle-signal alert** — both
+polarities and all three shapes (confluence threshold, single criterion, single
+component). For each it shows what's being watched and its live state at a
+glance. It does **not** run the backtest; it is a status view, not a study.
+
+```bash
+pftui analytics cycles tracked                 # every tracked cycle signal
+pftui analytics cycles tracked --asset BTC     # one asset (BTC matches BTC-USD)
+pftui analytics cycles tracked --polarity top  # only cycle-TOP conditions
+pftui analytics cycles tracked --json          # structured array for agents
+```
+
+Per-signal detail per row:
+
+- **asset / polarity / shape / human label / timeframe / target** — decoded from
+  the alert condition string. The label/decoder logic is reused verbatim from
+  `src/alerts/cycle_signal_alert.rs` (`parse_condition`, `condition_polarity`,
+  `criterion_label` / `top_criterion_label` / `component_label` /
+  `top_component_label`) — no label strings are re-invented in the dashboard.
+- **armed-at, recurring + cooldown** — from the alert rule row.
+- **fired-yet, last-fired, time-since-last (humanized: `3d 4h ago` / `never`),
+  fire count** — derived from the `triggered_alerts` log (per `alert_id`) plus
+  the rule's own `triggered_at` / status.
+- **current live read** — the matching `cycle_{bottom,top}_signals` for the
+  rule's asset + timeframe + polarity: `met N/7` and how many more criteria are
+  needed for a confluence rule, or met/unmet + signed `distance_to_trigger` for
+  a criterion/component. Computed **once per (asset, timeframe, polarity)** and
+  reused across rules that share it. Assets with no/shallow price history
+  degrade gracefully per-row (`no price history` / `insufficient history`) — no
+  panic, no false read.
+
+The header summarizes counts by polarity, how many have fired, and how many
+confluence rows are currently *close* to firing (armed and within one criterion
+of their target). Privacy-safe: signal metadata + counts only, no dollar values.
+
+Wired in `src/commands/cycle_tracked_cmd.rs`; CLI variant `Tracked` in
+`src/cli.rs`, dispatched in `src/main.rs`.

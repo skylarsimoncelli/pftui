@@ -20,7 +20,7 @@ const SHALLOW_THRESHOLD: usize = 400;
 
 /// Resolve common spoken aliases to their backend ticker (same convention as
 /// the cycle clock / strategy aliases). Unknown inputs pass through uppercased.
-fn resolve_alias(symbol: &str) -> String {
+pub(crate) fn resolve_alias(symbol: &str) -> String {
     match symbol.trim().to_lowercase().as_str() {
         "gold" => "GC=F".to_string(),
         "silver" => "SI=F".to_string(),
@@ -29,7 +29,7 @@ fn resolve_alias(symbol: &str) -> String {
 }
 
 /// Load history preferring the deeper of `SYM` / `SYM-USD`.
-fn load_deep_history(
+pub(crate) fn load_deep_history(
     backend: &BackendConnection,
     symbol: &str,
 ) -> Result<(String, Vec<crate::models::price::HistoryRecord>)> {

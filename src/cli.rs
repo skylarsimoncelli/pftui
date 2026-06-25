@@ -5095,6 +5095,25 @@ pub enum AnalyticsCyclesCommand {
         #[command(subcommand)]
         sub: Option<TopSignalsCommand>,
     },
+    /// Dashboard of every armed cycle-signal alert (cycle-BOTTOM and
+    /// cycle-TOP), with per-signal detail: decoded label/timeframe/polarity/
+    /// target, armed-at + recurring/cooldown, fired-yet + last-fired +
+    /// time-since + fire count, and a fast CURRENT LIVE READ (met N/7 for a
+    /// confluence rule, met/unmet + distance for a criterion/component).
+    /// Status view only — never runs the backtest.
+    #[command(
+        after_help = "Lists every alert whose condition is a cycle signal — confluence threshold\n(cycle_bottom_<tf>_<N> / cycle_top_<tf>_<N>), single criterion, or single\ncomponent — in either polarity, with its live state and firing history.\n\nThe live read is computed once per (asset, timeframe, polarity) and reused\nacross rules that share it; assets with no price history degrade gracefully\n(\"no price history\") rather than erroring. Signal metadata + counts only — no\ndollar values.\n\nExamples:\n  pftui analytics cycles tracked\n  pftui analytics cycles tracked --asset BTC --json\n  pftui analytics cycles tracked --polarity top"
+    )]
+    Tracked {
+        /// Restrict to one asset (e.g. BTC, gold, GC=F). BTC matches BTC-USD.
+        #[arg(long)]
+        asset: Option<String>,
+        /// Restrict to one side: top | bottom (default: both)
+        #[arg(long)]
+        polarity: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Translation ledger for one degree: per completed cycle the length,
     /// top position, LT/MID/RT class, and failed flag
     #[command(

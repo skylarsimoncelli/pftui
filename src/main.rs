@@ -2826,6 +2826,20 @@ fn run_cli(cli: Cli) -> Result<()> {
                         },
                     ),
                 },
+                cli::AnalyticsCyclesCommand::Tracked {
+                    asset,
+                    polarity,
+                    json,
+                } => commands::cli_json::or_json_error(
+                    "analytics cycles tracked",
+                    json,
+                    commands::cycle_tracked_cmd::run(
+                        &backend,
+                        asset.as_deref(),
+                        polarity.as_deref(),
+                        json,
+                    ),
+                ),
                 cli::AnalyticsCyclesCommand::Ledger {
                     symbol,
                     asset,

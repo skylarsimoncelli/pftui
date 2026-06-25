@@ -50,7 +50,7 @@ pub const TOP_CRITERION_PREFIX: &str = "cycle_top_criterion_";
 pub const TOP_COMPONENT_PREFIX: &str = "cycle_top_component_";
 
 /// Which side of the cycle an alert condition watches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Polarity {
     Bottom,
     Top,

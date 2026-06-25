@@ -30,7 +30,7 @@ use crate::models::price::HistoryRecord;
 /// Requested evaluation timeframe for the TF-relative criteria
 /// (RSI-MA / DSS / ERF). The fixed-TF criteria (bands=daily, dots=weekly+
 /// monthly, line=weekly, pi=daily) always run on their own aggregation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SignalTimeframe {
     Daily,
