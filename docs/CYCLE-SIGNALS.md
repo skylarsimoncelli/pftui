@@ -336,8 +336,67 @@ the legacy payload is byte-for-byte unchanged):
   inline `(n=… — too few firings; directional only)` marker. Additive field,
   omitted from JSON when false.
 
+### Drift-detrended expectancy (`--detrend`)
+
+On a secular-bull asset the raw expectancy is confounded by drift: BTC's baseline
+365d forward return is ≈ +150% because almost all of its history is one uptrend.
+The existing `lift_vs_baseline_pct` (signal mean − **global** baseline mean)
+controls for the *average* drift, but the drift is **non-stationary** (2013–2017
+drift ≫ 2022–2025 drift), so a cluster of firings in a high-drift era (e.g.
+2020–2021) still inflates the lift even with no real edge. `--detrend` closes
+this gap:
+
+```bash
+pftui analytics cycles bottom-signals backtest --asset BTC --detrend --json
+pftui analytics cycles top-signals    backtest --asset BTC --detrend --json
+```
+
+`--detrend` implies `--expectancy` (it only reshapes that block). It changes how
+each forward return is measured. Instead of the raw `(P_{i+h} − P_i)/P_i`, it
+reports the **EXCESS over the asset's contemporaneous (time-local) drift**:
+
+1. Estimate a per-day local log drift at bar `i` from a trailing log-price slope:
+   `g_i = (ln P_i − ln P_trail) / Δdays`, where `P_trail` is the most recent bar
+   on/before `date(i) − DETREND_TRAILING_DAYS` (**365 calendar days** — one year:
+   long enough to average a sub-annual cycle's swings into a representative
+   secular slope, short enough to stay *time-local*), and `Δdays` is the actual
+   calendar gap to that bar.
+2. Expected horizon drift return = `exp(g_i · h) − 1` (in percent).
+3. **Excess return = raw − expected drift return.**
+
+The SAME detrending is applied to BOTH the per-firing returns AND the baseline
+returns, so `lift_vs_baseline_pct` stays a like-for-like "signal excess −
+baseline excess" comparison. This isolates the signal's edge from "the asset
+trends up."
+
+**Determinism.** The `ln`/`exp` are the only transcendental step (libm f64, NOT
+IEEE-correctly-rounded — they can differ in the last ulp across libm versions).
+They are isolated: the per-bar drift % is computed in f64 then immediately
+rounded to 6 dp (`DRIFT_DP`) and converted back to `Decimal` BEFORE the
+subtraction, so all stored returns/means/lift stay Decimal and reproducible.
+(Their cross-platform variation is sub-ulp ~1e-15 — far below the 1e-6 rounding —
+so 6 dp absorbs it; the only residual risk is an exact 6-dp half-way boundary,
+astronomically unlikely on real return data.)
+
+**Honest caveats.** Detrending (a) **assumes log-LINEAR local drift** over the
+trailing year (a regime that is bending within the window is mis-estimated, most
+visibly right at a regime change), and (b) **reduces the sample size** — bars
+without a full trailing year have no drift estimate and are dropped from the
+detrended path.
+
+**Surfacing.** When detrended, the expectancy block carries a top-level
+`"detrended": true` flag and `"detrend_trailing_days": 365`, so a consumer knows
+the returns are excess-over-local-drift. The per-horizon stat field **names are
+unchanged** (`mean_return_pct`, `median_return_pct`, `lift_vs_baseline_pct`,
+`stdev_return_pct`, `effect_size`, …) — they simply carry excess values; the
+`detrended` flag tells the reader how to interpret them. Both fields are
+**omitted from JSON in raw (default) mode**, so the legacy payload is byte-for-byte
+unchanged. The text renderer prints a header line in the expectancy section —
+`Mode: DRIFT-DETRENDED (excess over trailing 365d local drift) — returns are
+excess-over-trend, not raw` — so detrended numbers can't be confused with raw.
+
 The block carries its own honest `small_n` / `insufficient_anchors` flags and
-`caveat`. JSON shape:
+`caveat`. JSON shape (raw mode; `--detrend` adds `detrended` + `detrend_trailing_days`):
 
 ```jsonc
 "expectancy": {

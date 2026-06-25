@@ -5,7 +5,9 @@
 
 use anyhow::{bail, Context, Result};
 
-use crate::analytics::cycle_signal_backtest::{self, DEFAULT_CONFLUENCE_THRESHOLDS};
+use crate::analytics::cycle_signal_backtest::{
+    self, DEFAULT_CONFLUENCE_THRESHOLDS, DETREND_TRAILING_DAYS,
+};
 use crate::analytics::cycle_signals::{self, SignalTimeframe};
 use crate::commands::cli_json;
 use crate::commands::cli_json::ErrorDetail;
@@ -94,12 +96,14 @@ pub fn run(
 /// Reliability backtest: measure each criterion's lead/lag + hit-rate against
 /// the verified cycle-low anchors over the full available history. Compute-only
 /// — nothing is persisted.
+#[allow(clippy::too_many_arguments)]
 pub fn run_backtest(
     backend: &BackendConnection,
     symbol: &str,
     timeframe: &str,
     window: Option<i64>,
     expectancy: bool,
+    detrend: bool,
     json_output: bool,
 ) -> Result<()> {
     // A zero match-window is meaningless (a firing would have to land EXACTLY
@@ -114,6 +118,9 @@ pub fn run_backtest(
             cycle_signal_backtest::DEFAULT_WINDOW_BARS
         );
     }
+    // Detrending only reshapes the expectancy block, so `--detrend` implies
+    // `--expectancy` (it is meaningless without it).
+    let expectancy = expectancy || detrend;
     let tf = SignalTimeframe::parse(timeframe)?;
     let (series, history) = load_deep_history(backend, symbol)?;
     if history.is_empty() {
@@ -131,6 +138,7 @@ pub fn run_backtest(
         window,
         &DEFAULT_CONFLUENCE_THRESHOLDS,
         expectancy,
+        detrend,
     ) else {
         return Err(anyhow::anyhow!(
             "insufficient history for a {} cycle-bottom backtest on {} ({} daily rows; need {})",
@@ -204,12 +212,14 @@ pub fn run_top(
 }
 
 /// Cycle-TOP reliability + forward-return expectancy backtest. Compute-only.
+#[allow(clippy::too_many_arguments)]
 pub fn run_top_backtest(
     backend: &BackendConnection,
     symbol: &str,
     timeframe: &str,
     window: Option<i64>,
     expectancy: bool,
+    detrend: bool,
     json_output: bool,
 ) -> Result<()> {
     if window == Some(0) {
@@ -220,6 +230,8 @@ pub fn run_top_backtest(
             cycle_signal_backtest::DEFAULT_WINDOW_BARS
         );
     }
+    // `--detrend` implies `--expectancy` (it only reshapes that block).
+    let expectancy = expectancy || detrend;
     let tf = SignalTimeframe::parse(timeframe)?;
     let (series, history) = load_deep_history(backend, symbol)?;
     if history.is_empty() {
@@ -237,6 +249,7 @@ pub fn run_top_backtest(
         window,
         &DEFAULT_CONFLUENCE_THRESHOLDS,
         expectancy,
+        detrend,
     ) else {
         return Err(anyhow::anyhow!(
             "insufficient history for a {} cycle-top backtest on {} ({} daily rows; need {})",
@@ -367,6 +380,13 @@ fn print_top_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
     use cycle_signal_backtest::ExpectancyRow;
     println!();
     println!("  ── Forward-return expectancy (price-structure swing highs) ──");
+    if exp.detrended {
+        println!(
+            "  Mode: DRIFT-DETRENDED (excess over trailing {}d local drift) — returns are \
+             excess-over-trend, not raw",
+            exp.detrend_trailing_days.unwrap_or(DETREND_TRAILING_DAYS)
+        );
+    }
     if exp.price_structure_anchors.is_empty() {
         println!("  price-structure swing highs: none derived");
     } else {
@@ -500,6 +520,13 @@ fn print_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
     use cycle_signal_backtest::ExpectancyRow;
     println!();
     println!("  ── Forward-return expectancy (asset-agnostic) ──");
+    if exp.detrended {
+        println!(
+            "  Mode: DRIFT-DETRENDED (excess over trailing {}d local drift) — returns are \
+             excess-over-trend, not raw",
+            exp.detrend_trailing_days.unwrap_or(DETREND_TRAILING_DAYS)
+        );
+    }
     if exp.price_structure_anchors.is_empty() {
         println!("  price-structure swing lows: none derived");
     } else {

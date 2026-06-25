@@ -73,6 +73,35 @@ pub const DEFAULT_WINDOW_BARS: i64 = 90;
 /// Default confluence thresholds to report (N-of-7).
 pub const DEFAULT_CONFLUENCE_THRESHOLDS: [usize; 3] = [3, 4, 5];
 
+/// Trailing window (calendar days) for the local log-price drift estimate used
+/// by the `--detrend` expectancy mode.
+///
+/// WHY 365: one year is long enough to average a sub-annual cycle's swings into
+/// a representative secular slope, yet short enough to stay TIME-LOCAL — it
+/// tracks the *contemporaneous* drift regime, so a 2013-era firing is detrended
+/// against 2013-era drift and a 2024-era firing against 2024-era drift, instead
+/// of subtracting one global all-history mean (which the existing
+/// `lift_vs_baseline_pct` already does and which the evaluation flagged as
+/// insufficient for a NON-stationary trend). A bar lacking a full year of
+/// trailing history has no drift estimate and is dropped from the detrended
+/// path (this reduces the detrended sample size vs raw — by design, documented).
+pub const DETREND_TRAILING_DAYS: i64 = 365;
+
+/// Decimal places the per-bar drift return % is rounded to BEFORE it is
+/// subtracted from the raw return.
+///
+/// DETERMINISM: the drift estimate is the ONLY place `ln`/`exp` (libm f64
+/// transcendentals, which are NOT IEEE-754 correctly-rounded and may differ in
+/// the last ulp across libm versions/platforms) enter the pipeline. Their
+/// cross-platform variation is sub-ulp (~1e-15 relative). Rounding the drift %
+/// to 6 dp (1e-6) — far finer than any quoted percentage — absorbs that noise
+/// so the stored EXCESS return (raw − drift, both Decimal) is reproducible given
+/// the same rounded drift. Residual risk: a value landing exactly on a 6-dp
+/// half-way boundary could round either way across libm versions; that is
+/// astronomically unlikely on real return data and is noted honestly rather than
+/// hidden. All downstream means/medians/lift/stdev stay pure Decimal.
+const DRIFT_DP: u32 = 6;
+
 /// Minimum firing count behind an expectancy row for its forward-return /
 /// lift stats to be read as anything more than directional. Below this the row
 /// is flagged `low_firings` and the renderer appends a "too few firings" marker
@@ -327,6 +356,20 @@ pub struct CycleSignalExpectancy {
     pub insufficient_anchors: bool,
     /// True when the anchor count is below `SMALL_N_THRESHOLD`.
     pub small_n: bool,
+    /// True when forward returns in this block are DRIFT-DETRENDED: every
+    /// per-firing AND baseline return is reported as EXCESS over the asset's
+    /// contemporaneous trailing-window local drift (`--detrend` mode), not the
+    /// raw price change. The per-horizon stat field NAMES are unchanged — this
+    /// flag tells the reader how to interpret them. Additive honesty flag,
+    /// omitted from JSON when false so the default (raw) payload is byte-for-byte
+    /// unchanged.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub detrended: bool,
+    /// Trailing window (calendar days) used for the local-drift estimate when
+    /// `detrended` is true ([`DETREND_TRAILING_DAYS`]). `None` (omitted) in raw
+    /// mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detrend_trailing_days: Option<i64>,
     /// Unconditioned baseline forward returns (every evaluated bar) per horizon.
     pub baseline: Vec<HorizonBaseline>,
     /// Per-criterion expectancy (7 rows).
@@ -536,6 +579,7 @@ pub fn run_backtest(
     window_days: Option<i64>,
     thresholds: &[usize],
     with_expectancy: bool,
+    detrend: bool,
 ) -> Option<CycleSignalBacktest> {
     let window_days = window_days.unwrap_or(DEFAULT_WINDOW_BARS).max(1);
     if history.len() < cycle_signals::min_daily_bars() {
@@ -704,6 +748,7 @@ pub fn run_backtest(
             &price_lows,
             &doctrine_anchors,
             window_days,
+            detrend,
         ))
     } else {
         None
@@ -832,6 +877,7 @@ pub fn run_top_backtest(
     window_days: Option<i64>,
     thresholds: &[usize],
     with_expectancy: bool,
+    detrend: bool,
 ) -> Option<CycleSignalBacktest> {
     let window_days = window_days.unwrap_or(DEFAULT_WINDOW_BARS).max(1);
     if history.len() < cycle_signals::min_daily_bars() {
@@ -976,6 +1022,7 @@ pub fn run_top_backtest(
             &conf_idx,
             &price_highs,
             window_days,
+            detrend,
         ))
     } else {
         None
@@ -1121,6 +1168,94 @@ fn forward_return_pct(history: &[HistoryRecord], i: usize, horizon_days: i64) ->
     } else {
         None
     }
+}
+
+/// Expected forward DRIFT return (percent, Decimal) over `horizon_days` from
+/// bar `i`, estimated from the asset's TRAILING-WINDOW local log-price slope —
+/// the "what the secular/time-local trend alone would deliver" baseline that the
+/// `--detrend` mode subtracts from each raw return.
+///
+/// METHOD: locate the most recent bar whose date is on/before
+/// `date(i) − DETREND_TRAILING_DAYS` (the trailing reference). Per-day log drift
+/// `g = (ln P_i − ln P_trail) / Δdays`, where `Δdays` is the ACTUAL calendar gap
+/// to that bar (≥ the nominal window on a gappy series — using the real gap is
+/// the honest per-day rate). Expected horizon drift return = `exp(g · h) − 1`,
+/// in percent.
+///
+/// `None` — and the bar is dropped from the detrended sample — when bar `i`
+/// lacks a full `DETREND_TRAILING_DAYS` of trailing history, on a nonpositive
+/// price, or on a degenerate zero/negative elapsed gap. Dropping early bars is
+/// the documented sample-size cost of detrending.
+///
+/// DETERMINISM: `ln`/`exp` are taken in f64 (isolated transcendental step) and
+/// the resulting drift % is immediately rounded to [`DRIFT_DP`] before being
+/// returned as a Decimal, so the subtraction downstream is stable Decimal math
+/// (see [`DRIFT_DP`] for the full ulp argument).
+fn expected_drift_return_pct(
+    history: &[HistoryRecord],
+    i: usize,
+    horizon_days: i64,
+) -> Option<Decimal> {
+    let d_i = parse(&history[i].date)?;
+    let p_i = history[i].close;
+    if p_i <= Decimal::ZERO {
+        return None;
+    }
+    let trail_target = d_i - chrono::Duration::days(DETREND_TRAILING_DAYS);
+    // Most recent bar on/before the trailing target. `partition_point` returns
+    // the count of leading bars with `date <= trail_target` (ascending dates),
+    // i.e. the index of the first bar PAST the target; the trailing reference is
+    // the bar just before it. Unparseable dates (never present in real bar data)
+    // sort with the past, matching `forward_return_pct`'s convention.
+    let head = &history[..i];
+    let off = head.partition_point(|r| parse(&r.date).map(|d| d <= trail_target).unwrap_or(true));
+    if off == 0 {
+        // No bar is a full window old → insufficient trailing history.
+        return None;
+    }
+    let trail = &head[off - 1];
+    let d_trail = parse(&trail.date)?;
+    let p_trail = trail.close;
+    if p_trail <= Decimal::ZERO {
+        return None;
+    }
+    let elapsed = (d_i - d_trail).num_days();
+    if elapsed <= 0 {
+        return None;
+    }
+    // --- Transcendental step ISOLATED to f64 (ln/exp are not IEEE-correctly-
+    // rounded); round the % to DRIFT_DP before leaving f64 so downstream Decimal
+    // math is reproducible. ---
+    let ln_pi = p_i.to_f64()?.ln();
+    let ln_pt = p_trail.to_f64()?.ln();
+    let g = (ln_pi - ln_pt) / elapsed as f64;
+    let drift_factor = (g * horizon_days as f64).exp();
+    let drift_pct = (drift_factor - 1.0) * 100.0;
+    Decimal::from_f64(drift_pct).map(|d| d.round_dp(DRIFT_DP))
+}
+
+/// Forward return (percent) from bar `i` over `horizon_days`, RAW or
+/// DRIFT-DETRENDED depending on `detrend`.
+///
+/// - Raw (`detrend == false`): `(P_{i+h} − P_i)/P_i` — identical to
+///   [`forward_return_pct`], so default output is byte-for-byte unchanged.
+/// - Detrended (`detrend == true`): `raw − expected_drift_return` — the EXCESS
+///   over the asset's contemporaneous trailing-window local drift. Returns
+///   `None` whenever either the raw return OR the trailing-drift estimate is
+///   unavailable, so a bar without a full trailing window is dropped from the
+///   detrended sample.
+fn measured_return_pct(
+    history: &[HistoryRecord],
+    i: usize,
+    horizon_days: i64,
+    detrend: bool,
+) -> Option<Decimal> {
+    let raw = forward_return_pct(history, i, horizon_days)?;
+    if !detrend {
+        return Some(raw);
+    }
+    let drift = expected_drift_return_pct(history, i, horizon_days)?;
+    Some(raw - drift)
 }
 
 /// Asset-agnostic price-structure swing lows: prominence-filtered pivot lows
@@ -1278,13 +1413,14 @@ fn horizon_returns(
     history: &[HistoryRecord],
     firing_idx: &[usize],
     baseline: &[HorizonBaseline],
+    detrend: bool,
 ) -> Vec<HorizonReturn> {
     FORWARD_HORIZONS_DAYS
         .iter()
         .map(|&h| {
             let rets: Vec<Decimal> = firing_idx
                 .iter()
-                .filter_map(|&i| forward_return_pct(history, i, h))
+                .filter_map(|&i| measured_return_pct(history, i, h, detrend))
                 .collect();
             let mean = dec_mean(&rets);
             let base_mean = baseline
@@ -1324,13 +1460,14 @@ fn top_horizon_returns(
     history: &[HistoryRecord],
     firing_idx: &[usize],
     baseline: &[HorizonBaseline],
+    detrend: bool,
 ) -> Vec<HorizonReturn> {
     FORWARD_HORIZONS_DAYS
         .iter()
         .map(|&h| {
             let rets: Vec<Decimal> = firing_idx
                 .iter()
-                .filter_map(|&i| forward_return_pct(history, i, h))
+                .filter_map(|&i| measured_return_pct(history, i, h, detrend))
                 .collect();
             let mean = dec_mean(&rets);
             let base_mean = baseline
@@ -1413,6 +1550,7 @@ fn build_expectancy(
     price_lows: &[(usize, NaiveDate, Decimal)],
     doctrine_anchors: &[(NaiveDate, Decimal)],
     window_days: i64,
+    detrend: bool,
 ) -> CycleSignalExpectancy {
     // Anchor set for closeness = price-structure lows ∪ doctrine anchors,
     // deduplicated by date (doctrine price wins on a tie since it is stronger
@@ -1430,13 +1568,15 @@ fn build_expectancy(
     let insufficient_anchors = anchors.is_empty();
     let small_n = anchors_used < SMALL_N_THRESHOLD;
 
-    // Baseline: forward returns over every evaluated bar at each horizon.
+    // Baseline: forward returns over every evaluated bar at each horizon
+    // (raw, or excess-over-local-drift when `detrend` — the SAME treatment as
+    // the per-firing returns, so lift stays a like-for-like comparison).
     let baseline: Vec<HorizonBaseline> = FORWARD_HORIZONS_DAYS
         .iter()
         .map(|&h| {
             let rets: Vec<Decimal> = eval_idx
                 .iter()
-                .filter_map(|&i| forward_return_pct(history, i, h))
+                .filter_map(|&i| measured_return_pct(history, i, h, detrend))
                 .collect();
             HorizonBaseline {
                 horizon_days: h,
@@ -1457,7 +1597,7 @@ fn build_expectancy(
             label: l.clone(),
             firings: idx.len(),
             low_firings: idx.len() < MIN_SIGNIFICANT_FIRINGS,
-            horizons: horizon_returns(history, idx, &baseline),
+            horizons: horizon_returns(history, idx, &baseline, detrend),
             closeness: closeness_stats(history, idx, &anchors, window_days),
         })
         .collect();
@@ -1470,7 +1610,7 @@ fn build_expectancy(
             label: format!("Confluence ≥{thr}/7 criteria firing"),
             firings: idx.len(),
             low_firings: idx.len() < MIN_SIGNIFICANT_FIRINGS,
-            horizons: horizon_returns(history, idx, &baseline),
+            horizons: horizon_returns(history, idx, &baseline, detrend),
             closeness: closeness_stats(history, idx, &anchors, window_days),
         })
         .collect();
@@ -1493,6 +1633,17 @@ fn build_expectancy(
              measured against the unconditioned same-horizon baseline."
         )
     };
+    let caveat = if detrend {
+        format!(
+            "{caveat} DRIFT-DETRENDED: every return (signal AND baseline) is EXCESS over the \
+             asset's trailing-{DETREND_TRAILING_DAYS}d local log-drift, isolating the signal's \
+             edge from secular/time-local trend. Caveats: this assumes log-LINEAR local drift over \
+             the window, and bars without a full trailing year are dropped (smaller sample than \
+             raw mode)."
+        )
+    } else {
+        caveat
+    };
 
     CycleSignalExpectancy {
         price_structure_anchors: price_lows
@@ -1505,6 +1656,8 @@ fn build_expectancy(
         anchors_used,
         insufficient_anchors,
         small_n,
+        detrended: detrend,
+        detrend_trailing_days: detrend.then_some(DETREND_TRAILING_DAYS),
         baseline,
         criteria,
         confluence,
@@ -1523,6 +1676,7 @@ fn build_top_expectancy(
     conf_idx: &[(usize, Vec<usize>)],
     price_highs: &[(usize, NaiveDate, Decimal)],
     window_days: i64,
+    detrend: bool,
 ) -> CycleSignalExpectancy {
     let anchors: Vec<(NaiveDate, Decimal)> =
         price_highs.iter().map(|&(_, d, p)| (d, p)).collect();
@@ -1535,7 +1689,7 @@ fn build_top_expectancy(
         .map(|&h| {
             let rets: Vec<Decimal> = eval_idx
                 .iter()
-                .filter_map(|&i| forward_return_pct(history, i, h))
+                .filter_map(|&i| measured_return_pct(history, i, h, detrend))
                 .collect();
             HorizonBaseline {
                 horizon_days: h,
@@ -1556,7 +1710,7 @@ fn build_top_expectancy(
             label: l.clone(),
             firings: idx.len(),
             low_firings: idx.len() < MIN_SIGNIFICANT_FIRINGS,
-            horizons: top_horizon_returns(history, idx, &baseline),
+            horizons: top_horizon_returns(history, idx, &baseline, detrend),
             closeness: closeness_stats(history, idx, &anchors, window_days),
         })
         .collect();
@@ -1568,7 +1722,7 @@ fn build_top_expectancy(
             label: format!("Confluence ≥{thr}/7 criteria firing"),
             firings: idx.len(),
             low_firings: idx.len() < MIN_SIGNIFICANT_FIRINGS,
-            horizons: top_horizon_returns(history, idx, &baseline),
+            horizons: top_horizon_returns(history, idx, &baseline, detrend),
             closeness: closeness_stats(history, idx, &anchors, window_days),
         })
         .collect();
@@ -1587,6 +1741,16 @@ fn build_top_expectancy(
              negative mean forward return and negative lift vs baseline."
         )
     };
+    let caveat = if detrend {
+        format!(
+            "{caveat} DRIFT-DETRENDED: every return (signal AND baseline) is EXCESS over the \
+             asset's trailing-{DETREND_TRAILING_DAYS}d local log-drift, isolating the signal's \
+             edge from secular/time-local trend. Caveats: assumes log-LINEAR local drift over the \
+             window, and bars without a full trailing year are dropped (smaller sample than raw)."
+        )
+    } else {
+        caveat
+    };
 
     CycleSignalExpectancy {
         price_structure_anchors: price_highs
@@ -1599,6 +1763,8 @@ fn build_top_expectancy(
         anchors_used,
         insufficient_anchors,
         small_n,
+        detrended: detrend,
+        detrend_trailing_days: detrend.then_some(DETREND_TRAILING_DAYS),
         baseline,
         criteria,
         confluence,
@@ -1730,6 +1896,7 @@ mod tests {
             Some(90),
             &DEFAULT_CONFLUENCE_THRESHOLDS,
             false,
+            false,
         )
         .expect("backtest");
         assert!(bt.expectancy.is_none(), "expectancy off by default");
@@ -1781,6 +1948,7 @@ mod tests {
             Some(120),
             &DEFAULT_CONFLUENCE_THRESHOLDS,
             false,
+            false,
         )
         .expect("backtest");
         // At least the 2022-11-21 anchor should verify against the planted low.
@@ -1810,6 +1978,7 @@ mod tests {
             None,
             &DEFAULT_CONFLUENCE_THRESHOLDS,
             true,
+            false,
         )
         .is_none());
     }
@@ -1826,6 +1995,7 @@ mod tests {
             None,
             &DEFAULT_CONFLUENCE_THRESHOLDS,
             true,
+            false,
         )
         .unwrap();
         let b = run_backtest(
@@ -1836,6 +2006,7 @@ mod tests {
             None,
             &DEFAULT_CONFLUENCE_THRESHOLDS,
             true,
+            false,
         )
         .unwrap();
         assert_eq!(
@@ -1968,6 +2139,7 @@ mod tests {
             Some(90),
             &DEFAULT_CONFLUENCE_THRESHOLDS,
             false,
+            false,
         )
         .expect("backtest");
         assert!(bt.anchors.is_empty(), "top path has no doctrine anchors");
@@ -2037,6 +2209,7 @@ mod tests {
             Some(120),
             &DEFAULT_CONFLUENCE_THRESHOLDS,
             true,
+            false,
         )
         .expect("backtest");
         let exp = bt.expectancy.expect("expectancy populated");
@@ -2103,6 +2276,7 @@ mod tests {
             None,
             &DEFAULT_CONFLUENCE_THRESHOLDS,
             true,
+            false,
         )
         .is_none());
     }
@@ -2118,6 +2292,7 @@ mod tests {
             SignalTimeframe::Monthly,
             Some(90),
             &DEFAULT_CONFLUENCE_THRESHOLDS,
+            false,
             false,
         )
         .expect("backtest");
@@ -2150,6 +2325,7 @@ mod tests {
             Some(120),
             &DEFAULT_CONFLUENCE_THRESHOLDS,
             true,
+            false,
         )
         .expect("backtest");
         let exp = bt.expectancy.expect("expectancy populated");
@@ -2344,6 +2520,7 @@ mod tests {
     ///   * Both headline rows have ≥20 firings and low_firings == false.
     ///   * low_firings is consistently wired: it equals (firings < MIN) on EVERY
     ///     row of both blocks.
+    ///
     /// (365d is deliberately NOT asserted: a 1-year horizon overshoots the ~13mo
     /// cycle and lands in the next decline, which is correct behaviour, not edge.)
     #[test]
@@ -2351,7 +2528,7 @@ mod tests {
         let bottoms = chained_v_bottoms(NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(), 14, 150, 250);
         let bt = run_backtest(
             "ACME", "ACME", &bottoms, SignalTimeframe::Monthly, Some(120),
-            &DEFAULT_CONFLUENCE_THRESHOLDS, true,
+            &DEFAULT_CONFLUENCE_THRESHOLDS, true, false,
         )
         .expect("bottom backtest");
         let exp = bt.expectancy.expect("bottom expectancy");
@@ -2391,7 +2568,7 @@ mod tests {
         let tops = chained_inverted_v(NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(), 14, 150, 250);
         let btt = run_top_backtest(
             "ACME", "ACME", &tops, SignalTimeframe::Monthly, Some(120),
-            &DEFAULT_CONFLUENCE_THRESHOLDS, true,
+            &DEFAULT_CONFLUENCE_THRESHOLDS, true, false,
         )
         .expect("top backtest");
         let expt = btt.expectancy.expect("top expectancy");
@@ -2421,5 +2598,235 @@ mod tests {
                 "top ≥4 should recover a clear negative edge at {h}d, got lift {lift}"
             );
         }
+    }
+
+    // ---- DRIFT-DETRENDED expectancy (the money test) ---------------------
+
+    /// Build a contiguous daily series directly from a log-price path, so the
+    /// drift and any planted dips are EXACTLY controllable. Price = exp(logp),
+    /// floored to stay positive; dates are one calendar day apart from `start`.
+    fn from_log_prices(start: NaiveDate, logp: &[f64]) -> Vec<HistoryRecord> {
+        logp.iter()
+            .enumerate()
+            .map(|(t, &lp)| {
+                let date = (start + chrono::Days::new(t as u64))
+                    .format("%Y-%m-%d")
+                    .to_string();
+                record(&date, lp.exp().max(0.01))
+            })
+            .collect()
+    }
+
+    /// Mean forward return (percent) of an expectancy row at one horizon.
+    fn mean_at(row: &ExpectancyRow, horizon: i64) -> Decimal {
+        row.horizons
+            .iter()
+            .find(|h| h.horizon_days == horizon)
+            .and_then(|h| h.mean_return_pct)
+            .unwrap_or_else(|| panic!("no mean at {horizon}d for {}", row.key))
+    }
+
+    /// THE MONEY TEST. Drift-detrending must strip an asset's time-local drift
+    /// from forward-return expectancy, leaving only the signal's genuine excess
+    /// edge — fixing the statistical-honesty gap that a global-mean baseline
+    /// cannot close on a NON-stationary trend.
+    ///
+    /// Construction (all controlled directly, no confluence engine in the loop —
+    /// the test calls `build_expectancy` with explicit firing indices, exactly
+    /// the production path minus signal detection):
+    ///
+    ///   EDGE series: two eras. Era 1 (bars 0..900) has a strong constant
+    ///   exponential drift (≈ +82% per 30d); era 2 (900..5900) is FLAT. "Firings"
+    ///   are clustered in era 1 at the bottoms of small planted V-dips (a +5.13%
+    ///   recovery bump on top of the drift). The baseline (every 10th bar, minus
+    ///   the regime-transition zone) spans BOTH eras, so its mean drift is far
+    ///   lower than era-1 drift — this is the non-stationarity that inflates raw
+    ///   lift even though the firings carry only a small real edge.
+    ///
+    ///   NO-EDGE series: a single era of the SAME pure exponential drift, NO
+    ///   dips. Firings are arbitrary mid-history bars with zero real edge.
+    ///
+    /// Asserts (horizon 30d; measured values in brackets):
+    ///   (a) RAW lift is large and dominated by drift — era-1 firings vs a
+    ///       both-eras baseline → [+78.4%], almost all the clustering/drift
+    ///       artifact (the real edge is only ~+10%).
+    ///   (b) DETRENDED lift ≈ the planted excess and is MUCH smaller than raw
+    ///       lift. In simple-return space the detrended excess is
+    ///       drift_factor·(bump_factor−1) ≈ 1.82·0.0513 ≈ +9.3% [measured +10.07%,
+    ///       baseline detrends to ~0] — ~7.8× smaller than the +78% raw lift, with
+    ///       ~+68pts of drift inflation removed.
+    ///   (c) On the NO-EDGE pure-drift series, detrended lift ≈ 0 [+2.4%] and the
+    ///       detrended MEAN return ≈ 0 [~0.00000004%] while the raw mean forward
+    ///       return is large [+82.2%] — proving the drift is actually stripped,
+    ///       not merely rescaled.
+    ///   (+) Detrending reduces the baseline sample size [544 → 507] (early bars
+    ///       lack a full trailing year and are dropped) — the documented honesty
+    ///       cost.
+    #[test]
+    fn detrend_strips_local_drift_isolating_planted_edge() {
+        let start = NaiveDate::from_ymd_opt(2000, 1, 1).unwrap();
+
+        // --- EDGE series: era1 high drift + dips, era2 long & flat. ---
+        // Era 2 is made LONG so the ~365-bar regime-transition zone (where a flat
+        // bar's trailing window still reaches into the steep era 1 and its local
+        // drift is mis-estimated) is only a small fraction of the baseline — that
+        // transition mis-estimate is a real, honest artifact of local detrending,
+        // diluted here rather than hidden.
+        let era1 = 900usize;
+        let total = 5900usize;
+        let drift_hi = 0.020_f64; // ≈ exp(0.020*30)=1.822 → +82.2% per 30 calendar days
+        let mut logp = vec![0.0_f64; total];
+        logp[0] = 100.0_f64.ln();
+        for t in 1..total {
+            let g = if t < era1 { drift_hi } else { 0.0 };
+            logp[t] = logp[t - 1] + g;
+        }
+        // Planted V-dips (the real edge): bottom at each center, recovering to the
+        // trend within ±hw bars. depth 0.05 log → exp(0.05)−1 = +5.13% recovery.
+        let hw = 10usize;
+        let depth = 0.05_f64;
+        let centers: Vec<usize> = (450..=850).step_by(50).collect(); // 9 dips, all with ≥365d trailing
+        for &c in &centers {
+            for off in 0..=hw {
+                let sub = depth * (1.0 - off as f64 / hw as f64);
+                logp[c + off] -= sub;
+                if off > 0 && c >= off {
+                    logp[c - off] -= sub; // skip off==0 so the bottom isn't subtracted twice
+                }
+            }
+        }
+        let edge = from_log_prices(start, &logp);
+        let firing_idx = centers.clone();
+        // Baseline = every 10th bar EXCEPT the regime-transition zone, where a
+        // bar's trailing year straddles both drift regimes and its local drift is
+        // genuinely ill-defined (the documented limitation of any local-drift
+        // estimator at a regime change). Excluding it consistently from BOTH raw
+        // and detrended baselines keeps the comparison like-for-like; the firings
+        // themselves sit safely in clean era-1 interior (full single-regime
+        // trailing window, forward window inside era 1).
+        let eval_idx: Vec<usize> = (0..total)
+            .step_by(10)
+            .filter(|&i| i + 35 < era1 || i >= era1 + 400)
+            .collect();
+        let crit_idx: Vec<(String, String, Vec<usize>)> = Vec::new();
+        let conf_idx: Vec<(usize, Vec<usize>)> = vec![(4usize, firing_idx.clone())];
+
+        let raw = build_expectancy(
+            &edge, &eval_idx, &crit_idx, &conf_idx, &[], &[], 90, /*detrend=*/ false,
+        );
+        let det = build_expectancy(
+            &edge, &eval_idx, &crit_idx, &conf_idx, &[], &[], 90, /*detrend=*/ true,
+        );
+        assert!(!raw.detrended);
+        assert!(det.detrended);
+        assert_eq!(det.detrend_trailing_days, Some(DETREND_TRAILING_DAYS));
+
+        let raw_row = raw.confluence.iter().find(|r| r.threshold == Some(4)).unwrap();
+        let det_row = det.confluence.iter().find(|r| r.threshold == Some(4)).unwrap();
+        let raw_lift = lift_at(raw_row, 30);
+        let det_lift = lift_at(det_row, 30);
+
+        // (a) Raw lift is large and dominated by the (clustered) drift artifact.
+        assert!(
+            raw_lift > dec!(35),
+            "raw lift should be large (drift-inflated), got {raw_lift}"
+        );
+        // (b) Detrended lift is much smaller than raw lift, and near the planted
+        //     excess drift_factor·(bump_factor−1) ≈ +9.3% (band generous for the
+        //     simple-return cross-term + minor transition contamination).
+        assert!(
+            det_lift > dec!(3) && det_lift < dec!(22),
+            "detrended lift should isolate the small planted excess (~9%), got {det_lift}"
+        );
+        assert!(
+            det_lift * dec!(2) < raw_lift,
+            "detrended lift {det_lift} must be MUCH smaller than raw lift {raw_lift}"
+        );
+        assert!(
+            (raw_lift - det_lift) > dec!(25),
+            "detrending must remove the bulk of the drift (~40pts), removed {}",
+            raw_lift - det_lift
+        );
+
+        // (+) Detrending drops early bars (no full trailing year) → fewer samples.
+        let raw_base = raw.baseline.iter().find(|b| b.horizon_days == 30).unwrap();
+        let det_base = det.baseline.iter().find(|b| b.horizon_days == 30).unwrap();
+        assert!(
+            det_base.samples < raw_base.samples,
+            "detrended baseline ({}) must drop early no-trailing-history bars vs raw ({})",
+            det_base.samples,
+            raw_base.samples
+        );
+
+        // --- NO-EDGE series: single era of the SAME pure drift, no dips. ---
+        let mut logp2 = vec![0.0_f64; total];
+        logp2[0] = 100.0_f64.ln();
+        for t in 1..total {
+            logp2[t] = logp2[t - 1] + drift_hi;
+        }
+        let flat = from_log_prices(start, &logp2);
+        // Firings: arbitrary mid-history bars (≥365d trailing), zero real edge.
+        let firing2: Vec<usize> = (500..=850).step_by(50).collect();
+        let conf2: Vec<(usize, Vec<usize>)> = vec![(4usize, firing2.clone())];
+
+        let raw2 = build_expectancy(
+            &flat, &eval_idx, &crit_idx, &conf2, &[], &[], 90, /*detrend=*/ false,
+        );
+        let det2 = build_expectancy(
+            &flat, &eval_idx, &crit_idx, &conf2, &[], &[], 90, /*detrend=*/ true,
+        );
+        let raw2_row = raw2.confluence.iter().find(|r| r.threshold == Some(4)).unwrap();
+        let det2_row = det2.confluence.iter().find(|r| r.threshold == Some(4)).unwrap();
+
+        // (c) Raw mean forward return is large (pure drift), but detrended lift
+        //     AND detrended mean are ≈ 0 — the drift is genuinely stripped.
+        assert!(
+            mean_at(raw2_row, 30) > dec!(50),
+            "no-edge raw 30d mean should be large pure drift, got {}",
+            mean_at(raw2_row, 30)
+        );
+        let det2_lift = lift_at(det2_row, 30);
+        assert!(
+            det2_lift.abs() < dec!(5),
+            "no-edge detrended lift must be ≈0 (drift removed), got {det2_lift}"
+        );
+        assert!(
+            mean_at(det2_row, 30).abs() < dec!(5),
+            "no-edge detrended mean must be ≈0 (excess over its own drift), got {}",
+            mean_at(det2_row, 30)
+        );
+        let det2_base = det2.baseline.iter().find(|b| b.horizon_days == 30).unwrap();
+        assert!(
+            det2_base.mean_return_pct.map(|m| m.abs() < dec!(5)).unwrap_or(false),
+            "no-edge detrended baseline mean must be ≈0, got {:?}",
+            det2_base.mean_return_pct
+        );
+    }
+
+    /// Default (no `--detrend`) output must be byte-for-byte unchanged: the
+    /// `detrended` / `detrend_trailing_days` fields are omitted from raw JSON.
+    #[test]
+    fn detrend_off_is_byte_identical_and_fields_omitted() {
+        let start = NaiveDate::from_ymd_opt(2019, 1, 1).unwrap();
+        let h = planted_v_bottom(start, 600, 200);
+        let raw = run_backtest(
+            "BTC", "BTC-USD", &h, SignalTimeframe::Monthly, None,
+            &DEFAULT_CONFLUENCE_THRESHOLDS, true, false,
+        )
+        .unwrap();
+        let json = serde_json::to_string(&raw).unwrap();
+        assert!(
+            !json.contains("detrended") && !json.contains("detrend_trailing_days"),
+            "raw-mode JSON must not carry the detrend flags"
+        );
+        // And detrended mode DOES surface them.
+        let det = run_backtest(
+            "BTC", "BTC-USD", &h, SignalTimeframe::Monthly, None,
+            &DEFAULT_CONFLUENCE_THRESHOLDS, true, true,
+        )
+        .unwrap();
+        let djson = serde_json::to_string(&det).unwrap();
+        assert!(djson.contains("\"detrended\":true"));
+        assert!(djson.contains("\"detrend_trailing_days\":365"));
     }
 }

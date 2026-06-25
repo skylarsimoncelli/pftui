@@ -5162,6 +5162,12 @@ pub enum BottomSignalsCommand {
         /// nearest price-structure swing low. Works for any symbol with history.
         #[arg(long)]
         expectancy: bool,
+        /// DRIFT-DETRENDED expectancy: report each forward return as EXCESS over
+        /// the asset's trailing-365d local drift (isolates the signal's edge
+        /// from secular/time-local trend). Implies --expectancy; drops bars
+        /// without a full trailing year (smaller sample). Default off → raw.
+        #[arg(long)]
+        detrend: bool,
         #[arg(long)]
         json: bool,
     },
@@ -5195,6 +5201,12 @@ pub enum TopSignalsCommand {
         /// nearest price-structure swing high). Works for any symbol with history.
         #[arg(long)]
         expectancy: bool,
+        /// DRIFT-DETRENDED expectancy: report each forward return as EXCESS over
+        /// the asset's trailing-365d local drift (isolates the signal's edge
+        /// from secular/time-local trend). Implies --expectancy; drops bars
+        /// without a full trailing year (smaller sample). Default off → raw.
+        #[arg(long)]
+        detrend: bool,
         #[arg(long)]
         json: bool,
     },

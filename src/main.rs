@@ -2758,13 +2758,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                         timeframe: bt_tf,
                         window,
                         expectancy,
+                        detrend,
                         json: bt_json,
                     }) => commands::cli_json::or_json_error(
                         "analytics cycles bottom-signals backtest",
                         bt_json,
                         match bt_symbol.or(bt_asset).or(symbol).or(asset) {
                             Some(sym) => commands::cycle_signals_cmd::run_backtest(
-                                &backend, &sym, &bt_tf, window, expectancy, bt_json,
+                                &backend, &sym, &bt_tf, window, expectancy, detrend, bt_json,
                             ),
                             None => Err(anyhow::anyhow!(
                                 "provide a symbol (positional) or --asset, e.g. `cycles bottom-signals backtest --asset BTC`"
@@ -2800,13 +2801,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                         timeframe: bt_tf,
                         window,
                         expectancy,
+                        detrend,
                         json: bt_json,
                     }) => commands::cli_json::or_json_error(
                         "analytics cycles top-signals backtest",
                         bt_json,
                         match bt_symbol.or(bt_asset).or(symbol).or(asset) {
                             Some(sym) => commands::cycle_signals_cmd::run_top_backtest(
-                                &backend, &sym, &bt_tf, window, expectancy, bt_json,
+                                &backend, &sym, &bt_tf, window, expectancy, detrend, bt_json,
                             ),
                             None => Err(anyhow::anyhow!(
                                 "provide a symbol (positional) or --asset, e.g. `cycles top-signals backtest --asset BTC`"
