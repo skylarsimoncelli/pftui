@@ -179,6 +179,26 @@ pub fn is_oversold(s: &DssSeries, oversold: f64) -> Option<bool> {
     current_dss(s).map(|v| v < oversold)
 }
 
+/// True when xDSS ticked DOWN on the latest bar (`dss[0] < dss[1]`) — the
+/// cycle-TOP mirror of [`turned_up`].
+pub fn turned_down(s: &DssSeries) -> Option<bool> {
+    last_two(&s.dss).map(|(prev, cur)| cur < prev)
+}
+
+/// True when xDSS crossed BELOW its trigger on the latest bar
+/// (`dss[1] >= trigger[1]` and `dss[0] < trigger[0]`) — the cycle-TOP mirror of
+/// [`crossed_above_trigger`].
+pub fn crossed_below_trigger(s: &DssSeries) -> Option<bool> {
+    let (d_prev, d_cur) = last_two(&s.dss)?;
+    let (t_prev, t_cur) = last_two(&s.trigger)?;
+    Some(d_prev >= t_prev && d_cur < t_cur)
+}
+
+/// True when the latest xDSS is overbought (> `overbought`, default 80).
+pub fn is_overbought(s: &DssSeries, overbought: f64) -> Option<bool> {
+    current_dss(s).map(|v| v > overbought)
+}
+
 /// Helper: the last two finite values of an `Option` series, as (prev, cur).
 fn last_two(series: &[Option<f64>]) -> Option<(f64, f64)> {
     let n = series.len();
@@ -256,5 +276,33 @@ mod tests {
         let close: Vec<f64> = (0..150).map(|i| 500.0 - i as f64 * 2.0).collect();
         let s = compute_dss_default(&close, &close, &close).expect("dss");
         assert_eq!(is_oversold(&s, 20.0), Some(true), "DSS should be oversold in a downtrend");
+    }
+
+    #[test]
+    fn inverted_v_fires_turn_down_and_cross_from_overbought() {
+        // Long rally drives DSS to overbought, then a sharp selloff makes it
+        // turn down and cross below its (lagging) trigger — the TOP mirror.
+        let mut close: Vec<f64> = (0..120).map(|i| 100.0 + i as f64 * 1.2).collect();
+        let base = *close.last().unwrap();
+        for j in 1..=30 {
+            close.push(base - j as f64 * 2.4);
+        }
+        let s = compute_dss_default(&close, &close, &close).expect("dss");
+        assert_eq!(turned_down(&s), Some(true), "DSS should turn down after a top");
+        let d = current_dss(&s).unwrap();
+        let t = current_trigger(&s).unwrap();
+        assert!(d < t, "DSS {d} should be below trigger {t} post-reversal");
+    }
+
+    #[test]
+    fn overbought_flag_at_top() {
+        // Pure advance: DSS pinned near 100.
+        let close: Vec<f64> = (0..150).map(|i| 100.0 + i as f64 * 2.0).collect();
+        let s = compute_dss_default(&close, &close, &close).expect("dss");
+        assert_eq!(
+            is_overbought(&s, 80.0),
+            Some(true),
+            "DSS should be overbought in an uptrend"
+        );
     }
 }

@@ -159,6 +159,16 @@ pub fn turned_up(erf: &[f64]) -> Option<bool> {
     Some(erf[n - 1] > erf[n - 2])
 }
 
+/// True when the ERF ticked DOWN on the latest bar (`erf[0] < erf[1]`) — the
+/// cycle-TOP mirror of [`turned_up`].
+pub fn turned_down(erf: &[f64]) -> Option<bool> {
+    let n = erf.len();
+    if n < 2 {
+        return None;
+    }
+    Some(erf[n - 1] < erf[n - 2])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +250,33 @@ mod tests {
         assert!(
             full[trough..].iter().any(|&v| v >= 0.0),
             "ERF should flip green during the recovery"
+        );
+    }
+
+    #[test]
+    fn turned_down_detects_inverted_v() {
+        // Up then sharp down — the ERF leads price, troughing/peaking near the
+        // turn. Assert `turned_down` fires on at least one bar in the early
+        // decline, and that the ERF goes red (<0) as the selloff runs.
+        let mut src: Vec<f64> = (0..200).map(|i| 100.0 + i as f64 * 0.3).collect();
+        let peak = src.len() - 1;
+        let base = *src.last().unwrap();
+        for j in 1..=40 {
+            src.push(base - j as f64 * 0.6);
+        }
+        let mut down_fired = false;
+        for end in (peak + 2)..=(peak + 12) {
+            let erf = compute_erf_default(&src[..end]).expect("erf");
+            if turned_down(&erf) == Some(true) {
+                down_fired = true;
+                break;
+            }
+        }
+        assert!(down_fired, "ERF should turn down through the reversal");
+        let full = compute_erf_default(&src).expect("erf");
+        assert!(
+            full[peak..].iter().any(|&v| v < 0.0),
+            "ERF should flip red during the decline"
         );
     }
 

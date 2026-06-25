@@ -1,9 +1,14 @@
-# CYCLE-SIGNALS.md — The Mechanical Cycle-Bottom Signal Suite
+# CYCLE-SIGNALS.md — The Mechanical Cycle-Bottom & Cycle-Top Signal Suites
 
 > Read before touching `src/analytics/cycle_signals.rs`, the `analytics cycles
-> bottom-signals` CLI, or any report/analyst prose that itemizes cycle-bottom
-> confirmations. Companion to [CYCLE-THEORY.md](CYCLE-THEORY.md) (the timing
-> engine) and [EPISTEMICS.md](EPISTEMICS.md) (the measurement discipline).
+> bottom-signals` / `top-signals` CLI, or any report/analyst prose that itemizes
+> cycle-bottom or cycle-top confirmations. Companion to
+> [CYCLE-THEORY.md](CYCLE-THEORY.md) (the timing engine) and
+> [EPISTEMICS.md](EPISTEMICS.md) (the measurement discipline).
+>
+> The bulk of this doc describes the cycle-**bottom** suite; the **symmetric
+> cycle-TOP suite** at the end is its exact inverted mirror (same engine,
+> bearish side).
 
 ## What it is
 
@@ -354,3 +359,114 @@ Under `--json`, a failed `bottom-signals` / backtest run emits
 - `insufficient_history` — the series resolved with some bars but fewer than the
   ~120-daily-bar floor the smoothing chains need; `bars_available` reports how
   many were found.
+
+---
+
+## The symmetric cycle-TOP suite (`analytics cycles top-signals`)
+
+`analytics cycles top-signals` is the **exact inverted mirror** of
+`bottom-signals`. It answers the opposite narrow question: *is a cycle TOP being
+put in right now?* Same engine, same 10→7 collapse, same struct shape
+(`criteria[]` with atomic `components[]`, `core_watch[]`, `met_count/total`,
+non-counted bonus) — every sub-signal just reads the **bearish/topping side** of
+the identical underlying indicators. It is position / measurement only; no price
+target, all `f64`, no money flows through it. Built in
+`src/analytics/cycle_signals.rs::cycle_top_signals` (mirror of
+`cycle_bottom_signals`).
+
+### The 7 composite cycle-TOP criteria
+
+| # | Composite (plain label) | Natural TF | Fires when |
+|---|---|---|---|
+| 1 | **Momentum line turning down** | requested | the RSI average's slope flips negative (`rsi_ma_turned_down`) |
+| 2 | **Momentum line crossed below price momentum** | requested | RSI-avg crosses below the raw RSI (`rsi_ma_cross_below_rsi`) |
+| 3 | **Double-smoothed stochastic topping** | requested | DSS ticked down **AND** crossed below its trigger (overbought >80 = qualifying context, not a firing condition) |
+| 4 | **Roofing filter confirming down** | requested | filter in top zone (>0) **AND** ticked down |
+| 5 | **Volatility bands bearish** | **daily** | daily band state == bearish |
+| 6 | **Significant reversal dots bearish** | **weekly + monthly** | a down-dot is active and ≥ any up-dot on either higher TF |
+| 7 | **Trend line lost** | **weekly** | price below the weekly trackline, or a fresh bearish cross on the latest weekly bar |
+| bonus | **Pi-cycle top (not counted)** | **daily** | last pi-cycle TOP within the trailing ~120 daily bars |
+
+The N/7 verdict bands mirror the bottom suite (`no/early/building/strong/very
+strong cycle-top confluence`). Same timeframe model: criteria 1–4 run on the
+requested `--timeframe` (default `monthly`); bands=daily, dots=weekly+monthly,
+line=weekly, pi=daily are fixed.
+
+### Running it
+
+```bash
+pftui analytics cycles top-signals --asset BTC                       # text, monthly
+pftui analytics cycles top-signals --asset BTC --timeframe monthly --json
+pftui analytics cycles top-signals --asset gold --timeframe weekly
+```
+
+The `--json` payload is the symmetric twin of the bottom payload: top-side flag
+fields (`rsi_ma_turned_down`, `dss_turned_down`, `dss_cross_below_trigger`,
+`dss_overbought`, `erf_top_zone`, `erf_turned_down`, `erf_negative`,
+`cyberbands_bearish`, `cyberdots_bearish`, `cyberline_lost`, `pi_cycle_top`),
+the 7 `criteria[]` rows (keys `momentum_turning_down`, `momentum_below_price`,
+`dss_topping`, `roofing_confirming_down`, `volatility_bands_bearish`,
+`reversal_dots_bearish`, `trend_line_lost`), `core_watch[]` (the four
+momentum/stochastic/roofing watch items), `met_count`/`total`, the bonus, and
+`verdict`.
+
+### Top backtest — forward-return expectancy vs swing HIGHS
+
+```bash
+pftui analytics cycles top-signals backtest --asset BTC --expectancy --json
+pftui analytics cycles top-signals backtest --asset gold --timeframe weekly --window 120 --expectancy
+```
+
+The top backtest is the asset-agnostic forward-return mirror of the bottom one,
+with two honest differences:
+
+1. **No doctrine top anchors.** The documented doctrine anchors (BTC 4-year,
+   gold ~6.9-year) are cycle **LOWS** — there are no doctrine TOP anchors. So the
+   top backtest's verified-anchor reliability section is **always empty**
+   (`anchors: []`, `small_n: true`, `caveat: insufficient_anchors`). The real
+   read lives in the **expectancy block**, which conditions forward returns on
+   **price-structure swing HIGHS** (`price_structure_highs`: prominence-filtered
+   pivot highs followed by a ≥20% decline — the mirror of `price_structure_lows`).
+   *(Implementation note: the shared `CycleSignalExpectancy` struct reuses the
+   `price_structure_lows` field name to carry the swing-HIGH dates on the top
+   path — the field is the anchor-date list regardless of polarity.)*
+2. **A good top signal precedes a DECLINE.** So the headline hit-rate is the
+   **negative** forward-return rate. Each per-horizon row adds
+   `negative_rate_pct` (fraction of firings followed by a strictly-negative
+   forward return). `mean_return_pct` / `median_return_pct` are expected to be
+   **negative** after a real top, and `lift_vs_baseline_pct`
+   (`mean - baseline_mean`) is expected to be **negative** (the asset
+   underperformed a random bar after the signal fired). Closeness is measured to
+   the nearest swing **high** (days + price-% gap).
+
+No-lookahead discipline is identical: at each evaluated bar `i` the engine reads
+only `history[..=i]`, so a firing's index set cannot shift when future bars
+arrive. Forward returns deliberately consume future bars — that is the outcome
+being graded, not the signal.
+
+### Cycle-TOP alert conditions
+
+Three condition shapes, the mirror of the bottom set, evaluated mechanically on
+`data refresh` (same `Technical` alert kind, same edge-trigger machinery; the
+engine dispatches on polarity — anything starting `cycle_top_` reads the top
+suite):
+
+- **Confluence threshold** — `cycle_top_<timeframe>_<N>` (e.g.
+  `cycle_top_monthly_4`): fires when the top `met/7` reaches `<N>`.
+- **Single criterion** — `cycle_top_criterion_<timeframe>_<criterion_key>`
+  (e.g. `cycle_top_criterion_weekly_trend_line_lost`).
+- **Single component** — `cycle_top_component_<timeframe>_<component_key>`
+  (e.g. `cycle_top_component_monthly_erf_turned_down`).
+
+Top criterion keys: `momentum_turning_down`, `momentum_below_price`,
+`dss_topping`, `roofing_confirming_down`, `volatility_bands_bearish`,
+`reversal_dots_bearish`, `trend_line_lost`.
+Top component keys: `rsi_ma_turned_down`, `rsi_ma_cross_below_rsi`,
+`dss_turned_down`, `dss_cross_below_trigger`, `dss_overbought`, `erf_top_zone`,
+`erf_turned_down`, `erf_negative`, `cyberbands_bearish`, `cyberdots_bearish`,
+`cyberline_lost`, `pi_cycle_top`.
+
+```bash
+pftui analytics alerts add --kind technical --symbol BTC-USD \
+  --condition cycle_top_monthly_4
+```

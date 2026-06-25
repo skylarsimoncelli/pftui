@@ -192,6 +192,13 @@ pub struct HorizonReturn {
     /// (the hit-rate of the trade thesis at this horizon).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub positive_rate_pct: Option<Decimal>,
+    /// Fraction of samples with a strictly NEGATIVE forward return, in percent.
+    /// Only populated for the cycle-TOP backtest, where a good top signal
+    /// precedes a DECLINE — so `negative_rate_pct` is the top thesis hit-rate
+    /// (the mirror of `positive_rate_pct` for the bottom backtest). `None` (and
+    /// omitted from JSON) on the bottom path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub negative_rate_pct: Option<Decimal>,
     /// Unconditioned baseline mean forward return at this horizon (every
     /// evaluated bar), in percent — the bar to beat.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -731,6 +738,190 @@ fn build_caveat(total_anchors: usize, small_n: bool, window_days: i64) -> String
     }
 }
 
+/// Run the cycle-TOP reliability + (optional) forward-return expectancy
+/// backtest — the symmetric mirror of [`run_backtest`]. The signal read at each
+/// point-in-time bar is [`cycle_signals::cycle_top_signals`] over
+/// `history[..=i]` (no lookahead). There are NO documented doctrine TOP anchors
+/// (the BTC/gold doctrine anchors are cycle LOWS), so the reliability section's
+/// verified-anchor set is always empty and the real grading happens in the
+/// expectancy block against asset-agnostic price-structure swing HIGHS.
+#[allow(clippy::too_many_arguments)]
+pub fn run_top_backtest(
+    symbol: &str,
+    series: &str,
+    history: &[HistoryRecord],
+    timeframe: SignalTimeframe,
+    window_days: Option<i64>,
+    thresholds: &[usize],
+    with_expectancy: bool,
+) -> Option<CycleSignalBacktest> {
+    let window_days = window_days.unwrap_or(DEFAULT_WINDOW_BARS).max(1);
+    if history.len() < cycle_signals::min_daily_bars() {
+        return None;
+    }
+    let as_of = history.last()?.date.clone();
+    let eval_stride_days = eval_stride_days(timeframe);
+
+    // No documented doctrine TOP anchors exist — tops are price-structure-only.
+    let anchors: Vec<String> = Vec::new();
+    let unverified: Vec<String> = Vec::new();
+    let anchor_dates: Vec<NaiveDate> = Vec::new();
+    let total_anchors = 0usize;
+    let small_n = total_anchors < SMALL_N_THRESHOLD;
+
+    let n_criteria = 7usize;
+    let mut prev_met: Vec<bool> = vec![false; n_criteria];
+    let mut prev_count: usize = 0;
+    let mut have_prev = false;
+    let mut keys_labels: Vec<(String, String)> = Vec::new();
+    let mut crit_firings: Vec<Vec<Firing>> = vec![Vec::new(); n_criteria];
+    let mut conf_firings: Vec<Vec<Firing>> = thresholds.iter().map(|_| Vec::new()).collect();
+    let mut crit_fire_idx: Vec<Vec<usize>> = vec![Vec::new(); n_criteria];
+    let mut conf_fire_idx: Vec<Vec<usize>> = thresholds.iter().map(|_| Vec::new()).collect();
+    let mut eval_idx: Vec<usize> = Vec::new();
+
+    let start = cycle_signals::min_daily_bars().saturating_sub(1);
+    let mut i = start;
+    while i < history.len() {
+        if let Some(read) = cycle_signals::cycle_top_signals(symbol, &history[..=i], timeframe) {
+            if keys_labels.is_empty() {
+                keys_labels = read
+                    .criteria
+                    .iter()
+                    .map(|c| (c.key.clone(), c.label.clone()))
+                    .collect();
+            }
+            let fired_on = read.as_of.clone();
+            let cur_met: Vec<bool> = read.criteria.iter().map(|c| c.met).collect();
+            let cur_count = read.met_count;
+            if with_expectancy {
+                eval_idx.push(i);
+            }
+            if have_prev {
+                for (ci, &met) in cur_met.iter().enumerate().take(n_criteria) {
+                    if met && !prev_met[ci] {
+                        let m = match_firing(&fired_on, &anchor_dates, window_days);
+                        let hit = m.is_some();
+                        crit_firings[ci].push(Firing {
+                            fired_on: fired_on.clone(),
+                            matched_low: m.as_ref().map(|(l, _)| l.clone()),
+                            lead_lag_days: m.as_ref().map(|(_, d)| *d),
+                            hit,
+                        });
+                        if with_expectancy {
+                            crit_fire_idx[ci].push(i);
+                        }
+                    }
+                }
+                for (ti, &thr) in thresholds.iter().enumerate() {
+                    let now_at = cur_count >= thr;
+                    let was_at = prev_count >= thr;
+                    if now_at && !was_at {
+                        let m = match_firing(&fired_on, &anchor_dates, window_days);
+                        let hit = m.is_some();
+                        conf_firings[ti].push(Firing {
+                            fired_on: fired_on.clone(),
+                            matched_low: m.as_ref().map(|(l, _)| l.clone()),
+                            lead_lag_days: m.as_ref().map(|(_, d)| *d),
+                            hit,
+                        });
+                        if with_expectancy {
+                            conf_fire_idx[ti].push(i);
+                        }
+                    }
+                }
+            }
+            prev_met = cur_met;
+            prev_count = cur_count;
+            have_prev = true;
+        }
+        if i + eval_stride_days >= history.len() && i + 1 < history.len() {
+            i = history.len() - 1;
+        } else {
+            i += eval_stride_days;
+        }
+    }
+
+    if keys_labels.is_empty() {
+        return None;
+    }
+
+    let criteria: Vec<CriterionReliability> = keys_labels
+        .iter()
+        .enumerate()
+        .map(|(ci, (k, l))| {
+            build_reliability(k, l, std::mem::take(&mut crit_firings[ci]), total_anchors)
+        })
+        .collect();
+    let confluence: Vec<CriterionReliability> = thresholds
+        .iter()
+        .enumerate()
+        .map(|(ti, &thr)| {
+            let mut row = build_reliability(
+                &format!("confluence_ge_{thr}"),
+                &format!("Confluence ≥{thr}/7 criteria firing"),
+                std::mem::take(&mut conf_firings[ti]),
+                total_anchors,
+            );
+            row.threshold = Some(thr);
+            row
+        })
+        .collect();
+
+    let headline =
+        "Cycle-TOP suite has no doctrine anchors (doctrine anchors are cycle LOWS); reliability \
+         is measured against price-structure swing highs in the expectancy block."
+            .to_string();
+    let caveat =
+        "insufficient_anchors: cycle TOPS have no documented doctrine anchors — the verified-low \
+         reliability section is empty by construction; use the expectancy block (price-structure \
+         swing highs) for the forward-return read."
+            .to_string();
+
+    let expectancy = if with_expectancy {
+        let price_highs =
+            price_structure_highs(history, PRICE_LOW_PIVOT_WINDOW, PRICE_LOW_PROMINENCE_PCT);
+        let crit_idx: Vec<(String, String, Vec<usize>)> = keys_labels
+            .iter()
+            .enumerate()
+            .map(|(ci, (k, l))| (k.clone(), l.clone(), std::mem::take(&mut crit_fire_idx[ci])))
+            .collect();
+        let conf_idx: Vec<(usize, Vec<usize>)> = thresholds
+            .iter()
+            .enumerate()
+            .map(|(ti, &thr)| (thr, std::mem::take(&mut conf_fire_idx[ti])))
+            .collect();
+        Some(build_top_expectancy(
+            history,
+            &eval_idx,
+            &crit_idx,
+            &conf_idx,
+            &price_highs,
+            window_days,
+        ))
+    } else {
+        None
+    };
+
+    Some(CycleSignalBacktest {
+        symbol: symbol.to_string(),
+        series: series.to_string(),
+        timeframe,
+        as_of,
+        bars: history.len(),
+        window_days,
+        eval_stride_days,
+        anchors,
+        unverified_anchors: unverified,
+        small_n,
+        criteria,
+        confluence,
+        headline,
+        caveat,
+        expectancy,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Forward-return expectancy (asset-agnostic)
 // ---------------------------------------------------------------------------
@@ -838,6 +1029,82 @@ fn price_structure_lows(
     out
 }
 
+/// Rolling-window pivot HIGHS — the mirror of [`pivot_lows`]. Left window
+/// clamped at the series start; right window must be complete (finality).
+/// Tie-break mirrors `pivot_lows`: equal highs resolve to the LATER bar
+/// (left non-strict, right strict).
+fn pivot_highs(high: &[Decimal], w: usize) -> Vec<usize> {
+    let n = high.len();
+    if n == 0 || w == 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for i in 0..n {
+        let Some(right_end) = i.checked_add(w) else {
+            continue;
+        };
+        if right_end >= n {
+            break;
+        }
+        let l0 = i.saturating_sub(w);
+        let left_ok = high[l0..i].iter().all(|&v| high[i] >= v);
+        let right_ok = high[i + 1..=right_end].iter().all(|&v| high[i] > v);
+        if left_ok && right_ok {
+            out.push(i);
+        }
+    }
+    out
+}
+
+/// Asset-agnostic price-structure swing HIGHS — the mirror of
+/// [`price_structure_lows`]. Prominence-filtered pivot highs over the FULL
+/// history, independent of the cycle-signal suite (only OHLC consulted).
+/// Returns `(index, date, high_price)`.
+///
+/// Method: rolling-window pivot highs on the daily high (falling back to
+/// close), then keep only pivots followed by a DECLINE of at least
+/// `prominence_pct` before the next pivot (or series end). The decline filter
+/// removes minor pullback peaks AND drops the most recent, not-yet-declined
+/// high — which conveniently avoids leaning on an unconfirmed top.
+///
+/// NOTE (epistemics): unlike the bottom backtest there are NO doctrine TOP
+/// anchors (the documented BTC 4y / gold ~6.9y anchors are cycle LOWS), so the
+/// top backtest is PRICE-STRUCTURE-ONLY. Treat these hit-rates as directional,
+/// never authoritative.
+fn price_structure_highs(
+    history: &[HistoryRecord],
+    pivot_window: usize,
+    prominence_pct: i64,
+) -> Vec<(usize, NaiveDate, Decimal)> {
+    if history.is_empty() {
+        return Vec::new();
+    }
+    let highs: Vec<Decimal> = history.iter().map(|r| r.high.unwrap_or(r.close)).collect();
+    let pivots = pivot_highs(&highs, pivot_window);
+    let prominence = Decimal::from(prominence_pct);
+    let mut out = Vec::new();
+    for (k, &pi) in pivots.iter().enumerate() {
+        let high_price = highs[pi];
+        if high_price <= Decimal::ZERO {
+            continue;
+        }
+        // Lowest low between this pivot and the next (or the series end).
+        let seg_end = pivots.get(k + 1).copied().unwrap_or(history.len());
+        let seg_lo = history[pi..seg_end.min(history.len())]
+            .iter()
+            .map(|r| r.low.unwrap_or(r.close))
+            .min()
+            .unwrap_or(high_price);
+        let decline_pct = (high_price - seg_lo) / high_price * dec!(100);
+        if decline_pct >= prominence {
+            if let Some(d) = parse(&history[pi].date) {
+                out.push((pi, d, high_price));
+            }
+        }
+    }
+    out
+}
+
 /// Match firing bar `i` to the nearest price anchor within `window_days`,
 /// returning `(signed_lead_lag_days, signed_price_gap_pct)`. Price gap is
 /// `(fire_price - low_price) / low_price * 100` (positive = fired above the low).
@@ -893,11 +1160,62 @@ fn horizon_returns(
                 mean_return_pct: mean,
                 median_return_pct: dec_median(rets.clone()),
                 positive_rate_pct: positive_rate_pct(&rets),
+                negative_rate_pct: None,
                 baseline_mean_return_pct: base_mean,
                 lift_vs_baseline_pct: lift,
             }
         })
         .collect()
+}
+
+/// Cycle-TOP variant of [`horizon_returns`]: identical forward-return machinery,
+/// but also populates `negative_rate_pct` (the fraction of forward returns that
+/// were strictly negative — the top thesis hit-rate). Lift is still
+/// `mean - baseline`; for a good top signal this is NEGATIVE (price
+/// underperformed the unconditioned baseline after the signal fired).
+fn top_horizon_returns(
+    history: &[HistoryRecord],
+    firing_idx: &[usize],
+    baseline: &[HorizonBaseline],
+) -> Vec<HorizonReturn> {
+    FORWARD_HORIZONS_DAYS
+        .iter()
+        .map(|&h| {
+            let rets: Vec<Decimal> = firing_idx
+                .iter()
+                .filter_map(|&i| forward_return_pct(history, i, h))
+                .collect();
+            let mean = dec_mean(&rets);
+            let base_mean = baseline
+                .iter()
+                .find(|b| b.horizon_days == h)
+                .and_then(|b| b.mean_return_pct);
+            let lift = match (mean, base_mean) {
+                (Some(m), Some(b)) => Some(m - b),
+                _ => None,
+            };
+            HorizonReturn {
+                horizon_days: h,
+                samples: rets.len(),
+                mean_return_pct: mean,
+                median_return_pct: dec_median(rets.clone()),
+                positive_rate_pct: positive_rate_pct(&rets),
+                negative_rate_pct: negative_rate_pct(&rets),
+                baseline_mean_return_pct: base_mean,
+                lift_vs_baseline_pct: lift,
+            }
+        })
+        .collect()
+}
+
+/// Fraction (percent) of strictly-negative values — the cycle-TOP mirror of
+/// [`positive_rate_pct`].
+fn negative_rate_pct(v: &[Decimal]) -> Option<Decimal> {
+    if v.is_empty() {
+        return None;
+    }
+    let neg = v.iter().filter(|x| x.is_sign_negative() && !x.is_zero()).count();
+    Some(Decimal::from(neg) / Decimal::from(v.len()) * dec!(100))
 }
 
 /// Aggregate closeness of a signal's firings to the nearest price-structure low.
@@ -1028,6 +1346,97 @@ fn build_expectancy(
         price_low_pivot_window: PRICE_LOW_PIVOT_WINDOW,
         price_low_prominence_pct: Decimal::from(PRICE_LOW_PROMINENCE_PCT),
         doctrine_anchors_used,
+        anchors_used,
+        insufficient_anchors,
+        small_n,
+        baseline,
+        criteria,
+        confluence,
+        caveat,
+    }
+}
+
+/// Assemble the cycle-TOP expectancy block — the mirror of [`build_expectancy`].
+/// Anchors are asset-agnostic price-structure swing HIGHS only (no doctrine top
+/// anchors exist). Forward returns are graded with [`top_horizon_returns`] so
+/// each horizon also carries `negative_rate_pct` (the top thesis hit-rate).
+fn build_top_expectancy(
+    history: &[HistoryRecord],
+    eval_idx: &[usize],
+    crit_idx: &[(String, String, Vec<usize>)],
+    conf_idx: &[(usize, Vec<usize>)],
+    price_highs: &[(usize, NaiveDate, Decimal)],
+    window_days: i64,
+) -> CycleSignalExpectancy {
+    let anchors: Vec<(NaiveDate, Decimal)> =
+        price_highs.iter().map(|&(_, d, p)| (d, p)).collect();
+    let anchors_used = anchors.len();
+    let insufficient_anchors = anchors.is_empty();
+    let small_n = anchors_used < SMALL_N_THRESHOLD;
+
+    let baseline: Vec<HorizonBaseline> = FORWARD_HORIZONS_DAYS
+        .iter()
+        .map(|&h| {
+            let rets: Vec<Decimal> = eval_idx
+                .iter()
+                .filter_map(|&i| forward_return_pct(history, i, h))
+                .collect();
+            HorizonBaseline {
+                horizon_days: h,
+                samples: rets.len(),
+                mean_return_pct: dec_mean(&rets),
+                median_return_pct: dec_median(rets.clone()),
+                positive_rate_pct: positive_rate_pct(&rets),
+            }
+        })
+        .collect();
+
+    let criteria: Vec<ExpectancyRow> = crit_idx
+        .iter()
+        .map(|(k, l, idx)| ExpectancyRow {
+            key: k.clone(),
+            threshold: None,
+            label: l.clone(),
+            firings: idx.len(),
+            horizons: top_horizon_returns(history, idx, &baseline),
+            closeness: closeness_stats(history, idx, &anchors, window_days),
+        })
+        .collect();
+    let confluence: Vec<ExpectancyRow> = conf_idx
+        .iter()
+        .map(|(thr, idx)| ExpectancyRow {
+            key: format!("confluence_ge_{thr}"),
+            threshold: Some(*thr),
+            label: format!("Confluence ≥{thr}/7 criteria firing"),
+            firings: idx.len(),
+            horizons: top_horizon_returns(history, idx, &baseline),
+            closeness: closeness_stats(history, idx, &anchors, window_days),
+        })
+        .collect();
+
+    let caveat = if insufficient_anchors {
+        "insufficient_anchors: no price-structure swing highs could be derived from this history \
+         — forward returns are reported but closeness is unmeasurable."
+            .to_string()
+    } else {
+        format!(
+            "small_n / price-structure-only: top expectancy is conditioned on {anchors_used} \
+             price-structure swing high(s) (lowest-low decline of ≥{PRICE_LOW_PROMINENCE_PCT}% out \
+             of the peak). Cycle TOPS have NO doctrine anchors, so these are WEAKER ground truth \
+             than the bottom backtest's doctrine lows — read negative-rate / lift / closeness as \
+             directional, not as probabilities. A good top signal precedes a DECLINE: expect \
+             negative mean forward return and negative lift vs baseline."
+        )
+    };
+
+    CycleSignalExpectancy {
+        price_structure_lows: price_highs
+            .iter()
+            .map(|(_, d, _)| d.format("%Y-%m-%d").to_string())
+            .collect(),
+        price_low_pivot_window: PRICE_LOW_PIVOT_WINDOW,
+        price_low_prominence_pct: Decimal::from(PRICE_LOW_PROMINENCE_PCT),
+        doctrine_anchors_used: false,
         anchors_used,
         insufficient_anchors,
         small_n,
@@ -1366,6 +1775,188 @@ mod tests {
         for row in exp.criteria.iter().chain(exp.confluence.iter()) {
             assert_eq!(row.horizons.len(), FORWARD_HORIZONS_DAYS.len());
         }
+    }
+
+    // ---- Cycle-TOP backtest (symmetric mirror) ---------------------------
+
+    /// Deep advance into an inverted-V top then selloff, planted to peak near a
+    /// known date. Mirrors the top engine fixture so criteria actually fire.
+    fn planted_inverted_v(start: NaiveDate, n_rally: usize, n_decline: usize) -> Vec<HistoryRecord> {
+        let mut out = Vec::new();
+        let mut day = 0u64;
+        let mut price = 300.0;
+        for i in 0..n_rally {
+            price = 300.0 + i as f64 * (700.0 / n_rally as f64);
+            let noise = 8.0 * (i as f64 / 11.0).sin();
+            let date = (start + chrono::Days::new(day))
+                .format("%Y-%m-%d")
+                .to_string();
+            out.push(record(&date, (price + noise).max(50.0)));
+            day += 1;
+        }
+        let base = price;
+        for j in 1..=n_decline {
+            let p = (base - j as f64 * (600.0 / n_decline as f64)).max(50.0);
+            let noise = 6.0 * (j as f64 / 9.0).sin();
+            let date = (start + chrono::Days::new(day))
+                .format("%Y-%m-%d")
+                .to_string();
+            out.push(record(&date, (p + noise).max(50.0)));
+            day += 1;
+        }
+        out
+    }
+
+    #[test]
+    fn top_backtest_shallow_history_returns_none() {
+        let start = NaiveDate::from_ymd_opt(2022, 1, 1).unwrap();
+        let h = planted_inverted_v(start, 40, 10);
+        assert!(run_top_backtest(
+            "ACME",
+            "ACME",
+            &h,
+            SignalTimeframe::Monthly,
+            None,
+            &DEFAULT_CONFLUENCE_THRESHOLDS,
+            true,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn top_backtest_no_doctrine_anchors_but_fires() {
+        let start = NaiveDate::from_ymd_opt(2019, 1, 1).unwrap();
+        let h = planted_inverted_v(start, 700, 250);
+        let bt = run_top_backtest(
+            "TEST",
+            "TEST",
+            &h,
+            SignalTimeframe::Monthly,
+            Some(90),
+            &DEFAULT_CONFLUENCE_THRESHOLDS,
+            false,
+        )
+        .expect("backtest");
+        assert!(bt.expectancy.is_none(), "expectancy off by default");
+        assert_eq!(bt.criteria.len(), 7);
+        assert_eq!(bt.confluence.len(), 3);
+        // No doctrine top anchors ever.
+        assert!(bt.anchors.is_empty());
+        assert!(bt.small_n);
+        assert!(bt.caveat.contains("insufficient_anchors"));
+        // Top criteria still fired over the selloff.
+        let total_firings: usize = bt.criteria.iter().map(|c| c.firings).sum();
+        assert!(total_firings > 0, "expected some top firings on a selloff");
+    }
+
+    #[test]
+    fn top_expectancy_has_price_highs_and_negative_return() {
+        // Double inverted-V so the prominence-filtered pivot-high scan retains
+        // at least one swing high (decline out > 20%).
+        let start = NaiveDate::from_ymd_opt(2016, 1, 1).unwrap();
+        let mut h = planted_inverted_v(start, 500, 400);
+        let next_start = NaiveDate::from_ymd_opt(2018, 6, 1).unwrap();
+        let mut h2 = planted_inverted_v(next_start, 500, 400);
+        h.append(&mut h2);
+        let bt = run_top_backtest(
+            "ACME",
+            "ACME",
+            &h,
+            SignalTimeframe::Monthly,
+            Some(120),
+            &DEFAULT_CONFLUENCE_THRESHOLDS,
+            true,
+        )
+        .expect("backtest");
+        let exp = bt.expectancy.expect("expectancy populated");
+        assert!(!exp.doctrine_anchors_used, "tops have no doctrine anchors");
+        assert!(
+            !exp.price_structure_lows.is_empty(),
+            "expected price-structure swing highs (stored in the shared field)"
+        );
+        assert!(!exp.insufficient_anchors, "swing highs should be present");
+        assert!(exp.anchors_used > 0);
+        assert_eq!(exp.baseline.len(), FORWARD_HORIZONS_DAYS.len());
+        assert_eq!(exp.criteria.len(), 7);
+        // Every horizon row on the top path carries negative_rate_pct.
+        for row in exp.criteria.iter().chain(exp.confluence.iter()) {
+            assert_eq!(row.horizons.len(), FORWARD_HORIZONS_DAYS.len());
+            for h in &row.horizons {
+                if h.samples > 0 {
+                    assert!(
+                        h.negative_rate_pct.is_some(),
+                        "top horizons must report negative_rate_pct"
+                    );
+                }
+            }
+        }
+        // The high-confluence firings should precede a DECLINE: at the longest
+        // horizon, the >=3 confluence mean forward return should be negative for
+        // a series engineered to sell off after each top. Find the row.
+        let conf3 = exp
+            .confluence
+            .iter()
+            .find(|r| r.threshold == Some(3))
+            .expect("confluence>=3 row");
+        if let Some(h365) = conf3.horizons.iter().find(|h| h.horizon_days == 365) {
+            if let Some(mean) = h365.mean_return_pct {
+                assert!(
+                    mean < Decimal::ZERO,
+                    "top confluence should precede a 1y decline, got {mean}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn price_structure_highs_detects_planted_peak() {
+        let start = NaiveDate::from_ymd_opt(2016, 1, 1).unwrap();
+        let mut h = planted_inverted_v(start, 500, 400);
+        let next_start = NaiveDate::from_ymd_opt(2018, 6, 1).unwrap();
+        let mut h2 = planted_inverted_v(next_start, 500, 400);
+        h.append(&mut h2);
+        let highs = price_structure_highs(&h, PRICE_LOW_PIVOT_WINDOW, PRICE_LOW_PROMINENCE_PCT);
+        assert!(!highs.is_empty(), "should detect at least one swing high");
+        // Each retained high must be a real bar with a positive price.
+        for (idx, _d, p) in &highs {
+            assert!(*idx < h.len());
+            assert!(*p > Decimal::ZERO);
+        }
+    }
+
+    #[test]
+    fn negative_rate_pct_is_exact() {
+        // Three returns: -5, -1, +3 -> 2/3 negative = 66.67%.
+        let v = vec![dec!(-5), dec!(-1), dec!(3)];
+        let r = negative_rate_pct(&v).unwrap();
+        // 2/3 * 100 = 66.6666...
+        assert!((r - dec!(66.6666)).abs() < dec!(0.01), "got {r}");
+        let pos = positive_rate_pct(&v).unwrap();
+        assert!((pos - dec!(33.3333)).abs() < dec!(0.01), "got {pos}");
+        assert_eq!(negative_rate_pct(&[]), None);
+    }
+
+    #[test]
+    fn top_no_lookahead_signal_stable() {
+        let start = NaiveDate::from_ymd_opt(2017, 1, 1).unwrap();
+        let full = planted_inverted_v(start, 700, 300);
+        let i = 820usize.min(full.len() - 1);
+        let read_a = cycle_signals::cycle_top_signals("ACME", &full[..=i], SignalTimeframe::Monthly)
+            .expect("read at i");
+        let mut extended = full[..=i].to_vec();
+        for k in 1..=60 {
+            let date = (start + chrono::Days::new((i + k) as u64))
+                .format("%Y-%m-%d")
+                .to_string();
+            extended.push(record(&date, 50.0 + k as f64));
+        }
+        let read_b =
+            cycle_signals::cycle_top_signals("ACME", &extended[..=i], SignalTimeframe::Monthly)
+                .expect("read at i (extended)");
+        let a: Vec<bool> = read_a.criteria.iter().map(|c| c.met).collect();
+        let b: Vec<bool> = read_b.criteria.iter().map(|c| c.met).collect();
+        assert_eq!(a, b, "top firing-driving criteria at bar i must be lookahead-free");
+        assert_eq!(read_a.met_count, read_b.met_count);
     }
 
     /// No-lookahead invariant for the EXPECTANCY path: the signal read at bar i

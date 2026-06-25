@@ -120,6 +120,41 @@ fn valid_cycle_condition_arms_with_json_id() {
 }
 
 #[test]
+fn valid_cycle_top_condition_arms_with_json_id() {
+    let home = IsolatedHome::new("valid-top-json");
+    let out = home.run(&[
+        "analytics", "alerts", "add", "--kind", "technical", "--symbol", "BTC-USD",
+        "--condition", "cycle_top_monthly_4", "--json",
+    ]);
+    assert!(out.status.success(), "valid top condition failed: {}", stderr(&out));
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout(&out)).expect("alerts add --json must emit valid JSON");
+    assert_eq!(v["command"], "analytics alerts add");
+    assert!(v["id"].as_i64().is_some(), "missing load-bearing id: {v}");
+    assert_eq!(v["condition"], "cycle_top_monthly_4");
+}
+
+#[test]
+fn invalid_cycle_top_condition_is_rejected_nonzero() {
+    let home = IsolatedHome::new("invalid-top-cond");
+    for bad in [
+        "cycle_top_yearly_4",                  // invalid timeframe
+        "cycle_top_monthly_8",                 // N > 7
+        "cycle_top_criterion_weekly_bogus_key", // unknown criterion
+    ] {
+        let out = home.run(&[
+            "analytics", "alerts", "add", "--kind", "technical", "--symbol", "BTC-USD",
+            "--condition", bad,
+        ]);
+        assert!(
+            !out.status.success(),
+            "impossible top condition `{bad}` armed with exit 0. stdout={}",
+            stdout(&out)
+        );
+    }
+}
+
+#[test]
 fn non_cycle_technical_condition_still_arms() {
     let home = IsolatedHome::new("noncycle");
     let out = home.run(&[

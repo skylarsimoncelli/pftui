@@ -76,6 +76,21 @@ pub fn ma_crossed_above_rsi(r: &RsiMa) -> Option<bool> {
     Some(ma_prev <= rsi_prev && ma_cur > rsi_cur)
 }
 
+/// True when the RSI-MA ticked DOWN on the latest bar (`rsiMA[0] < rsiMA[1]`) —
+/// the cycle-TOP mirror of [`ma_turned_up`].
+pub fn ma_turned_down(r: &RsiMa) -> Option<bool> {
+    last_two(&r.rsi_ma).map(|(prev, cur)| cur < prev)
+}
+
+/// True when the RSI-MA crossed BELOW the raw RSI on the latest bar
+/// (`rsiMA[1] >= rsi[1]` and `rsiMA[0] < rsi[0]`) — the cycle-TOP mirror of
+/// [`ma_crossed_above_rsi`].
+pub fn ma_crossed_below_rsi(r: &RsiMa) -> Option<bool> {
+    let (ma_prev, ma_cur) = last_two(&r.rsi_ma)?;
+    let (rsi_prev, rsi_cur) = last_two(&r.rsi)?;
+    Some(ma_prev >= rsi_prev && ma_cur < rsi_cur)
+}
+
 fn last_two(series: &[Option<f64>]) -> Option<(f64, f64)> {
     let n = series.len();
     if n < 2 {
@@ -146,5 +161,43 @@ mod tests {
             }
         }
         assert!(crossed, "RSI-MA should cross above RSI as momentum cools");
+    }
+
+    #[test]
+    fn inverted_v_ma_turns_down_and_crosses_below_rsi() {
+        // Rally then sharp reversal down, then a bounce — the TOP mirror. During
+        // the selloff the fast RSI leads down and the lagging MA follows (turning
+        // down); as the selloff eases the RSI ticks above its still-falling MA
+        // (the MA crosses BELOW the RSI — the cycle-top confirmation).
+        let mut closes: Vec<f64> = (0..80).map(|i| 100.0 + i as f64 * 1.5).collect();
+        let selloff_start = closes.len();
+        let base = *closes.last().unwrap();
+        for j in 1..=25 {
+            closes.push(base - j as f64 * 2.5);
+        }
+        let bottom = *closes.last().unwrap();
+        for j in 1..=10 {
+            closes.push(bottom + j as f64 * 0.4);
+        }
+
+        let mut ma_down = false;
+        for end in (selloff_start + 14)..=closes.len() {
+            let sub = compute_rsi_ma(&closes[..end], 14, 14).expect("sub");
+            if ma_turned_down(&sub) == Some(true) {
+                ma_down = true;
+                break;
+            }
+        }
+        assert!(ma_down, "RSI-MA should fall as the selloff drags RSI down");
+
+        let mut crossed = false;
+        for end in (closes.len() - 10)..=closes.len() {
+            let sub = compute_rsi_ma(&closes[..end], 14, 14).expect("sub");
+            if ma_crossed_below_rsi(&sub) == Some(true) {
+                crossed = true;
+                break;
+            }
+        }
+        assert!(crossed, "RSI-MA should cross below RSI as momentum recovers");
     }
 }
