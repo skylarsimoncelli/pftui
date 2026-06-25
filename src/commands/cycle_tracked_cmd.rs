@@ -278,11 +278,9 @@ fn compute_live_read(
     parsed: &CycleSignalCondition,
 ) -> LiveRead {
     let key = (symbol.to_uppercase(), timeframe, polarity);
-    if !cache.contains_key(&key) {
-        let computed = load_read(backend, symbol, timeframe, polarity);
-        cache.insert(key.clone(), computed);
-    }
-    let cached = cache.get(&key).expect("just inserted");
+    let cached = cache
+        .entry(key)
+        .or_insert_with(|| load_read(backend, symbol, timeframe, polarity));
     decode_live(cached, parsed, polarity)
 }
 
@@ -330,26 +328,34 @@ fn decode_live(
             distance_to_target: None,
             summary: "insufficient history".to_string(),
         },
-        CachedRead::Bottom(Some(sig)) => decode_from_parts(
-            parsed,
-            sig.met_count,
-            sig.total,
-            &criteria_keys_met(&sig.criteria),
-            component_distance(&sig.criteria),
-        ),
-        CachedRead::Top(Some(sig)) => decode_from_parts(
-            parsed,
-            sig.met_count,
-            sig.total,
-            &criteria_keys_met(&sig.criteria),
-            component_distance(&sig.criteria),
-        ),
+        // The MET boolean is taken from the canonical engine path
+        // (`evaluate` / `evaluate_top`) so component rows inherit the same
+        // `find_component(...).unwrap_or_else(component_fallback)` semantics the
+        // alert engine uses — including the fallback-only keys (`erf_positive`,
+        // `pi_cycle_bottom`, `erf_negative`, `pi_cycle_top`) that live OUTSIDE
+        // `criteria[].components`. We only hand-extract met_count/total + the
+        // distance column for display.
+        CachedRead::Bottom(Some(sig)) => {
+            let met = csa::evaluate(&sig.symbol, parsed, Some(sig)).is_triggered;
+            decode_from_parts(
+                parsed,
+                sig.met_count,
+                sig.total,
+                met,
+                component_distance(&sig.criteria),
+            )
+        }
+        CachedRead::Top(Some(sig)) => {
+            let met = csa::evaluate_top(&sig.symbol, parsed, Some(sig)).is_triggered;
+            decode_from_parts(
+                parsed,
+                sig.met_count,
+                sig.total,
+                met,
+                component_distance(&sig.criteria),
+            )
+        }
     }
-}
-
-/// Map of composite criterion key → met bool.
-fn criteria_keys_met(criteria: &[cycle_signals::Criterion]) -> HashMap<String, bool> {
-    criteria.iter().map(|c| (c.key.clone(), c.met)).collect()
 }
 
 /// Map of atomic component key → (met, signed distance-to-trigger).
@@ -366,16 +372,18 @@ fn component_distance(
     out
 }
 
+/// Decode the display fields for one row. `met` is the AUTHORITATIVE met
+/// boolean from the engine path (`evaluate` / `evaluate_top`); met_count/total
+/// and the component distance are pulled from the signal struct for context.
 fn decode_from_parts(
     parsed: &CycleSignalCondition,
     met_count: usize,
     total: usize,
-    crit_met: &HashMap<String, bool>,
+    met: bool,
     comp: HashMap<String, (bool, Option<f64>)>,
 ) -> LiveRead {
     match parsed {
         CycleSignalCondition::Confluence { target, .. } => {
-            let met = met_count >= *target;
             let remaining = target.saturating_sub(met_count);
             let summary = if met {
                 format!("met ({met_count}/{total})")
@@ -390,21 +398,21 @@ fn decode_from_parts(
                 summary,
             }
         }
-        CycleSignalCondition::Criterion { criterion_key, .. } => {
-            let met = crit_met.get(criterion_key).copied().unwrap_or(false);
-            LiveRead {
-                met: Some(met),
-                met_count: Some(met_count),
-                total: Some(total),
-                distance_to_target: None,
-                summary: format!(
-                    "{} (suite {met_count}/{total})",
-                    if met { "met" } else { "not met" }
-                ),
-            }
-        }
+        CycleSignalCondition::Criterion { .. } => LiveRead {
+            met: Some(met),
+            met_count: Some(met_count),
+            total: Some(total),
+            distance_to_target: None,
+            summary: format!(
+                "{} (suite {met_count}/{total})",
+                if met { "met" } else { "not met" }
+            ),
+        },
         CycleSignalCondition::Component { component_key, .. } => {
-            let (met, dist) = comp.get(component_key).copied().unwrap_or((false, None));
+            // Distance column comes from the components map (when the key lives
+            // there); the met state is the authoritative engine value, which
+            // also covers the fallback-only keys absent from the map.
+            let dist = comp.get(component_key).and_then(|(_, d)| *d);
             let summary = match dist {
                 Some(d) => format!(
                     "{} (dist {:+.2})",
@@ -438,10 +446,19 @@ fn normalize_sym(s: &str) -> String {
         .to_string()
 }
 
-/// Pick the lexicographically-newest of two optional ISO-ish timestamps.
+/// Pick the chronologically-newest of two optional timestamps. Compares PARSED
+/// instants (not raw strings) so a mix of RFC3339 (`...T..Z`) and SQLite-naive
+/// (`YYYY-MM-DD HH:MM:SS`) shapes sorts correctly — lexical compare would
+/// mis-rank them ('T' > ' '). Falls back to lexical only if a value won't parse.
 fn newest(a: Option<String>, b: Option<String>) -> Option<String> {
     match (a, b) {
-        (Some(x), Some(y)) => Some(if x >= y { x } else { y }),
+        (Some(x), Some(y)) => {
+            let later = match (parse_ts(&x), parse_ts(&y)) {
+                (Some(px), Some(py)) => px >= py,
+                _ => x >= y,
+            };
+            Some(if later { x } else { y })
+        }
         (Some(x), None) => Some(x),
         (None, Some(y)) => Some(y),
         (None, None) => None,
@@ -918,5 +935,143 @@ mod tests {
             .format("%Y-%m-%d %H:%M:%S")
             .to_string();
         assert!(humanize_since(&naive, now).ends_with("ago"));
+    }
+
+    #[test]
+    fn newest_compares_parsed_instants_not_raw_strings() {
+        // RFC3339 'T'(0x54) > SQLite ' '(0x20) lexically, so a lexical compare
+        // would wrongly pick the OLDER naive string when the RFC3339 one is in
+        // an EARLIER calendar slot. Here the naive value is later in time and
+        // must win despite sorting first lexically.
+        // Same calendar day so the date/time separator decides the lexical
+        // order: RFC3339 midnight ('T') sorts AFTER the naive noon (' ') even
+        // though noon is the later instant.
+        let rfc_earlier = "2026-06-10T00:00:00+00:00".to_string(); // midnight
+        let naive_later = "2026-06-10 12:00:00".to_string(); // noon (later)
+        assert!(rfc_earlier.as_str() > naive_later.as_str(), "precondition: lexical mis-ranks");
+        assert_eq!(
+            newest(Some(rfc_earlier.clone()), Some(naive_later.clone())),
+            Some(naive_later),
+            "newest must pick the chronologically-later naive timestamp"
+        );
+    }
+
+    // ---- Component fallback-key live read (regression for the divergence) ----
+    //
+    // `pi_cycle_bottom` / `erf_positive` (bottom) and `pi_cycle_top` /
+    // `erf_negative` (top) are NOT carried in `criteria[].components`, so a
+    // hand-decode of the components map alone would report them "not met". The
+    // dashboard must instead inherit the engine's met value (which applies the
+    // `component_fallback`). These tests build a signal where the fallback key
+    // IS met and assert the dashboard agrees with `evaluate` / `evaluate_top`.
+
+    fn bottom_sig_fallback_met() -> CycleBottomSignals {
+        CycleBottomSignals {
+            symbol: "TEST".to_string(),
+            timeframe: SignalTimeframe::Monthly,
+            as_of: "2026-06-01".to_string(),
+            rsi: None,
+            rsi_ma: None,
+            rsi_ma_turned_up: false,
+            rsi_ma_cross_above_rsi: false,
+            dss: None,
+            dss_trigger: None,
+            dss_turned_up: false,
+            dss_cross_above_trigger: false,
+            dss_oversold: false,
+            erf: Some(1.5),
+            erf_positive: true, // fallback-only key, met
+            erf_green: true,
+            erf_bottom_zone: false,
+            erf_turned_up: false,
+            cyberbands_state: None,
+            cyberbands_bullish: false,
+            cyberdots_weekly_strength: None,
+            cyberdots_monthly_strength: None,
+            cyberdots_bullish: false,
+            cyberline_value: None,
+            cyberline_price_above: None,
+            cyberline_reclaim: false,
+            pi_cycle_bottom: true, // fallback-only key (BonusSignal), met
+            pi_cycle_last_bottom: Some("2026-05-01".to_string()),
+            criteria: Vec::new(), // deliberately NO components carrying those keys
+            core_watch: Vec::new(),
+            met_count: 0,
+            total: 7,
+            bonus: None,
+            verdict: String::new(),
+        }
+    }
+
+    fn top_sig_fallback_met() -> CycleTopSignals {
+        CycleTopSignals {
+            symbol: "TEST".to_string(),
+            timeframe: SignalTimeframe::Monthly,
+            as_of: "2026-06-01".to_string(),
+            rsi: None,
+            rsi_ma: None,
+            rsi_ma_turned_down: false,
+            rsi_ma_cross_below_rsi: false,
+            dss: None,
+            dss_trigger: None,
+            dss_turned_down: false,
+            dss_cross_below_trigger: false,
+            dss_overbought: false,
+            erf: Some(-1.5),
+            erf_negative: true, // fallback-only key, met
+            erf_top_zone: false,
+            erf_turned_down: false,
+            cyberbands_state: None,
+            cyberbands_bearish: false,
+            cyberdots_weekly_down_strength: None,
+            cyberdots_monthly_down_strength: None,
+            cyberdots_bearish: false,
+            cyberline_value: None,
+            cyberline_price_above: None,
+            cyberline_lost: false,
+            pi_cycle_top: true, // fallback-only key (BonusSignal), met
+            pi_cycle_last_top: Some("2026-05-01".to_string()),
+            criteria: Vec::new(),
+            core_watch: Vec::new(),
+            met_count: 0,
+            total: 7,
+            bonus: None,
+            verdict: String::new(),
+        }
+    }
+
+    #[test]
+    fn component_fallback_key_met_matches_engine() {
+        // BOTTOM: pi_cycle_bottom and erf_positive are met only via fallback.
+        let sig = bottom_sig_fallback_met();
+        let cached = CachedRead::Bottom(Some(sig.clone()));
+        for key in ["pi_cycle_bottom", "erf_positive"] {
+            let cond = format!("cycle_component_monthly_{key}");
+            let parsed = parse_condition(&cond).unwrap();
+            let engine_met = csa::evaluate(&sig.symbol, &parsed, Some(&sig)).is_triggered;
+            assert!(engine_met, "engine should report {key} met via fallback");
+            let live = decode_live(&cached, &parsed, Polarity::Bottom);
+            assert_eq!(
+                live.met,
+                Some(engine_met),
+                "dashboard met for {key} must match engine ({engine_met})"
+            );
+        }
+
+        // TOP: pi_cycle_top and erf_negative, the symmetric mirror.
+        let tsig = top_sig_fallback_met();
+        let tcached = CachedRead::Top(Some(tsig.clone()));
+        for key in ["pi_cycle_top", "erf_negative"] {
+            let cond = format!("cycle_top_component_monthly_{key}");
+            let parsed = parse_condition(&cond).unwrap();
+            let engine_met = csa::evaluate_top(&tsig.symbol, &parsed, Some(&tsig)).is_triggered;
+            assert!(engine_met, "engine should report {key} met via fallback");
+            let live = decode_live(&tcached, &parsed, Polarity::Top);
+            assert_eq!(
+                live.met,
+                Some(engine_met),
+                "dashboard met for {key} must match engine ({engine_met})"
+            );
+        }
     }
 }
