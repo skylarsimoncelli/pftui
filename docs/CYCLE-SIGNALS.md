@@ -313,7 +313,7 @@ The block carries its own honest `small_n` / `insufficient_anchors` flags and
 
 ```jsonc
 "expectancy": {
-  "price_structure_lows": ["2018-12-15", "2020-03-13", "2022-11-21", "..."],
+  "price_structure_anchors": ["2018-12-15", "2020-03-13", "2022-11-21", "..."],
   "price_low_pivot_window": 90,
   "price_low_prominence_pct": 20,
   "doctrine_anchors_used": true,
@@ -425,11 +425,12 @@ with two honest differences:
    top backtest's verified-anchor reliability section is **always empty**
    (`anchors: []`, `small_n: true`, `caveat: insufficient_anchors`). The real
    read lives in the **expectancy block**, which conditions forward returns on
-   **price-structure swing HIGHS** (`price_structure_highs`: prominence-filtered
-   pivot highs followed by a ≥20% decline — the mirror of `price_structure_lows`).
-   *(Implementation note: the shared `CycleSignalExpectancy` struct reuses the
-   `price_structure_lows` field name to carry the swing-HIGH dates on the top
-   path — the field is the anchor-date list regardless of polarity.)*
+   **price-structure swing HIGHS** (prominence-filtered pivot highs followed by
+   a ≥20% decline — the mirror of the swing-low detector).
+   *(Implementation note: the shared `CycleSignalExpectancy` struct exposes the
+   polarity-neutral `price_structure_anchors` field — it carries swing LOWS on
+   the bottom path and swing HIGHS on the top path; the field is the anchor-date
+   list regardless of polarity.)*
 2. **A good top signal precedes a DECLINE.** So the headline hit-rate is the
    **negative** forward-return rate. Each per-horizon row adds
    `negative_rate_pct` (fraction of firings followed by a strictly-negative

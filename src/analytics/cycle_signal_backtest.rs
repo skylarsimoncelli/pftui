@@ -268,8 +268,10 @@ pub struct ExpectancyRow {
 /// merged into the anchor set (stronger ground truth) but are not required.
 #[derive(Debug, Clone, Serialize)]
 pub struct CycleSignalExpectancy {
-    /// Price-structure swing-low anchor dates (asset-agnostic, prominence-filtered).
-    pub price_structure_lows: Vec<String>,
+    /// Price-structure swing anchor dates (asset-agnostic, prominence-filtered).
+    /// Polarity-neutral: carries swing LOWS on the cycle-bottom path and swing
+    /// HIGHS on the cycle-top path (the render labels them per-polarity).
+    pub price_structure_anchors: Vec<String>,
     /// Pivot half-width (daily bars) used for the swing-low scan.
     pub price_low_pivot_window: usize,
     /// Minimum post-low recovery (percent) required to retain a swing low.
@@ -388,6 +390,39 @@ fn build_reliability(
     total_anchors: usize,
 ) -> CriterionReliability {
     let n = firings.len();
+
+    // No verified anchors to grade against (e.g. the cycle-TOP path, which has
+    // no doctrine top-anchors, or any non-doctrine series). The firing COUNT is
+    // still real, but hits / false_positives / precision are UNMEASURABLE: with
+    // an empty anchor set every firing trivially "misses", which would report
+    // e.g. `false_positives: 29` and read as a real failure rate. Null those
+    // fields out instead and say so in the summary; the loud `insufficient_anchors`
+    // caveat carries the rest. (The bottom path with doctrine anchors —
+    // total_anchors > 0 — is unchanged.)
+    if total_anchors == 0 {
+        let summary = if n == 0 {
+            "never fired over the available history".to_string()
+        } else {
+            format!("{n} firings · reliability unmeasurable (no verified anchors)")
+        };
+        return CriterionReliability {
+            key: key.to_string(),
+            threshold: None,
+            label: label.to_string(),
+            firings: n,
+            hits: 0,
+            false_positives: 0,
+            precision: None,
+            lows_covered: 0,
+            coverage: None,
+            median_lead_lag_days: None,
+            lead_lag_min_days: None,
+            lead_lag_max_days: None,
+            summary,
+            firing_detail: firings,
+        };
+    }
+
     let hits = firings.iter().filter(|f| f.hit).count();
     let false_positives = n - hits;
     let precision = if n > 0 {
@@ -972,14 +1007,22 @@ fn forward_return_pct(history: &[HistoryRecord], i: usize, horizon_days: i64) ->
     if p0 <= Decimal::ZERO {
         return None;
     }
-    for r in &history[i + 1..] {
-        if let Some(d) = parse(&r.date) {
-            if d >= target {
-                return Some((r.close - p0) / p0 * dec!(100));
-            }
-        }
+    // History is date-sorted ascending, so binary-search the first bar whose
+    // date is on/after the horizon target instead of scanning forward linearly
+    // (O(log n) vs O(n) — this runs once per firing AND once per baseline bar,
+    // so the linear form was O(n²) on long histories). `partition_point`
+    // returns the first index where the predicate `date < target` is false,
+    // i.e. the first bar on/after the target — identical to the bar the linear
+    // scan selected. Unparseable dates (never present in real bar data) sort
+    // with the past so they are skipped exactly as the linear scan skipped them.
+    let tail = &history[i + 1..];
+    let off = tail.partition_point(|r| parse(&r.date).map(|d| d < target).unwrap_or(true));
+    let r = tail.get(off)?;
+    if parse(&r.date)? >= target {
+        Some((r.close - p0) / p0 * dec!(100))
+    } else {
+        None
     }
-    None
 }
 
 /// Asset-agnostic price-structure swing lows: prominence-filtered pivot lows
@@ -1339,7 +1382,7 @@ fn build_expectancy(
     };
 
     CycleSignalExpectancy {
-        price_structure_lows: price_lows
+        price_structure_anchors: price_lows
             .iter()
             .map(|(_, d, _)| d.format("%Y-%m-%d").to_string())
             .collect(),
@@ -1430,7 +1473,7 @@ fn build_top_expectancy(
     };
 
     CycleSignalExpectancy {
-        price_structure_lows: price_highs
+        price_structure_anchors: price_highs
             .iter()
             .map(|(_, d, _)| d.format("%Y-%m-%d").to_string())
             .collect(),
@@ -1713,6 +1756,98 @@ mod tests {
 
     /// Price-% closeness: a firing planted exactly 25% above a planted low must
     /// report a +25.00% price gap and a 0-day lead/lag at the low.
+    /// The binary-search forward-return hot path must select the SAME bar as a
+    /// naive linear scan on an irregularly-spaced (gappy) date series — across
+    /// several start bars and all reported horizons.
+    #[test]
+    fn forward_return_binary_matches_linear() {
+        // Reference linear scan (the prior implementation) for cross-checking.
+        fn linear(history: &[HistoryRecord], i: usize, horizon_days: i64) -> Option<Decimal> {
+            let d0 = parse(&history[i].date)?;
+            let target = d0 + chrono::Duration::days(horizon_days);
+            let p0 = history[i].close;
+            if p0 <= Decimal::ZERO {
+                return None;
+            }
+            for r in &history[i + 1..] {
+                if let Some(d) = parse(&r.date) {
+                    if d >= target {
+                        return Some((r.close - p0) / p0 * dec!(100));
+                    }
+                }
+            }
+            None
+        }
+        // Gappy series: skip some days so target dates fall BETWEEN bars (the
+        // case where ">= target" must pick the first bar strictly past a gap).
+        let start = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let mut h = Vec::new();
+        let mut day = 0u64;
+        for step in 0..400u64 {
+            let date = (start + chrono::Days::new(day)).format("%Y-%m-%d").to_string();
+            h.push(record(&date, 100.0 + step as f64 * 0.7));
+            // irregular cadence: 1,2,3-day gaps repeating
+            day += 1 + (step % 3);
+        }
+        for &horizon in &FORWARD_HORIZONS_DAYS {
+            for i in (0..h.len()).step_by(7) {
+                assert_eq!(
+                    forward_return_pct(&h, i, horizon),
+                    linear(&h, i, horizon),
+                    "binary-search != linear at i={i}, horizon={horizon}"
+                );
+            }
+        }
+        // And a known exact value: bar 0 priced 100.0, find the 30-day-forward bar.
+        let exact = forward_return_pct(&h, 0, 30).expect("30d return");
+        let exact_linear = linear(&h, 0, 30).expect("30d return (linear)");
+        assert_eq!(exact, exact_linear);
+    }
+
+    /// A zero-anchor backtest (no doctrine anchors, e.g. the cycle-TOP path or a
+    /// non-doctrine series) must NOT report every firing as a false positive.
+    /// Firing COUNTS stay real; hits/false_positives/precision/coverage null out.
+    #[test]
+    fn zero_anchor_backtest_no_misleading_miss_counts() {
+        let start = NaiveDate::from_ymd_opt(2019, 1, 1).unwrap();
+        let h = planted_inverted_v(start, 700, 250);
+        let bt = run_top_backtest(
+            "TEST",
+            "TEST",
+            &h,
+            SignalTimeframe::Monthly,
+            Some(90),
+            &DEFAULT_CONFLUENCE_THRESHOLDS,
+            false,
+        )
+        .expect("backtest");
+        assert!(bt.anchors.is_empty(), "top path has no doctrine anchors");
+        let total_firings: usize = bt.criteria.iter().map(|c| c.firings).sum();
+        assert!(total_firings > 0, "expected firings to still be counted");
+        for row in bt.criteria.iter().chain(bt.confluence.iter()) {
+            assert_eq!(
+                row.false_positives, 0,
+                "{} must not count firings as false positives without anchors",
+                row.key
+            );
+            assert_eq!(row.hits, 0, "{} cannot hit a nonexistent anchor", row.key);
+            assert!(
+                row.precision.is_none(),
+                "{} precision must be null (unmeasurable), not 0%",
+                row.key
+            );
+            assert!(row.coverage.is_none(), "{} coverage must be null", row.key);
+            if row.firings > 0 {
+                assert!(
+                    row.summary.contains("unmeasurable"),
+                    "{} summary should flag unmeasurable reliability, got {:?}",
+                    row.key,
+                    row.summary
+                );
+            }
+        }
+    }
+
     #[test]
     fn price_gap_closeness_is_exact() {
         let start = NaiveDate::from_ymd_opt(2021, 6, 1).unwrap();
@@ -1761,7 +1896,7 @@ mod tests {
             "ACME has no doctrine anchors"
         );
         assert!(
-            !exp.price_structure_lows.is_empty(),
+            !exp.price_structure_anchors.is_empty(),
             "expected price-structure swing lows on a double V-bottom"
         );
         assert!(
@@ -1871,7 +2006,7 @@ mod tests {
         let exp = bt.expectancy.expect("expectancy populated");
         assert!(!exp.doctrine_anchors_used, "tops have no doctrine anchors");
         assert!(
-            !exp.price_structure_lows.is_empty(),
+            !exp.price_structure_anchors.is_empty(),
             "expected price-structure swing highs (stored in the shared field)"
         );
         assert!(!exp.insufficient_anchors, "swing highs should be present");

@@ -345,14 +345,14 @@ fn print_top_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
     use cycle_signal_backtest::ExpectancyRow;
     println!();
     println!("  ── Forward-return expectancy (price-structure swing highs) ──");
-    if exp.price_structure_lows.is_empty() {
+    if exp.price_structure_anchors.is_empty() {
         println!("  price-structure swing highs: none derived");
     } else {
         println!(
             "  price-structure swing highs ({}d pivot, ≥{}% decline): {}",
             exp.price_low_pivot_window,
             exp.price_low_prominence_pct.normalize(),
-            exp.price_structure_lows.join(", ")
+            exp.price_structure_anchors.join(", ")
         );
     }
     println!("  anchors used: {}", exp.anchors_used);
@@ -469,14 +469,14 @@ fn print_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
     use cycle_signal_backtest::ExpectancyRow;
     println!();
     println!("  ── Forward-return expectancy (asset-agnostic) ──");
-    if exp.price_structure_lows.is_empty() {
+    if exp.price_structure_anchors.is_empty() {
         println!("  price-structure swing lows: none derived");
     } else {
         println!(
             "  price-structure swing lows ({}d pivot, ≥{}% recovery): {}",
             exp.price_low_pivot_window,
             exp.price_low_prominence_pct.normalize(),
-            exp.price_structure_lows.join(", ")
+            exp.price_structure_anchors.join(", ")
         );
     }
     println!(

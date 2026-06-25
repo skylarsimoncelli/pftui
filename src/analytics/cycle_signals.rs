@@ -357,6 +357,18 @@ fn aggregate_ohlc(daily: &Ohlc, tf: SignalTimeframe) -> Ohlc {
 /// bars). Below this the engine returns `None`.
 const MIN_DAILY_BARS: usize = 120;
 
+/// DSS Bressert oversold/overbought thresholds (0–100 scale). A DSS reading
+/// below `DSS_OVERSOLD` is the qualifying bottom CONTEXT flag; above
+/// `DSS_OVERBOUGHT` is the topping CONTEXT flag. Hoisted here (with the other
+/// suite constants) so a future tuning pass touches one place rather than the
+/// inline call sites in both the bottom and top suites.
+const DSS_OVERSOLD: f64 = 20.0;
+const DSS_OVERBOUGHT: f64 = 80.0;
+
+/// Recency window (daily bars, ≈4 months) within which a pi-cycle bottom/top
+/// still qualifies the current extreme.
+const PI_CYCLE_RECENT_BARS: usize = 120;
+
 /// Minimum daily bars for a meaningful read — exposed so the reliability
 /// backtest can size its rolling-evaluation start point identically.
 pub fn min_daily_bars() -> usize {
@@ -418,7 +430,7 @@ pub fn cycle_bottom_signals(
         .unwrap_or(false);
     let dss_oversold = dss_state
         .as_ref()
-        .and_then(|s| dss_bressert::is_oversold(s, 20.0))
+        .and_then(|s| dss_bressert::is_oversold(s, DSS_OVERSOLD))
         .unwrap_or(false);
 
     // Ehlers roofing filter.
@@ -483,7 +495,7 @@ pub fn cycle_bottom_signals(
     let pi_cycle_bottom = pi
         .as_ref()
         .and_then(|p| p.last_bottom.as_ref())
-        .map(|d| within_recent(&daily.dates, d, 120))
+        .map(|d| within_recent(&daily.dates, d, PI_CYCLE_RECENT_BARS))
         .unwrap_or(false);
 
     // --- Collapse the 10 atomic sub-signals into 7 composite criteria ---
@@ -566,9 +578,9 @@ pub fn cycle_bottom_signals(
                 met: dss_oversold,
                 value: dss,
                 previous_value: dss_pair.map(|(prev, _)| prev),
-                comparison_value: Some(20.0),
-                previous_comparison_value: Some(20.0),
-                distance_to_trigger: dss.map(|d| 20.0 - d),
+                comparison_value: Some(DSS_OVERSOLD),
+                previous_comparison_value: Some(DSS_OVERSOLD),
+                distance_to_trigger: dss.map(|d| DSS_OVERSOLD - d),
             },
         ],
     });
@@ -791,7 +803,7 @@ pub fn cycle_top_signals(
         .unwrap_or(false);
     let dss_overbought = dss_state
         .as_ref()
-        .and_then(|s| dss_bressert::is_overbought(s, 80.0))
+        .and_then(|s| dss_bressert::is_overbought(s, DSS_OVERBOUGHT))
         .unwrap_or(false);
 
     // Ehlers roofing filter (topping side).
@@ -851,7 +863,7 @@ pub fn cycle_top_signals(
     let pi_cycle_top = pi
         .as_ref()
         .and_then(|p| p.last_top.as_ref())
-        .map(|d| within_recent(&daily.dates, d, 120))
+        .map(|d| within_recent(&daily.dates, d, PI_CYCLE_RECENT_BARS))
         .unwrap_or(false);
 
     // --- Collapse the 10 atomic sub-signals into 7 composite criteria ---
@@ -934,9 +946,9 @@ pub fn cycle_top_signals(
                 met: dss_overbought,
                 value: dss,
                 previous_value: dss_pair.map(|(prev, _)| prev),
-                comparison_value: Some(80.0),
-                previous_comparison_value: Some(80.0),
-                distance_to_trigger: dss.map(|d| d - 80.0),
+                comparison_value: Some(DSS_OVERBOUGHT),
+                previous_comparison_value: Some(DSS_OVERBOUGHT),
+                distance_to_trigger: dss.map(|d| d - DSS_OVERBOUGHT),
             },
         ],
     });
