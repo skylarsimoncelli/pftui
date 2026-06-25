@@ -160,7 +160,7 @@ pub fn turned_up(erf: &[f64]) -> Option<bool> {
 }
 
 /// True when the ERF ticked DOWN on the latest bar (`erf[0] < erf[1]`) — the
-/// cycle-TOP mirror of [`turned_up`].
+/// cycle-TOP / cycle-high mirror of [`turned_up`].
 pub fn turned_down(erf: &[f64]) -> Option<bool> {
     let n = erf.len();
     if n < 2 {
@@ -265,7 +265,7 @@ mod tests {
             src.push(base - j as f64 * 0.6);
         }
         let mut down_fired = false;
-        for end in (peak + 2)..=(peak + 12) {
+        for end in (peak + 2)..=(peak + 20) {
             let erf = compute_erf_default(&src[..end]).expect("erf");
             if turned_down(&erf) == Some(true) {
                 down_fired = true;
@@ -289,5 +289,30 @@ mod tests {
         let three = compute_erf(&src, 48, 10, Poles::Three).expect("three");
         // Distinct filters → distinct tails.
         assert!((two.last().unwrap() - three.last().unwrap()).abs() > 1e-9);
+    }
+
+    #[test]
+    fn default_erf_golden_tail_on_wave_trend_fixture() {
+        let src: Vec<f64> = (0..180)
+            .map(|i| {
+                let x = i as f64;
+                100.0 + 0.07 * x + 6.0 * (x / 5.0).sin() + 2.0 * (x / 17.0).cos()
+            })
+            .collect();
+        let erf = compute_erf_default(&src).expect("erf");
+        let expected = [
+            -3.396697171152,
+            -3.891982380551,
+            -4.212188536735,
+            -4.344206841211,
+            -4.282501104732,
+        ];
+        let tail = &erf[erf.len() - expected.len()..];
+        for (got, expected) in tail.iter().zip(expected) {
+            assert!(
+                (got - expected).abs() < 1e-9,
+                "golden ERF tail changed: got {got}, expected {expected}"
+            );
+        }
     }
 }

@@ -6,7 +6,7 @@
 use anyhow::{bail, Context, Result};
 
 use crate::analytics::cycle_signal_backtest::{
-    self, DEFAULT_CONFLUENCE_THRESHOLDS, DETREND_TRAILING_DAYS,
+    self, TriggerMode, TriggerSide, DEFAULT_CONFLUENCE_THRESHOLDS, DETREND_TRAILING_DAYS,
 };
 use crate::analytics::cycle_signals::{self, SignalTimeframe};
 use crate::commands::cli_json;
@@ -93,6 +93,50 @@ pub fn run(
     Ok(())
 }
 
+pub fn run_top(
+    backend: &BackendConnection,
+    symbol: &str,
+    timeframe: &str,
+    json_output: bool,
+) -> Result<()> {
+    let tf = SignalTimeframe::parse(timeframe)?;
+    let (series, history) = load_deep_history(backend, symbol)?;
+    if history.is_empty() {
+        return Err(anyhow::anyhow!(
+            "no price history for {} — run `pftui data refresh` or check the symbol",
+            symbol.to_uppercase()
+        ))
+        .context(ErrorDetail::new("no_history"));
+    }
+    let Some(sig) = cycle_signals::cycle_top_signals(&series, &history, tf) else {
+        return Err(anyhow::anyhow!(
+            "insufficient history for a {} cycle-high read on {} ({} daily rows; need {})",
+            tf.label(),
+            series,
+            history.len(),
+            cycle_signals::min_daily_bars()
+        ))
+        .context(ErrorDetail::with_bars(
+            "insufficient_history",
+            history.len(),
+        ));
+    };
+
+    if json_output {
+        let payload = serde_json::to_value(&sig)?;
+        let payload = cli_json::envelope(
+            payload,
+            "analytics cycles top-signals",
+            &sig.as_of,
+            Some(&series),
+        );
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_top_text(&sig, &series);
+    }
+    Ok(())
+}
+
 /// Reliability backtest: measure each criterion's lead/lag + hit-rate against
 /// the verified cycle-low anchors over the full available history. Compute-only
 /// — nothing is persisted.
@@ -168,50 +212,8 @@ pub fn run_backtest(
     Ok(())
 }
 
-/// `pftui analytics cycles top-signals` — mechanical cycle-TOP signal suite,
-/// the symmetric mirror of `bottom-signals`. Position / measurement only.
-pub fn run_top(
-    backend: &BackendConnection,
-    symbol: &str,
-    timeframe: &str,
-    json_output: bool,
-) -> Result<()> {
-    let tf = SignalTimeframe::parse(timeframe)?;
-    let (series, history) = load_deep_history(backend, symbol)?;
-    if history.is_empty() {
-        return Err(anyhow::anyhow!(
-            "no price history for {} — run `pftui data refresh` or check the symbol",
-            symbol.to_uppercase()
-        ))
-        .context(ErrorDetail::new("no_history"));
-    }
-    let Some(sig) = cycle_signals::cycle_top_signals(&series, &history, tf) else {
-        return Err(anyhow::anyhow!(
-            "insufficient history for a {} cycle-top read on {} ({} daily rows; need {})",
-            tf.label(),
-            series,
-            history.len(),
-            cycle_signals::min_daily_bars()
-        ))
-        .context(ErrorDetail::with_bars("insufficient_history", history.len()));
-    };
-
-    if json_output {
-        let payload = serde_json::to_value(&sig)?;
-        let payload = cli_json::envelope(
-            payload,
-            "analytics cycles top-signals",
-            &sig.as_of,
-            Some(&series),
-        );
-        println!("{}", serde_json::to_string_pretty(&payload)?);
-    } else {
-        print_top_text(&sig, &series);
-    }
-    Ok(())
-}
-
-/// Cycle-TOP reliability + forward-return expectancy backtest. Compute-only.
+/// Cycle-TOP reliability (native cycle highs) + forward-return expectancy
+/// backtest. Compute-only.
 #[allow(clippy::too_many_arguments)]
 pub fn run_top_backtest(
     backend: &BackendConnection,
@@ -225,7 +227,7 @@ pub fn run_top_backtest(
     if window == Some(0) {
         bail!(
             "--window 0 is not meaningful (a firing would have to land exactly on \
-             the swing-high date); use a positive day count or omit --window for \
+             the verified/swing-high date); use a positive day count or omit --window for \
              the default ±{}-day window",
             cycle_signal_backtest::DEFAULT_WINDOW_BARS
         );
@@ -274,6 +276,204 @@ pub fn run_top_backtest(
         print_top_backtest(&bt);
     }
     Ok(())
+}
+
+// --- trigger-backtest event study (cycle-low / cycle-high) ---
+fn parse_trigger_keys(raw: &[String]) -> Vec<String> {
+    raw.iter()
+        .flat_map(|s| s.split(','))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn parse_trigger_mode(raw: &str) -> Result<TriggerMode> {
+    match raw.trim().to_lowercase().as_str() {
+        "all" => Ok(TriggerMode::All),
+        "any" => Ok(TriggerMode::Any),
+        other => bail!("unknown trigger mode '{other}' — expected all or any"),
+    }
+}
+
+fn parse_horizons(raw: &str) -> Result<Vec<i64>> {
+    let mut out = Vec::new();
+    for part in raw.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+        let (num, mult) = match part.chars().last() {
+            Some('d') | Some('D') => (&part[..part.len() - 1], 1),
+            Some('w') | Some('W') => (&part[..part.len() - 1], 7),
+            Some('m') | Some('M') => (&part[..part.len() - 1], 30),
+            Some('y') | Some('Y') => (&part[..part.len() - 1], 365),
+            Some(c) if c.is_ascii_digit() => (part, 1),
+            _ => bail!("invalid horizon '{part}' — use e.g. 7d,30d,52w,1y"),
+        };
+        let n: i64 = num
+            .parse()
+            .with_context(|| format!("invalid horizon '{part}'"))?;
+        if n <= 0 {
+            bail!("invalid horizon '{part}' — horizons must be positive");
+        }
+        out.push(n * mult);
+    }
+    out.sort_unstable();
+    out.dedup();
+    if out.is_empty() {
+        bail!("provide at least one positive horizon");
+    }
+    Ok(out)
+}
+
+pub fn run_trigger_backtest(options: TriggerBacktestCommandOptions<'_>) -> Result<()> {
+    let TriggerBacktestCommandOptions {
+        backend,
+        symbol,
+        side,
+        timeframe,
+        triggers,
+        mode,
+        horizons,
+        window,
+        json_output,
+    } = options;
+    if window == Some(0) {
+        bail!(
+            "--window 0 is not meaningful; use a positive day count or omit --window for \
+             the default ±{}-day window",
+            cycle_signal_backtest::DEFAULT_WINDOW_BARS
+        );
+    }
+    let tf = SignalTimeframe::parse(timeframe)?;
+    let trigger_keys = parse_trigger_keys(triggers);
+    if trigger_keys.is_empty() {
+        bail!("provide at least one --trigger key");
+    }
+    let mode = parse_trigger_mode(mode)?;
+    let horizons = parse_horizons(horizons)?;
+    let (series, history) = load_deep_history(backend, symbol)?;
+    if history.is_empty() {
+        return Err(anyhow::anyhow!(
+            "no price history for {} — run `pftui data refresh` or check the symbol",
+            symbol.to_uppercase()
+        ))
+        .context(ErrorDetail::new("no_history"));
+    }
+    let Some(bt) = cycle_signal_backtest::run_trigger_backtest(
+        cycle_signal_backtest::CycleTriggerBacktestRequest {
+            symbol,
+            series: &series,
+            history: &history,
+            side,
+            timeframe: tf,
+            trigger_keys: &trigger_keys,
+            mode,
+            horizons_days: &horizons,
+            window_days: window,
+        },
+    ) else {
+        return Err(anyhow::anyhow!(
+            "insufficient history for a {} cycle trigger backtest on {} ({} daily rows; need {})",
+            tf.label(),
+            series,
+            history.len(),
+            cycle_signals::min_daily_bars()
+        ))
+        .context(ErrorDetail::with_bars(
+            "insufficient_history",
+            history.len(),
+        ));
+    };
+    if !bt.unknown_trigger_keys.is_empty() {
+        bail!(
+            "unknown trigger key(s): {}. Use `bottom-signals --json` or `top-signals --json` \
+             to inspect criteria[].key and criteria[].components[].key",
+            bt.unknown_trigger_keys.join(", ")
+        );
+    }
+
+    if json_output {
+        let command = match side {
+            TriggerSide::Bottom => "analytics cycles bottom-signals trigger-backtest",
+            TriggerSide::Top => "analytics cycles top-signals trigger-backtest",
+        };
+        let payload = serde_json::to_value(&bt)?;
+        let payload = cli_json::envelope(payload, command, &bt.as_of, Some(&series));
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_trigger_backtest(&bt);
+    }
+    Ok(())
+}
+
+pub struct TriggerBacktestCommandOptions<'a> {
+    pub backend: &'a BackendConnection,
+    pub symbol: &'a str,
+    pub side: TriggerSide,
+    pub timeframe: &'a str,
+    pub triggers: &'a [String],
+    pub mode: &'a str,
+    pub horizons: &'a str,
+    pub window: Option<i64>,
+    pub json_output: bool,
+}
+
+fn print_trigger_backtest(bt: &cycle_signal_backtest::CycleTriggerBacktest) {
+    let side = match bt.side {
+        TriggerSide::Bottom => "Cycle-Low",
+        TriggerSide::Top => "Cycle-High",
+    };
+    println!(
+        "{side} Trigger Backtest — {} ({} timeframe, series {})",
+        bt.symbol,
+        bt.timeframe.label(),
+        bt.series
+    );
+    println!(
+        "  triggers: {} ({:?}) · horizons: {}",
+        bt.trigger_keys.join(", "),
+        bt.mode,
+        bt.horizon_stats
+            .iter()
+            .map(|h| format!("{}d", h.horizon_days))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    println!("  {}", bt.summary);
+    println!();
+    println!("  Forward returns:");
+    for h in &bt.horizon_stats {
+        println!(
+            "    {:>4}d  n={} good={} good_rate={} mean={} median={}",
+            h.horizon_days,
+            h.resolved,
+            h.good,
+            fmt_pct(h.good_rate),
+            fmt_pct(h.mean_return_pct.map(|v| v / 100.0)),
+            fmt_pct(h.median_return_pct.map(|v| v / 100.0)),
+        );
+    }
+    println!();
+    println!("  Events:");
+    for e in &bt.events {
+        println!(
+            "    {} close {} · anchor {} · timing {} · price distance {}",
+            e.fired_on,
+            e.close,
+            e.matched_anchor.as_deref().unwrap_or("none"),
+            e.lead_lag_days
+                .map(|d| format!("{d:+}d"))
+                .unwrap_or_else(|| "n/a".to_string()),
+            e.price_distance_from_anchor_pct
+                .map(|p| format!("{p:+.1}%"))
+                .unwrap_or_else(|| "n/a".to_string()),
+        );
+    }
+    println!();
+    println!("  {}", bt.caveat);
+}
+
+fn fmt_pct(value: Option<f64>) -> String {
+    value
+        .map(|v| format!("{:.0}%", v * 100.0))
+        .unwrap_or_else(|| "n/a".to_string())
 }
 
 fn print_top_text(sig: &cycle_signals::CycleTopSignals, series: &str) {

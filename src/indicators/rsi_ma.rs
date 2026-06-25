@@ -68,6 +68,11 @@ pub fn ma_turned_up(r: &RsiMa) -> Option<bool> {
     last_two(&r.rsi_ma).map(|(prev, cur)| cur > prev)
 }
 
+/// True when the RSI-MA ticked down on the latest bar (`rsiMA[0] < rsiMA[1]`).
+pub fn ma_turned_down(r: &RsiMa) -> Option<bool> {
+    last_two(&r.rsi_ma).map(|(prev, cur)| cur < prev)
+}
+
 /// True when the RSI-MA crossed ABOVE the raw RSI on the latest bar
 /// (`rsiMA[1] <= rsi[1]` and `rsiMA[0] > rsi[0]`) — the cycle-low confirmation.
 pub fn ma_crossed_above_rsi(r: &RsiMa) -> Option<bool> {
@@ -76,15 +81,9 @@ pub fn ma_crossed_above_rsi(r: &RsiMa) -> Option<bool> {
     Some(ma_prev <= rsi_prev && ma_cur > rsi_cur)
 }
 
-/// True when the RSI-MA ticked DOWN on the latest bar (`rsiMA[0] < rsiMA[1]`) —
-/// the cycle-TOP mirror of [`ma_turned_up`].
-pub fn ma_turned_down(r: &RsiMa) -> Option<bool> {
-    last_two(&r.rsi_ma).map(|(prev, cur)| cur < prev)
-}
-
 /// True when the RSI-MA crossed BELOW the raw RSI on the latest bar
-/// (`rsiMA[1] >= rsi[1]` and `rsiMA[0] < rsi[0]`) — the cycle-TOP mirror of
-/// [`ma_crossed_above_rsi`].
+/// (`rsiMA[1] >= rsi[1]` and `rsiMA[0] < rsi[0]`) — the cycle-TOP / cycle-high
+/// mirror of [`ma_crossed_above_rsi`].
 pub fn ma_crossed_below_rsi(r: &RsiMa) -> Option<bool> {
     let (ma_prev, ma_cur) = last_two(&r.rsi_ma)?;
     let (rsi_prev, rsi_cur) = last_two(&r.rsi)?;
@@ -199,5 +198,31 @@ mod tests {
             }
         }
         assert!(crossed, "RSI-MA should cross below RSI as momentum recovers");
+    }
+
+    #[test]
+    fn blowoff_top_ma_turns_down_and_crosses_below_rsi() {
+        let mut closes: Vec<f64> = (0..80).map(|i| 100.0 + i as f64 * 1.5).collect();
+        let peak = *closes.last().unwrap();
+        for j in 1..=25 {
+            closes.push(peak - j as f64 * 2.5);
+        }
+        let mut ma_down = false;
+        for end in 40..=closes.len() {
+            if let Some(sub) = compute_rsi_ma(&closes[..end], 14, 14) {
+                ma_down |= ma_turned_down(&sub) == Some(true);
+            }
+        }
+        assert!(ma_down, "RSI-MA should turn down after a rollover");
+    }
+
+    #[test]
+    fn ma_crossed_below_rsi_matches_edge_definition() {
+        let r = RsiMa {
+            rsi: vec![None, Some(55.0), Some(60.0)],
+            rsi_ma: vec![None, Some(57.0), Some(58.0)],
+        };
+        assert_eq!(ma_crossed_below_rsi(&r), Some(true));
+        assert_eq!(ma_crossed_above_rsi(&r), Some(false));
     }
 }

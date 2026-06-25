@@ -72,6 +72,8 @@ pub struct BuildContext {
     pub public_prediction_intelligence: Vec<PredictionMarketIntelligence>,
     pub public_source_tier_overrides: Vec<SourceTierOverrideSummary>,
     pub private_portfolio_snapshot: Option<PrivatePortfolioSnapshotSummary>,
+    pub private_portfolio_moves: Vec<PrivatePortfolioMoveRow>,
+    pub private_alerts: Vec<PrivateAlertRow>,
     pub private_derived_actions: Vec<DerivedActionSummary>,
     pub private_binary_catalysts: Vec<BinaryCatalystSummary>,
     pub private_what_changed_deltas: Vec<WhatChangedDeltaSummary>,
@@ -92,6 +94,7 @@ pub struct BuildContext {
     pub private_outlooks: Vec<PrivateOutlookByHorizonRow>,
     pub private_risk_factor_mappings: Vec<PrivateRiskFactorMapping>,
     pub private_journal_views: Vec<PrivateJournalViewRow>,
+    pub private_recent_journal: Vec<PrivateRecentJournalRow>,
     pub private_news_events: Vec<PrivateNewsCatalyst>,
     pub private_news_silence: Vec<NewsVolumeSignal>,
     pub private_open_predictions: Vec<PrivateOpenPredictionRow>,
@@ -175,6 +178,7 @@ pub struct BuildContext {
     /// `private_epistemic_health` section; empty (sub-block suppressed)
     /// while the ledger is still accruing.
     pub recommendation_scoreboard: Vec<RecommendationScoreboardLine>,
+    pub private_cycle_watch: Option<PrivateCycleWatchSummary>,
     /// META (not a data slot): per-slot load issues recorded by the loaders
     /// in [`BuildContext::load`]. A loader that fails must NEVER abort the
     /// build, but it must NEVER be silent either — it records a
@@ -843,6 +847,26 @@ pub struct PrivatePortfolioSnapshotSummary {
     pub allocation_summary: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivatePortfolioMoveRow {
+    pub symbol: String,
+    pub move_1h_pct: Option<f64>,
+    pub move_24h_pct: Option<f64>,
+    pub move_7d_pct: Option<f64>,
+    pub move_30d_pct: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateAlertRow {
+    pub id: i64,
+    pub symbol: String,
+    pub kind: String,
+    pub status: String,
+    pub condition: Option<String>,
+    pub label: String,
+    pub triggered_at: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DerivedActionSummary {
     pub asset: String,
@@ -978,6 +1002,17 @@ pub struct PrivateJournalViewRow {
     pub summary: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateRecentJournalRow {
+    pub id: i64,
+    pub timestamp: String,
+    pub author: String,
+    pub symbol: Option<String>,
+    pub tag: Option<String>,
+    pub status: String,
+    pub content: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrivateNewsCatalyst {
     pub headline: String,
@@ -1012,6 +1047,40 @@ pub struct PrivateOpenPredictionsCalibration {
     pub sample_size: u32,
     pub predicted_pct: Option<f64>,
     pub observed_pct: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateCycleWatchSummary {
+    pub as_of: String,
+    pub verdict: String,
+    pub met_count: usize,
+    pub total: usize,
+    pub items: Vec<PrivateCycleWatchItem>,
+    pub backtest_headline: Option<String>,
+    pub caveat: Option<String>,
+    pub panels: Vec<PrivateCycleWatchPanel>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateCycleWatchPanel {
+    pub title: String,
+    pub as_of: String,
+    pub verdict: String,
+    pub met_count: usize,
+    pub total: usize,
+    pub items: Vec<PrivateCycleWatchItem>,
+    pub backtest_headline: Option<String>,
+    pub caveat: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateCycleWatchItem {
+    pub label: String,
+    pub met: bool,
+    pub met_components: usize,
+    pub total_components: usize,
+    pub detail: String,
+    pub distance_notes: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1133,11 +1202,39 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_portfolio_snapshot",
             visibility: SectionVisibility::Private,
         },
+        SectionSpec {
+            name: "private_portfolio_moves",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
+            name: "private_alerts",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
+            name: "private_cycle_watch",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
+            name: "private_open_predictions",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
+            name: "private_recent_journal",
+            visibility: SectionVisibility::Private,
+        },
         // Macro & News Outlook — synthesized prose replacing the
         // standalone Macro Context atomic-data block + News & Catalysts
         // table. Suppressed when the synthesis writer didn't author one.
         SectionSpec {
             name: "private_macro_news_outlook",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
+            name: "private_news_catalysts",
+            visibility: SectionVisibility::Private,
+        },
+        SectionSpec {
+            name: "private_upcoming_calendar",
             visibility: SectionVisibility::Private,
         },
         // Per-asset Convergence Trajectory + Outlook + Risk Concentration
@@ -1196,6 +1293,10 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
             name: "private_closing",
             visibility: SectionVisibility::Private,
         },
+        SectionSpec {
+            name: "private_decisions_pending",
+            visibility: SectionVisibility::Private,
+        },
         // Epistemic Health — run_health instrumentation for the report
         // date. Meta-content (how the machine ran, not what it believes),
         // so it goes after the closing, at the very end. Auto-suppressed
@@ -1218,12 +1319,10 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
         //   private_mismatch_surface  — auto-suppressed when aligned;
         //                               the synthesis writer narrates
         //                               mismatches inline.
-        //   private_news_catalysts    — replaced by macro+news outlook.
-        //   private_upcoming_calendar — operator scans the synthesized
-        //                               outlook for next-week binaries.
-        //   private_open_predictions  — 8 pages of cards; operator can
-        //                               run `pftui journal prediction
-        //                               list` for the canonical view.
+        //   private_news_catalysts    — now restored to the default plan as a
+        //                               compact operational surface.
+        //   private_upcoming_calendar — now restored to the default plan.
+        //   private_open_predictions  — now restored to the default plan.
         //   private_lessons_applied   — surfaced inline in the synthesis
         //                               writer's prose when material.
         //   private_self_retrospective_calibration — auto-suppressed
@@ -1232,8 +1331,7 @@ pub fn private_section_plan() -> Vec<SectionSpec> {
         //                               writer's bullets in the per-
         //                               asset cards + the Outlook prose.
         //
-        //   private_decisions_pending — surfaced via chat (Step 11),
-        //                               not PDF.
+        //   private_decisions_pending — now restored to the default plan.
         //   private_per_asset_convergence — integrated into per-asset
         //                                   card (Current bias block).
     ]
@@ -1290,6 +1388,14 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         "private_synthesis" => sections::private_synthesis::render_private_synthesis(ctx),
         "private_portfolio_snapshot" => {
             sections::private_portfolio_snapshot::render_private_portfolio_snapshot(ctx)
+        }
+        "private_portfolio_moves" => {
+            sections::private_portfolio_moves::render_private_portfolio_moves(ctx)
+        }
+        "private_alerts" => sections::private_alerts::render_private_alerts(ctx),
+        "private_cycle_watch" => sections::private_cycle_watch::render_private_cycle_watch(ctx),
+        "private_recent_journal" => {
+            sections::private_recent_journal::render_private_recent_journal(ctx)
         }
         "private_macro_context" => sections::private_macro_context::render_private_macro_context(ctx),
         "private_macro_thesis_chains" => {
@@ -1403,7 +1509,11 @@ where
     match backend.sqlite_native() {
         Some(conn) => load_slot(issues, slot, f(conn)),
         None => {
-            note_error(issues, slot, "backend is not native SQLite; slot loader skipped");
+            note_error(
+                issues,
+                slot,
+                "backend is not native SQLite; slot loader skipped",
+            );
             None
         }
     }
@@ -1611,17 +1721,17 @@ impl BuildContext {
             "data_freshness",
             crate::commands::status::source_statuses_backend(backend),
         )
-            .map(|rows| {
-                rows.into_iter()
-                    .map(|s| DataFreshnessSummary {
-                        source: s.name.to_string(),
-                        last_fetch: s.last_fetch,
-                        records: Some(s.records as u64),
-                        status: s.status.as_lowercase_str().to_string(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        .map(|rows| {
+            rows.into_iter()
+                .map(|s| DataFreshnessSummary {
+                    source: s.name.to_string(),
+                    last_fetch: s.last_fetch,
+                    records: Some(s.records as u64),
+                    status: s.status.as_lowercase_str().to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
         // Latest narrative snapshot drives synthesis + scenario 7d deltas.
         let narrative = load_sqlite_slot(&mut ctx.slot_issues, "synthesis", backend, |conn| {
@@ -1636,29 +1746,29 @@ impl BuildContext {
             "regime",
             crate::db::regime_snapshots::get_current_backend(backend),
         )
-            .flatten()
-            .map(|snap| {
-                let detail = snap.drivers.as_deref().and_then(|raw| {
-                    serde_json::from_str::<Vec<String>>(raw)
-                        .ok()
-                        .map(|v| v.join("; "))
-                        .filter(|s| !s.is_empty())
-                        .or_else(|| {
-                            let trimmed = raw.trim();
-                            (!trimmed.is_empty()).then(|| trimmed.to_string())
-                        })
-                });
-                let detail = match (detail, snap.confidence) {
-                    (Some(d), Some(c)) => Some(format!("{d} (confidence {:.0}%)", c * 100.0)),
-                    (Some(d), None) => Some(d),
-                    (None, Some(c)) => Some(format!("confidence {:.0}%", c * 100.0)),
-                    (None, None) => None,
-                };
-                RegimeSummary {
-                    classification: snap.regime,
-                    detail,
-                }
+        .flatten()
+        .map(|snap| {
+            let detail = snap.drivers.as_deref().and_then(|raw| {
+                serde_json::from_str::<Vec<String>>(raw)
+                    .ok()
+                    .map(|v| v.join("; "))
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| {
+                        let trimmed = raw.trim();
+                        (!trimmed.is_empty()).then(|| trimmed.to_string())
+                    })
             });
+            let detail = match (detail, snap.confidence) {
+                (Some(d), Some(c)) => Some(format!("{d} (confidence {:.0}%)", c * 100.0)),
+                (Some(d), None) => Some(d),
+                (None, Some(c)) => Some(format!("confidence {:.0}%", c * 100.0)),
+                (None, None) => None,
+            };
+            RegimeSummary {
+                classification: snap.regime,
+                detail,
+            }
+        });
 
         // Synthesis — derived from the narrative snapshot headline/subtitle,
         // falling back to the regime classification so the section is never
@@ -1682,16 +1792,16 @@ impl BuildContext {
             "analyst_convergence",
             crate::db::analyst_views::convergence_all_backend(backend, Some("7d")),
         )
-                .map(|reports| {
-                    reports
-                        .into_iter()
-                        .map(|r| AnalystConvergenceSummary {
-                            asset: r.asset,
-                            summary: r.summary,
-                        })
-                        .collect()
+        .map(|reports| {
+            reports
+                .into_iter()
+                .map(|r| AnalystConvergenceSummary {
+                    asset: r.asset,
+                    summary: r.summary,
                 })
-                .unwrap_or_default();
+                .collect()
+        })
+        .unwrap_or_default();
 
         // Per-layer analyst views, grouped per asset-class for each section.
         let all_views =
@@ -1720,18 +1830,18 @@ impl BuildContext {
         // Scenarios — current probabilities from `scenarios`, 7d deltas mapped
         // from the latest narrative snapshot's `scenario_shifts`.
         let shift_map = scenario_shift_map(narrative.as_ref());
-        let scenarios =
-            match crate::db::scenarios::list_scenarios_backend(backend, Some("active")) {
-                Ok(rows) => rows,
-                Err(e) => {
-                    note_error_many(
-                        &mut ctx.slot_issues,
-                        &["public_scenarios", "scenario_deltas"],
-                        &e.to_string(),
-                    );
-                    Vec::new()
-                }
-            };
+        let scenarios = match crate::db::scenarios::list_scenarios_backend(backend, Some("active"))
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                note_error_many(
+                    &mut ctx.slot_issues,
+                    &["public_scenarios", "scenario_deltas"],
+                    &e.to_string(),
+                );
+                Vec::new()
+            }
+        };
         ctx.public_scenarios = scenarios
             .iter()
             .map(|s| PublicScenarioRow {
@@ -1816,25 +1926,25 @@ impl BuildContext {
             backend,
             crate::db::economic_data::get_all,
         )
-            .map(|rows| {
-                rows.into_iter()
-                    .map(|e| MacroIndicatorSummary {
-                        name: pretty_indicator(&e.indicator),
-                        value: Some(e.value.normalize().to_string()),
-                        trend: e.change.map(|c| {
-                            if c.is_sign_negative() {
-                                format!("down {}", c.abs().normalize())
-                            } else if c.is_zero() {
-                                "flat".to_string()
-                            } else {
-                                format!("up {}", c.normalize())
-                            }
-                        }),
-                        freshness: Some(short_date(&e.fetched_at)),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        .map(|rows| {
+            rows.into_iter()
+                .map(|e| MacroIndicatorSummary {
+                    name: pretty_indicator(&e.indicator),
+                    value: Some(e.value.normalize().to_string()),
+                    trend: e.change.map(|c| {
+                        if c.is_sign_negative() {
+                            format!("down {}", c.abs().normalize())
+                        } else if c.is_zero() {
+                            "flat".to_string()
+                        } else {
+                            format!("up {}", c.normalize())
+                        }
+                    }),
+                    freshness: Some(short_date(&e.fetched_at)),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
         // News — latest 48h, ranked into public events + per-asset signals.
         const NEWS_SLOTS: &[&str] = &[
@@ -1846,8 +1956,7 @@ impl BuildContext {
         ];
         let news = match backend.sqlite_native() {
             Some(conn) => {
-                match crate::db::news_cache::get_latest_news(conn, 60, None, None, None, Some(48))
-                {
+                match crate::db::news_cache::get_latest_news(conn, 60, None, None, None, Some(48)) {
                     Ok(rows) => rows,
                     Err(e) => {
                         note_error_many(&mut ctx.slot_issues, NEWS_SLOTS, &e.to_string());
@@ -1983,10 +2092,18 @@ impl BuildContext {
         ctx.real_yield_context = load_real_yield_context(backend);
 
         // Equity indices + sector ETFs.
-        ctx.equity_indices =
-            equity_rows(backend, &price_map, EQUITY_INDEX_ASSETS, week_ago.as_deref());
-        ctx.equity_sectors =
-            equity_rows(backend, &price_map, EQUITY_SECTOR_ASSETS, week_ago.as_deref());
+        ctx.equity_indices = equity_rows(
+            backend,
+            &price_map,
+            EQUITY_INDEX_ASSETS,
+            week_ago.as_deref(),
+        );
+        ctx.equity_sectors = equity_rows(
+            backend,
+            &price_map,
+            EQUITY_SECTOR_ASSETS,
+            week_ago.as_deref(),
+        );
 
         // ---- Private slots -------------------------------------------------
         // Portfolio snapshot + per-position rows from transactions × prices.
@@ -2039,7 +2156,9 @@ impl BuildContext {
                 let mut pnl_total: rust_decimal::Decimal = rust_decimal::Decimal::ZERO;
                 let mut any_pnl_component = false;
                 for p in &positions {
-                    let Some(curr) = p.current_price else { continue };
+                    let Some(curr) = p.current_price else {
+                        continue;
+                    };
                     let qty = p.quantity;
                     let Some(quote) = price_map.get(&p.symbol) else {
                         continue;
@@ -2056,9 +2175,8 @@ impl BuildContext {
                 let (daily_pnl, daily_pnl_pct) = if any_pnl_component {
                     let pct = if !total_value.is_zero() {
                         Some(dec_to_f64(
-                            ((pnl_total / total_value)
-                                * rust_decimal::Decimal::from(100))
-                            .round_dp(2),
+                            ((pnl_total / total_value) * rust_decimal::Decimal::from(100))
+                                .round_dp(2),
                         ))
                     } else {
                         None
@@ -2087,8 +2205,18 @@ impl BuildContext {
                         unrealized_pnl: p.gain.map(format_price),
                     })
                     .collect();
+                ctx.private_portfolio_moves =
+                    compute_private_portfolio_moves(backend, report_date, &positions, &price_map);
             }
         }
+
+        ctx.private_alerts = load_slot(
+            &mut ctx.slot_issues,
+            "private_alerts",
+            crate::db::alerts::list_alerts_backend(backend),
+        )
+        .map(map_alert_rows)
+        .unwrap_or_default();
 
         // Open (pending) predictions resolving — `journal prediction list`.
         ctx.private_open_predictions = load_sqlite_slot(
@@ -2105,26 +2233,55 @@ impl BuildContext {
                 )
             },
         )
-            .map(|preds| {
-                preds
-                    .into_iter()
-                    .map(|p| {
-                        let target_date = p.target_date.clone().unwrap_or_default();
-                        let days_remaining = days_between(report_date, &target_date);
-                        PrivateOpenPredictionRow {
-                            id: Some(p.id),
-                            symbol: p.symbol.clone().unwrap_or_else(|| "—".to_string()),
-                            claim: p.claim.clone(),
-                            target_date,
-                            days_remaining,
-                            confidence: p.confidence,
-                            conviction: None,
-                            direction: None,
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        .map(|preds| {
+            preds
+                .into_iter()
+                .map(|p| {
+                    let target_date = p.target_date.clone().unwrap_or_default();
+                    let days_remaining = days_between(report_date, &target_date);
+                    PrivateOpenPredictionRow {
+                        id: Some(p.id),
+                        symbol: p.symbol.clone().unwrap_or_else(|| "—".to_string()),
+                        claim: p.claim.clone(),
+                        target_date,
+                        days_remaining,
+                        confidence: p.confidence,
+                        conviction: None,
+                        direction: None,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+        ctx.private_recent_journal = load_slot(
+            &mut ctx.slot_issues,
+            "private_recent_journal",
+            crate::db::journal::list_entries_backend(
+                backend,
+                Some(8),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+        )
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|entry| PrivateRecentJournalRow {
+                    id: entry.id,
+                    timestamp: entry.timestamp,
+                    author: entry.author,
+                    symbol: entry.symbol,
+                    tag: entry.tag,
+                    status: entry.status,
+                    content: entry.content,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
         // Lessons applied — count lesson references over the trailing window.
         ctx.private_lessons_applied = load_sqlite_slot(
@@ -2158,11 +2315,9 @@ impl BuildContext {
         if ctx.cross_layer_signals.is_empty()
             && !ctx.slot_issues.contains_key("cross_layer_signals")
         {
-            if let Some(latest) = latest_agent_message_date_before(
-                backend,
-                report_date,
-                |from| !from.starts_with("panel-") && from != "analyst-decisions",
-            ) {
+            if let Some(latest) = latest_agent_message_date_before(backend, report_date, |from| {
+                !from.starts_with("panel-") && from != "analyst-decisions"
+            }) {
                 ctx.slot_issues.insert(
                     "cross_layer_signals",
                     SlotIssue::UpstreamNotRun(format!(
@@ -2295,18 +2450,16 @@ impl BuildContext {
         // for the report date. When no notes exist for the report date but
         // earlier synthesis notes do, the synthesis-writer pass didn't run
         // today — classify as upstream_not_run, not no_data.
-        ctx.synthesis_notes = load_sqlite_slot(
-            &mut ctx.slot_issues,
-            "synthesis_notes",
-            backend,
-            |conn| load_synthesis_notes(conn, report_date),
-        )
-        .unwrap_or_default();
-        if !ctx.synthesis_notes.has_content() && !ctx.slot_issues.contains_key("synthesis_notes")
-        {
-            if let Some(latest) = backend.sqlite_native().and_then(|conn| {
-                latest_synthesis_note_date_before(conn, report_date)
-            }) {
+        ctx.synthesis_notes =
+            load_sqlite_slot(&mut ctx.slot_issues, "synthesis_notes", backend, |conn| {
+                load_synthesis_notes(conn, report_date)
+            })
+            .unwrap_or_default();
+        if !ctx.synthesis_notes.has_content() && !ctx.slot_issues.contains_key("synthesis_notes") {
+            if let Some(latest) = backend
+                .sqlite_native()
+                .and_then(|conn| latest_synthesis_note_date_before(conn, report_date))
+            {
                 ctx.slot_issues.insert(
                     "synthesis_notes",
                     SlotIssue::UpstreamNotRun(format!(
@@ -2343,28 +2496,28 @@ impl BuildContext {
             "private_asset_convergence",
             crate::db::analyst_views::convergence_all_backend(backend, since_ts.as_deref()),
         )
-                .map(|reports| {
-                    reports
+        .map(|reports| {
+            reports
+                .into_iter()
+                .filter(|r| !r.views.is_empty())
+                .map(|r| PrivateAssetConvergenceRow {
+                    target_pct: targets_by_symbol.get(&r.asset.to_uppercase()).copied(),
+                    symbol: r.asset,
+                    views: r
+                        .views
                         .into_iter()
-                        .filter(|r| !r.views.is_empty())
-                        .map(|r| PrivateAssetConvergenceRow {
-                            target_pct: targets_by_symbol.get(&r.asset.to_uppercase()).copied(),
-                            symbol: r.asset,
-                            views: r
-                                .views
-                                .into_iter()
-                                .map(|v| PrivateAssetConvergenceView {
-                                    analyst: v.analyst,
-                                    conviction: v.conviction,
-                                    reasoning_summary: v.reasoning_summary,
-                                    probation: v.probation,
-                                    probation_streak: v.probation_streak,
-                                })
-                                .collect(),
+                        .map(|v| PrivateAssetConvergenceView {
+                            analyst: v.analyst,
+                            conviction: v.conviction,
+                            reasoning_summary: v.reasoning_summary,
+                            probation: v.probation,
+                            probation_streak: v.probation_streak,
                         })
-                        .collect()
+                        .collect(),
                 })
-                .unwrap_or_default();
+                .collect()
+        })
+        .unwrap_or_default();
 
         // -----------------------------------------------------------------
         // W4 loaders: news, calibration, lessons, conviction trajectories,
@@ -2397,8 +2550,7 @@ impl BuildContext {
             |conn| crate::db::news_cache::get_latest_news(conn, 200, None, None, None, Some(24)),
         )
         .unwrap_or_default();
-        ctx.private_news_events =
-            private_news_events_for_held(&news_24h, &held_symbols);
+        ctx.private_news_events = private_news_events_for_held(&news_24h, &held_symbols);
 
         // 2. private_news_silence — run the silence analyzer the same way
         //    the CLI does; map its entries onto NewsVolumeSignal.
@@ -2407,19 +2559,19 @@ impl BuildContext {
             "private_news_silence",
             crate::commands::news_silence::build_report_backend(backend, 28),
         )
-            .map(|rep| {
-                rep.entries
-                    .into_iter()
-                    .map(|e| NewsVolumeSignal {
-                        topic: e.topic,
-                        current_count: e.observed_count.max(0) as u32,
-                        baseline_count: Some(e.median_count),
-                        status: e.status,
-                        caveat: (!e.label.is_empty()).then_some(e.label),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        .map(|rep| {
+            rep.entries
+                .into_iter()
+                .map(|e| NewsVolumeSignal {
+                    topic: e.topic,
+                    current_count: e.observed_count.max(0) as u32,
+                    baseline_count: Some(e.median_count),
+                    status: e.status,
+                    caveat: (!e.label.is_empty()).then_some(e.label),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
         // 3. private_macro_divergences — narrative-vs-money divergence per
         //    scenario. Material when |divergence z-score| > 1.0 (the spec's
@@ -2433,17 +2585,17 @@ impl BuildContext {
             "private_macro_divergences",
             crate::commands::narrative_divergence::build_report_backend(backend, 24, 1.0),
         )
-                .map(|rep| {
-                    rep.entries
-                        .into_iter()
-                        .map(|e| PrivateNarrativeMoneyDivergence {
-                            scenario: e.scenario_name,
-                            summary: e.label,
-                            material: e.divergence_score.abs() > 1.0,
-                        })
-                        .collect()
+        .map(|rep| {
+            rep.entries
+                .into_iter()
+                .map(|e| PrivateNarrativeMoneyDivergence {
+                    scenario: e.scenario_name,
+                    summary: e.label,
+                    material: e.divergence_score.abs() > 1.0,
                 })
-                .unwrap_or_default();
+                .collect()
+        })
+        .unwrap_or_default();
 
         let target_records: std::collections::HashMap<
             String,
@@ -2506,32 +2658,32 @@ impl BuildContext {
             "private_macro_scenarios",
             crate::db::scenarios::get_all_timelines_backend(backend, Some(7)),
         )
-                .map(|timelines| {
-                    let mut rows: Vec<PrivateMacroScenarioRow> = timelines
-                        .into_iter()
-                        .map(|t| {
-                            // change = current - first; prior_7d = current - change.
-                            // When no history exists, fall back to the current value
-                            // so the row still renders deterministically.
-                            let prior_7d = t
-                                .change
-                                .map(|d| t.current_probability - d)
-                                .unwrap_or(t.current_probability);
-                            PrivateMacroScenarioRow {
-                                name: t.name,
-                                probability: t.current_probability,
-                                prior_7d,
-                            }
-                        })
-                        .collect();
-                    rows.sort_by(|a, b| {
-                        b.probability
-                            .partial_cmp(&a.probability)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    });
-                    rows
+        .map(|timelines| {
+            let mut rows: Vec<PrivateMacroScenarioRow> = timelines
+                .into_iter()
+                .map(|t| {
+                    // change = current - first; prior_7d = current - change.
+                    // When no history exists, fall back to the current value
+                    // so the row still renders deterministically.
+                    let prior_7d = t
+                        .change
+                        .map(|d| t.current_probability - d)
+                        .unwrap_or(t.current_probability);
+                    PrivateMacroScenarioRow {
+                        name: t.name,
+                        probability: t.current_probability,
+                        prior_7d,
+                    }
                 })
-                .unwrap_or_default();
+                .collect();
+            rows.sort_by(|a, b| {
+                b.probability
+                    .partial_cmp(&a.probability)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            rows
+        })
+        .unwrap_or_default();
 
         // Private macro regime quadrant — derived from `regime_snapshots`. The
         // table doesn't carry explicit `growth` / `inflation` columns (its
@@ -2549,28 +2701,26 @@ impl BuildContext {
             "private_macro_regime",
             crate::db::regime_snapshots::get_history_backend(backend, Some(7)),
         )
-                .filter(|rows| !rows.is_empty())
-                .and_then(|rows| {
-                    let head = rows.first()?;
-                    let (growth, inflation) = regime_to_axes(&head.regime)?;
-                    let trail = rows
-                        .iter()
-                        .skip(1)
-                        .filter_map(|snap| {
-                            regime_to_axes(&snap.regime).map(|(g, i)| {
-                                PrivateRegimeTrailPoint {
-                                    growth: g,
-                                    inflation: i,
-                                }
-                            })
-                        })
-                        .collect();
-                    Some(PrivateMacroRegimeQuadrant {
-                        growth,
-                        inflation,
-                        trail,
+        .filter(|rows| !rows.is_empty())
+        .and_then(|rows| {
+            let head = rows.first()?;
+            let (growth, inflation) = regime_to_axes(&head.regime)?;
+            let trail = rows
+                .iter()
+                .skip(1)
+                .filter_map(|snap| {
+                    regime_to_axes(&snap.regime).map(|(g, i)| PrivateRegimeTrailPoint {
+                        growth: g,
+                        inflation: i,
                     })
-                });
+                })
+                .collect();
+            Some(PrivateMacroRegimeQuadrant {
+                growth,
+                inflation,
+                trail,
+            })
+        });
 
         // 5 + 6. Calibration matrix rows. Public surface keeps every row;
         //        private surface filters to held-asset topics.
@@ -2629,13 +2779,11 @@ impl BuildContext {
         // 10. epistemic_health — the run_health row for the report date,
         //     surfaced as the final (meta) private section. Best-effort:
         //     missing row or non-SQLite backend degrades to None.
-        ctx.epistemic_health = load_sqlite_slot(
-            &mut ctx.slot_issues,
-            "epistemic_health",
-            backend,
-            |conn| crate::db::run_health::get_run_health(conn, report_date),
-        )
-        .flatten();
+        ctx.epistemic_health =
+            load_sqlite_slot(&mut ctx.slot_issues, "epistemic_health", backend, |conn| {
+                crate::db::run_health::get_run_health(conn, report_date)
+            })
+            .flatten();
 
         // 11. recommendation_scoreboard — the ledger's per-held-symbol
         //     forward-return summary (action mix, 90d hit rate, ADD−WAIT
@@ -2648,6 +2796,8 @@ impl BuildContext {
         )
         .map(|board| scoreboard_lines_for_held(&board, &held_symbols))
         .unwrap_or_default();
+
+        ctx.private_cycle_watch = load_private_cycle_watch(backend);
 
         // ---- Build-time staleness pass ------------------------------------
         // For inputs with freshness expectations (prices, sentiment,
@@ -2682,8 +2832,11 @@ impl BuildContext {
                 .map(|p| (p.symbol.clone(), p.allocation_pct))
                 .collect();
             ctx.private_basket_allocation =
-                crate::report::sections::private_basket_allocation::compute_rows(backend, &held_pairs)
-                    .unwrap_or_default();
+                crate::report::sections::private_basket_allocation::compute_rows(
+                    backend,
+                    &held_pairs,
+                )
+                .unwrap_or_default();
         }
 
         Ok(ctx)
@@ -2823,8 +2976,8 @@ fn load_latest_synthesis_adversary_views(
         }
         let evidence = serde_json::from_str::<Vec<String>>(&r.counter_case_evidence_points)
             .unwrap_or_default();
-        let triggers = serde_json::from_str::<Vec<String>>(&r.falsification_triggers)
-            .unwrap_or_default();
+        let triggers =
+            serde_json::from_str::<Vec<String>>(&r.falsification_triggers).unwrap_or_default();
         out.push(AdversarySynthesisSummary {
             asset: r.asset,
             current_convergence_summary: r.current_convergence_summary,
@@ -3171,7 +3324,9 @@ fn synthesis_from_narrative(narrative: &serde_json::Value) -> Option<SynthesisSn
 
 /// Map scenario name → 7-day probability delta (percentage points) from the
 /// narrative snapshot's `scenario_shifts` array. Empty when absent.
-fn scenario_shift_map(narrative: Option<&serde_json::Value>) -> std::collections::HashMap<String, f64> {
+fn scenario_shift_map(
+    narrative: Option<&serde_json::Value>,
+) -> std::collections::HashMap<String, f64> {
     let mut map = std::collections::HashMap::new();
     let Some(shifts) = narrative
         .and_then(|v| v.get("scenario_shifts"))
@@ -3196,7 +3351,11 @@ fn scenario_shift_map(narrative: Option<&serde_json::Value>) -> std::collections
 fn week_ago_date(report_date: &str) -> Option<String> {
     chrono::NaiveDate::parse_from_str(report_date, "%Y-%m-%d")
         .ok()
-        .map(|d| (d - chrono::Duration::days(7)).format("%Y-%m-%d").to_string())
+        .map(|d| {
+            (d - chrono::Duration::days(7))
+                .format("%Y-%m-%d")
+                .to_string()
+        })
 }
 
 /// Whole days between `from` and `to` (`YYYY-MM-DD`); negative if `to` is past.
@@ -3238,13 +3397,345 @@ fn weekly_change_pct(
     Some(dec_to_f64(pct.round_dp(2)))
 }
 
+fn pct_change_from_prior(
+    current: rust_decimal::Decimal,
+    prior: rust_decimal::Decimal,
+) -> Option<f64> {
+    if prior.is_zero() {
+        return None;
+    }
+    let pct = ((current - prior) / prior) * rust_decimal::Decimal::from(100);
+    Some(dec_to_f64(pct.round_dp(2)))
+}
+
+fn date_days_before(report_date: &str, days: i64) -> Option<String> {
+    let date = chrono::NaiveDate::parse_from_str(report_date, "%Y-%m-%d").ok()?;
+    Some(
+        (date - chrono::Duration::days(days))
+            .format("%Y-%m-%d")
+            .to_string(),
+    )
+}
+
+fn move_from_history(
+    backend: &BackendConnection,
+    symbol: &str,
+    current: rust_decimal::Decimal,
+    report_date: &str,
+    days: i64,
+) -> Option<f64> {
+    let date = date_days_before(report_date, days)?;
+    let prior = crate::db::price_history::get_price_at_date_backend(backend, symbol, &date)
+        .ok()
+        .flatten()?;
+    pct_change_from_prior(current, prior)
+}
+
+fn weighted_move(rows: &[(f64, Option<f64>)]) -> Option<f64> {
+    let mut weighted = 0.0;
+    let mut weight_sum = 0.0;
+    for (weight, value) in rows {
+        let Some(value) = value else { continue };
+        if *weight <= 0.0 {
+            continue;
+        }
+        weighted += weight * value;
+        weight_sum += weight;
+    }
+    if weight_sum > 0.0 {
+        Some((weighted / weight_sum * 100.0).round() / 100.0)
+    } else {
+        None
+    }
+}
+
+fn compute_private_portfolio_moves(
+    backend: &BackendConnection,
+    report_date: &str,
+    positions: &[crate::models::position::Position],
+    price_map: &std::collections::HashMap<String, &crate::models::price::PriceQuote>,
+) -> Vec<PrivatePortfolioMoveRow> {
+    let mut rows = Vec::new();
+    let mut total_24h = Vec::new();
+    let mut total_7d = Vec::new();
+    let mut total_30d = Vec::new();
+
+    for p in positions {
+        let Some(current) = p.current_price else {
+            continue;
+        };
+        let allocation = p.allocation_pct.map(dec_to_f64).unwrap_or(0.0);
+        let quote = price_map.get(&p.symbol);
+        let move_24h = quote
+            .and_then(|q| q.previous_close)
+            .and_then(|prior| pct_change_from_prior(current, prior));
+        let move_7d = move_from_history(backend, &p.symbol, current, report_date, 7);
+        let move_30d = move_from_history(backend, &p.symbol, current, report_date, 30);
+
+        total_24h.push((allocation, move_24h));
+        total_7d.push((allocation, move_7d));
+        total_30d.push((allocation, move_30d));
+
+        rows.push(PrivatePortfolioMoveRow {
+            symbol: p.symbol.clone(),
+            move_1h_pct: None,
+            move_24h_pct: move_24h,
+            move_7d_pct: move_7d,
+            move_30d_pct: move_30d,
+        });
+    }
+
+    if !rows.is_empty() {
+        rows.push(PrivatePortfolioMoveRow {
+            symbol: "TOTAL".to_string(),
+            move_1h_pct: None,
+            move_24h_pct: weighted_move(&total_24h),
+            move_7d_pct: weighted_move(&total_7d),
+            move_30d_pct: weighted_move(&total_30d),
+        });
+    }
+
+    rows.sort_by(|a, b| {
+        if a.symbol == "TOTAL" {
+            std::cmp::Ordering::Less
+        } else if b.symbol == "TOTAL" {
+            std::cmp::Ordering::Greater
+        } else {
+            a.symbol.cmp(&b.symbol)
+        }
+    });
+    rows
+}
+
+fn map_alert_rows(alerts: Vec<crate::alerts::AlertRule>) -> Vec<PrivateAlertRow> {
+    let mut rows: Vec<PrivateAlertRow> = alerts
+        .into_iter()
+        .filter(|a| {
+            matches!(
+                a.status,
+                crate::alerts::AlertStatus::Armed | crate::alerts::AlertStatus::Triggered
+            )
+        })
+        .map(|a| PrivateAlertRow {
+            id: a.id,
+            symbol: a.symbol,
+            kind: a.kind.to_string(),
+            status: a.status.to_string(),
+            condition: a.condition,
+            label: a.rule_text,
+            triggered_at: a.triggered_at,
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        let rank = |status: &str| if status == "triggered" { 0 } else { 1 };
+        rank(&a.status)
+            .cmp(&rank(&b.status))
+            .then_with(|| b.triggered_at.cmp(&a.triggered_at))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    rows.truncate(12);
+    rows
+}
+
+fn load_private_cycle_watch(backend: &BackendConnection) -> Option<PrivateCycleWatchSummary> {
+    let mut history =
+        crate::db::price_history::get_history_backend(backend, "BTC-USD", 9000).unwrap_or_default();
+    if history.is_empty() {
+        history =
+            crate::db::price_history::get_history_backend(backend, "BTC", 9000).unwrap_or_default();
+    }
+    if history.is_empty() {
+        return None;
+    }
+    let bottom_signals = crate::analytics::cycle_signals::cycle_bottom_signals(
+        "BTC",
+        &history,
+        crate::analytics::cycle_signals::SignalTimeframe::Monthly,
+    )?;
+    let bottom_backtest = crate::analytics::cycle_signal_backtest::run_backtest(
+        "BTC",
+        "BTC-USD",
+        &history,
+        crate::analytics::cycle_signals::SignalTimeframe::Monthly,
+        None,
+        &crate::analytics::cycle_signal_backtest::DEFAULT_CONFLUENCE_THRESHOLDS,
+        false,
+        false,
+    );
+    let top_signals = crate::analytics::cycle_signals::cycle_top_signals(
+        "BTC",
+        &history,
+        crate::analytics::cycle_signals::SignalTimeframe::Monthly,
+    );
+    let top_backtest = top_signals.as_ref().and_then(|_| {
+        crate::analytics::cycle_signal_backtest::run_top_backtest(
+            "BTC",
+            "BTC-USD",
+            &history,
+            crate::analytics::cycle_signals::SignalTimeframe::Monthly,
+            None,
+            &crate::analytics::cycle_signal_backtest::DEFAULT_CONFLUENCE_THRESHOLDS,
+            false,
+            false,
+        )
+    });
+
+    let bottom_items = bottom_signals
+        .core_watch
+        .iter()
+        .map(|item| PrivateCycleWatchItem {
+            label: item.label.clone(),
+            met: item.met,
+            met_components: item.met_components,
+            total_components: item.total_components,
+            detail: item.detail.clone(),
+            distance_notes: distance_notes_for_cycle_item(&bottom_signals.criteria, &item.key),
+        })
+        .collect::<Vec<_>>();
+    let bottom_panel = PrivateCycleWatchPanel {
+        title: "Cycle-low accumulation".to_string(),
+        as_of: bottom_signals.as_of.clone(),
+        verdict: bottom_signals.verdict.clone(),
+        met_count: bottom_signals.met_count,
+        total: bottom_signals.total,
+        items: bottom_items.clone(),
+        backtest_headline: bottom_backtest.as_ref().map(|b| b.headline.clone()),
+        caveat: bottom_backtest.as_ref().map(|b| b.caveat.clone()),
+    };
+
+    let mut panels = vec![bottom_panel];
+    if let Some(top) = top_signals {
+        let top_items = top
+            .core_watch
+            .iter()
+            .map(|item| PrivateCycleWatchItem {
+                label: item.label.clone(),
+                met: item.met,
+                met_components: item.met_components,
+                total_components: item.total_components,
+                detail: item.detail.clone(),
+                distance_notes: distance_notes_for_cycle_item(&top.criteria, &item.key),
+            })
+            .collect::<Vec<_>>();
+        panels.push(PrivateCycleWatchPanel {
+            title: "Cycle-high exhaustion".to_string(),
+            as_of: top.as_of,
+            verdict: top.verdict,
+            met_count: top.met_count,
+            total: top.total,
+            items: top_items,
+            backtest_headline: top_backtest.as_ref().map(|b| b.headline.clone()),
+            caveat: top_backtest.as_ref().map(|b| b.caveat.clone()),
+        });
+    }
+
+    Some(PrivateCycleWatchSummary {
+        as_of: bottom_signals.as_of,
+        verdict: bottom_signals.verdict,
+        met_count: bottom_signals.met_count,
+        total: bottom_signals.total,
+        items: bottom_items,
+        backtest_headline: bottom_backtest.as_ref().map(|b| b.headline.clone()),
+        caveat: bottom_backtest.map(|b| b.caveat),
+        panels,
+    })
+}
+
+fn distance_notes_for_cycle_item(
+    criteria: &[crate::analytics::cycle_signals::Criterion],
+    key: &str,
+) -> Vec<String> {
+    let component = |name: &str| {
+        criteria
+            .iter()
+            .flat_map(|c| c.components.iter())
+            .find(|c| c.key == name)
+    };
+    let fmt = |value: Option<f64>| {
+        value
+            .map(|v| format!("{v:+.2}"))
+            .unwrap_or_else(|| "n/a".to_string())
+    };
+
+    match key {
+        "momentum_turning_up" => component("rsi_ma_turned_up")
+            .map(|c| vec![format!("RSI-average change {}", fmt(c.distance_to_trigger))])
+            .unwrap_or_default(),
+        "momentum_above_price" => component("rsi_ma_cross_above_rsi")
+            .map(|c| {
+                vec![format!(
+                    "RSI-average minus RSI {}",
+                    fmt(c.distance_to_trigger)
+                )]
+            })
+            .unwrap_or_default(),
+        "dss_bottoming" => {
+            let mut notes = Vec::new();
+            if let Some(c) = component("dss_turned_up") {
+                notes.push(format!("DSS change {}", fmt(c.distance_to_trigger)));
+            }
+            if let Some(c) = component("dss_cross_above_trigger") {
+                notes.push(format!("DSS-trigger spread {}", fmt(c.distance_to_trigger)));
+            }
+            notes
+        }
+        "roofing_confirming_up" => {
+            let mut notes = Vec::new();
+            if let Some(c) = component("erf_bottom_zone") {
+                notes.push(format!(
+                    "bottom-zone distance {}",
+                    fmt(c.distance_to_trigger)
+                ));
+            }
+            if let Some(c) = component("erf_turned_up") {
+                notes.push(format!("filter change {}", fmt(c.distance_to_trigger)));
+            }
+            notes
+        }
+        "momentum_turning_down" => component("rsi_ma_turned_down")
+            .map(|c| vec![format!("RSI-average change {}", fmt(c.distance_to_trigger))])
+            .unwrap_or_default(),
+        "momentum_below_price" => component("rsi_ma_cross_below_rsi")
+            .map(|c| {
+                vec![format!(
+                    "RSI-average minus RSI {}",
+                    fmt(c.distance_to_trigger)
+                )]
+            })
+            .unwrap_or_default(),
+        "dss_topping" => {
+            let mut notes = Vec::new();
+            if let Some(c) = component("dss_turned_down") {
+                notes.push(format!("DSS change {}", fmt(c.distance_to_trigger)));
+            }
+            if let Some(c) = component("dss_cross_below_trigger") {
+                notes.push(format!("DSS-trigger spread {}", fmt(c.distance_to_trigger)));
+            }
+            if let Some(c) = component("dss_overbought") {
+                notes.push(format!("overbought margin {}", fmt(c.distance_to_trigger)));
+            }
+            notes
+        }
+        "roofing_confirming_down" => {
+            let mut notes = Vec::new();
+            if let Some(c) = component("erf_top_zone") {
+                notes.push(format!("top-zone distance {}", fmt(c.distance_to_trigger)));
+            }
+            if let Some(c) = component("erf_turned_down") {
+                notes.push(format!("filter change {}", fmt(c.distance_to_trigger)));
+            }
+            notes
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// Compact trend signal from the latest daily technical snapshot: position
 /// relative to the 50- and 200-day SMAs. `None` when no snapshot exists.
 fn trend_signal(backend: &BackendConnection, symbol: &str) -> Option<String> {
-    let snap =
-        crate::db::technical_snapshots::get_latest_snapshot_backend(backend, symbol, "1d")
-            .ok()
-            .flatten()?;
+    let snap = crate::db::technical_snapshots::get_latest_snapshot_backend(backend, symbol, "1d")
+        .ok()
+        .flatten()?;
     let above_50 = snap.above_sma_50.unwrap_or(false);
     let above_200 = snap.above_sma_200.unwrap_or(false);
     let trend = match (above_50, above_200) {
@@ -3316,7 +3807,9 @@ fn load_real_yield_context(backend: &BackendConnection) -> Option<RealYieldSumma
     };
     let interpretation = match direction {
         "rising" => "Rising real yields raise the opportunity cost of holding non-yielding metals",
-        "falling" => "Falling real yields lower the opportunity cost of holding non-yielding metals",
+        "falling" => {
+            "Falling real yields lower the opportunity cost of holding non-yielding metals"
+        }
         _ => "Stable real yields leave the rate impulse on metals broadly neutral",
     };
     Some(RealYieldSummary {
@@ -3358,9 +3851,7 @@ fn load_bitcoin_etf_flow_summaries(
     };
     let etf_rows: Vec<_> = rows
         .into_iter()
-        .filter(|r| {
-            r.flow_type == "etf_creation" || r.flow_type == "etf_redemption"
-        })
+        .filter(|r| r.flow_type == "etf_creation" || r.flow_type == "etf_redemption")
         .collect();
     if etf_rows.is_empty() {
         return Vec::new();
@@ -3528,13 +4019,11 @@ fn calendar_to_macro_catalysts(
     events: &[crate::db::calendar_cache::CalendarEvent],
     limit: usize,
 ) -> Vec<PrivateMacroCatalyst> {
-    let mut seen: std::collections::HashSet<(String, String)> =
-        std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
     events
         .iter()
         .filter(|e| {
-            e.event_type == "economic"
-                && matches!(effective_impact(e).as_str(), "high" | "medium")
+            e.event_type == "economic" && matches!(effective_impact(e).as_str(), "high" | "medium")
         })
         .filter(|e| seen.insert((e.date.clone(), canonical_calendar_key(&e.name))))
         .take(limit)
@@ -3555,17 +4044,12 @@ fn calendar_to_macro_catalysts(
 /// weekly run rendered three NFP decision-pending cards with
 /// conflicting forecasts.
 fn canonical_calendar_key(headline: &str) -> String {
-    let lower = headline
-        .to_lowercase()
-        .replace(['-', '_'], " ");
+    let lower = headline.to_lowercase().replace(['-', '_'], " ");
     let collapsed: String = lower
         .chars()
         .filter(|c| c.is_alphanumeric() || c.is_whitespace())
         .collect();
-    let normalized = collapsed
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let normalized = collapsed.split_whitespace().collect::<Vec<_>>().join(" ");
 
     const FAMILIES: &[(&str, &str)] = &[
         ("non farm payrolls private", "nfp"),
@@ -3614,8 +4098,7 @@ fn calendar_to_binary_catalysts(
         Err(_) => return Vec::new(),
     };
     let cutoff = from + Duration::days(horizon_days);
-    let mut seen: std::collections::HashSet<(String, String)> =
-        std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
     events
         .iter()
         .filter(|e| e.event_type == "economic" && effective_impact(e) == "high")
@@ -3744,9 +4227,9 @@ fn symbol_aliases_for_news(symbol: &str) -> Vec<String> {
             &["SI=F", "SLV", "XAG", "XAG=X", "XAGUSD=X"]
         }
         // Bitcoin — spot ticker, futures, ETF aliases.
-        "BTC" | "BTC-USD" | "BTCUSD=X" | "IBIT" | "FBTC" => {
-            &["BTC", "BTC-USD", "BTCUSD=X", "BITCOIN", "IBIT", "FBTC", "BITO"]
-        }
+        "BTC" | "BTC-USD" | "BTCUSD=X" | "IBIT" | "FBTC" => &[
+            "BTC", "BTC-USD", "BTCUSD=X", "BITCOIN", "IBIT", "FBTC", "BITO",
+        ],
         // Ethereum.
         "ETH" | "ETH-USD" | "ETHUSD=X" => &["ETH", "ETH-USD", "ETHUSD=X", "ETHEREUM"],
         // Dollar index — DXY is the feed canonical, but Yahoo uses DX-Y.NYB.
@@ -3807,15 +4290,18 @@ fn catalyst_impact_label(event: &crate::db::calendar_cache::CalendarEvent) -> St
 /// Build the private "lessons applied" summary directly from the prediction +
 /// lesson tables. Counts how many predictions reference each lesson and surfaces
 /// the most-referenced ones. `None` when there are no predictions at all.
-fn load_lessons_applied(conn: &rusqlite::Connection) -> Result<Option<PrivateLessonsAppliedSummary>> {
-    let predictions =
-        crate::db::user_predictions::list_predictions(conn, None, None, None, None)?;
+fn load_lessons_applied(
+    conn: &rusqlite::Connection,
+) -> Result<Option<PrivateLessonsAppliedSummary>> {
+    let predictions = crate::db::user_predictions::list_predictions(conn, None, None, None, None)?;
     if predictions.is_empty() {
         return Ok(None);
     }
     let lessons = crate::db::prediction_lessons::list_lessons(conn, None, None)?;
-    let lesson_by_id: std::collections::HashMap<i64, &crate::db::prediction_lessons::PredictionLesson> =
-        lessons.iter().map(|l| (l.id, l)).collect();
+    let lesson_by_id: std::collections::HashMap<
+        i64,
+        &crate::db::prediction_lessons::PredictionLesson,
+    > = lessons.iter().map(|l| (l.id, l)).collect();
 
     let mut counts: std::collections::BTreeMap<i64, u32> = std::collections::BTreeMap::new();
     let mut guarded = 0u32;
@@ -3824,8 +4310,7 @@ fn load_lessons_applied(conn: &rusqlite::Connection) -> Result<Option<PrivateLes
             continue;
         }
         guarded += 1;
-        let unique: std::collections::BTreeSet<i64> =
-            p.lessons_applied.iter().copied().collect();
+        let unique: std::collections::BTreeSet<i64> = p.lessons_applied.iter().copied().collect();
         for id in unique {
             *counts.entry(id).or_default() += 1;
         }
@@ -3910,14 +4395,9 @@ fn load_todays_analyst_synthesis(
     let mut headlines: [Option<String>; 4] = Default::default();
     let mut all_notes_today: Vec<crate::db::daily_notes::DailyNote> = Vec::new();
     for (author, idx) in analyst_authors.iter() {
-        let notes = crate::db::daily_notes::list_notes(
-            conn,
-            Some(report_date),
-            None,
-            None,
-            Some(*author),
-        )
-        .unwrap_or_default();
+        let notes =
+            crate::db::daily_notes::list_notes(conn, Some(report_date), None, None, Some(*author))
+                .unwrap_or_default();
         if let Some(longest) = notes
             .iter()
             .max_by_key(|n| n.content.trim().chars().count())
@@ -4024,14 +4504,10 @@ fn scan_leading_move(
     // `\b[A-Z][A-Z0-9.=^-]{0,9}\s*[-+]?\d{1,3}(?:\.\d+)?%`
     // Accept both `BTC -7%` and `BTC -7.0%`; trailing `=F` / `^VIX`-style
     // suffixes are common in our symbol set.
-    let token_re = regex::Regex::new(
-        r"\b([A-Z][A-Z0-9.=^-]{0,9})\s*([-+]?\d{1,3}(?:\.\d+)?)%",
-    )
-    .ok()?;
-    let cum_re = regex::Regex::new(
-        r"cum\s+([-+]?\d{1,3}(?:\.\d+)?)%(?:\s+from\s+([^.\n,;]+))?",
-    )
-    .ok()?;
+    let token_re =
+        regex::Regex::new(r"\b([A-Z][A-Z0-9.=^-]{0,9})\s*([-+]?\d{1,3}(?:\.\d+)?)%").ok()?;
+    let cum_re =
+        regex::Regex::new(r"cum\s+([-+]?\d{1,3}(?:\.\d+)?)%(?:\s+from\s+([^.\n,;]+))?").ok()?;
 
     let held: std::collections::HashSet<String> =
         held_assets.iter().map(|s| s.to_ascii_uppercase()).collect();
@@ -4039,7 +4515,10 @@ fn scan_leading_move(
     let mut best: Option<MaterialMove> = None;
     for note in notes {
         for cap in token_re.captures_iter(&note.content) {
-            let asset = cap.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
+            let asset = cap
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
             let pct_str = cap.get(2).map(|m| m.as_str()).unwrap_or("");
             let Ok(pct) = pct_str.parse::<f64>() else {
                 continue;
@@ -4067,8 +4546,9 @@ fn scan_leading_move(
                 .min(note.content.len());
             let window_end = (match_end + 160).min(note.content.len());
             let window = &note.content[match_end..window_end];
-            let cumulative_pct =
-                cum_re.captures(window).and_then(|c| c.get(1)?.as_str().parse::<f64>().ok());
+            let cumulative_pct = cum_re
+                .captures(window)
+                .and_then(|c| c.get(1)?.as_str().parse::<f64>().ok());
             // Note: trim to the matched sentence-ish window.
             let note_snippet = truncate_excerpt(window, 160);
             best = Some(MaterialMove {
@@ -4177,9 +4657,7 @@ fn private_news_events_for_held(
 
 /// Read every row from `calibration_matrix` and project onto the renderer's
 /// reliability shape. Latest snapshot per (layer, conviction_band) wins.
-fn load_calibration_rows(
-    conn: &rusqlite::Connection,
-) -> Result<Vec<CalibrationReliabilityRow>> {
+fn load_calibration_rows(conn: &rusqlite::Connection) -> Result<Vec<CalibrationReliabilityRow>> {
     let mut stmt = conn.prepare(
         "SELECT layer, COALESCE(topic, ''), COALESCE(conviction_band, ''),
                 n, hit_rate, COALESCE(stated_confidence, 0.0), recorded_at
@@ -4281,11 +4759,7 @@ fn load_open_predictions_calibration(
             .timeframe
             .as_deref()
             .and_then(normalize_pred_layer)
-            .or_else(|| {
-                p.source_agent
-                    .as_deref()
-                    .and_then(normalize_pred_layer)
-            })
+            .or_else(|| p.source_agent.as_deref().and_then(normalize_pred_layer))
             .unwrap_or_else(|| "unknown".to_string());
         *layer_counts.entry(layer).or_default() += 1;
     }
@@ -4335,14 +4809,13 @@ fn load_open_predictions_calibration(
 /// value, summary is the lesson's miss-type-prefixed why_wrong (already
 /// computed by the report), and applied_to lists how many predictions cited
 /// the lesson in the window.
-fn load_public_lessons_applied(
-    conn: &rusqlite::Connection,
-) -> Result<Vec<LessonAppliedSummary>> {
-    let predictions =
-        crate::db::user_predictions::list_predictions(conn, None, None, None, None)?;
+fn load_public_lessons_applied(conn: &rusqlite::Connection) -> Result<Vec<LessonAppliedSummary>> {
+    let predictions = crate::db::user_predictions::list_predictions(conn, None, None, None, None)?;
     let lessons = crate::db::prediction_lessons::list_lessons(conn, None, None)?;
-    let lesson_by_id: std::collections::HashMap<i64, &crate::db::prediction_lessons::PredictionLesson> =
-        lessons.iter().map(|l| (l.id, l)).collect();
+    let lesson_by_id: std::collections::HashMap<
+        i64,
+        &crate::db::prediction_lessons::PredictionLesson,
+    > = lessons.iter().map(|l| (l.id, l)).collect();
 
     // 24h window cutoff in the same UTC form predictions use.
     let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
@@ -4359,7 +4832,10 @@ fn load_public_lessons_applied(
                 chrono::NaiveDateTime::parse_from_str(&p.created_at, "%Y-%m-%d %H:%M:%S")
                     .ok()
                     .map(|naive| {
-                        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive, chrono::Utc) >= cutoff
+                        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                            naive,
+                            chrono::Utc,
+                        ) >= cutoff
                     })
             })
             .unwrap_or(false);
@@ -4434,8 +4910,10 @@ fn load_conviction_trajectories(
          ORDER BY recorded_at ASC",
     )?;
     let mut rows = stmt.query(rusqlite::params![cutoff])?;
-    let mut grouped: std::collections::BTreeMap<(String, String), Vec<PrivateConvictionTrajectoryPoint>> =
-        std::collections::BTreeMap::new();
+    let mut grouped: std::collections::BTreeMap<
+        (String, String),
+        Vec<PrivateConvictionTrajectoryPoint>,
+    > = std::collections::BTreeMap::new();
     while let Some(r) = rows.next()? {
         let analyst: String = r.get(0)?;
         let asset: String = r.get(1)?;
@@ -4577,7 +5055,11 @@ pub struct DataAvailabilityRow {
 }
 
 /// Classify one slot from its populated bit + any recorded issue.
-fn availability_row(ctx: &BuildContext, field: &'static str, populated: bool) -> DataAvailabilityRow {
+fn availability_row(
+    ctx: &BuildContext,
+    field: &'static str,
+    populated: bool,
+) -> DataAvailabilityRow {
     if populated {
         return DataAvailabilityRow {
             field,
@@ -4675,6 +5157,8 @@ pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
     vec_slot!(public_prediction_intelligence);
     vec_slot!(public_source_tier_overrides);
     opt_slot!(private_portfolio_snapshot);
+    vec_slot!(private_portfolio_moves);
+    vec_slot!(private_alerts);
     vec_slot!(private_derived_actions);
     vec_slot!(private_binary_catalysts);
     vec_slot!(private_what_changed_deltas);
@@ -4692,6 +5176,7 @@ pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
     vec_slot!(private_analytics_risk);
     vec_slot!(private_basket_allocation);
     vec_slot!(private_journal_views);
+    vec_slot!(private_recent_journal);
     vec_slot!(private_news_events);
     vec_slot!(private_news_silence);
     vec_slot!(private_open_predictions);
@@ -4708,6 +5193,7 @@ pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
     vec_slot!(portfolio_decision_cards);
     map_slot!(private_asset_intelligence);
     opt_slot!(morning_brief);
+    opt_slot!(private_cycle_watch);
     rows.push(availability_row(
         ctx,
         "synthesis_notes",
@@ -4735,7 +5221,9 @@ pub fn check_slot_conformance(
         let mut seen = BTreeSet::new();
         for t in tracked {
             if !seen.insert(t) {
-                return Err(format!("slot `{t}` is tracked twice in data_availability()"));
+                return Err(format!(
+                    "slot `{t}` is tracked twice in data_availability()"
+                ));
             }
         }
     }
@@ -4802,10 +5290,7 @@ impl DryRunSummary {
         ));
         out.push_str("Section plan:\n");
         for (idx, spec) in self.plan.iter().enumerate() {
-            let outcome = self
-                .section_outcomes
-                .iter()
-                .find(|o| o.name == spec.name);
+            let outcome = self.section_outcomes.iter().find(|o| o.name == spec.name);
             let note = match outcome {
                 Some(o) if !o.rendered => format!(
                     "  [suppressed: {}]",
@@ -4848,10 +5333,7 @@ impl DryRunSummary {
         for path in &self.output_paths {
             out.push_str(&format!("  - {}\n", path.display()));
         }
-        out.push_str(&format!(
-            "\nPrivacy audit: {}\n",
-            self.privacy_audit_status
-        ));
+        out.push_str(&format!("\nPrivacy audit: {}\n", self.privacy_audit_status));
         out
     }
 }
@@ -5067,7 +5549,9 @@ pub fn render_integrity_footer(
         .map(|r| {
             (
                 r.field,
-                r.reason.clone().unwrap_or_else(|| "unknown error".to_string()),
+                r.reason
+                    .clone()
+                    .unwrap_or_else(|| "unknown error".to_string()),
             )
         })
         .collect();
@@ -5120,7 +5604,16 @@ pub fn render_integrity_footer(
     if !staleness.is_empty() {
         let inputs: Vec<String> = staleness
             .iter()
-            .map(|w| format!("{} ({})", w.input, w.message.trim_start_matches("⚠ ").trim_start_matches('⚠').trim()))
+            .map(|w| {
+                format!(
+                    "{} ({})",
+                    w.input,
+                    w.message
+                        .trim_start_matches("⚠ ")
+                        .trim_start_matches('⚠')
+                        .trim()
+                )
+            })
             .collect();
         out.push_str(&format!("\n*Stale inputs: {}.*", inputs.join("; ")));
     }
@@ -5452,9 +5945,8 @@ pub fn assemble(
     if let Some(public_path) = plan.public_path.as_ref() {
         let body = assemble_public(ctx)?;
         if let Some(parent) = public_path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!("failed to create public out-dir {}", parent.display())
-            })?;
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create public out-dir {}", parent.display()))?;
         }
         fs::write(public_path, &body)
             .with_context(|| format!("failed to write {}", public_path.display()))?;
@@ -5508,7 +6000,9 @@ pub fn load_parallels_results_classified(
         Err(e) => {
             return (
                 Vec::new(),
-                Some(SlotIssue::LoaderError(format!("failed to read {path}: {e}"))),
+                Some(SlotIssue::LoaderError(format!(
+                    "failed to read {path}: {e}"
+                ))),
             );
         }
     };
@@ -5710,14 +6204,9 @@ fn latest_synthesis_note_date_before(
     conn: &rusqlite::Connection,
     report_date: &str,
 ) -> Option<String> {
-    let notes = crate::db::daily_notes::list_notes(
-        conn,
-        None,
-        None,
-        Some(500),
-        Some("analyst-synthesis"),
-    )
-    .ok()?;
+    let notes =
+        crate::db::daily_notes::list_notes(conn, None, None, Some(500), Some("analyst-synthesis"))
+            .ok()?;
     notes
         .iter()
         .filter(|n| parse_synthesis_header(&n.content).is_some())
@@ -5848,7 +6337,9 @@ fn parse_panel_response_prose(raw: &str) -> Option<InvestorPanelResponse> {
     let after_header = &raw[header_split..];
     let bracket_end = after_header.find(']')?;
     let bracket = &after_header[1..bracket_end];
-    let after_bracket = after_header[bracket_end + 1..].trim_start_matches(':').trim();
+    let after_bracket = after_header[bracket_end + 1..]
+        .trim_start_matches(':')
+        .trim();
 
     let mut overall_signal = "neutral".to_string();
     let mut confidence: u8 = 0;
@@ -5896,9 +6387,7 @@ fn scan_prose_positioning(body: &str) -> Vec<InvestorPanelPositioning> {
         let after = &body[idx + key.len()..];
         let head = after.trim_start();
         // Read up to the next comma or period to get "<signal>/<weight>"
-        let end = head
-            .find([',', '.'])
-            .unwrap_or_else(|| head.len().min(120));
+        let end = head.find([',', '.']).unwrap_or_else(|| head.len().min(120));
         let segment = head[..end].trim();
         let mut signal = "neutral".to_string();
         let mut weight = String::new();
@@ -5926,7 +6415,10 @@ fn scan_prose_positioning(body: &str) -> Vec<InvestorPanelPositioning> {
         // if any.
         let reasoning = head[end..]
             .split_once('(')
-            .and_then(|(_, rest)| rest.split_once(')').map(|(inner, _)| inner.trim().to_string()))
+            .and_then(|(_, rest)| {
+                rest.split_once(')')
+                    .map(|(inner, _)| inner.trim().to_string())
+            })
             .unwrap_or_default();
         out.push(InvestorPanelPositioning {
             asset: (*key).to_string(),
@@ -5941,7 +6433,12 @@ fn scan_prose_positioning(body: &str) -> Vec<InvestorPanelPositioning> {
 fn first_sentence_after_assets(body: &str) -> &str {
     // Crude: take the last sentence-ending segment as key_insight.
     body.rsplit_once(". ")
-        .map(|(prefix, _)| prefix.rsplit_once(". ").map(|(_, tail)| tail).unwrap_or(prefix))
+        .map(|(prefix, _)| {
+            prefix
+                .rsplit_once(". ")
+                .map(|(_, tail)| tail)
+                .unwrap_or(prefix)
+        })
         .unwrap_or(body)
         .trim()
 }
@@ -5957,9 +6454,7 @@ fn trailing_change_clause(body: &str) -> &str {
 /// panel responses. Labels mirror the panel skill's consensus rules:
 /// "strong-consensus" when ≥75% of voters agree, "high-divergence"
 /// when bullish/bearish counts are within one vote, "mixed" otherwise.
-fn aggregate_panel_consensus(
-    responses: &[InvestorPanelResponse],
-) -> Vec<InvestorPanelConsensus> {
+fn aggregate_panel_consensus(responses: &[InvestorPanelResponse]) -> Vec<InvestorPanelConsensus> {
     use std::collections::BTreeMap;
     let mut tally: BTreeMap<String, (u32, u32, u32)> = BTreeMap::new();
     for r in responses {
@@ -6088,10 +6583,7 @@ fn parse_decision_card(raw: &str) -> Option<PortfolioDecisionCard> {
 /// BULL CASE / BEAR CASE / WHAT WOULD CHANGE MY MIND / RISK / REWARD
 /// sub-sections). Notes without a recognised header are ignored so the
 /// section never renders stray content.
-fn load_synthesis_notes(
-    conn: &rusqlite::Connection,
-    report_date: &str,
-) -> Result<SynthesisNotes> {
+fn load_synthesis_notes(conn: &rusqlite::Connection, report_date: &str) -> Result<SynthesisNotes> {
     let notes = crate::db::daily_notes::list_notes(
         conn,
         Some(report_date),
@@ -6162,13 +6654,12 @@ fn load_asset_intelligence_blob(
     symbol: &str,
 ) -> Option<AssetIntelligenceBlob> {
     let sym = symbol.to_uppercase();
-    let spot =
-        crate::db::price_cache::get_cached_price_backend(backend, &sym, "USD")
-            .ok()
-            .flatten();
+    let spot = crate::db::price_cache::get_cached_price_backend(backend, &sym, "USD")
+        .ok()
+        .flatten();
 
-    let history = crate::db::price_history::get_history_backend(backend, &sym, 30)
-        .unwrap_or_default();
+    let history =
+        crate::db::price_history::get_history_backend(backend, &sym, 30).unwrap_or_default();
     let daily_change_pct = if history.len() >= 2 {
         let prev = history[history.len() - 2].close;
         let curr = history[history.len() - 1].close;
@@ -6183,11 +6674,9 @@ fn load_asset_intelligence_blob(
         None
     };
 
-    let snap = crate::db::technical_snapshots::get_latest_snapshot_backend(
-        backend, &sym, "1d",
-    )
-    .ok()
-    .flatten();
+    let snap = crate::db::technical_snapshots::get_latest_snapshot_backend(backend, &sym, "1d")
+        .ok()
+        .flatten();
 
     let rsi_14 = snap.as_ref().and_then(|s| s.rsi_14);
     let rsi_signal = rsi_14.map(|r| {
@@ -6201,9 +6690,8 @@ fn load_asset_intelligence_blob(
     });
     let trend = trend_signal(backend, &sym);
 
-    let levels =
-        crate::db::technical_levels::get_levels_for_symbol_backend(backend, &sym)
-            .unwrap_or_default();
+    let levels = crate::db::technical_levels::get_levels_for_symbol_backend(backend, &sym)
+        .unwrap_or_default();
     let (nearest_support, nearest_resistance) = if let Some(price) = spot.as_ref().map(|q| q.price)
     {
         if let Ok(p) = price.to_string().parse::<f64>() {
@@ -6221,8 +6709,8 @@ fn load_asset_intelligence_blob(
 
     let range_52w_position = snap.as_ref().and_then(|s| s.range_52w_position);
 
-    let scenarios = crate::db::scenarios::list_scenarios_backend(backend, Some("active"))
-        .unwrap_or_default();
+    let scenarios =
+        crate::db::scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let scenario_count = scenarios
         .iter()
         .filter(|s| {
@@ -6257,15 +6745,19 @@ fn load_asset_intelligence_blob(
         })
         .unwrap_or(0);
 
-    let structural_context = snap.as_ref().and_then(|s| {
-        match (s.above_sma_50, s.above_sma_200) {
-            (Some(true), Some(true)) => Some("Above both 50/200 SMA — structural uptrend".to_string()),
-            (Some(false), Some(false)) => Some("Below both 50/200 SMA — structural downtrend".to_string()),
+    let structural_context = snap
+        .as_ref()
+        .and_then(|s| match (s.above_sma_50, s.above_sma_200) {
+            (Some(true), Some(true)) => {
+                Some("Above both 50/200 SMA — structural uptrend".to_string())
+            }
+            (Some(false), Some(false)) => {
+                Some("Below both 50/200 SMA — structural downtrend".to_string())
+            }
             (Some(true), Some(false)) => Some("Above 50 SMA, below 200 SMA — mixed".to_string()),
             (Some(false), Some(true)) => Some("Below 50 SMA, above 200 SMA — fragile".to_string()),
             _ => None,
-        }
-    });
+        });
 
     if spot.is_none()
         && snap.is_none()
@@ -6280,8 +6772,12 @@ fn load_asset_intelligence_blob(
     // position line (cycle assets), and the composite Cyber Dots verdict.
     // All auto-skip (None) when the underlying history is too shallow for
     // an honest read.
-    let (structure_verdict_daily, structure_verdict_weekly, cycle_clock_verdict, cyber_verdict_daily) =
-        load_structure_and_cycle_verdicts(backend, &sym);
+    let (
+        structure_verdict_daily,
+        structure_verdict_weekly,
+        cycle_clock_verdict,
+        cyber_verdict_daily,
+    ) = load_structure_and_cycle_verdicts(backend, &sym);
 
     let signal_expectancy = load_signal_expectancy_line(backend, &sym);
 
@@ -6321,8 +6817,7 @@ fn load_signal_expectancy_line(backend: &BackendConnection, sym: &str) -> Option
     if history.len() < 250 {
         return None;
     }
-    let last_date =
-        chrono::NaiveDate::parse_from_str(&history.last()?.date, "%Y-%m-%d").ok()?;
+    let last_date = chrono::NaiveDate::parse_from_str(&history.last()?.date, "%Y-%m-%d").ok()?;
     let cutoff = (last_date - chrono::Duration::days(10))
         .format("%Y-%m-%d")
         .to_string();
@@ -6399,7 +6894,12 @@ fn load_signal_expectancy_line(backend: &BackendConnection, sym: &str) -> Option
 fn load_structure_and_cycle_verdicts(
     backend: &BackendConnection,
     sym: &str,
-) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     use crate::analytics::market_structure::{analyze, Timeframe};
 
     let (series, history) =
@@ -6487,7 +6987,9 @@ mod assembler_tests {
 
     #[test]
     fn scoreboard_lines_for_held_filters_and_aggregates() {
-        use crate::db::recommendations::{Scoreboard, ScoreboardCell, ScoreboardRow, WindowQuality};
+        use crate::db::recommendations::{
+            Scoreboard, ScoreboardCell, ScoreboardRow, WindowQuality,
+        };
         let board = Scoreboard {
             rows: vec![
                 ScoreboardRow {
@@ -6580,9 +7082,9 @@ mod assembler_tests {
             .iter()
             .all(|s| matches!(s.visibility, SectionVisibility::Private)));
         assert!(plan.iter().any(|s| s.name == "private_bottom_line"));
-        // Decisions pending intentionally surfaced via chat (Step 11),
-        // not as a static PDF section. Confirm the section is gone.
-        assert!(plan.iter().all(|s| s.name != "private_decisions_pending"));
+        assert!(plan.iter().any(|s| s.name == "private_decisions_pending"));
+        assert!(plan.iter().any(|s| s.name == "private_alerts"));
+        assert!(plan.iter().any(|s| s.name == "private_cycle_watch"));
     }
 
     #[test]
@@ -6619,7 +7121,14 @@ mod assembler_tests {
             "private_bottom_line",
             "private_synthesis",
             "private_portfolio_snapshot",
+            "private_portfolio_moves",
+            "private_alerts",
+            "private_cycle_watch",
+            "private_open_predictions",
+            "private_recent_journal",
             "private_macro_news_outlook",
+            "private_news_catalysts",
+            "private_upcoming_calendar",
             "private_conviction_trajectory",
             "private_outlook_by_horizon",
             "private_risk_concentration",
@@ -6629,16 +7138,11 @@ mod assembler_tests {
             "private_external_ta",
             "private_parallels",
             "private_closing",
+            "private_decisions_pending",
             "private_epistemic_health",
         ];
-        let pub_actual: Vec<&str> = public_section_plan()
-            .iter()
-            .map(|s| s.name)
-            .collect();
-        let prv_actual: Vec<&str> = private_section_plan()
-            .iter()
-            .map(|s| s.name)
-            .collect();
+        let pub_actual: Vec<&str> = public_section_plan().iter().map(|s| s.name).collect();
+        let prv_actual: Vec<&str> = private_section_plan().iter().map(|s| s.name).collect();
         assert_eq!(pub_actual, expected_public);
         assert_eq!(prv_actual, expected_private);
     }
@@ -6723,7 +7227,9 @@ mod assembler_tests {
         assert!(violations.len() >= 2, "expected at least two violations");
         let tokens: Vec<&str> = violations.iter().map(|v| v.token.as_str()).collect();
         assert!(tokens.iter().any(|t| t.contains("my portfolio")));
-        assert!(tokens.iter().any(|t| t.contains("I hold") || t.contains("i hold")));
+        assert!(tokens
+            .iter()
+            .any(|t| t.contains("I hold") || t.contains("i hold")));
     }
 
     #[test]
@@ -6740,7 +7246,9 @@ mod assembler_tests {
     fn audit_public_markdown_rejects_skylar_token() {
         let body = "## Executive Summary\n\nSkylar's journal said the regime is shifting.";
         let violations = audit_public_markdown(body);
-        assert!(violations.iter().any(|v| v.token.eq_ignore_ascii_case("skylar")));
+        assert!(violations
+            .iter()
+            .any(|v| v.token.eq_ignore_ascii_case("skylar")));
     }
 
     #[test]
@@ -6757,8 +7265,7 @@ mod assembler_tests {
         let ctx = BuildContext::for_date("2026-06-02");
         let body = assemble_private(&ctx).expect("private assembly should succeed");
         assert!(body.contains("## Bottom Line"));
-        // Decisions Pending now surfaced in chat (Step 11), not in PDF.
-        assert!(!body.contains("## Decisions Pending"));
+        assert!(body.contains("## Decisions Pending"));
     }
 
     /// Make a fresh per-test temp directory. Removes on drop.
@@ -6769,8 +7276,7 @@ mod assembler_tests {
             static COUNTER: AtomicU64 = AtomicU64::new(0);
             let n = COUNTER.fetch_add(1, Ordering::Relaxed);
             let pid = std::process::id();
-            let dir = std::env::temp_dir()
-                .join(format!("pftui-assembler-{tag}-{pid}-{n}"));
+            let dir = std::env::temp_dir().join(format!("pftui-assembler-{tag}-{pid}-{n}"));
             std::fs::create_dir_all(&dir).expect("create tempdir");
             TempDir(dir)
         }
@@ -7065,9 +7571,7 @@ mod assembler_tests {
             if let Some(rest) = trimmed.strip_prefix("pub ") {
                 if let Some(colon) = rest.find(':') {
                     let name = rest[..colon].trim();
-                    if name
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                         && !name.is_empty()
                     {
                         fields.push(name.to_string());
@@ -7110,7 +7614,10 @@ mod assembler_tests {
         let tracked: Vec<&str> = rows.iter().map(|r| r.field).collect();
         let err = check_slot_conformance(&fields, &tracked, BUILD_CONTEXT_META_FIELDS)
             .expect_err("an untracked slot must fail conformance");
-        assert!(err.contains("fictional_new_slot"), "error names the slot: {err}");
+        assert!(
+            err.contains("fictional_new_slot"),
+            "error names the slot: {err}"
+        );
         assert!(
             err.contains("availability tracking"),
             "error explains the rule: {err}"
@@ -7369,15 +7876,16 @@ mod assembler_tests {
             .find(|w| w.input == "analyst_views")
             .expect("old views must produce a staleness warning");
         assert!(views_warning.message.contains("run Phase 1"));
-        assert!(views_warning
-            .sections
-            .contains(&"private_synthesis"));
+        assert!(views_warning.sections.contains(&"private_synthesis"));
     }
 
     #[test]
     fn compute_staleness_quiet_when_views_fresh() {
         let backend = in_memory_backend();
-        let today = chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        let today = chrono::Utc::now()
+            .date_naive()
+            .format("%Y-%m-%d")
+            .to_string();
         let views = vec![crate::db::analyst_views::AnalystView {
             id: 1,
             analyst: "low".to_string(),
@@ -7439,10 +7947,7 @@ mod assembler_tests {
             other => panic!("expected UpstreamNotRun for synthesis_notes, got {other:?}"),
         }
         // And the staleness pass annotates the prose sections.
-        assert!(ctx
-            .staleness
-            .iter()
-            .any(|w| w.input == "synthesis_notes"));
+        assert!(ctx.staleness.iter().any(|w| w.input == "synthesis_notes"));
     }
 
     #[test]
@@ -7553,21 +8058,25 @@ mod assembler_tests {
         assert!(names.contains(&"private_closing"));
         assert!(names.contains(&"private_external_ta"));
         assert!(names.contains(&"private_parallels"));
+        assert!(names.contains(&"private_portfolio_moves"));
+        assert!(names.contains(&"private_alerts"));
+        assert!(names.contains(&"private_cycle_watch"));
+        assert!(names.contains(&"private_recent_journal"));
+        assert!(names.contains(&"private_news_catalysts"));
+        assert!(names.contains(&"private_open_predictions"));
+        assert!(names.contains(&"private_upcoming_calendar"));
+        assert!(names.contains(&"private_decisions_pending"));
         // private_overview must be first.
         assert_eq!(names[0], "private_overview");
-        // private_epistemic_health (meta) must be last, after the closing.
+        // private_epistemic_health (meta) must be last, after decisions.
         assert!(names.contains(&"private_epistemic_health"));
         assert_eq!(*names.last().unwrap(), "private_epistemic_health");
-        assert_eq!(names[names.len() - 2], "private_closing");
+        assert_eq!(names[names.len() - 2], "private_decisions_pending");
         // Sections intentionally dropped per 2026-06-08 polish:
         assert!(!names.contains(&"private_per_asset_convergence"));
-        assert!(!names.contains(&"private_decisions_pending"));
         assert!(!names.contains(&"private_macro_context"));
-        assert!(!names.contains(&"private_news_catalysts"));
-        assert!(!names.contains(&"private_open_predictions"));
         assert!(!names.contains(&"private_lessons_applied"));
         assert!(!names.contains(&"private_cross_layer_signals"));
-        assert!(!names.contains(&"private_upcoming_calendar"));
     }
 
     #[test]
@@ -7627,7 +8136,12 @@ mod assembler_tests {
         }
     }
 
-    fn fixture_drift(symbol: &str, target_pct: f64, actual_pct: f64, band_pct: f64) -> PrivateDriftRow {
+    fn fixture_drift(
+        symbol: &str,
+        target_pct: f64,
+        actual_pct: f64,
+        band_pct: f64,
+    ) -> PrivateDriftRow {
         PrivateDriftRow {
             symbol: symbol.to_string(),
             target_pct,
@@ -7923,7 +8437,12 @@ mod assembler_tests {
         let cpi = evt("2026-06-10", "Core CPI YoY", "low", "economic");
         assert_eq!(effective_impact(&cpi), "high");
 
-        let baker = evt("2026-06-06", "Baker Hughes Oil Rig Count", "low", "economic");
+        let baker = evt(
+            "2026-06-06",
+            "Baker Hughes Oil Rig Count",
+            "low",
+            "economic",
+        );
         assert_eq!(effective_impact(&baker), "low"); // genuinely low
 
         let participation = evt("2026-06-06", "Participation Rate", "low", "economic");
@@ -7956,8 +8475,14 @@ mod assembler_tests {
     #[test]
     fn format_usd_compact_renders_with_sign_and_unit() {
         use rust_decimal::Decimal;
-        assert_eq!(format_usd_compact(Decimal::from_str("245300000").unwrap()), "+$245.3M");
-        assert_eq!(format_usd_compact(Decimal::from_str("-1200000000").unwrap()), "-$1.20B");
+        assert_eq!(
+            format_usd_compact(Decimal::from_str("245300000").unwrap()),
+            "+$245.3M"
+        );
+        assert_eq!(
+            format_usd_compact(Decimal::from_str("-1200000000").unwrap()),
+            "-$1.20B"
+        );
         assert_eq!(format_usd_compact(Decimal::from_str("0").unwrap()), "+$0");
     }
 
@@ -8040,9 +8565,7 @@ mod assembler_tests {
                 metric: "exchange_reserve_proxy_btc".to_string(),
                 date: "2026-06-04".to_string(),
                 value: "1850000".to_string(),
-                metadata: Some(
-                    r#"{"flow_7d_btc": -1200.0, "flow_30d_btc": -3400.0}"#.to_string(),
-                ),
+                metadata: Some(r#"{"flow_7d_btc": -1200.0, "flow_30d_btc": -3400.0}"#.to_string()),
                 fetched_at: "2026-06-04T12:00:00Z".to_string(),
             },
         )
@@ -8050,7 +8573,11 @@ mod assembler_tests {
         let rows = load_bitcoin_onchain_summaries(&backend);
         assert_eq!(rows.len(), 2);
         assert!(rows[0].value.as_deref().unwrap().contains("620.5 EH/s"));
-        assert!(rows[1].interpretation.as_deref().unwrap().contains("7d net flow -1200"));
+        assert!(rows[1]
+            .interpretation
+            .as_deref()
+            .unwrap()
+            .contains("7d net flow -1200"));
     }
 }
 
@@ -8141,13 +8668,29 @@ mod todays_analyst_synthesis_tests {
 
         let leading = synthesis.leading_move.as_ref().expect("leading move set");
         assert_eq!(leading.asset, "BTC");
-        assert!((leading.move_pct + 7.0).abs() < f64::EPSILON, "{}", leading.move_pct);
+        assert!(
+            (leading.move_pct + 7.0).abs() < f64::EPSILON,
+            "{}",
+            leading.move_pct
+        );
         assert_eq!(leading.cumulative_pct, Some(-14.0));
 
-        assert!(synthesis.headline_low.as_deref().unwrap().contains("BTC -7%"));
-        assert!(synthesis.headline_medium.as_deref().unwrap().contains("credit spreads"));
+        assert!(synthesis
+            .headline_low
+            .as_deref()
+            .unwrap()
+            .contains("BTC -7%"));
+        assert!(synthesis
+            .headline_medium
+            .as_deref()
+            .unwrap()
+            .contains("credit spreads"));
         assert!(synthesis.headline_high.is_none());
-        assert!(synthesis.headline_macro.as_deref().unwrap().contains("dollar squeeze"));
+        assert!(synthesis
+            .headline_macro
+            .as_deref()
+            .unwrap()
+            .contains("dollar squeeze"));
 
         let action = synthesis.action_summary.as_deref().unwrap();
         assert!(action.contains("Trim BTC exposure"), "action: {action}");
@@ -8296,36 +8839,12 @@ mod todays_analyst_synthesis_tests {
         {
             let conn = backend.sqlite_native().expect("sqlite backend");
             // Seed three active scenarios with distinct probabilities.
-            crate::db::scenarios::add_scenario(
-                conn,
-                "Soft Landing",
-                30.0,
-                None,
-                None,
-                None,
-                None,
-            )
-            .expect("add a");
-            crate::db::scenarios::add_scenario(
-                conn,
-                "Stagflation",
-                55.0,
-                None,
-                None,
-                None,
-                None,
-            )
-            .expect("add b");
-            crate::db::scenarios::add_scenario(
-                conn,
-                "Recession",
-                15.0,
-                None,
-                None,
-                None,
-                None,
-            )
-            .expect("add c");
+            crate::db::scenarios::add_scenario(conn, "Soft Landing", 30.0, None, None, None, None)
+                .expect("add a");
+            crate::db::scenarios::add_scenario(conn, "Stagflation", 55.0, None, None, None, None)
+                .expect("add b");
+            crate::db::scenarios::add_scenario(conn, "Recession", 15.0, None, None, None, None)
+                .expect("add c");
         }
         let ctx = BuildContext::load(&backend, "2026-06-05").expect("load context");
         let names: Vec<&str> = ctx
@@ -8440,10 +8959,8 @@ mod loader_w4_tests {
         // Two entries match: BTC headline and the GLD,SLV combined tag.
         assert_eq!(out.len(), 2);
         assert!(out.iter().any(|c| c.headline == "BTC rallies on flows"));
-        assert!(out
-            .iter()
-            .any(|c| c.headline == "Compound symbol_tag list"
-                && c.related_assets.iter().any(|a| a == "GLD")));
+        assert!(out.iter().any(|c| c.headline == "Compound symbol_tag list"
+            && c.related_assets.iter().any(|a| a == "GLD")));
         // Domain and tier flow through.
         assert!(out.iter().all(|c| c.domain == "example.com"));
         assert!(out.iter().all(|c| c.source_tier == Some(1)));
@@ -8763,7 +9280,10 @@ mod loader_w4_tests {
     fn normalize_pred_layer_maps_common_aliases() {
         assert_eq!(normalize_pred_layer("LOW").as_deref(), Some("low"));
         assert_eq!(normalize_pred_layer("medium").as_deref(), Some("medium"));
-        assert_eq!(normalize_pred_layer("macro-checkpoint").as_deref(), Some("macro-checkpoint"));
+        assert_eq!(
+            normalize_pred_layer("macro-checkpoint").as_deref(),
+            Some("macro-checkpoint")
+        );
         assert_eq!(normalize_pred_layer("macro").as_deref(), Some("macro"));
         assert_eq!(normalize_pred_layer("short").as_deref(), Some("low"));
         assert!(normalize_pred_layer("weird").is_none());

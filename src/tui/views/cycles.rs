@@ -1558,6 +1558,7 @@ mod tests {
             met: true,
             detail: String::new(),
             last_bottom: None,
+            last_top: None,
         };
 
         // Without a bonus → exactly 7 rows, none flagged bonus.

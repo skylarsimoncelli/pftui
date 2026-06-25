@@ -612,7 +612,7 @@ fn cycle_signal_label(symbol: &str, condition: &str) -> String {
     let polarity = condition_polarity(condition).unwrap_or(Polarity::Bottom);
     let side = match polarity {
         Polarity::Bottom => "cycle-bottom",
-        Polarity::Top => "cycle-top",
+        Polarity::Top => "cycle-high",
     };
     match parse_condition(condition) {
         Ok(CycleSignalCondition::Confluence { timeframe, target }) => format!(
@@ -647,7 +647,11 @@ fn cycle_signal_label(symbol: &str, condition: &str) -> String {
 }
 
 fn inferred_direction(condition: &str) -> AlertDirection {
-    if condition.contains("below") || condition.contains("bearish") || condition.contains("lower") {
+    if condition.starts_with("cycle_top_")
+        || condition.contains("below")
+        || condition.contains("bearish")
+        || condition.contains("lower")
+    {
         AlertDirection::Below
     } else {
         AlertDirection::Above
@@ -1658,9 +1662,10 @@ mod tests {
 
     #[test]
     fn test_cycle_signal_label_is_polarity_aware() {
-        // (a) a cycle-top confluence condition must render "cycle-top", never "cycle-bottom".
+        // (a) a cycle-top confluence condition must render the top side
+        // ("cycle-high"), never "cycle-bottom".
         let top = cycle_signal_label("BTC-USD", "cycle_top_monthly_4");
-        assert!(top.contains("cycle-top"), "top label: {top}");
+        assert!(top.contains("cycle-high"), "top label: {top}");
         assert!(!top.contains("cycle-bottom"), "top label leaked bottom: {top}");
         assert!(top.contains("4/7"), "top label missing threshold: {top}");
 

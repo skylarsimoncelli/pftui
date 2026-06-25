@@ -44,6 +44,11 @@ impl SignalTimeframe {
             "daily" | "1d" | "d" => Ok(SignalTimeframe::Daily),
             "weekly" | "1w" | "w" => Ok(SignalTimeframe::Weekly),
             "monthly" | "1mo" | "m" => Ok(SignalTimeframe::Monthly),
+            "hourly" | "1h" | "h" => {
+                anyhow::bail!(
+                    "hourly timeframe requires intraday cached bars; pftui currently supports daily, weekly, or monthly for cycle signals and will not fake hourly from daily history"
+                )
+            }
             other => {
                 anyhow::bail!("unknown timeframe '{other}' — expected daily, weekly, or monthly")
             }
@@ -126,7 +131,7 @@ pub struct WatchItem {
     pub components: Vec<Component>,
 }
 
-/// The non-counted bonus signal (Pi-Cycle bottom on daily).
+/// The non-counted bonus signal (Pi-Cycle top/bottom on daily).
 #[derive(Debug, Clone, Serialize)]
 pub struct BonusSignal {
     pub key: String,
@@ -135,6 +140,8 @@ pub struct BonusSignal {
     pub detail: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_bottom: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_top: Option<String>,
 }
 
 /// Full cycle-bottom signal read.
@@ -707,6 +714,7 @@ pub fn cycle_bottom_signals(
             None => "no bottom in window".into(),
         },
         last_bottom: pi_cycle_last_bottom.clone(),
+        last_top: None,
     });
 
     let verdict = build_verdict(timeframe, met_count, core_total, &criteria);
@@ -1074,7 +1082,8 @@ pub fn cycle_top_signals(
             Some(d) => format!("last top {d}"),
             None => "no top in window".into(),
         },
-        last_bottom: pi_cycle_last_top.clone(),
+        last_bottom: None,
+        last_top: pi_cycle_last_top.clone(),
     });
 
     let verdict = build_top_verdict(timeframe, met_count, core_total, &criteria);
@@ -1252,15 +1261,15 @@ fn build_top_verdict(
         .map(|c| c.label.as_str())
         .collect();
     let strength = if met == 0 {
-        "no cycle-top criteria firing"
+        "no cycle-high criteria firing"
     } else if met <= 2 {
-        "early / weak cycle-top confluence"
+        "early / weak cycle-high confluence"
     } else if met <= 4 {
-        "building cycle-top confluence"
+        "building cycle-high confluence"
     } else if met <= 6 {
-        "strong cycle-top confluence"
+        "strong cycle-high confluence"
     } else {
-        "very strong cycle-top confluence (all 7)"
+        "very strong cycle-high confluence (all 7)"
     };
     if firing.is_empty() {
         format!("{} suite: {met}/{total} — {strength}", tf.label())
@@ -1525,6 +1534,74 @@ mod tests {
         assert!(keys.contains(&"momentum_turning_down"));
         assert!(keys.contains(&"dss_topping"));
         assert!(keys.contains(&"trend_line_lost"));
+    }
+
+    /// Long rally into a sharp rollover — theirs' top regime fixture, kept
+    /// alongside `inverted_v_history` so both top-suite fixtures survive.
+    fn blowoff_top_history(n_rally: usize, n_decline: usize) -> Vec<HistoryRecord> {
+        let start = NaiveDate::from_ymd_opt(2019, 1, 1).unwrap();
+        let mut out = Vec::new();
+        let mut day = 0u64;
+        let mut price = 300.0;
+        for i in 0..n_rally {
+            price = 300.0 + i as f64 * (900.0 / n_rally as f64);
+            let noise = 8.0 * (i as f64 / 13.0).sin();
+            let date = (start + chrono::Days::new(day))
+                .format("%Y-%m-%d")
+                .to_string();
+            out.push(record(&date, price + noise));
+            day += 1;
+        }
+        let peak = price;
+        for j in 1..=n_decline {
+            let p = peak - j as f64 * (450.0 / n_decline as f64);
+            let noise = 6.0 * (j as f64 / 7.0).sin();
+            let date = (start + chrono::Days::new(day))
+                .format("%Y-%m-%d")
+                .to_string();
+            out.push(record(&date, (p + noise).max(50.0)));
+            day += 1;
+        }
+        out
+    }
+
+    #[test]
+    fn blowoff_top_fires_multiple_criteria() {
+        let h = blowoff_top_history(750, 250);
+        let sig = cycle_top_signals("TEST", &h, SignalTimeframe::Monthly).expect("top signals");
+        assert_eq!(sig.timeframe, SignalTimeframe::Monthly);
+        assert_eq!(sig.total, 7);
+        assert_eq!(sig.criteria.len(), 7);
+        assert_eq!(sig.criteria.iter().filter(|c| c.met).count(), sig.met_count);
+        assert!(sig.criteria.iter().all(|c| !c.components.is_empty()));
+        assert!(
+            sig.met_count >= 3,
+            "expected ≥3/7 at a clean top rollover, got {}: {:?}",
+            sig.met_count,
+            sig.criteria
+                .iter()
+                .filter(|c| c.met)
+                .map(|c| c.key.clone())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            sig.rsi_ma_turned_down,
+            "RSI average should be falling after a rollover"
+        );
+        assert_eq!(sig.core_watch.len(), 4);
+        assert!(sig
+            .core_watch
+            .iter()
+            .all(|item| item.met_components <= item.total_components));
+        let ma_component = sig
+            .criteria
+            .iter()
+            .flat_map(|c| c.components.iter())
+            .find(|c| c.key == "rsi_ma_turned_down")
+            .expect("rsi ma top component");
+        assert!(ma_component.previous_value.is_some());
+        assert!(ma_component.distance_to_trigger.is_some());
+        assert!(sig.verdict.contains("cycle-high"));
     }
 
     #[test]

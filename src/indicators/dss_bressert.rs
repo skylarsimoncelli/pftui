@@ -166,6 +166,11 @@ pub fn turned_up(s: &DssSeries) -> Option<bool> {
     last_two(&s.dss).map(|(prev, cur)| cur > prev)
 }
 
+/// True when xDSS ticked down on the latest bar (`dss[0] < dss[1]`).
+pub fn turned_down(s: &DssSeries) -> Option<bool> {
+    last_two(&s.dss).map(|(prev, cur)| cur < prev)
+}
+
 /// True when xDSS crossed ABOVE its trigger on the latest bar
 /// (`dss[1] <= trigger[1]` and `dss[0] > trigger[0]`).
 pub fn crossed_above_trigger(s: &DssSeries) -> Option<bool> {
@@ -174,24 +179,17 @@ pub fn crossed_above_trigger(s: &DssSeries) -> Option<bool> {
     Some(d_prev <= t_prev && d_cur > t_cur)
 }
 
-/// True when the latest xDSS is oversold (< `oversold`, default 20).
-pub fn is_oversold(s: &DssSeries, oversold: f64) -> Option<bool> {
-    current_dss(s).map(|v| v < oversold)
-}
-
-/// True when xDSS ticked DOWN on the latest bar (`dss[0] < dss[1]`) — the
-/// cycle-TOP mirror of [`turned_up`].
-pub fn turned_down(s: &DssSeries) -> Option<bool> {
-    last_two(&s.dss).map(|(prev, cur)| cur < prev)
-}
-
 /// True when xDSS crossed BELOW its trigger on the latest bar
-/// (`dss[1] >= trigger[1]` and `dss[0] < trigger[0]`) — the cycle-TOP mirror of
-/// [`crossed_above_trigger`].
+/// (`dss[1] >= trigger[1]` and `dss[0] < trigger[0]`).
 pub fn crossed_below_trigger(s: &DssSeries) -> Option<bool> {
     let (d_prev, d_cur) = last_two(&s.dss)?;
     let (t_prev, t_cur) = last_two(&s.trigger)?;
     Some(d_prev >= t_prev && d_cur < t_cur)
+}
+
+/// True when the latest xDSS is oversold (< `oversold`, default 20).
+pub fn is_oversold(s: &DssSeries, oversold: f64) -> Option<bool> {
+    current_dss(s).map(|v| v < oversold)
 }
 
 /// True when the latest xDSS is overbought (> `overbought`, default 80).
@@ -224,7 +222,7 @@ mod tests {
         let close = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let s = stoch(&close, &close, &close, 5);
         assert_eq!(s[4], Some(100.0)); // 100*(5-1)/(5-1)
-        // A mid value.
+                                       // A mid value.
         let close = vec![1.0, 5.0, 3.0];
         let s = stoch(&close, &close, &close, 3);
         // window [1,5,3]: lo=1, hi=5, c=3 -> 100*(3-1)/(5-1) = 50
@@ -263,7 +261,11 @@ mod tests {
         }
         let s = compute_dss_default(&close, &close, &close).expect("dss");
         // After the rally the DSS must be rising.
-        assert_eq!(turned_up(&s), Some(true), "DSS should turn up after V-bottom");
+        assert_eq!(
+            turned_up(&s),
+            Some(true),
+            "DSS should turn up after V-bottom"
+        );
         // And it should be above the trigger now (it crossed during the rally).
         let d = current_dss(&s).unwrap();
         let t = current_trigger(&s).unwrap();
@@ -271,11 +273,80 @@ mod tests {
     }
 
     #[test]
+    fn blowoff_top_fires_turn_down_and_cross_from_overbought() {
+        let mut close: Vec<f64> = (0..120).map(|i| 100.0 + i as f64 * 1.2).collect();
+        let peak = *close.last().unwrap();
+        for j in 1..=40 {
+            close.push(peak - j as f64 * 2.0);
+        }
+        let s = compute_dss_default(&close, &close, &close).expect("dss");
+        assert!(
+            s.dss.iter().flatten().any(|v| *v > 80.0),
+            "fixture should visit overbought"
+        );
+        let mut down = false;
+        let mut crossed = false;
+        for end in 120..=close.len() {
+            if let Some(sub) = compute_dss_default(&close[..end], &close[..end], &close[..end]) {
+                down |= turned_down(&sub) == Some(true);
+                crossed |= crossed_below_trigger(&sub) == Some(true);
+            }
+        }
+        assert!(down, "DSS should turn down after a top");
+        assert!(crossed, "DSS should cross below trigger after a top");
+    }
+
+    #[test]
     fn oversold_flag_at_bottom() {
         // Pure decline: DSS pinned near 0.
         let close: Vec<f64> = (0..150).map(|i| 500.0 - i as f64 * 2.0).collect();
         let s = compute_dss_default(&close, &close, &close).expect("dss");
-        assert_eq!(is_oversold(&s, 20.0), Some(true), "DSS should be oversold in a downtrend");
+        assert_eq!(
+            is_oversold(&s, 20.0),
+            Some(true),
+            "DSS should be oversold in a downtrend"
+        );
+    }
+
+    #[test]
+    fn default_dss_golden_tail_on_wave_trend_fixture() {
+        let close: Vec<f64> = (0..180)
+            .map(|i| {
+                let x = i as f64;
+                100.0 + 0.07 * x + 6.0 * (x / 5.0).sin() + 2.0 * (x / 17.0).cos()
+            })
+            .collect();
+        let s = compute_dss_default(&close, &close, &close).expect("dss");
+        let expected_dss = [
+            20.685811380499,
+            16.548649104399,
+            13.238919283520,
+            10.591135426816,
+            8.472908341452,
+        ];
+        let expected_trigger = [
+            35.315531411708,
+            29.059903975938,
+            23.786242411799,
+            19.387873416804,
+            15.749551725020,
+        ];
+        let dss_tail = &s.dss[s.dss.len() - expected_dss.len()..];
+        let trigger_tail = &s.trigger[s.trigger.len() - expected_trigger.len()..];
+        for (got, expected) in dss_tail.iter().zip(expected_dss) {
+            let got = got.expect("dss value");
+            assert!(
+                (got - expected).abs() < 1e-9,
+                "golden DSS tail changed: got {got}, expected {expected}"
+            );
+        }
+        for (got, expected) in trigger_tail.iter().zip(expected_trigger) {
+            let got = got.expect("trigger value");
+            assert!(
+                (got - expected).abs() < 1e-9,
+                "golden DSS trigger tail changed: got {got}, expected {expected}"
+            );
+        }
     }
 
     #[test]
