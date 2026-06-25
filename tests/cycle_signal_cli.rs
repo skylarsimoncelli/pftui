@@ -4,6 +4,7 @@
 //! - non-cycle Technical conditions still arm
 //! - `bottom-signals --json` classifies errors with a machine-readable reason
 //! - backtest `--window 0` is rejected
+//! - hourly cycle signals fail honestly until pftui has intraday cached bars
 //!
 //! All runs use an isolated temp HOME so the real local portfolio DB is never
 //! touched (on macOS `dirs::data_local_dir()` derives from $HOME; on Linux it
@@ -40,10 +41,7 @@ impl IsolatedHome {
             dir.join(".config/pftui"),
         ] {
             let _ = std::fs::create_dir_all(&cfg_root);
-            let _ = std::fs::write(
-                cfg_root.join("config.toml"),
-                "home_tab = \"portfolio\"\n",
-            );
+            let _ = std::fs::write(cfg_root.join("config.toml"), "home_tab = \"portfolio\"\n");
         }
         IsolatedHome { dir }
     }
@@ -77,14 +75,24 @@ fn stderr(o: &Output) -> String {
 fn invalid_cycle_condition_is_rejected_nonzero() {
     let home = IsolatedHome::new("invalid-cond");
     for bad in [
-        "cycle_bottom_yearly_4",     // invalid timeframe
-        "cycle_bottom_monthly_8",    // N > 7
-        "cycle_bottom_monthly_0",    // N = 0
-        "cycle_criterion_weekly_bogus_key", // unknown criterion
+        "cycle_bottom_yearly_4",                // invalid timeframe
+        "cycle_bottom_monthly_8",               // N > 7
+        "cycle_bottom_monthly_0",               // N = 0
+        "cycle_criterion_weekly_bogus_key",     // unknown criterion
+        "cycle_top_yearly_4",                   // invalid top timeframe
+        "cycle_top_monthly_8",                  // top N > 7
+        "cycle_top_criterion_weekly_bogus_key", // unknown top criterion
     ] {
         let out = home.run(&[
-            "analytics", "alerts", "add", "--kind", "technical", "--symbol", "BTC-USD",
-            "--condition", bad,
+            "analytics",
+            "alerts",
+            "add",
+            "--kind",
+            "technical",
+            "--symbol",
+            "BTC-USD",
+            "--condition",
+            bad,
         ]);
         assert!(
             !out.status.success(),
@@ -101,13 +109,58 @@ fn invalid_cycle_condition_is_rejected_nonzero() {
 }
 
 #[test]
+fn valid_cycle_top_condition_arms_with_json_id() {
+    let home = IsolatedHome::new("valid-top-json");
+    let out = home.run(&[
+        "analytics",
+        "alerts",
+        "add",
+        "--kind",
+        "technical",
+        "--symbol",
+        "BTC-USD",
+        "--condition",
+        "cycle_top_monthly_4",
+        "--json",
+    ]);
+    assert!(
+        out.status.success(),
+        "valid top condition failed: {}",
+        stderr(&out)
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout(&out)).expect("alerts add --json must emit valid JSON");
+    assert_eq!(v["command"], "analytics alerts add");
+    assert!(v["id"].as_i64().is_some(), "missing load-bearing id: {v}");
+    assert_eq!(v["symbol"], "BTC-USD");
+    assert_eq!(v["kind"], "technical");
+    assert_eq!(v["condition"], "cycle_top_monthly_4");
+    assert!(v["label"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("cycle-high"));
+}
+
+#[test]
 fn valid_cycle_condition_arms_with_json_id() {
     let home = IsolatedHome::new("valid-json");
     let out = home.run(&[
-        "analytics", "alerts", "add", "--kind", "technical", "--symbol", "BTC-USD",
-        "--condition", "cycle_bottom_monthly_4", "--json",
+        "analytics",
+        "alerts",
+        "add",
+        "--kind",
+        "technical",
+        "--symbol",
+        "BTC-USD",
+        "--condition",
+        "cycle_bottom_monthly_4",
+        "--json",
     ]);
-    assert!(out.status.success(), "valid condition failed: {}", stderr(&out));
+    assert!(
+        out.status.success(),
+        "valid condition failed: {}",
+        stderr(&out)
+    );
     let v: serde_json::Value =
         serde_json::from_str(&stdout(&out)).expect("alerts add --json must emit valid JSON");
     assert_eq!(v["command"], "analytics alerts add");
@@ -123,8 +176,16 @@ fn valid_cycle_condition_arms_with_json_id() {
 fn non_cycle_technical_condition_still_arms() {
     let home = IsolatedHome::new("noncycle");
     let out = home.run(&[
-        "analytics", "alerts", "add", "--kind", "technical", "--symbol", "BTC-USD",
-        "--condition", "price_below_sma200", "--json",
+        "analytics",
+        "alerts",
+        "add",
+        "--kind",
+        "technical",
+        "--symbol",
+        "BTC-USD",
+        "--condition",
+        "price_below_sma200",
+        "--json",
     ]);
     assert!(
         out.status.success(),
@@ -140,7 +201,12 @@ fn non_cycle_technical_condition_still_arms() {
 fn bottom_signals_unknown_symbol_emits_reason() {
     let home = IsolatedHome::new("unknown-sym");
     let out = home.run(&[
-        "analytics", "cycles", "bottom-signals", "--asset", "ZZZNOTREAL", "--json",
+        "analytics",
+        "cycles",
+        "bottom-signals",
+        "--asset",
+        "ZZZNOTREAL",
+        "--json",
     ]);
     assert!(!out.status.success(), "unknown symbol should fail nonzero");
     let v: serde_json::Value =
@@ -153,11 +219,59 @@ fn bottom_signals_unknown_symbol_emits_reason() {
 }
 
 #[test]
+fn top_signals_unknown_symbol_emits_reason() {
+    let home = IsolatedHome::new("top-unknown-sym");
+    let out = home.run(&[
+        "analytics",
+        "cycles",
+        "top-signals",
+        "--asset",
+        "ZZZNOTREAL",
+        "--json",
+    ]);
+    assert!(!out.status.success(), "unknown symbol should fail nonzero");
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout(&out)).expect("error envelope must be JSON under --json");
+    assert_eq!(v["error"]["reason"], "no_history", "envelope: {v}");
+    assert!(v["error"]["message"].as_str().is_some());
+}
+
+#[test]
+fn hourly_cycle_signals_rejected_instead_of_faked_from_daily_history() {
+    let home = IsolatedHome::new("hourly-refusal");
+    for cmd in ["bottom-signals", "top-signals"] {
+        let out = home.run(&[
+            "analytics",
+            "cycles",
+            cmd,
+            "--asset",
+            "BTC",
+            "--timeframe",
+            "hourly",
+            "--json",
+        ]);
+        assert!(!out.status.success(), "{cmd} hourly should fail nonzero");
+        let combined = format!("{}{}", stdout(&out), stderr(&out));
+        assert!(
+            combined.contains("intraday cached bars") && combined.contains("will not fake hourly"),
+            "{cmd} hourly refusal was unclear: {combined}"
+        );
+    }
+}
+
+#[test]
 fn backtest_window_zero_rejected() {
     let home = IsolatedHome::new("window-zero");
     let out = home.run(&[
-        "analytics", "cycles", "bottom-signals", "backtest", "--asset", "BTC",
-        "--window", "0", "--json",
+        "analytics",
+        "cycles",
+        "bottom-signals",
+        "backtest",
+        "--asset",
+        "BTC",
+        "--window",
+        "0",
+        "--json",
     ]);
     assert!(!out.status.success(), "--window 0 should be rejected");
     let combined = format!("{}{}", stdout(&out), stderr(&out));
@@ -165,4 +279,84 @@ fn backtest_window_zero_rejected() {
         combined.contains("window 0") || combined.contains("not meaningful"),
         "rejection message unclear: {combined}"
     );
+}
+
+#[test]
+fn top_backtest_window_zero_rejected() {
+    let home = IsolatedHome::new("top-window-zero");
+    let out = home.run(&[
+        "analytics",
+        "cycles",
+        "top-signals",
+        "backtest",
+        "--asset",
+        "BTC",
+        "--window",
+        "0",
+        "--json",
+    ]);
+    assert!(!out.status.success(), "--window 0 should be rejected");
+    let combined = format!("{}{}", stdout(&out), stderr(&out));
+    assert!(
+        combined.contains("window 0") || combined.contains("not meaningful"),
+        "rejection message unclear: {combined}"
+    );
+}
+
+#[test]
+fn trigger_backtest_unknown_symbol_emits_reason() {
+    let home = IsolatedHome::new("trigger-unknown-sym");
+    let out = home.run(&[
+        "analytics",
+        "cycles",
+        "bottom-signals",
+        "trigger-backtest",
+        "--asset",
+        "ZZZNOTREAL",
+        "--trigger",
+        "rsi_ma_cross_above_rsi",
+        "--json",
+    ]);
+    assert!(!out.status.success(), "unknown symbol should fail nonzero");
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout(&out)).expect("error envelope must be JSON under --json");
+    assert_eq!(v["error"]["reason"], "no_history", "envelope: {v}");
+}
+
+#[test]
+fn trigger_backtest_rejects_bad_horizon_and_mode() {
+    let home = IsolatedHome::new("trigger-args");
+    let bad_horizon = home.run(&[
+        "analytics",
+        "cycles",
+        "bottom-signals",
+        "trigger-backtest",
+        "--asset",
+        "BTC",
+        "--trigger",
+        "rsi_ma_cross_above_rsi",
+        "--horizons",
+        "0d",
+        "--json",
+    ]);
+    assert!(!bad_horizon.status.success(), "0d horizon should fail");
+    let combined = format!("{}{}", stdout(&bad_horizon), stderr(&bad_horizon));
+    assert!(combined.contains("horizons must be positive"), "{combined}");
+
+    let bad_mode = home.run(&[
+        "analytics",
+        "cycles",
+        "top-signals",
+        "trigger-backtest",
+        "--asset",
+        "BTC",
+        "--trigger",
+        "rsi_ma_cross_below_rsi",
+        "--mode",
+        "both",
+        "--json",
+    ]);
+    assert!(!bad_mode.status.success(), "invalid mode should fail");
+    let combined = format!("{}{}", stdout(&bad_mode), stderr(&bad_mode));
+    assert!(combined.contains("expected all or any"), "{combined}");
 }

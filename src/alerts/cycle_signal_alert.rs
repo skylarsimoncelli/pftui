@@ -33,7 +33,7 @@
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
 
-use crate::analytics::cycle_signals::{CycleBottomSignals, SignalTimeframe};
+use crate::analytics::cycle_signals::{CycleBottomSignals, CycleTopSignals, SignalTimeframe};
 
 /// Condition-string prefix for confluence-threshold alerts.
 pub const CONFLUENCE_PREFIX: &str = "cycle_bottom_";
@@ -41,6 +41,9 @@ pub const CONFLUENCE_PREFIX: &str = "cycle_bottom_";
 pub const CRITERION_PREFIX: &str = "cycle_criterion_";
 /// Condition-string prefix for atomic component alerts.
 pub const COMPONENT_PREFIX: &str = "cycle_component_";
+pub const TOP_CONFLUENCE_PREFIX: &str = "cycle_top_";
+pub const TOP_CRITERION_PREFIX: &str = "cycle_top_criterion_";
+pub const TOP_COMPONENT_PREFIX: &str = "cycle_top_component_";
 
 /// The 7 composite criterion keys, as emitted by the signal engine. Used to
 /// disambiguate the timeframe token from the criterion key when parsing a
@@ -71,6 +74,31 @@ pub const COMPONENT_KEYS: [&str; 12] = [
     "erf_positive",
 ];
 
+pub const TOP_CRITERION_KEYS: [&str; 7] = [
+    "momentum_turning_down",
+    "momentum_below_price",
+    "dss_topping",
+    "roofing_confirming_down",
+    "volatility_bands_bearish",
+    "exhaustion_dots",
+    "trend_line_lost",
+];
+
+pub const TOP_COMPONENT_KEYS: [&str; 12] = [
+    "rsi_ma_turned_down",
+    "rsi_ma_cross_below_rsi",
+    "dss_turned_down",
+    "dss_cross_below_trigger",
+    "dss_overbought",
+    "erf_top_zone",
+    "erf_turned_down",
+    "cyberbands_bearish",
+    "cyberdots_bearish",
+    "cyberline_lost",
+    "pi_cycle_top",
+    "erf_positive",
+];
+
 /// A parsed cycle-signal alert condition.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CycleSignalCondition {
@@ -89,6 +117,18 @@ pub enum CycleSignalCondition {
         timeframe: SignalTimeframe,
         component_key: String,
     },
+    TopConfluence {
+        timeframe: SignalTimeframe,
+        target: usize,
+    },
+    TopCriterion {
+        timeframe: SignalTimeframe,
+        criterion_key: String,
+    },
+    TopComponent {
+        timeframe: SignalTimeframe,
+        component_key: String,
+    },
 }
 
 /// Returns true if a condition string is a cycle-signal alert condition.
@@ -96,6 +136,15 @@ pub fn is_cycle_signal_condition(condition: &str) -> bool {
     condition.starts_with(CONFLUENCE_PREFIX)
         || condition.starts_with(CRITERION_PREFIX)
         || condition.starts_with(COMPONENT_PREFIX)
+        || condition.starts_with(TOP_CONFLUENCE_PREFIX)
+        || condition.starts_with(TOP_CRITERION_PREFIX)
+        || condition.starts_with(TOP_COMPONENT_PREFIX)
+}
+
+pub fn is_cycle_top_condition(condition: &str) -> bool {
+    condition.starts_with(TOP_CONFLUENCE_PREFIX)
+        || condition.starts_with(TOP_CRITERION_PREFIX)
+        || condition.starts_with(TOP_COMPONENT_PREFIX)
 }
 
 /// Parse a cycle-signal condition string into its typed form.
@@ -104,6 +153,65 @@ pub fn is_cycle_signal_condition(condition: &str) -> bool {
 /// Criterion:  `cycle_criterion_<timeframe>_<criterion_key>`.
 /// Component:  `cycle_component_<timeframe>_<component_key>`.
 pub fn parse_condition(condition: &str) -> anyhow::Result<CycleSignalCondition> {
+    if let Some(rest) = condition.strip_prefix(TOP_COMPONENT_PREFIX) {
+        let (tf_token, key) = rest.split_once('_').ok_or_else(|| {
+            anyhow::anyhow!(
+                "invalid cycle top component condition '{condition}' — expected \
+                 cycle_top_component_<timeframe>_<component_key>"
+            )
+        })?;
+        let timeframe = SignalTimeframe::parse(tf_token)?;
+        if !TOP_COMPONENT_KEYS.contains(&key) {
+            anyhow::bail!(
+                "unknown cycle top component key '{key}' — expected one of: {}",
+                TOP_COMPONENT_KEYS.join(", ")
+            );
+        }
+        return Ok(CycleSignalCondition::TopComponent {
+            timeframe,
+            component_key: key.to_string(),
+        });
+    }
+
+    if let Some(rest) = condition.strip_prefix(TOP_CRITERION_PREFIX) {
+        let (tf_token, key) = rest.split_once('_').ok_or_else(|| {
+            anyhow::anyhow!(
+                "invalid cycle top criterion condition '{condition}' — expected \
+                 cycle_top_criterion_<timeframe>_<criterion_key>"
+            )
+        })?;
+        let timeframe = SignalTimeframe::parse(tf_token)?;
+        if !TOP_CRITERION_KEYS.contains(&key) {
+            anyhow::bail!(
+                "unknown cycle top criterion key '{key}' — expected one of: {}",
+                TOP_CRITERION_KEYS.join(", ")
+            );
+        }
+        return Ok(CycleSignalCondition::TopCriterion {
+            timeframe,
+            criterion_key: key.to_string(),
+        });
+    }
+
+    if let Some(rest) = condition.strip_prefix(TOP_CONFLUENCE_PREFIX) {
+        let (tf_token, n_token) = rest.rsplit_once('_').ok_or_else(|| {
+            anyhow::anyhow!(
+                "invalid cycle top confluence condition '{condition}' — expected \
+                 cycle_top_<timeframe>_<N>"
+            )
+        })?;
+        let timeframe = SignalTimeframe::parse(tf_token)?;
+        let target: usize = n_token.parse().map_err(|_| {
+            anyhow::anyhow!(
+                "invalid cycle-top confluence target '{n_token}' in '{condition}' — expected 1..=7"
+            )
+        })?;
+        if target == 0 || target > 7 {
+            anyhow::bail!("cycle-top confluence target must be 1..=7, got {target}");
+        }
+        return Ok(CycleSignalCondition::TopConfluence { timeframe, target });
+    }
+
     if let Some(rest) = condition.strip_prefix(COMPONENT_PREFIX) {
         // rest = "<timeframe>_<component_key>"
         let (tf_token, key) = rest.split_once('_').ok_or_else(|| {
@@ -192,12 +300,19 @@ pub fn validate_condition(condition: &str) -> anyhow::Result<()> {
              Confluence threshold — cycle_bottom_<timeframe>_<N>\n  \
              Single criterion    — cycle_criterion_<timeframe>_<key>\n  \
              Single component    — cycle_component_<timeframe>_<key>\n  \
+             Top confluence      — cycle_top_<timeframe>_<N>\n  \
+             Top criterion       — cycle_top_criterion_<timeframe>_<key>\n  \
+             Top component       — cycle_top_component_<timeframe>_<key>\n  \
              Timeframes: daily | weekly | monthly\n  \
              N (confluence target): 1..=7\n  \
              Criterion keys: {}\n  \
-             Component keys: {}",
+             Component keys: {}\n  \
+             Top criterion keys: {}\n  \
+             Top component keys: {}",
             CRITERION_KEYS.join(", "),
-            COMPONENT_KEYS.join(", ")
+            COMPONENT_KEYS.join(", "),
+            TOP_CRITERION_KEYS.join(", "),
+            TOP_COMPONENT_KEYS.join(", ")
         )
     })
 }
@@ -209,6 +324,9 @@ pub fn condition_timeframe(condition: &str) -> anyhow::Result<SignalTimeframe> {
         CycleSignalCondition::Confluence { timeframe, .. } => timeframe,
         CycleSignalCondition::Criterion { timeframe, .. } => timeframe,
         CycleSignalCondition::Component { timeframe, .. } => timeframe,
+        CycleSignalCondition::TopConfluence { timeframe, .. } => timeframe,
+        CycleSignalCondition::TopCriterion { timeframe, .. } => timeframe,
+        CycleSignalCondition::TopComponent { timeframe, .. } => timeframe,
     })
 }
 
@@ -264,6 +382,37 @@ pub fn component_label(key: &str) -> &'static str {
         "cyberline_reclaim" => "weekly trend line reclaimed",
         "pi_cycle_bottom" => "cycle-bottom bonus fired recently",
         _ => "cycle-bottom component",
+    }
+}
+
+pub fn top_criterion_label(key: &str) -> &'static str {
+    match key {
+        "momentum_turning_down" => "momentum line turning down",
+        "momentum_below_price" => "momentum line below price momentum",
+        "dss_topping" => "double-smoothed stochastic topping",
+        "roofing_confirming_down" => "roofing filter confirming down",
+        "volatility_bands_bearish" => "volatility bands bearish",
+        "exhaustion_dots" => "significant exhaustion dots",
+        "trend_line_lost" => "trend line lost",
+        _ => "cycle-high criterion",
+    }
+}
+
+pub fn top_component_label(key: &str) -> &'static str {
+    match key {
+        "rsi_ma_turned_down" => "RSI average ticked down",
+        "rsi_ma_cross_below_rsi" => "RSI average lost the RSI",
+        "dss_turned_down" => "stochastic ticked down",
+        "dss_cross_below_trigger" => "stochastic crossed below trigger",
+        "dss_overbought" => "stochastic overbought",
+        "erf_top_zone" => "roofing filter in top zone",
+        "erf_turned_down" => "roofing filter ticked down",
+        "cyberbands_bearish" => "daily momentum bands bearish",
+        "cyberdots_bearish" => "higher-timeframe strength dots bearish",
+        "cyberline_lost" => "weekly trend line lost",
+        "pi_cycle_top" => "cycle-top bonus fired recently",
+        "erf_positive" => "roofing filter positive",
+        _ => "cycle-high component",
     }
 }
 
@@ -379,6 +528,137 @@ pub fn evaluate(
                 }),
             }
         }
+        CycleSignalCondition::TopConfluence { .. }
+        | CycleSignalCondition::TopCriterion { .. }
+        | CycleSignalCondition::TopComponent { .. } => CycleSignalEval {
+            is_triggered: false,
+            current_value: None,
+            trigger_data: json!({
+                "kind": "cycle_top_signal",
+                "reason": "wrong_evaluator",
+                "symbol": symbol,
+            }),
+        },
+    }
+}
+
+pub fn evaluate_top(
+    symbol: &str,
+    parsed: &CycleSignalCondition,
+    signals: Option<&CycleTopSignals>,
+) -> CycleSignalEval {
+    let asset = friendly_asset(symbol);
+    let Some(sig) = signals else {
+        return CycleSignalEval {
+            is_triggered: false,
+            current_value: None,
+            trigger_data: json!({
+                "kind": "cycle_top_signal",
+                "reason": "insufficient_history",
+                "symbol": symbol,
+            }),
+        };
+    };
+
+    match parsed {
+        CycleSignalCondition::TopConfluence { timeframe, target } => {
+            let met = sig.met_count;
+            let is_triggered = met >= *target;
+            CycleSignalEval {
+                is_triggered,
+                current_value: Some(Decimal::from(met)),
+                trigger_data: json!({
+                    "kind": "cycle_top_confluence",
+                    "symbol": symbol,
+                    "asset": asset,
+                    "timeframe": timeframe.label(),
+                    "met_count": met,
+                    "total": sig.total,
+                    "target": target,
+                    "as_of": sig.as_of,
+                    "message": format!(
+                        "{asset} {} cycle-high signals {met}/{} (≥{target} target met)",
+                        timeframe.label(),
+                        sig.total
+                    ),
+                }),
+            }
+        }
+        CycleSignalCondition::TopCriterion {
+            timeframe,
+            criterion_key,
+        } => {
+            let criterion = sig.criteria.iter().find(|c| &c.key == criterion_key);
+            let is_triggered = criterion.map(|c| c.met).unwrap_or(false);
+            CycleSignalEval {
+                is_triggered,
+                current_value: Some(Decimal::from(if is_triggered { 1u8 } else { 0u8 })),
+                trigger_data: json!({
+                    "kind": "cycle_top_criterion",
+                    "symbol": symbol,
+                    "asset": asset,
+                    "timeframe": timeframe.label(),
+                    "criterion_key": criterion_key,
+                    "criterion_label": top_criterion_label(criterion_key),
+                    "met": is_triggered,
+                    "met_count": sig.met_count,
+                    "total": sig.total,
+                    "as_of": sig.as_of,
+                    "message": format!(
+                        "{asset} {} {} (cycle-high signals {}/{})",
+                        timeframe.label(),
+                        top_criterion_label(criterion_key),
+                        sig.met_count,
+                        sig.total
+                    ),
+                }),
+            }
+        }
+        CycleSignalCondition::TopComponent {
+            timeframe,
+            component_key,
+        } => {
+            let component = find_top_component(sig, component_key);
+            let is_triggered = component
+                .map(|component| component.0)
+                .unwrap_or_else(|| top_component_fallback(sig, component_key).unwrap_or(false));
+            let value = component
+                .and_then(|component| component.1)
+                .or_else(|| top_component_value_fallback(sig, component_key));
+            CycleSignalEval {
+                is_triggered,
+                current_value: Some(Decimal::from(if is_triggered { 1u8 } else { 0u8 })),
+                trigger_data: json!({
+                    "kind": "cycle_top_component",
+                    "symbol": symbol,
+                    "asset": asset,
+                    "timeframe": timeframe.label(),
+                    "component_key": component_key,
+                    "component_label": top_component_label(component_key),
+                    "met": is_triggered,
+                    "value": value,
+                    "met_count": sig.met_count,
+                    "total": sig.total,
+                    "as_of": sig.as_of,
+                    "message": format!(
+                        "{asset} {} {} (cycle-high signals {}/{})",
+                        timeframe.label(),
+                        top_component_label(component_key),
+                        sig.met_count,
+                        sig.total
+                    ),
+                }),
+            }
+        }
+        _ => CycleSignalEval {
+            is_triggered: false,
+            current_value: None,
+            trigger_data: json!({
+                "kind": "cycle_top_signal",
+                "reason": "wrong_evaluator",
+                "symbol": symbol,
+            }),
+        },
     }
 }
 
@@ -399,6 +679,29 @@ fn component_fallback(sig: &CycleBottomSignals, component_key: &str) -> Option<b
 }
 
 fn component_value_fallback(sig: &CycleBottomSignals, component_key: &str) -> Option<f64> {
+    match component_key {
+        "erf_positive" => sig.erf,
+        _ => None,
+    }
+}
+
+fn find_top_component(sig: &CycleTopSignals, component_key: &str) -> Option<(bool, Option<f64>)> {
+    sig.criteria
+        .iter()
+        .flat_map(|criterion| criterion.components.iter())
+        .find(|component| component.key == component_key)
+        .map(|component| (component.met, component.value))
+}
+
+fn top_component_fallback(sig: &CycleTopSignals, component_key: &str) -> Option<bool> {
+    match component_key {
+        "erf_positive" => Some(sig.erf_positive),
+        "pi_cycle_top" => Some(sig.pi_cycle_top),
+        _ => None,
+    }
+}
+
+fn top_component_value_fallback(sig: &CycleTopSignals, component_key: &str) -> Option<f64> {
     match component_key {
         "erf_positive" => sig.erf,
         _ => None,

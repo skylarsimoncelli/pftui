@@ -5073,6 +5073,27 @@ pub enum AnalyticsCyclesCommand {
         #[command(subcommand)]
         sub: Option<BottomSignalsCommand>,
     },
+    /// Mechanical cycle-high / exhaustion signal suite: symmetric N-of-7
+    /// confluence of independent top-risk confirmations.
+    #[command(
+        after_help = "Scores 7 composite cycle-high criteria, each at its natural timeframe and\nchecked on the latest bar (N/7 confluence):\n  1. Momentum line turning down               the RSI's moving average ticked down\n  2. Momentum line below price momentum       the RSI average lost the RSI\n  3. Double-smoothed stochastic topping       stochastic ticked down AND crossed below its trigger (overbought = context)\n  4. Roofing filter confirming down           de-trended cycle filter in top zone (>0) AND ticked down\n  5. Volatility bands bearish (daily)         daily momentum bands in the bearish state\n  6. Significant exhaustion dots (wk/mo)      weekly/monthly strength dots net-bearish\n  7. Trend line lost (weekly)                 price lost the weekly trackline\n  bonus: pi-cycle top (daily)                 fired recently — reported, NOT counted in the 7\n\nExamples:\n  pftui analytics cycles top-signals --asset BTC\n  pftui analytics cycles top-signals --asset BTC --timeframe monthly --json\n  pftui analytics cycles top-signals backtest --asset BTC --json"
+    )]
+    TopSignals {
+        /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
+        symbol: Option<String>,
+        /// Asset (alias for the positional symbol; e.g. BTC, gold, GC=F)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Timeframe for the RSI/stochastic/roofing criteria: monthly (default), weekly, or daily
+        #[arg(long, default_value = "monthly")]
+        timeframe: String,
+        #[arg(long)]
+        json: bool,
+        /// Reliability backtest: measure each criterion's lead/lag + hit-rate
+        /// vs completed native cycle highs (no-lookahead, point-in-time).
+        #[command(subcommand)]
+        sub: Option<TopSignalsCommand>,
+    },
     /// Translation ledger for one degree: per completed cycle the length,
     /// top position, LT/MID/RT class, and failed flag
     #[command(
@@ -5112,6 +5133,92 @@ pub enum BottomSignalsCommand {
         #[arg(long, default_value = "monthly")]
         timeframe: String,
         /// Match window in DAYS (+/-) around a verified low for a firing to count as a hit
+        #[arg(long)]
+        window: Option<i64>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Flexible event-study backtest for arbitrary criterion/component trigger
+    /// combinations, including forward returns at custom horizons.
+    #[command(
+        name = "trigger-backtest",
+        after_help = "Backtests arbitrary cycle-low trigger combinations. Keys can be either\ncomposite criteria (e.g. momentum_above_price, dss_bottoming) or atomic\ncomponents (e.g. rsi_ma_cross_above_rsi, dss_cross_above_trigger,\ndss_turned_up). The trigger fires on the false->true edge of the combined\ncondition, then reports timing and price distance to the nearest verified cycle\nlow plus forward returns at each requested horizon.\n\nExamples:\n  pftui analytics cycles bottom-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_above_rsi --horizons 7d,30d,365d --json\n  pftui analytics cycles bottom-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_above_rsi,dss_cross_above_trigger,dss_turned_up --mode all --json\n  pftui analytics cycles bottom-signals trigger-backtest --asset gold \\\n    --trigger dss_bottoming --timeframe monthly --horizons 30d,180d,365d"
+    )]
+    TriggerBacktest {
+        /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
+        symbol: Option<String>,
+        /// Asset (alias for the positional symbol; e.g. BTC, gold, GC=F)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Criterion/component key(s). Repeat or comma-separate.
+        #[arg(long = "trigger", required = true)]
+        triggers: Vec<String>,
+        /// Combination mode for multiple triggers: all or any
+        #[arg(long, default_value = "all")]
+        mode: String,
+        /// Forward-return horizons, comma-separated; supports d/w/m/y suffixes
+        #[arg(long, default_value = "7d,30d,365d")]
+        horizons: String,
+        /// Timeframe for the RSI/stochastic/roofing criteria: monthly (default), weekly, or daily
+        #[arg(long, default_value = "monthly")]
+        timeframe: String,
+        /// Match window in DAYS (+/-) around a verified low for a firing to count as a hit
+        #[arg(long)]
+        window: Option<i64>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TopSignalsCommand {
+    /// Reliability backtest of the 7 cycle-high criteria (+ N/7 confluence)
+    /// against completed native cycle highs derived from verified low-to-low
+    /// intervals. Point-in-time (no lookahead). Honest about the tiny anchor
+    /// count.
+    #[command(
+        after_help = "Measures each top/exhaustion criterion and N/7 confluence against completed\nnative cycle highs. A cycle high is derived mechanically as the maximum close\nbetween two verified cycle lows; the unfinished current cycle is excluded.\n\nExamples:\n  pftui analytics cycles top-signals backtest --asset BTC --json\n  pftui analytics cycles top-signals backtest --asset gold --timeframe weekly --window 120"
+    )]
+    Backtest {
+        /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
+        symbol: Option<String>,
+        /// Asset (alias for the positional symbol; e.g. BTC, gold, GC=F)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Timeframe for the RSI/stochastic/roofing criteria: monthly (default), weekly, or daily
+        #[arg(long, default_value = "monthly")]
+        timeframe: String,
+        /// Match window in DAYS (+/-) around a completed high for a firing to count as a hit
+        #[arg(long)]
+        window: Option<i64>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Flexible event-study backtest for arbitrary criterion/component trigger
+    /// combinations against completed native cycle highs.
+    #[command(
+        name = "trigger-backtest",
+        after_help = "Backtests arbitrary cycle-high/exhaustion trigger combinations. Keys can be\ncriteria (e.g. momentum_below_price, dss_topping) or atomic components\n(e.g. rsi_ma_cross_below_rsi, dss_cross_below_trigger, dss_turned_down).\nReports timing and price distance to completed native cycle highs plus forward\nreturns at custom horizons. For top signals, a 'good' forward return is negative.\n\nExamples:\n  pftui analytics cycles top-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_below_rsi --horizons 7d,30d,365d --json\n  pftui analytics cycles top-signals trigger-backtest --asset gold \\\n    --trigger dss_topping,roofing_confirming_down --mode all --json"
+    )]
+    TriggerBacktest {
+        /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
+        symbol: Option<String>,
+        /// Asset (alias for the positional symbol; e.g. BTC, gold, GC=F)
+        #[arg(long)]
+        asset: Option<String>,
+        /// Criterion/component key(s). Repeat or comma-separate.
+        #[arg(long = "trigger", required = true)]
+        triggers: Vec<String>,
+        /// Combination mode for multiple triggers: all or any
+        #[arg(long, default_value = "all")]
+        mode: String,
+        /// Forward-return horizons, comma-separated; supports d/w/m/y suffixes
+        #[arg(long, default_value = "7d,30d,365d")]
+        horizons: String,
+        /// Timeframe for the RSI/stochastic/roofing criteria: monthly (default), weekly, or daily
+        #[arg(long, default_value = "monthly")]
+        timeframe: String,
+        /// Match window in DAYS (+/-) around a completed high for a firing to count as a hit
         #[arg(long)]
         window: Option<i64>,
         #[arg(long)]
