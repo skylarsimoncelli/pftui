@@ -138,6 +138,7 @@ pub fn insert_report_backend(
     )
 }
 
+#[allow(dead_code)] // backend-dispatch variant; the report loader uses the raw-conn path
 pub fn latest_before_backend(
     backend: &BackendConnection,
     mode: Option<&str>,
@@ -243,6 +244,7 @@ fn map_archive_row(row: ArchiveRow) -> ReportArchiveRecord {
     }
 }
 
+#[allow(dead_code)] // reached only via latest_before_backend (Postgres path)
 fn latest_before_postgres(
     pool: &PgPool,
     mode: Option<&str>,
