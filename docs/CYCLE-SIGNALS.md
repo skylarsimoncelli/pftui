@@ -307,7 +307,18 @@ the legacy payload is byte-for-byte unchanged):
   price-structure low within the match window, reporting BOTH signed lead/lag in
   days AND the signed `price_gap_pct` `(fire_price − low_price)/low_price·100`.
   Aggregated as `median_lead_lag_days`, `median_price_gap_pct`, `matched_firings`,
-  and `confidence_pct` (= matched / firings).
+  and `confidence_pct` (= matched / firings). **Sign convention for
+  `median_lead_lag_days`: positive = the signal fired AFTER the extreme
+  (confirmation / lag), negative = fired BEFORE it. A positive value is NOT
+  predictive lead time** — the text renderer prints this convention inline.
+- **Per-row firing-count guard.** Each confluence/criterion row also carries
+  `low_firings: bool` — true when that row's `firings` count is below
+  `MIN_SIGNIFICANT_FIRINGS` (20). It is keyed to the per-row firing count, NOT to
+  the anchor-count-driven `small_n`, so a row with plenty of anchors but only a
+  handful of firings is still flagged. When true, the row's forward-return / lift
+  numbers are directional only, never a probability; the text renderer appends an
+  inline `(n=… — too few firings; directional only)` marker. Additive field,
+  omitted from JSON when false.
 
 The block carries its own honest `small_n` / `insufficient_anchors` flags and
 `caveat`. JSON shape:
@@ -330,6 +341,7 @@ The block carries its own honest `small_n` / `insufficient_anchors` flags and
     {
       "key": "confluence_ge_3", "threshold": 3,
       "label": "Confluence ≥3/7 criteria firing", "firings": 23,
+      "low_firings": false,   // true & present only when firings < MIN_SIGNIFICANT_FIRINGS (20)
       "horizons": [
         { "horizon_days": 30, "samples": 23, "mean_return_pct": "7.18",
           "median_return_pct": "8.55", "positive_rate_pct": "65.2",

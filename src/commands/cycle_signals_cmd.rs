@@ -404,8 +404,17 @@ fn print_top_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
             ),
             _ => format!(" · {} firings, no in-window high match", r.firings),
         };
-        format!("    {:<42} {horizons}{close}", r.label)
+        let warn = if r.low_firings {
+            format!(" (n={} — too few firings; directional only)", r.firings)
+        } else {
+            String::new()
+        };
+        format!("    {:<42} {horizons}{close}{warn}", r.label)
     };
+    println!(
+        "  closeness sign convention: \"+Nd to high\" = signal fired N days AFTER the swing high \
+         (+ = confirmation/lag, NOT predictive lead; − = fired before the high)."
+    );
     println!("  Confluence expectancy ([N%↓] = forward-return NEGATIVE rate = top hit-rate):");
     for r in &exp.confluence {
         println!("{}", row_line(r));
@@ -533,8 +542,17 @@ fn print_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
             ),
             _ => format!(" · {} firings, no in-window low match", r.firings),
         };
-        format!("    {:<42} {horizons}{close}", r.label)
+        let warn = if r.low_firings {
+            format!(" (n={} — too few firings; directional only)", r.firings)
+        } else {
+            String::new()
+        };
+        format!("    {:<42} {horizons}{close}{warn}", r.label)
     };
+    println!(
+        "  closeness sign convention: \"+Nd to low\" = signal fired N days AFTER the swing low \
+         (+ = confirmation/lag, NOT predictive lead; − = fired before the low)."
+    );
     println!("  Confluence expectancy:");
     for r in &exp.confluence {
         println!("{}", row_line(r));

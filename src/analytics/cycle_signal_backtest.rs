@@ -72,6 +72,18 @@ pub const DEFAULT_WINDOW_BARS: i64 = 90;
 /// Default confluence thresholds to report (N-of-7).
 pub const DEFAULT_CONFLUENCE_THRESHOLDS: [usize; 3] = [3, 4, 5];
 
+/// Minimum firing count behind an expectancy row for its forward-return /
+/// lift stats to be read as anything more than directional. Below this the row
+/// is flagged `low_firings` and the renderer appends a "too few firings" marker
+/// so a seductive lift value (e.g. "365d lift +281.9" on 11 firings) cannot be
+/// mistaken for a probability. 20 is a deliberately conservative floor: it is
+/// the smallest sample at which a per-horizon mean / positive-rate begins to
+/// have any standard-error worth quoting (a binomial rate on n<20 has a
+/// half-width wider than ±10 points), and it is keyed to the *per-row firing
+/// count* — independent of the verified-ANCHOR count that drives `small_n`,
+/// because a row can have plenty of anchors yet only a handful of firings.
+pub const MIN_SIGNIFICANT_FIRINGS: usize = 20;
+
 /// Evaluation cadence in DAILY bars. Daily signals must be sampled every bar
 /// so one-day rising edges cannot disappear between evaluations. Weekly and
 /// monthly signals can use a weekly cadence because their underlying bars are
@@ -254,6 +266,13 @@ pub struct ExpectancyRow {
     pub threshold: Option<usize>,
     pub label: String,
     pub firings: usize,
+    /// True when this row's firing count is below [`MIN_SIGNIFICANT_FIRINGS`] —
+    /// its forward-return / lift numbers are then directional only, NOT a
+    /// probability. Additive honesty flag; keyed to the per-row firing count,
+    /// independent of the anchor-count-driven `small_n`. Omitted from JSON when
+    /// false so the legacy payload is unchanged for well-sampled rows.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub low_firings: bool,
     /// Forward-return expectancy at each horizon.
     pub horizons: Vec<HorizonReturn>,
     /// Closeness to the nearest price-structure low.
@@ -1345,6 +1364,7 @@ fn build_expectancy(
             threshold: None,
             label: l.clone(),
             firings: idx.len(),
+            low_firings: idx.len() < MIN_SIGNIFICANT_FIRINGS,
             horizons: horizon_returns(history, idx, &baseline),
             closeness: closeness_stats(history, idx, &anchors, window_days),
         })
@@ -1357,6 +1377,7 @@ fn build_expectancy(
             threshold: Some(*thr),
             label: format!("Confluence ≥{thr}/7 criteria firing"),
             firings: idx.len(),
+            low_firings: idx.len() < MIN_SIGNIFICANT_FIRINGS,
             horizons: horizon_returns(history, idx, &baseline),
             closeness: closeness_stats(history, idx, &anchors, window_days),
         })
@@ -1441,6 +1462,7 @@ fn build_top_expectancy(
             threshold: None,
             label: l.clone(),
             firings: idx.len(),
+            low_firings: idx.len() < MIN_SIGNIFICANT_FIRINGS,
             horizons: top_horizon_returns(history, idx, &baseline),
             closeness: closeness_stats(history, idx, &anchors, window_days),
         })
@@ -1452,6 +1474,7 @@ fn build_top_expectancy(
             threshold: Some(*thr),
             label: format!("Confluence ≥{thr}/7 criteria firing"),
             firings: idx.len(),
+            low_firings: idx.len() < MIN_SIGNIFICANT_FIRINGS,
             horizons: top_horizon_returns(history, idx, &baseline),
             closeness: closeness_stats(history, idx, &anchors, window_days),
         })
@@ -2121,5 +2144,156 @@ mod tests {
         let b: Vec<bool> = read_b.criteria.iter().map(|c| c.met).collect();
         assert_eq!(a, b, "firing-driving criteria at bar i must be lookahead-free");
         assert_eq!(read_a.met_count, read_b.met_count);
+    }
+
+    /// Chain `cycles` back-to-back V-bottoms (decline→rally) into one continuous,
+    /// strictly date-ascending series. Each bottom is followed by a large rally,
+    /// so the expectancy engine has a KNOWN bullish edge to recover.
+    fn chained_v_bottoms(
+        start: NaiveDate,
+        cycles: usize,
+        n_decline: usize,
+        n_rally: usize,
+    ) -> Vec<HistoryRecord> {
+        let mut out: Vec<HistoryRecord> = Vec::new();
+        let mut cursor = start;
+        for _ in 0..cycles {
+            let cyc = planted_v_bottom(cursor, n_decline, n_rally);
+            // Next cycle starts the day after this cycle's last bar.
+            if let Some(last) = cyc.last() {
+                let last_date = NaiveDate::parse_from_str(&last.date, "%Y-%m-%d").unwrap();
+                cursor = last_date + chrono::Days::new(1);
+            }
+            out.extend(cyc);
+        }
+        out
+    }
+
+    fn chained_inverted_v(
+        start: NaiveDate,
+        cycles: usize,
+        n_rally: usize,
+        n_decline: usize,
+    ) -> Vec<HistoryRecord> {
+        let mut out: Vec<HistoryRecord> = Vec::new();
+        let mut cursor = start;
+        for _ in 0..cycles {
+            let cyc = planted_inverted_v(cursor, n_rally, n_decline);
+            if let Some(last) = cyc.last() {
+                let last_date = NaiveDate::parse_from_str(&last.date, "%Y-%m-%d").unwrap();
+                cursor = last_date + chrono::Days::new(1);
+            }
+            out.extend(cyc);
+        }
+        out
+    }
+
+    /// Helper: the lift_vs_baseline_pct of a confluence row at one horizon.
+    fn lift_at(row: &ExpectancyRow, horizon: i64) -> Decimal {
+        row.horizons
+            .iter()
+            .find(|h| h.horizon_days == horizon)
+            .and_then(|h| h.lift_vs_baseline_pct)
+            .unwrap_or_else(|| panic!("no lift at {horizon}d for {}", row.key))
+    }
+
+    /// GROUND-TRUTH VALIDATION. Plant a synthetic series with a KNOWN edge and
+    /// assert the expectancy engine recovers it — turning "trust the lift number"
+    /// into "the methodology is validated against ground truth."
+    ///
+    /// Construction: 14 back-to-back V-cycles, each a 150-bar decline into a deep
+    /// low followed by a 250-bar (~+200%) rally. So the cycle-BOTTOM confluence
+    /// fires near each low, shortly BEFORE a large up-move; the cycle-TOP
+    /// confluence (on the mirror series) fires near each peak, shortly before a
+    /// large DOWN-move. We plant 14 cycles specifically so the headline ≥4/7 row
+    /// clears MIN_SIGNIFICANT_FIRINGS (it gets 35 firings) and is therefore NOT
+    /// flagged low_firings — the edge is well-sampled, not a 1-2 firing mirage.
+    ///
+    /// Assertions:
+    ///   * BOTTOM ≥4/7: lift_vs_baseline is clearly POSITIVE at the 30/90/180d
+    ///     horizons (the planted rally), with double-digit magnitude — the engine
+    ///     recovers the planted bullish edge.
+    ///   * TOP ≥4/7 (mirror series): lift_vs_baseline is clearly NEGATIVE at the
+    ///     same horizons — the engine recovers the planted bearish edge.
+    ///   * Both headline rows have ≥20 firings and low_firings == false.
+    ///   * low_firings is consistently wired: it equals (firings < MIN) on EVERY
+    ///     row of both blocks.
+    /// (365d is deliberately NOT asserted: a 1-year horizon overshoots the ~13mo
+    /// cycle and lands in the next decline, which is correct behaviour, not edge.)
+    #[test]
+    fn synthetic_known_edge_is_recovered_by_expectancy() {
+        let bottoms = chained_v_bottoms(NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(), 14, 150, 250);
+        let bt = run_backtest(
+            "ACME", "ACME", &bottoms, SignalTimeframe::Monthly, Some(120),
+            &DEFAULT_CONFLUENCE_THRESHOLDS, true,
+        )
+        .expect("bottom backtest");
+        let exp = bt.expectancy.expect("bottom expectancy");
+
+        // low_firings is consistently keyed to the per-row firing count.
+        for r in exp.criteria.iter().chain(exp.confluence.iter()) {
+            assert_eq!(
+                r.low_firings,
+                r.firings < MIN_SIGNIFICANT_FIRINGS,
+                "bottom row {} low_firings flag must equal firings<{MIN_SIGNIFICANT_FIRINGS}",
+                r.key
+            );
+        }
+
+        let bot4 = exp
+            .confluence
+            .iter()
+            .find(|r| r.threshold == Some(4))
+            .expect("bottom ≥4 row");
+        // Enough firings planted → NOT flagged low_firings.
+        assert!(
+            bot4.firings >= MIN_SIGNIFICANT_FIRINGS,
+            "planted enough firings, got {}",
+            bot4.firings
+        );
+        assert!(!bot4.low_firings, "well-sampled row must not be low_firings");
+        // The planted bullish edge is recovered: positive lift, double-digit.
+        for h in [30, 90, 180] {
+            let lift = lift_at(bot4, h);
+            assert!(
+                lift > dec!(5),
+                "bottom ≥4 should recover a clear positive edge at {h}d, got lift {lift}"
+            );
+        }
+
+        // Mirror: planted bearish edge on inverted-V cycles.
+        let tops = chained_inverted_v(NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(), 14, 150, 250);
+        let btt = run_top_backtest(
+            "ACME", "ACME", &tops, SignalTimeframe::Monthly, Some(120),
+            &DEFAULT_CONFLUENCE_THRESHOLDS, true,
+        )
+        .expect("top backtest");
+        let expt = btt.expectancy.expect("top expectancy");
+        for r in expt.criteria.iter().chain(expt.confluence.iter()) {
+            assert_eq!(
+                r.low_firings,
+                r.firings < MIN_SIGNIFICANT_FIRINGS,
+                "top row {} low_firings flag must equal firings<{MIN_SIGNIFICANT_FIRINGS}",
+                r.key
+            );
+        }
+        let top4 = expt
+            .confluence
+            .iter()
+            .find(|r| r.threshold == Some(4))
+            .expect("top ≥4 row");
+        assert!(
+            top4.firings >= MIN_SIGNIFICANT_FIRINGS,
+            "planted enough top firings, got {}",
+            top4.firings
+        );
+        assert!(!top4.low_firings, "well-sampled top row must not be low_firings");
+        for h in [30, 90, 180] {
+            let lift = lift_at(top4, h);
+            assert!(
+                lift < dec!(-5),
+                "top ≥4 should recover a clear negative edge at {h}d, got lift {lift}"
+            );
+        }
     }
 }
