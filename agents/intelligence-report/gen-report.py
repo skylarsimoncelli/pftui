@@ -296,10 +296,13 @@ def md_to_pdf(md_path, pdf_path, title, date, subtitle=None, author="Skylar Simo
         return f'![{alt}]({src})'
     md_content = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', resolve_img, md_content)
 
-    # Expand pftui visualization tokens (e.g. <!--CYCLE_VIZ:map:BTC-->) into inline
-    # SVG via the Python viz library (repo: viz/). Rust computes the data via the
-    # `--json` CLI; Python renders it. Any unavailable chart expands to nothing, so
-    # this never breaks a report. Best-effort: if the viz lib is missing, skip.
+    # Expand pftui visualization tokens (e.g. <!--CYCLE_VIZ:map:BTC-->,
+    # <!--CYCLE_BACKTEST_VIZ:expectancy:BTC?polarity=bottom-->, the
+    # <!--CYCLE_SIGNALS_VIZ:tracked:all--> dashboard, etc.) into inline SVG via the
+    # Python viz library (repo: viz/). Rust computes the data via the `--json` CLI
+    # (incl. `analytics cycles {bottom,top}-signals backtest --expectancy` and
+    # `analytics cycles tracked`); Python renders it. Any unavailable chart expands
+    # to nothing, so this never breaks a report. Best-effort: if the lib is missing, skip.
     try:
         _repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
         sys.path.insert(0, os.path.join(_repo_root, 'viz'))

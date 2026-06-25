@@ -212,7 +212,8 @@ component reports `current - previous`.
   in **name-free** public prose.
 - **Report chart:** `viz/cycle_signals_viz.py` renders the checklist + N/7 gauge
   as inline SVG. Token `<!--CYCLE_SIGNALS_VIZ:checklist:BTC-->` (auto-injected at
-  the Bitcoin/Gold section headings by `viz/report_charts.py`).
+  the Bitcoin/Gold section headings by `viz/report_charts.py`). See **Report
+  rendering** below for the backtest report card and tracked dashboard tokens.
 
 ## How to backtest reliability
 
@@ -511,3 +512,21 @@ of their target). Privacy-safe: signal metadata + counts only, no dollar values.
 
 Wired in `src/commands/cycle_tracked_cmd.rs`; CLI variant `Tracked` in
 `src/cli.rs`, dispatched in `src/main.rs`.
+
+## Report rendering (inline-SVG viz tokens)
+
+The Python report layer (`viz/`, "Rust computes, Python draws") turns these JSON
+contracts into inline-SVG report assets via the `<!--FAMILY_VIZ:type:arg-->`
+token mechanism (`viz/render.py`). Three cycle-signal tokens exist:
+
+| Token | Source CLI | Renders |
+|---|---|---|
+| `<!--CYCLE_SIGNALS_VIZ:checklist:BTC-->` | `analytics cycles bottom-signals` | the N-of-7 bottom confluence ✓/✗ list + gauge (auto-injected at the Bitcoin/Gold section headings) |
+| `<!--CYCLE_BACKTEST_VIZ:expectancy:BTC?polarity=bottom&timeframe=monthly-->` | `analytics cycles {bottom,top}-signals backtest --expectancy` | a per-signal **backtest report card**: forward-return signal-vs-baseline bars per 30/90/180/365d for the headline ≥4/7 threshold (sign-aware — bottoms want positive returns, tops want negative), a per-threshold hit-rate + closeness table, and an honest "reliability unmeasurable — directional only" caveat card when `insufficient_anchors`/zero firings |
+| `<!--CYCLE_SIGNALS_VIZ:tracked:all-->` | `analytics cycles tracked` | a **tracked-signals dashboard**: heat-strip of every armed cycle-signal alert (live met/total bar colored by closeness, distance-to-target, fired?, time-since-last). Payload = `all` or `SYM[?polarity=bottom\|top]` |
+
+The backtest card consumes the `expectancy` block documented above (numbers are
+rust_decimal strings; bottoms read `positive_rate_pct`, tops read
+`negative_rate_pct`). Renderers: `viz/cycle_backtest_viz.py` (card) and
+`viz/cycle_signals_viz.py` (checklist + tracked). All three are public-safe
+(name-free, no holdings) and degrade to an empty string on missing data.
