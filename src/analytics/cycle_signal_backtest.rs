@@ -31,14 +31,38 @@
 use std::collections::BTreeSet;
 
 use chrono::NaiveDate;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::Serialize;
 
+use crate::analytics::cycle_engine::pivot_lows;
 use crate::analytics::cycle_signals::{self, SignalTimeframe};
 use crate::models::price::HistoryRecord;
 
 /// Below this many verified anchors the result is flagged small-n: a hit-rate
 /// computed on fewer samples than this must not be read as robust.
 pub const SMALL_N_THRESHOLD: usize = 5;
+
+/// Forward-return horizons (calendar days) reported by the expectancy backtest.
+/// A signal's edge is "what does the asset do 1mo / 1q / 6mo / 1y after it
+/// fires", measured against the same-horizon unconditioned baseline.
+pub const FORWARD_HORIZONS_DAYS: [i64; 4] = [30, 90, 180, 365];
+
+/// Rolling-window half-width (in DAILY bars) for the asset-agnostic
+/// price-structure swing-low detector. ~90 bars ≈ a quarter on each side, so a
+/// retained pivot is the lowest low in roughly a half-year window — significant
+/// enough to stand in for a cycle low when no doctrine anchor exists.
+pub const PRICE_LOW_PIVOT_WINDOW: usize = 90;
+
+/// Minimum post-low recovery (percent) for a detected swing low to be retained
+/// as a price-structure anchor. A genuine cycle low is followed by a
+/// meaningful rally; a 20% bounce filters out shelves and minor pullbacks.
+/// NOTE (epistemics): price-derived anchors are WEAKER ground truth than the
+/// doctrine anchors (BTC 4y / gold ~6.9y) — they are mechanically the lowest
+/// low in a window with a rally out, not an externally verified cycle low. They
+/// exist so the expectancy read works for an ARBITRARY symbol with enough
+/// history; treat their hit-rates as directional, not authoritative.
+pub const PRICE_LOW_PROMINENCE_PCT: i64 = 20;
 
 /// Default match window (in DAILY bars) around a verified low within which a
 /// firing counts as a hit. ±90 calendar days ≈ one quarter — a cycle-bottom
@@ -143,6 +167,121 @@ pub struct CycleSignalBacktest {
     /// Headline: most reliable leading criteria + what confluence buys.
     pub headline: String,
     /// Small-n / trust caveat (always present).
+    pub caveat: String,
+    /// Forward-return expectancy block. Populated only when the backtest is run
+    /// with expectancy enabled (the `--expectancy` CLI flag). `None` keeps the
+    /// legacy reliability-only payload byte-for-byte unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expectancy: Option<CycleSignalExpectancy>,
+}
+
+/// Forward-return summary at one horizon for one signal (or the baseline).
+#[derive(Debug, Clone, Serialize)]
+pub struct HorizonReturn {
+    /// Horizon in calendar days (30/90/180/365).
+    pub horizon_days: i64,
+    /// Number of firings that had at least `horizon_days` of future history.
+    pub samples: usize,
+    /// Mean forward return over the samples, in percent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mean_return_pct: Option<Decimal>,
+    /// Median forward return over the samples, in percent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub median_return_pct: Option<Decimal>,
+    /// Fraction of samples with a strictly positive forward return, in percent
+    /// (the hit-rate of the trade thesis at this horizon).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub positive_rate_pct: Option<Decimal>,
+    /// Unconditioned baseline mean forward return at this horizon (every
+    /// evaluated bar), in percent — the bar to beat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baseline_mean_return_pct: Option<Decimal>,
+    /// Expectancy LIFT: `mean_return_pct - baseline_mean_return_pct`, in percent.
+    /// Positive means firing on this signal beat buying a random bar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lift_vs_baseline_pct: Option<Decimal>,
+}
+
+/// Unconditioned baseline forward-return at one horizon (every evaluated bar).
+#[derive(Debug, Clone, Serialize)]
+pub struct HorizonBaseline {
+    pub horizon_days: i64,
+    pub samples: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mean_return_pct: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub median_return_pct: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub positive_rate_pct: Option<Decimal>,
+}
+
+/// Closeness of a signal's firings to the nearest price-structure low: how near
+/// the actual extreme, in BOTH days and price-percent.
+#[derive(Debug, Clone, Serialize)]
+pub struct ClosenessStats {
+    /// Firings that matched a price-structure low within the match window.
+    pub matched_firings: usize,
+    /// Total firings (denominator for `confidence`).
+    pub firings: usize,
+    /// Median signed lead/lag in days over the matched firings (negative =
+    /// fired BEFORE the low).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub median_lead_lag_days: Option<i64>,
+    /// Median signed price-percent gap between the firing price and the matched
+    /// low's price: `(fire_price - low_price) / low_price * 100`. Positive =
+    /// fired ABOVE the low.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub median_price_gap_pct: Option<Decimal>,
+    /// matched_firings / firings, in percent — the firing's hit-rate / accuracy
+    /// against price-structure lows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence_pct: Option<Decimal>,
+}
+
+/// Forward-return expectancy + closeness for one signal (criterion or
+/// confluence threshold).
+#[derive(Debug, Clone, Serialize)]
+pub struct ExpectancyRow {
+    pub key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<usize>,
+    pub label: String,
+    pub firings: usize,
+    /// Forward-return expectancy at each horizon.
+    pub horizons: Vec<HorizonReturn>,
+    /// Closeness to the nearest price-structure low.
+    pub closeness: ClosenessStats,
+}
+
+/// Asset-agnostic forward-return expectancy backtest.
+///
+/// Conditions forward returns on confluence (and on each criterion) using
+/// price-structure swing lows as anchors — so it works for ANY symbol with
+/// enough history, not just BTC/gold. Doctrine anchors, when they exist, are
+/// merged into the anchor set (stronger ground truth) but are not required.
+#[derive(Debug, Clone, Serialize)]
+pub struct CycleSignalExpectancy {
+    /// Price-structure swing-low anchor dates (asset-agnostic, prominence-filtered).
+    pub price_structure_lows: Vec<String>,
+    /// Pivot half-width (daily bars) used for the swing-low scan.
+    pub price_low_pivot_window: usize,
+    /// Minimum post-low recovery (percent) required to retain a swing low.
+    pub price_low_prominence_pct: Decimal,
+    /// Whether doctrine anchors (BTC/gold) were merged into the anchor set.
+    pub doctrine_anchors_used: bool,
+    /// Total anchors used for closeness matching (price-structure ∪ doctrine).
+    pub anchors_used: usize,
+    /// True when no anchors at all could be derived (closeness unmeasurable).
+    pub insufficient_anchors: bool,
+    /// True when the anchor count is below `SMALL_N_THRESHOLD`.
+    pub small_n: bool,
+    /// Unconditioned baseline forward returns (every evaluated bar) per horizon.
+    pub baseline: Vec<HorizonBaseline>,
+    /// Per-criterion expectancy (7 rows).
+    pub criteria: Vec<ExpectancyRow>,
+    /// Per-confluence-threshold expectancy.
+    pub confluence: Vec<ExpectancyRow>,
+    /// Honest trust caveat.
     pub caveat: String,
 }
 
@@ -303,6 +442,7 @@ fn build_reliability(
 /// Run the reliability backtest. `window_days` is the ± match window; `None`
 /// uses [`DEFAULT_WINDOW_BARS`]. Returns `None` only when history is too
 /// shallow for even a single engine read.
+#[allow(clippy::too_many_arguments)]
 pub fn run_backtest(
     symbol: &str,
     series: &str,
@@ -310,6 +450,7 @@ pub fn run_backtest(
     timeframe: SignalTimeframe,
     window_days: Option<i64>,
     thresholds: &[usize],
+    with_expectancy: bool,
 ) -> Option<CycleSignalBacktest> {
     let window_days = window_days.unwrap_or(DEFAULT_WINDOW_BARS).max(1);
     if history.len() < cycle_signals::min_daily_bars() {
@@ -349,6 +490,11 @@ pub fn run_backtest(
     let mut keys_labels: Vec<(String, String)> = Vec::new();
     let mut crit_firings: Vec<Vec<Firing>> = vec![Vec::new(); n_criteria];
     let mut conf_firings: Vec<Vec<Firing>> = thresholds.iter().map(|_| Vec::new()).collect();
+    // Expectancy bookkeeping (only used when `with_expectancy`): the daily-bar
+    // INDEX of every firing per signal, plus every evaluated bar (baseline).
+    let mut crit_fire_idx: Vec<Vec<usize>> = vec![Vec::new(); n_criteria];
+    let mut conf_fire_idx: Vec<Vec<usize>> = thresholds.iter().map(|_| Vec::new()).collect();
+    let mut eval_idx: Vec<usize> = Vec::new();
 
     let start = cycle_signals::min_daily_bars().saturating_sub(1);
     let mut i = start;
@@ -364,6 +510,9 @@ pub fn run_backtest(
             let fired_on = read.as_of.clone();
             let cur_met: Vec<bool> = read.criteria.iter().map(|c| c.met).collect();
             let cur_count = read.met_count;
+            if with_expectancy {
+                eval_idx.push(i);
+            }
 
             if have_prev {
                 for (ci, &met) in cur_met.iter().enumerate().take(n_criteria) {
@@ -376,6 +525,9 @@ pub fn run_backtest(
                             lead_lag_days: m.as_ref().map(|(_, d)| *d),
                             hit,
                         });
+                        if with_expectancy {
+                            crit_fire_idx[ci].push(i);
+                        }
                     }
                 }
                 for (ti, &thr) in thresholds.iter().enumerate() {
@@ -390,6 +542,9 @@ pub fn run_backtest(
                             lead_lag_days: m.as_ref().map(|(_, d)| *d),
                             hit,
                         });
+                        if with_expectancy {
+                            conf_fire_idx[ti].push(i);
+                        }
                     }
                 }
             }
@@ -436,6 +591,39 @@ pub fn run_backtest(
     let headline = build_headline(&criteria, &confluence, total_anchors);
     let caveat = build_caveat(total_anchors, small_n, window_days);
 
+    // --- Forward-return expectancy (asset-agnostic) ---
+    let expectancy = if with_expectancy {
+        // Price-structure anchors: derived purely from OHLC (no circularity).
+        let price_lows =
+            price_structure_lows(history, PRICE_LOW_PIVOT_WINDOW, PRICE_LOW_PROMINENCE_PCT);
+        // Doctrine anchors carried over from the verified set (date, close).
+        let doctrine_anchors: Vec<(NaiveDate, Decimal)> = anchor_dates
+            .iter()
+            .filter_map(|&d| price_at_date(history, d).map(|p| (d, p)))
+            .collect();
+        let crit_idx: Vec<(String, String, Vec<usize>)> = keys_labels
+            .iter()
+            .enumerate()
+            .map(|(ci, (k, l))| (k.clone(), l.clone(), std::mem::take(&mut crit_fire_idx[ci])))
+            .collect();
+        let conf_idx: Vec<(usize, Vec<usize>)> = thresholds
+            .iter()
+            .enumerate()
+            .map(|(ti, &thr)| (thr, std::mem::take(&mut conf_fire_idx[ti])))
+            .collect();
+        Some(build_expectancy(
+            history,
+            &eval_idx,
+            &crit_idx,
+            &conf_idx,
+            &price_lows,
+            &doctrine_anchors,
+            window_days,
+        ))
+    } else {
+        None
+    };
+
     Some(CycleSignalBacktest {
         symbol: symbol.to_string(),
         series: series.to_string(),
@@ -451,6 +639,7 @@ pub fn run_backtest(
         confluence,
         headline,
         caveat,
+        expectancy,
     })
 }
 
@@ -540,6 +729,319 @@ fn build_caveat(total_anchors: usize, small_n: bool, window_days: i64) -> String
     } else {
         base
     }
+}
+
+// ---------------------------------------------------------------------------
+// Forward-return expectancy (asset-agnostic)
+// ---------------------------------------------------------------------------
+
+/// Mean of a slice of decimals.
+fn dec_mean(v: &[Decimal]) -> Option<Decimal> {
+    if v.is_empty() {
+        return None;
+    }
+    let sum: Decimal = v.iter().copied().sum();
+    Some(sum / Decimal::from(v.len()))
+}
+
+/// Median of a slice of decimals (average of the two middle values for even n).
+fn dec_median(mut v: Vec<Decimal>) -> Option<Decimal> {
+    if v.is_empty() {
+        return None;
+    }
+    v.sort();
+    let mid = v.len() / 2;
+    if v.len() % 2 == 1 {
+        Some(v[mid])
+    } else {
+        Some((v[mid - 1] + v[mid]) / dec!(2))
+    }
+}
+
+/// Fraction (percent) of strictly-positive values.
+fn positive_rate_pct(v: &[Decimal]) -> Option<Decimal> {
+    if v.is_empty() {
+        return None;
+    }
+    let pos = v.iter().filter(|x| x.is_sign_positive() && !x.is_zero()).count();
+    Some(Decimal::from(pos) / Decimal::from(v.len()) * dec!(100))
+}
+
+/// Forward return (percent) from bar `i` to the first bar whose date is on or
+/// after `date(i) + horizon_days`. `None` when bar `i` has no qualifying future
+/// bar (not enough forward history) or a zero/negative base price.
+///
+/// This is the OUTCOME measurement, not the signal read: it deliberately looks
+/// forward. The no-lookahead discipline governs the *signal* evaluation
+/// (`history[..=i]`), never the realized forward return being graded.
+fn forward_return_pct(history: &[HistoryRecord], i: usize, horizon_days: i64) -> Option<Decimal> {
+    let d0 = parse(&history[i].date)?;
+    let target = d0 + chrono::Duration::days(horizon_days);
+    let p0 = history[i].close;
+    if p0 <= Decimal::ZERO {
+        return None;
+    }
+    for r in &history[i + 1..] {
+        if let Some(d) = parse(&r.date) {
+            if d >= target {
+                return Some((r.close - p0) / p0 * dec!(100));
+            }
+        }
+    }
+    None
+}
+
+/// Asset-agnostic price-structure swing lows: prominence-filtered pivot lows
+/// over the FULL price history, independent of the cycle-signal suite (no
+/// circularity — only OHLC is consulted). Returns `(index, date, low_price)`.
+///
+/// Method: rolling-window pivot lows (`cycle_engine::pivot_lows`) on the daily
+/// low (falling back to close), then keep only pivots followed by a recovery of
+/// at least `prominence_pct` before the next pivot (or series end). The
+/// recovery filter both removes minor shelves AND drops the most recent,
+/// not-yet-recovered low — which conveniently avoids leaning on an unconfirmed
+/// bottom.
+fn price_structure_lows(
+    history: &[HistoryRecord],
+    pivot_window: usize,
+    prominence_pct: i64,
+) -> Vec<(usize, NaiveDate, Decimal)> {
+    if history.is_empty() {
+        return Vec::new();
+    }
+    let lows: Vec<Decimal> = history
+        .iter()
+        .map(|r| r.low.unwrap_or(r.close))
+        .collect();
+    let pivots = pivot_lows(&lows, pivot_window);
+    let prominence = Decimal::from(prominence_pct);
+    let mut out = Vec::new();
+    for (k, &pi) in pivots.iter().enumerate() {
+        let low_price = lows[pi];
+        if low_price <= Decimal::ZERO {
+            continue;
+        }
+        // Highest high between this pivot and the next (or the series end).
+        let seg_end = pivots.get(k + 1).copied().unwrap_or(history.len());
+        let seg_hi = history[pi..seg_end.min(history.len())]
+            .iter()
+            .map(|r| r.high.unwrap_or(r.close))
+            .max()
+            .unwrap_or(low_price);
+        let recovery_pct = (seg_hi - low_price) / low_price * dec!(100);
+        if recovery_pct >= prominence {
+            if let Some(d) = parse(&history[pi].date) {
+                out.push((pi, d, low_price));
+            }
+        }
+    }
+    out
+}
+
+/// Match firing bar `i` to the nearest price anchor within `window_days`,
+/// returning `(signed_lead_lag_days, signed_price_gap_pct)`. Price gap is
+/// `(fire_price - low_price) / low_price * 100` (positive = fired above the low).
+fn match_price_anchor(
+    history: &[HistoryRecord],
+    i: usize,
+    anchors: &[(NaiveDate, Decimal)],
+    window_days: i64,
+) -> Option<(i64, Decimal)> {
+    let f = parse(&history[i].date)?;
+    let fire_price = history[i].close;
+    let mut best: Option<(i64, Decimal)> = None;
+    for &(a, low_price) in anchors {
+        if low_price <= Decimal::ZERO {
+            continue;
+        }
+        let signed = (f - a).num_days();
+        if signed.abs() <= window_days
+            && best.map(|(b, _)| signed.abs() < b.abs()).unwrap_or(true)
+        {
+            let gap = (fire_price - low_price) / low_price * dec!(100);
+            best = Some((signed, gap));
+        }
+    }
+    best
+}
+
+/// Build the per-horizon forward-return rows for one signal's firing indices.
+fn horizon_returns(
+    history: &[HistoryRecord],
+    firing_idx: &[usize],
+    baseline: &[HorizonBaseline],
+) -> Vec<HorizonReturn> {
+    FORWARD_HORIZONS_DAYS
+        .iter()
+        .map(|&h| {
+            let rets: Vec<Decimal> = firing_idx
+                .iter()
+                .filter_map(|&i| forward_return_pct(history, i, h))
+                .collect();
+            let mean = dec_mean(&rets);
+            let base_mean = baseline
+                .iter()
+                .find(|b| b.horizon_days == h)
+                .and_then(|b| b.mean_return_pct);
+            let lift = match (mean, base_mean) {
+                (Some(m), Some(b)) => Some(m - b),
+                _ => None,
+            };
+            HorizonReturn {
+                horizon_days: h,
+                samples: rets.len(),
+                mean_return_pct: mean,
+                median_return_pct: dec_median(rets.clone()),
+                positive_rate_pct: positive_rate_pct(&rets),
+                baseline_mean_return_pct: base_mean,
+                lift_vs_baseline_pct: lift,
+            }
+        })
+        .collect()
+}
+
+/// Aggregate closeness of a signal's firings to the nearest price-structure low.
+fn closeness_stats(
+    history: &[HistoryRecord],
+    firing_idx: &[usize],
+    anchors: &[(NaiveDate, Decimal)],
+    window_days: i64,
+) -> ClosenessStats {
+    let firings = firing_idx.len();
+    let mut lead_lags: Vec<i64> = Vec::new();
+    let mut gaps: Vec<Decimal> = Vec::new();
+    for &i in firing_idx {
+        if let Some((days, gap)) = match_price_anchor(history, i, anchors, window_days) {
+            lead_lags.push(days);
+            gaps.push(gap);
+        }
+    }
+    let matched = lead_lags.len();
+    let confidence_pct = if firings > 0 {
+        Some(Decimal::from(matched) / Decimal::from(firings) * dec!(100))
+    } else {
+        None
+    };
+    ClosenessStats {
+        matched_firings: matched,
+        firings,
+        median_lead_lag_days: median(lead_lags),
+        median_price_gap_pct: dec_median(gaps),
+        confidence_pct,
+    }
+}
+
+/// Assemble the full expectancy block from per-signal firing indices, the set
+/// of evaluated bars (for the baseline), and the price/doctrine anchor set.
+#[allow(clippy::too_many_arguments)]
+fn build_expectancy(
+    history: &[HistoryRecord],
+    eval_idx: &[usize],
+    crit_idx: &[(String, String, Vec<usize>)],
+    conf_idx: &[(usize, Vec<usize>)],
+    price_lows: &[(usize, NaiveDate, Decimal)],
+    doctrine_anchors: &[(NaiveDate, Decimal)],
+    window_days: i64,
+) -> CycleSignalExpectancy {
+    // Anchor set for closeness = price-structure lows ∪ doctrine anchors,
+    // deduplicated by date (doctrine price wins on a tie since it is stronger
+    // ground truth).
+    let mut anchor_map: std::collections::BTreeMap<NaiveDate, Decimal> = std::collections::BTreeMap::new();
+    for &(_, d, p) in price_lows {
+        anchor_map.entry(d).or_insert(p);
+    }
+    for &(d, p) in doctrine_anchors {
+        anchor_map.insert(d, p);
+    }
+    let anchors: Vec<(NaiveDate, Decimal)> = anchor_map.iter().map(|(&d, &p)| (d, p)).collect();
+    let anchors_used = anchors.len();
+    let doctrine_anchors_used = !doctrine_anchors.is_empty();
+    let insufficient_anchors = anchors.is_empty();
+    let small_n = anchors_used < SMALL_N_THRESHOLD;
+
+    // Baseline: forward returns over every evaluated bar at each horizon.
+    let baseline: Vec<HorizonBaseline> = FORWARD_HORIZONS_DAYS
+        .iter()
+        .map(|&h| {
+            let rets: Vec<Decimal> = eval_idx
+                .iter()
+                .filter_map(|&i| forward_return_pct(history, i, h))
+                .collect();
+            HorizonBaseline {
+                horizon_days: h,
+                samples: rets.len(),
+                mean_return_pct: dec_mean(&rets),
+                median_return_pct: dec_median(rets.clone()),
+                positive_rate_pct: positive_rate_pct(&rets),
+            }
+        })
+        .collect();
+
+    let criteria: Vec<ExpectancyRow> = crit_idx
+        .iter()
+        .map(|(k, l, idx)| ExpectancyRow {
+            key: k.clone(),
+            threshold: None,
+            label: l.clone(),
+            firings: idx.len(),
+            horizons: horizon_returns(history, idx, &baseline),
+            closeness: closeness_stats(history, idx, &anchors, window_days),
+        })
+        .collect();
+
+    let confluence: Vec<ExpectancyRow> = conf_idx
+        .iter()
+        .map(|(thr, idx)| ExpectancyRow {
+            key: format!("confluence_ge_{thr}"),
+            threshold: Some(*thr),
+            label: format!("Confluence ≥{thr}/7 criteria firing"),
+            firings: idx.len(),
+            horizons: horizon_returns(history, idx, &baseline),
+            closeness: closeness_stats(history, idx, &anchors, window_days),
+        })
+        .collect();
+
+    let caveat = if insufficient_anchors {
+        "insufficient_anchors: no price-structure or doctrine cycle lows could be derived from \
+         this history — forward returns are reported but closeness is unmeasurable."
+            .to_string()
+    } else if small_n {
+        format!(
+            "small_n: expectancy is conditioned on only {anchors_used} cycle-low anchor(s) \
+             ({} doctrine). Price-structure anchors are mechanically derived (lowest low in a \
+             window with a ≥{PRICE_LOW_PROMINENCE_PCT}% recovery) and are WEAKER ground truth than \
+             doctrine anchors — read lift/closeness as directional, not as probabilities.",
+            doctrine_anchors.len()
+        )
+    } else {
+        format!(
+            "Expectancy conditioned on {anchors_used} cycle-low anchor(s); forward-return lift is \
+             measured against the unconditioned same-horizon baseline."
+        )
+    };
+
+    CycleSignalExpectancy {
+        price_structure_lows: price_lows
+            .iter()
+            .map(|(_, d, _)| d.format("%Y-%m-%d").to_string())
+            .collect(),
+        price_low_pivot_window: PRICE_LOW_PIVOT_WINDOW,
+        price_low_prominence_pct: Decimal::from(PRICE_LOW_PROMINENCE_PCT),
+        doctrine_anchors_used,
+        anchors_used,
+        insufficient_anchors,
+        small_n,
+        baseline,
+        criteria,
+        confluence,
+        caveat,
+    }
+}
+
+/// Look up the close price on an exact date (anchors are real bar dates).
+fn price_at_date(history: &[HistoryRecord], date: NaiveDate) -> Option<Decimal> {
+    let target = date.format("%Y-%m-%d").to_string();
+    history.iter().find(|r| r.date == target).map(|r| r.close)
 }
 
 #[cfg(test)]
@@ -659,8 +1161,10 @@ mod tests {
             SignalTimeframe::Monthly,
             Some(90),
             &DEFAULT_CONFLUENCE_THRESHOLDS,
+            false,
         )
         .expect("backtest");
+        assert!(bt.expectancy.is_none(), "expectancy off by default");
         assert_eq!(bt.eval_stride_days, 7);
         assert_eq!(bt.criteria.len(), 7);
         assert_eq!(bt.confluence.len(), 3);
@@ -708,6 +1212,7 @@ mod tests {
             SignalTimeframe::Monthly,
             Some(120),
             &DEFAULT_CONFLUENCE_THRESHOLDS,
+            false,
         )
         .expect("backtest");
         // At least the 2022-11-21 anchor should verify against the planted low.
@@ -735,7 +1240,8 @@ mod tests {
             &h,
             SignalTimeframe::Monthly,
             None,
-            &DEFAULT_CONFLUENCE_THRESHOLDS
+            &DEFAULT_CONFLUENCE_THRESHOLDS,
+            true,
         )
         .is_none());
     }
@@ -751,6 +1257,7 @@ mod tests {
             SignalTimeframe::Monthly,
             None,
             &DEFAULT_CONFLUENCE_THRESHOLDS,
+            true,
         )
         .unwrap();
         let b = run_backtest(
@@ -760,11 +1267,133 @@ mod tests {
             SignalTimeframe::Monthly,
             None,
             &DEFAULT_CONFLUENCE_THRESHOLDS,
+            true,
         )
         .unwrap();
         assert_eq!(
             serde_json::to_string(&a).unwrap(),
             serde_json::to_string(&b).unwrap()
         );
+        // Determinism must hold WITH the expectancy block populated.
+        assert!(a.expectancy.is_some());
+    }
+
+    // ---- Expectancy unit tests -------------------------------------------
+
+    /// Forward-return math on a synthetic series with a KNOWN post-signal rally:
+    /// 100 -> 110 over 30 days is a clean +10%; assert mean/median numerically.
+    #[test]
+    fn forward_return_math_is_exact() {
+        // 31 daily bars: bar 0 at 100.0, then linear ramp so bar 30 == 110.0.
+        let start = NaiveDate::from_ymd_opt(2021, 1, 1).unwrap();
+        let mut h = Vec::new();
+        for d in 0..=30u64 {
+            let price = 100.0 + (d as f64) * (10.0 / 30.0);
+            let date = (start + chrono::Days::new(d)).format("%Y-%m-%d").to_string();
+            h.push(record(&date, price));
+        }
+        let r = forward_return_pct(&h, 0, 30).expect("30d forward return");
+        // (110 - 100)/100 * 100 = 10.00 (allow tiny ramp rounding).
+        assert!((r - dec!(10)).abs() < dec!(0.01), "got {r}");
+        // Two identical firings -> mean == median == the same return.
+        let rets = vec![r, r];
+        assert_eq!(dec_mean(&rets), Some(r));
+        assert_eq!(dec_median(rets.clone()), Some(r));
+        assert_eq!(positive_rate_pct(&rets), Some(dec!(100)));
+    }
+
+    /// Price-% closeness: a firing planted exactly 25% above a planted low must
+    /// report a +25.00% price gap and a 0-day lead/lag at the low.
+    #[test]
+    fn price_gap_closeness_is_exact() {
+        let start = NaiveDate::from_ymd_opt(2021, 6, 1).unwrap();
+        // The low bar is at index 0 priced 80; the firing bar at index 0 too is
+        // the anchor itself — instead place the anchor at 80 and the firing 25%
+        // higher (100) on the SAME date offset window.
+        let mut h = Vec::new();
+        for d in 0..10u64 {
+            let date = (start + chrono::Days::new(d)).format("%Y-%m-%d").to_string();
+            h.push(record(&date, 100.0)); // firing price 100
+        }
+        let low_date = NaiveDate::from_ymd_opt(2021, 6, 5).unwrap();
+        let anchors = vec![(low_date, dec!(80))]; // low price 80; 100 is +25%
+        // Firing at index 0 (date 2021-06-01), 4 days before the low.
+        let (days, gap) = match_price_anchor(&h, 0, &anchors, 90).expect("matched");
+        assert_eq!(days, -4, "fired 4 days before the low");
+        assert_eq!(gap, dec!(25), "(100-80)/80*100 == 25%");
+    }
+
+    /// Asset-agnostic path: a synthetic NON-BTC/NON-gold symbol with planted
+    /// swing lows must yield price-structure anchors and a populated expectancy
+    /// result (NOT insufficient_anchors).
+    #[test]
+    fn asset_agnostic_expectancy_has_anchors() {
+        // Two deep V-bottoms back to back so the prominence-filtered pivot scan
+        // retains at least one price-structure low (rally out > 20%).
+        let start = NaiveDate::from_ymd_opt(2016, 1, 1).unwrap();
+        let mut h = planted_v_bottom(start, 500, 400);
+        let next_start = NaiveDate::from_ymd_opt(2018, 6, 1).unwrap();
+        let mut h2 = planted_v_bottom(next_start, 500, 400);
+        h.append(&mut h2);
+        // A symbol with NO doctrine anchors.
+        let bt = run_backtest(
+            "ACME",
+            "ACME",
+            &h,
+            SignalTimeframe::Monthly,
+            Some(120),
+            &DEFAULT_CONFLUENCE_THRESHOLDS,
+            true,
+        )
+        .expect("backtest");
+        let exp = bt.expectancy.expect("expectancy populated");
+        assert!(
+            !exp.doctrine_anchors_used,
+            "ACME has no doctrine anchors"
+        );
+        assert!(
+            !exp.price_structure_lows.is_empty(),
+            "expected price-structure swing lows on a double V-bottom"
+        );
+        assert!(
+            !exp.insufficient_anchors,
+            "asset-agnostic anchors should be present"
+        );
+        assert!(exp.anchors_used > 0);
+        // Baseline + per-horizon rows are present for all 4 horizons.
+        assert_eq!(exp.baseline.len(), FORWARD_HORIZONS_DAYS.len());
+        assert_eq!(exp.criteria.len(), 7);
+        for row in exp.criteria.iter().chain(exp.confluence.iter()) {
+            assert_eq!(row.horizons.len(), FORWARD_HORIZONS_DAYS.len());
+        }
+    }
+
+    /// No-lookahead invariant for the EXPECTANCY path: the signal read at bar i
+    /// over history[..=i] is unchanged after appending future bars, so the
+    /// firing INDEX set (which drives expectancy) cannot shift retroactively.
+    /// (Forward returns inherently consume future bars — that is the outcome,
+    /// not the signal — so we assert the SIGNAL stability that expectancy rests on.)
+    #[test]
+    fn expectancy_no_lookahead_signal_stable() {
+        let start = NaiveDate::from_ymd_opt(2017, 1, 1).unwrap();
+        let full = planted_v_bottom(start, 700, 300);
+        let i = 820usize.min(full.len() - 1);
+        let read_a =
+            cycle_signals::cycle_bottom_signals("ACME", &full[..=i], SignalTimeframe::Monthly)
+                .expect("read at i");
+        let mut extended = full[..=i].to_vec();
+        for k in 1..=60 {
+            let date = (start + chrono::Days::new((i + k) as u64))
+                .format("%Y-%m-%d")
+                .to_string();
+            extended.push(record(&date, 9000.0 + k as f64));
+        }
+        let read_b =
+            cycle_signals::cycle_bottom_signals("ACME", &extended[..=i], SignalTimeframe::Monthly)
+                .expect("read at i (extended)");
+        let a: Vec<bool> = read_a.criteria.iter().map(|c| c.met).collect();
+        let b: Vec<bool> = read_b.criteria.iter().map(|c| c.met).collect();
+        assert_eq!(a, b, "firing-driving criteria at bar i must be lookahead-free");
+        assert_eq!(read_a.met_count, read_b.met_count);
     }
 }

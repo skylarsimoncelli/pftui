@@ -99,6 +99,7 @@ pub fn run_backtest(
     symbol: &str,
     timeframe: &str,
     window: Option<i64>,
+    expectancy: bool,
     json_output: bool,
 ) -> Result<()> {
     // A zero match-window is meaningless (a firing would have to land EXACTLY
@@ -129,6 +130,7 @@ pub fn run_backtest(
         tf,
         window,
         &DEFAULT_CONFLUENCE_THRESHOLDS,
+        expectancy,
     ) else {
         return Err(anyhow::anyhow!(
             "insufficient history for a {} cycle-bottom backtest on {} ({} daily rows; need {})",
@@ -197,6 +199,97 @@ fn print_backtest(bt: &cycle_signal_backtest::CycleSignalBacktest) {
         println!("  ⚠ {}", bt.caveat);
     } else {
         println!("  {}", bt.caveat);
+    }
+    if let Some(exp) = &bt.expectancy {
+        print_expectancy(exp);
+    }
+}
+
+/// Render the asset-agnostic forward-return expectancy block.
+fn print_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
+    use cycle_signal_backtest::ExpectancyRow;
+    println!();
+    println!("  ── Forward-return expectancy (asset-agnostic) ──");
+    if exp.price_structure_lows.is_empty() {
+        println!("  price-structure swing lows: none derived");
+    } else {
+        println!(
+            "  price-structure swing lows ({}d pivot, ≥{}% recovery): {}",
+            exp.price_low_pivot_window,
+            exp.price_low_prominence_pct.normalize(),
+            exp.price_structure_lows.join(", ")
+        );
+    }
+    println!(
+        "  anchors used: {}{}",
+        exp.anchors_used,
+        if exp.doctrine_anchors_used {
+            " (incl. doctrine)"
+        } else {
+            ""
+        }
+    );
+    // Baseline line.
+    let base = exp
+        .baseline
+        .iter()
+        .map(|b| {
+            format!(
+                "{}d {}",
+                b.horizon_days,
+                b.mean_return_pct
+                    .map(|m| format!("{:+.1}%", m))
+                    .unwrap_or_else(|| "n/a".into())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("  ");
+    println!("  baseline mean fwd return:  {base}");
+    println!();
+    let row_line = |r: &ExpectancyRow| {
+        let horizons = r
+            .horizons
+            .iter()
+            .map(|h| {
+                let mean = h
+                    .mean_return_pct
+                    .map(|m| format!("{:+.1}%", m))
+                    .unwrap_or_else(|| "n/a".into());
+                let lift = h
+                    .lift_vs_baseline_pct
+                    .map(|l| format!("(lift {:+.1})", l))
+                    .unwrap_or_default();
+                format!("{}d {mean}{lift}", h.horizon_days)
+            })
+            .collect::<Vec<_>>()
+            .join("  ");
+        let close = match (
+            r.closeness.median_price_gap_pct,
+            r.closeness.median_lead_lag_days,
+            r.closeness.confidence_pct,
+        ) {
+            (Some(gap), Some(days), Some(conf)) => format!(
+                " · {} firings, {} matched (conf {:.0}%), median {:+.1}% / {:+}d to low",
+                r.firings, r.closeness.matched_firings, conf, gap, days
+            ),
+            _ => format!(" · {} firings, no in-window low match", r.firings),
+        };
+        format!("    {:<42} {horizons}{close}", r.label)
+    };
+    println!("  Confluence expectancy:");
+    for r in &exp.confluence {
+        println!("{}", row_line(r));
+    }
+    println!();
+    println!("  Per-criterion expectancy:");
+    for r in &exp.criteria {
+        println!("{}", row_line(r));
+    }
+    println!();
+    if exp.small_n || exp.insufficient_anchors {
+        println!("  ⚠ {}", exp.caveat);
+    } else {
+        println!("  {}", exp.caveat);
     }
 }
 

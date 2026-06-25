@@ -267,6 +267,81 @@ of 1 (`--window 0` is rejected as meaningless, since a firing would then have to
 land exactly on the verified-low date). Omit `--window` for the default
 ±90-day window.
 
+### Forward-return expectancy (`--expectancy`, asset-agnostic)
+
+The reliability rows above answer *did the signal land near a doctrine low?* — but
+they need hand-curated doctrine anchors (BTC/gold only) and report **no forward
+returns**. Add `--expectancy` to also compute an **asset-agnostic expectancy
+block** that works for any symbol with enough history:
+
+```bash
+pftui analytics cycles bottom-signals backtest --asset BTC --expectancy --json
+pftui analytics cycles bottom-signals backtest --asset SPY --expectancy            # arbitrary symbol
+```
+
+It adds an `expectancy` object to the result (omitted entirely without the flag, so
+the legacy payload is byte-for-byte unchanged):
+
+- **Price-structure anchors.** Significant swing lows are derived *from price alone*
+  via a prominence-filtered pivot scan (lowest low in a ±90-daily-bar window that is
+  followed by a ≥20% recovery). These are **independent of the confluence signal
+  being graded** (no circularity) and work for an arbitrary symbol. When doctrine
+  anchors exist they are merged in (stronger ground truth), but are not required.
+  *Epistemic caveat:* price-derived anchors are weaker ground truth than doctrine
+  anchors — read their numbers as directional.
+- **Forward-return expectancy conditioned on confluence.** Walking history
+  point-in-time (same no-lookahead discipline — at bar `i` the engine sees only
+  `history[..=i]`), for each confluence threshold (≥3/≥4/≥5 of 7) and each single
+  criterion: `mean`/`median`/`positive_rate_pct` forward return at **30/90/180/365
+  calendar-day** horizons, plus the unconditioned same-horizon `baseline` and the
+  resulting `lift_vs_baseline_pct` (signal mean − baseline mean). Forward returns
+  inherently consume future bars — that is the *outcome*, not the signal; the
+  no-lookahead rule governs only the signal read.
+- **Closeness to the actual extreme.** Each firing is matched to the nearest
+  price-structure low within the match window, reporting BOTH signed lead/lag in
+  days AND the signed `price_gap_pct` `(fire_price − low_price)/low_price·100`.
+  Aggregated as `median_lead_lag_days`, `median_price_gap_pct`, `matched_firings`,
+  and `confidence_pct` (= matched / firings).
+
+The block carries its own honest `small_n` / `insufficient_anchors` flags and
+`caveat`. JSON shape:
+
+```jsonc
+"expectancy": {
+  "price_structure_lows": ["2018-12-15", "2020-03-13", "2022-11-21", "..."],
+  "price_low_pivot_window": 90,
+  "price_low_prominence_pct": 20,
+  "doctrine_anchors_used": true,
+  "anchors_used": 13,
+  "insufficient_anchors": false,
+  "small_n": false,
+  "baseline": [
+    { "horizon_days": 30, "samples": 593, "mean_return_pct": "6.25",
+      "median_return_pct": "2.76", "positive_rate_pct": "56.8" }
+    // 90 / 180 / 365 …
+  ],
+  "confluence": [
+    {
+      "key": "confluence_ge_3", "threshold": 3,
+      "label": "Confluence ≥3/7 criteria firing", "firings": 23,
+      "horizons": [
+        { "horizon_days": 30, "samples": 23, "mean_return_pct": "7.18",
+          "median_return_pct": "8.55", "positive_rate_pct": "65.2",
+          "baseline_mean_return_pct": "6.25", "lift_vs_baseline_pct": "0.93" }
+        // 90 / 180 / 365 …
+      ],
+      "closeness": {
+        "matched_firings": 14, "firings": 23, "median_lead_lag_days": 26,
+        "median_price_gap_pct": "32.89", "confidence_pct": "60.9"
+      }
+    }
+    // ≥4 / ≥5 …
+  ],
+  "criteria": [ /* same shape, one row per criterion */ ],
+  "caveat": "Expectancy conditioned on 13 cycle-low anchor(s); …"
+}
+```
+
 ### Structured error reasons
 
 Under `--json`, a failed `bottom-signals` / backtest run emits

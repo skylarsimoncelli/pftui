@@ -5114,6 +5114,13 @@ pub enum BottomSignalsCommand {
         /// Match window in DAYS (+/-) around a verified low for a firing to count as a hit
         #[arg(long)]
         window: Option<i64>,
+        /// Also compute the asset-agnostic forward-return EXPECTANCY block:
+        /// mean/median/positive-rate forward returns at 30/90/180/365d per
+        /// confluence threshold and per criterion, expectancy LIFT vs the
+        /// unconditioned baseline, and closeness (days + price-%) to the
+        /// nearest price-structure swing low. Works for any symbol with history.
+        #[arg(long)]
+        expectancy: bool,
         #[arg(long)]
         json: bool,
     },
