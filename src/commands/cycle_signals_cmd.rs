@@ -341,6 +341,28 @@ fn print_top_backtest(bt: &cycle_signal_backtest::CycleSignalBacktest) {
 }
 
 /// Render the cycle-TOP forward-return expectancy block (price-structure highs).
+/// Compact scale-context tag appended INSIDE the lift parens so a lift value can
+/// never be read alone: `, ~0.4σ, base σ 180%`. Rendered only when the horizon
+/// carries an `effect_size`; the baseline dispersion is looked up for the same
+/// horizon. Effect size is a directional scale check, not a significance test.
+fn sigma_context(
+    exp: &cycle_signal_backtest::CycleSignalExpectancy,
+    h: &cycle_signal_backtest::HorizonReturn,
+) -> String {
+    let Some(es) = h.effect_size else {
+        return String::new();
+    };
+    let base_sigma = exp
+        .baseline
+        .iter()
+        .find(|b| b.horizon_days == h.horizon_days)
+        .and_then(|b| b.stdev_return_pct);
+    match base_sigma {
+        Some(s) => format!(", ~{:.1}σ, base σ {:.0}%", es, s),
+        None => format!(", ~{:.1}σ", es),
+    }
+}
+
 fn print_top_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
     use cycle_signal_backtest::ExpectancyRow;
     println!();
@@ -387,7 +409,7 @@ fn print_top_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
                     .unwrap_or_default();
                 let lift = h
                     .lift_vs_baseline_pct
-                    .map(|l| format!("(lift {:+.1})", l))
+                    .map(|l| format!("(lift {:+.1}{})", l, sigma_context(exp, h)))
                     .unwrap_or_default();
                 format!("{}d {mean}{neg}{lift}", h.horizon_days)
             })
@@ -525,7 +547,7 @@ fn print_expectancy(exp: &cycle_signal_backtest::CycleSignalExpectancy) {
                     .unwrap_or_else(|| "n/a".into());
                 let lift = h
                     .lift_vs_baseline_pct
-                    .map(|l| format!("(lift {:+.1})", l))
+                    .map(|l| format!("(lift {:+.1}{})", l, sigma_context(exp, h)))
                     .unwrap_or_default();
                 format!("{}d {mean}{lift}", h.horizon_days)
             })

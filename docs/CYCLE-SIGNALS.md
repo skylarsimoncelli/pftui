@@ -303,6 +303,22 @@ the legacy payload is byte-for-byte unchanged):
   resulting `lift_vs_baseline_pct` (signal mean − baseline mean). Forward returns
   inherently consume future bars — that is the *outcome*, not the signal; the
   no-lookahead rule governs only the signal read.
+- **Dispersion + scale-aware effect size (statistical honesty).** A big lift on
+  a handful of noisy firings reads as robust unless the reader can see the noise
+  behind the mean. Each horizon (signal row AND `baseline`) carries
+  `stdev_return_pct` — the **population** standard deviation (variance divides by
+  `n`, not `n−1`) of that horizon's forward returns in percent, `None` when
+  `samples < 2`. Each signal horizon also carries `effect_size` =
+  `lift_vs_baseline_pct ÷ baseline.stdev_return_pct` for the same horizon: how
+  many baseline-return standard deviations the signal shifts the mean. This
+  contextualizes lift against return dispersion — a +67 lift against a 180%-std
+  baseline is only ~0.37σ — and is **directional context, NOT a significance
+  test** (no p-value is claimed). `effect_size` is `None` when the baseline stdev
+  is missing or zero. The text renderer prints the σ context inline next to every
+  lift, e.g. `365d +218.0%(lift +67.5, ~0.4σ, base σ 180%)`. *Determinism note:*
+  the sqrt converts the Decimal variance to `f64` for the single `f64::sqrt`
+  (IEEE-754 correctly-rounded, identical on every platform) and rounds back to a
+  fixed 6 dp — fully reproducible, no randomness.
 - **Closeness to the actual extreme.** Each firing is matched to the nearest
   price-structure low within the match window, reporting BOTH signed lead/lag in
   days AND the signed `price_gap_pct` `(fire_price − low_price)/low_price·100`.
@@ -334,7 +350,8 @@ The block carries its own honest `small_n` / `insufficient_anchors` flags and
   "small_n": false,
   "baseline": [
     { "horizon_days": 30, "samples": 593, "mean_return_pct": "6.25",
-      "median_return_pct": "2.76", "positive_rate_pct": "56.8" }
+      "median_return_pct": "2.76", "positive_rate_pct": "56.8",
+      "stdev_return_pct": "18.40" }   // population σ of baseline fwd returns
     // 90 / 180 / 365 …
   ],
   "confluence": [
@@ -345,7 +362,9 @@ The block carries its own honest `small_n` / `insufficient_anchors` flags and
       "horizons": [
         { "horizon_days": 30, "samples": 23, "mean_return_pct": "7.18",
           "median_return_pct": "8.55", "positive_rate_pct": "65.2",
-          "baseline_mean_return_pct": "6.25", "lift_vs_baseline_pct": "0.93" }
+          "baseline_mean_return_pct": "6.25", "lift_vs_baseline_pct": "0.93",
+          "stdev_return_pct": "21.07",  // population σ of THIS signal's fwd returns
+          "effect_size": "0.05" }       // lift ÷ baseline σ (here ~0.05σ — tiny)
         // 90 / 180 / 365 …
       ],
       "closeness": {

@@ -31,6 +31,7 @@
 use std::collections::BTreeSet;
 
 use chrono::NaiveDate;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
@@ -219,6 +220,23 @@ pub struct HorizonReturn {
     /// Positive means firing on this signal beat buying a random bar.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lift_vs_baseline_pct: Option<Decimal>,
+    /// POPULATION standard deviation of this signal's forward returns over
+    /// `samples`, in percent — the noise behind `mean_return_pct`. `None` when
+    /// `samples < 2` (dispersion undefined). See [`stdev_pct`] for the exact
+    /// definition and the deterministic sqrt note. Additive honesty field,
+    /// omitted from JSON when absent so the legacy payload is unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdev_return_pct: Option<Decimal>,
+    /// ROUGH standardized effect size: `lift_vs_baseline_pct` divided by the
+    /// SAME-horizon BASELINE `stdev_return_pct` — i.e. how many baseline-return
+    /// standard deviations the signal shifts the forward-return mean. Drift- and
+    /// scale-aware: a +67 lift against a 180%-std baseline is ~0.37σ (modest),
+    /// exposing that the raw lift is small relative to noise. `None` when the
+    /// baseline stdev is missing or zero. DIRECTIONAL context only — this is NOT
+    /// a significance test and implies no p-value. Additive field, omitted when
+    /// absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_size: Option<Decimal>,
 }
 
 /// Unconditioned baseline forward-return at one horizon (every evaluated bar).
@@ -232,6 +250,12 @@ pub struct HorizonBaseline {
     pub median_return_pct: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub positive_rate_pct: Option<Decimal>,
+    /// POPULATION standard deviation of the unconditioned baseline forward
+    /// returns over `samples`, in percent — the dispersion scale against which
+    /// signal `effect_size` is measured. `None` when `samples < 2`. Additive
+    /// field, omitted from JSON when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdev_return_pct: Option<Decimal>,
 }
 
 /// Closeness of a signal's firings to the nearest price-structure low: how near
@@ -1012,6 +1036,61 @@ fn positive_rate_pct(v: &[Decimal]) -> Option<Decimal> {
     Some(Decimal::from(pos) / Decimal::from(v.len()) * dec!(100))
 }
 
+/// Decimal places the deterministic square root is rounded to. Six places is
+/// far finer than any quoted percentage and keeps the rounded result identical
+/// across platforms.
+const STDEV_DP: u32 = 6;
+
+/// POPULATION standard deviation (percent) of a forward-return distribution.
+///
+/// DEFINITION: **population** standard deviation — the variance divides by `n`
+/// (NOT `n-1`). These are full enumerations of a row's firings (or every
+/// evaluated baseline bar), not inferential subsamples, so the population form
+/// is the honest one and it avoids the `n-1` edge case. `None` when `samples < 2`
+/// (dispersion is undefined on a single point).
+///
+/// DETERMINISM: the mean and the variance are computed entirely in `Decimal`.
+/// ONLY the final square-root step leaves `Decimal`: the variance is converted
+/// to `f64`, `f64::sqrt` is taken, and the result is converted back to `Decimal`
+/// rounded to [`STDEV_DP`] places. `f64::sqrt` is an IEEE-754 *correctly-rounded*
+/// operation — it returns the same bits on every conforming platform for the
+/// same input (unlike libm transcendentals such as `ln`/`exp`) — and the trailing
+/// `round_dp` discards any sub-ulp noise, so the stored value is fully
+/// reproducible. There is no randomness anywhere.
+fn stdev_pct(v: &[Decimal]) -> Option<Decimal> {
+    if v.len() < 2 {
+        return None;
+    }
+    let n = Decimal::from(v.len());
+    let mean = v.iter().copied().sum::<Decimal>() / n;
+    let var = v
+        .iter()
+        .map(|x| {
+            let d = *x - mean;
+            d * d
+        })
+        .sum::<Decimal>()
+        / n;
+    if var <= Decimal::ZERO {
+        // Degenerate distribution (all samples identical) — zero dispersion.
+        return Some(Decimal::ZERO);
+    }
+    let root = var.to_f64()?.sqrt();
+    Decimal::from_f64(root).map(|d| d.round_dp(STDEV_DP))
+}
+
+/// ROUGH standardized effect size: `lift / baseline_stdev`, rounded to 2 dp —
+/// how many baseline-return standard deviations the signal shifts the
+/// forward-return mean. `None` when the lift or the baseline dispersion is
+/// missing, or the baseline stdev is zero. DIRECTIONAL scale context only, NOT a
+/// significance test: no p-value is claimed.
+fn effect_size(lift: Option<Decimal>, base_stdev: Option<Decimal>) -> Option<Decimal> {
+    match (lift, base_stdev) {
+        (Some(l), Some(s)) if !s.is_zero() => Some((l / s).round_dp(2)),
+        _ => None,
+    }
+}
+
 /// Forward return (percent) from bar `i` to the first bar whose date is on or
 /// after `date(i) + horizon_days`. `None` when bar `i` has no qualifying future
 /// bar (not enough forward history) or a zero/negative base price.
@@ -1216,6 +1295,10 @@ fn horizon_returns(
                 (Some(m), Some(b)) => Some(m - b),
                 _ => None,
             };
+            let base_stdev = baseline
+                .iter()
+                .find(|b| b.horizon_days == h)
+                .and_then(|b| b.stdev_return_pct);
             HorizonReturn {
                 horizon_days: h,
                 samples: rets.len(),
@@ -1225,6 +1308,8 @@ fn horizon_returns(
                 negative_rate_pct: None,
                 baseline_mean_return_pct: base_mean,
                 lift_vs_baseline_pct: lift,
+                stdev_return_pct: stdev_pct(&rets),
+                effect_size: effect_size(lift, base_stdev),
             }
         })
         .collect()
@@ -1256,6 +1341,10 @@ fn top_horizon_returns(
                 (Some(m), Some(b)) => Some(m - b),
                 _ => None,
             };
+            let base_stdev = baseline
+                .iter()
+                .find(|b| b.horizon_days == h)
+                .and_then(|b| b.stdev_return_pct);
             HorizonReturn {
                 horizon_days: h,
                 samples: rets.len(),
@@ -1265,6 +1354,8 @@ fn top_horizon_returns(
                 negative_rate_pct: negative_rate_pct(&rets),
                 baseline_mean_return_pct: base_mean,
                 lift_vs_baseline_pct: lift,
+                stdev_return_pct: stdev_pct(&rets),
+                effect_size: effect_size(lift, base_stdev),
             }
         })
         .collect()
@@ -1353,6 +1444,7 @@ fn build_expectancy(
                 mean_return_pct: dec_mean(&rets),
                 median_return_pct: dec_median(rets.clone()),
                 positive_rate_pct: positive_rate_pct(&rets),
+                stdev_return_pct: stdev_pct(&rets),
             }
         })
         .collect();
@@ -1451,6 +1543,7 @@ fn build_top_expectancy(
                 mean_return_pct: dec_mean(&rets),
                 median_return_pct: dec_median(rets.clone()),
                 positive_rate_pct: positive_rate_pct(&rets),
+                stdev_return_pct: stdev_pct(&rets),
             }
         })
         .collect();
@@ -1775,6 +1868,39 @@ mod tests {
         assert_eq!(dec_mean(&rets), Some(r));
         assert_eq!(dec_median(rets.clone()), Some(r));
         assert_eq!(positive_rate_pct(&rets), Some(dec!(100)));
+    }
+
+    /// Hand-computed dispersion + effect size on a KNOWN distribution.
+    ///
+    /// Returns [10, 20, 30, 40] (percent):
+    ///   mean = (10+20+30+40)/4 = 25
+    ///   deviations = [-15, -5, 5, 15]; squares = [225, 25, 25, 225], sum = 500
+    ///   POPULATION variance = 500/4 = 125
+    ///   stdev = sqrt(125) = 11.180339887… → 11.180340 at 6 dp
+    /// Effect size: lift 67.5 against baseline stdev 180 = 67.5/180 = 0.375 → 0.38 (2 dp).
+    #[test]
+    fn stdev_and_effect_size_hand_computed() {
+        // Population stdev of [10,20,30,40] = sqrt(125) = 11.180340 (6 dp).
+        let v = vec![dec!(10), dec!(20), dec!(30), dec!(40)];
+        let sd = stdev_pct(&v).expect("stdev for n>=2");
+        assert!(
+            (sd - dec!(11.180340)).abs() < dec!(0.000001),
+            "stdev got {sd}, want 11.180340"
+        );
+
+        // n < 2 → dispersion undefined.
+        assert_eq!(stdev_pct(&[dec!(5)]), None);
+        assert_eq!(stdev_pct(&[]), None);
+        // Degenerate (all identical) → exactly zero dispersion.
+        assert_eq!(stdev_pct(&[dec!(7), dec!(7), dec!(7)]), Some(dec!(0)));
+
+        // Effect size = lift / baseline_stdev, rounded to 2 dp.
+        assert_eq!(effect_size(Some(dec!(67.5)), Some(dec!(180))), Some(dec!(0.38)));
+        // Zero / degenerate baseline dispersion → None (no scale to divide by).
+        assert_eq!(effect_size(Some(dec!(67.5)), Some(dec!(0))), None);
+        // Missing baseline dispersion or missing lift → None.
+        assert_eq!(effect_size(Some(dec!(67.5)), None), None);
+        assert_eq!(effect_size(None, Some(dec!(180))), None);
     }
 
     /// Price-% closeness: a firing planted exactly 25% above a planted low must
