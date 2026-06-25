@@ -23,6 +23,7 @@ pub mod private_operator_deep_dive;
 pub mod private_outlook_by_horizon;
 pub mod private_overview;
 pub mod private_parallels;
+pub mod private_since_last_report;
 pub mod private_per_asset_convergence;
 pub mod private_portfolio_moves;
 pub mod private_portfolio_snapshot;

@@ -52,6 +52,7 @@ pub mod journal;
 pub mod macro_events;
 pub mod mobile_timeframe_scores;
 pub mod narrative_snapshots;
+pub mod report_archive;
 pub mod news_silence;
 #[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
 pub mod news_cache;

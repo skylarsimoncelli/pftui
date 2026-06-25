@@ -157,6 +157,18 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_narrative_snapshots_recorded_at
             ON narrative_snapshots(recorded_at DESC);
 
+        CREATE TABLE IF NOT EXISTS report_archive (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_date TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            title TEXT,
+            content TEXT NOT NULL,
+            stance_json TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_report_archive_date
+            ON report_archive(report_date DESC, mode);
+
         CREATE TABLE IF NOT EXISTS allocation_targets (
             symbol TEXT PRIMARY KEY,
             target_pct TEXT NOT NULL,

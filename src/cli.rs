@@ -1709,6 +1709,62 @@ pub enum ReportCommand {
         #[command(subcommand)]
         command: ReportBuildCommand,
     },
+
+    /// The Reporting Loop ledger: archived reports the next run reflects against
+    #[command(
+        name = "archive",
+        after_help = "Subcommands:\n  import  Append a rendered report markdown file into the archive\n  list    Show the most recent archived reports"
+    )]
+    Archive {
+        #[command(subcommand)]
+        command: ReportArchiveCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ReportArchiveCommand {
+    /// Append one rendered report (markdown file) into the report_archive ledger
+    #[command(
+        name = "import",
+        after_help = "Imports a single report's markdown into the report_archive ledger so future\nruns can reflect against it. Idempotent per (date, mode).\n\nExamples:\n  pftui report archive import --file reports/daily-2026-06-04.md --mode public --date 2026-06-04\n  pftui report archive import --file /tmp/priv.md --mode private --date 2026-06-18 --json"
+    )]
+    Import {
+        /// Path to the report markdown file
+        #[arg(long, value_name = "FILE")]
+        file: PathBuf,
+
+        /// Report mode tag
+        #[arg(long, value_enum)]
+        mode: ReportBuildMode,
+
+        /// Report date (YYYY-MM-DD) the report covers
+        #[arg(long, value_name = "DATE")]
+        date: String,
+
+        /// Optional title; defaults to "<mode> daily <date>"
+        #[arg(long, value_name = "TITLE")]
+        title: Option<String>,
+
+        /// Emit the outcome as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// List the most recent archived reports (newest first)
+    #[command(name = "list")]
+    List {
+        /// Filter by mode; omit for all
+        #[arg(long, value_enum)]
+        mode: Option<ReportBuildMode>,
+
+        /// Max rows
+        #[arg(long, default_value = "10")]
+        limit: i64,
+
+        /// Emit as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

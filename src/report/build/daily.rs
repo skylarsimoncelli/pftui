@@ -79,6 +79,9 @@ pub struct BuildContext {
     pub private_what_changed_deltas: Vec<WhatChangedDeltaSummary>,
     pub private_positions: Vec<PrivatePositionSnapshotRow>,
     pub private_drift_rows: Vec<PrivateDriftRow>,
+    /// Price action since the last archived private report (Reporting Loop).
+    /// `None` when no prior report has been archived yet.
+    pub since_last_report: Option<SinceLastReport>,
     pub private_macro_regime: Option<PrivateMacroRegimeQuadrant>,
     pub private_macro_scenarios: Vec<PrivateMacroScenarioRow>,
     pub private_macro_divergences: Vec<PrivateNarrativeMoneyDivergence>,
@@ -365,6 +368,12 @@ pub struct SynthesisNotes {
     /// per-asset comparison of external reads against our convergence.
     /// Suppressed when the Phase 2c agent didn't run.
     pub external_ta: Option<String>,
+    /// Since-last-report reflection prose (body of
+    /// `[synthesis-since-last-report]`). Written by the synthesis writer after
+    /// reading the prior archived report: what the desk said last time, what the
+    /// tape did since, and where it was right or wrong. Rendered at the top of
+    /// the private report by `private_since_last_report`.
+    pub since_last_report: Option<String>,
     /// Per-asset bull/bear/change-mind/risk-reward blocks, in the order the
     /// notes were written.
     pub assets: Vec<SynthesisAssetNote>,
@@ -380,6 +389,7 @@ impl SynthesisNotes {
             || self.macro_outlook.is_some()
             || self.closing.is_some()
             || self.external_ta.is_some()
+            || self.since_last_report.is_some()
             || !self.assets.is_empty()
     }
 }
@@ -906,6 +916,27 @@ pub struct PrivateDriftRow {
     pub band_pct: f64,
 }
 
+/// One held asset's price move over the period since the last archived report.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SinceLastReportRow {
+    pub symbol: String,
+    pub then_price: f64,
+    pub now_price: f64,
+    pub pct: f64,
+}
+
+/// Deterministic price action over the period since the most recent prior
+/// archived private report — the factual spine of the `private_since_last_report`
+/// section (the synthesis writer adds the reflective prose on top).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SinceLastReport {
+    /// Date of the prior archived report being compared against.
+    pub prior_date: Option<String>,
+    /// Whole days between the prior report and this one.
+    pub days: i64,
+    pub rows: Vec<SinceLastReportRow>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrivateMacroRegimeQuadrant {
     pub growth: f64,
@@ -1170,170 +1201,49 @@ pub fn public_section_plan() -> Vec<SectionSpec> {
 }
 
 /// Canonical ordering of the private daily report sections (Step 5b).
+///
+/// 2026-06-25 reshape (operator ask): the private report is THREE simple
+/// sections only — a prose "since last report" overview, one condensed section
+/// per held asset (folding in all analysis + portfolio context), and the state
+/// of macro/news/catalysts. Every other section's renderer stays registered and
+/// callable via `render_section()` (the Composition step may still pull one in),
+/// but the default plan is just these three. System-health / epistemic /
+/// integrity content is deliberately excluded — the report skill investigates
+/// and fixes those each run instead of surfacing them in the PDF.
 pub fn private_section_plan() -> Vec<SectionSpec> {
     vec![
-        // Overview opens every private report — operator's explicit ask:
-        // "the report should always open with an overview section, human
-        // readable, engaging, high level discussion." Reads the
-        // synthesis-economy note.
+        // 1. Since Last Report — opens every private report. Deterministic
+        //    price action over the period since the last archived report plus a
+        //    synthesis reflection holding the desk accountable to prior calls.
         SectionSpec {
-            name: "private_overview",
+            name: "private_since_last_report",
             visibility: SectionVisibility::Private,
         },
-        // Operator Deep Dive — the long-form synthesis tailored to the
-        // operator's focus prompt for this run. Suppressed when no
-        // deep-dive note exists (i.e. balanced-weekly runs).
-        SectionSpec {
-            name: "private_operator_deep_dive",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_bottom_line",
-            visibility: SectionVisibility::Private,
-        },
-        // Per-Asset Briefing — one card per held asset with 5-block
-        // structure. The 4-layer convergence + asset intelligence flow into
-        // the card automatically.
+        // 2. Per-Asset Briefing — one condensed section per held asset, folding
+        //    convergence + TA + cycle + signal-expectancy + news + portfolio
+        //    context (position/alloc/drift/unrealized) into a single block.
         SectionSpec {
             name: "private_synthesis",
             visibility: SectionVisibility::Private,
         },
-        SectionSpec {
-            name: "private_portfolio_snapshot",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_portfolio_moves",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_alerts",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_cycle_watch",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_open_predictions",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_recent_journal",
-            visibility: SectionVisibility::Private,
-        },
-        // Macro & News Outlook — synthesized prose replacing the
-        // standalone Macro Context atomic-data block + News & Catalysts
-        // table. Suppressed when the synthesis writer didn't author one.
+        // 3. Macro, News & Catalysts — synthesized macro tape + calendar + news.
         SectionSpec {
             name: "private_macro_news_outlook",
             visibility: SectionVisibility::Private,
         },
-        SectionSpec {
-            name: "private_news_catalysts",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_upcoming_calendar",
-            visibility: SectionVisibility::Private,
-        },
-        // Per-asset Convergence Trajectory + Outlook + Risk Concentration
-        // are kept because they auto-suppress when there's no substantive
-        // data. They render only when the analyst writes produced
-        // something worth surfacing.
-        SectionSpec {
-            name: "private_conviction_trajectory",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_outlook_by_horizon",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_risk_concentration",
-            visibility: SectionVisibility::Private,
-        },
-        // Drawdown Survival & Tail Risk — native per-held-asset risk read
-        // (vol/EVT/CDaR/ruin/time-under-water). Self-suppresses when no held
-        // asset has enough price history.
-        SectionSpec {
-            name: "private_analytics_risk",
-            visibility: SectionVisibility::Private,
-        },
-        // Risk-Parity Allocation Check — current book weight vs equal-risk
-        // (risk-parity / downside-RP) weights. Self-suppresses with <2 priceable
-        // held assets.
-        SectionSpec {
-            name: "private_basket_allocation",
-            visibility: SectionVisibility::Private,
-        },
-        // Investor Panel Consensus (panel section is now consensus-only
-        // by default; the persona-detail table is suppressed unless a
-        // strong divergence warrants surfacing it).
-        SectionSpec {
-            name: "private_investor_panel",
-            visibility: SectionVisibility::Private,
-        },
-        // External TA & Comparison — Phase 2c research agent's web-
-        // sourced TA reads + per-asset comparison vs our convergence.
-        // Auto-suppressed when no external-ta note was attached.
-        SectionSpec {
-            name: "private_external_ta",
-            visibility: SectionVisibility::Private,
-        },
-        // Quantitative Parallels — table self-suppresses when no set
-        // returned matches.
-        SectionSpec {
-            name: "private_parallels",
-            visibility: SectionVisibility::Private,
-        },
-        // Closing — synthesized conclusion (Gameplan / Portfolio
-        // reflection / What to Watch). Last substantive section.
-        SectionSpec {
-            name: "private_closing",
-            visibility: SectionVisibility::Private,
-        },
-        SectionSpec {
-            name: "private_decisions_pending",
-            visibility: SectionVisibility::Private,
-        },
-        // Epistemic Health — run_health instrumentation for the report
-        // date. Meta-content (how the machine ran, not what it believes),
-        // so it goes after the closing, at the very end. Auto-suppressed
-        // when no run_health row exists for the date.
-        SectionSpec {
-            name: "private_epistemic_health",
-            visibility: SectionVisibility::Private,
-        },
-        // Sections intentionally dropped from the default plan per
-        // operator feedback (2026-06-07): too much unformatted data,
-        // walls of text. Still callable via render_section() and the
-        // Composition step can pull them in when warranted, but they
-        // don't render by default:
-        //
-        //   private_macro_context     — atomic data; macro+news outlook
-        //                               (above) is the synthesized
-        //                               replacement.
-        //   private_macro_thesis_chains — niche; surfaced inline when
-        //                                 thesis chains are written.
-        //   private_mismatch_surface  — auto-suppressed when aligned;
-        //                               the synthesis writer narrates
-        //                               mismatches inline.
-        //   private_news_catalysts    — now restored to the default plan as a
-        //                               compact operational surface.
-        //   private_upcoming_calendar — now restored to the default plan.
-        //   private_open_predictions  — now restored to the default plan.
-        //   private_lessons_applied   — surfaced inline in the synthesis
-        //                               writer's prose when material.
-        //   private_self_retrospective_calibration — auto-suppressed
-        //                               when calibration_matrix empty.
-        //   private_cross_layer_signals — replaced by the synthesis
-        //                               writer's bullets in the per-
-        //                               asset cards + the Outlook prose.
-        //
-        //   private_decisions_pending — now restored to the default plan.
-        //   private_per_asset_convergence — integrated into per-asset
-        //                                   card (Current bias block).
+        // All other renderers (private_overview, private_operator_deep_dive,
+        // private_bottom_line, private_portfolio_snapshot, private_portfolio_moves,
+        // private_alerts, private_cycle_watch, private_open_predictions,
+        // private_recent_journal, private_news_catalysts, private_upcoming_calendar,
+        // private_conviction_trajectory, private_outlook_by_horizon,
+        // private_risk_concentration, private_analytics_risk, private_basket_allocation,
+        // private_investor_panel, private_external_ta, private_parallels,
+        // private_closing, private_decisions_pending, private_epistemic_health,
+        // private_macro_context, private_macro_thesis_chains, private_mismatch_surface,
+        // private_lessons_applied, private_self_retrospective_calibration,
+        // private_cross_layer_signals, private_per_asset_convergence) remain
+        // registered in render_section() and callable on demand, but are no longer
+        // part of the default private plan.
     ]
 }
 
@@ -1372,6 +1282,9 @@ pub fn render_section(name: &str, ctx: &BuildContext) -> Result<String> {
         "public_methodology" => sections::public_methodology::render_public_methodology(ctx),
         "private_bottom_line" => sections::private_bottom_line::render_private_bottom_line(ctx),
         "private_overview" => sections::private_overview::render_private_overview(ctx),
+        "private_since_last_report" => {
+            sections::private_since_last_report::render_private_since_last_report(ctx)
+        }
         "private_operator_deep_dive" => {
             sections::private_operator_deep_dive::render_private_operator_deep_dive(ctx)
         }
@@ -2623,6 +2536,14 @@ impl BuildContext {
 
         ctx.private_derived_actions =
             derive_actions(&ctx.private_asset_convergence, &ctx.private_drift_rows);
+
+        // Since-last-report price action (Reporting Loop): compare each held
+        // asset's close now vs at the most recent prior archived private report.
+        // None when no prior report exists yet — the renderer handles that.
+        if let Some(conn) = backend.sqlite_native() {
+            ctx.since_last_report =
+                load_since_last_report(conn, report_date, &ctx.private_positions);
+        }
         // What-changed deltas (private "What Changed in 7d" strip) — reuse the
         // `pftui analytics deltas --json` backend so the report and the CLI
         // surface the same change-radar items. We pass `persist_current=false`
@@ -5160,6 +5081,7 @@ pub fn data_availability(ctx: &BuildContext) -> Vec<DataAvailabilityRow> {
     vec_slot!(private_what_changed_deltas);
     vec_slot!(private_positions);
     vec_slot!(private_drift_rows);
+    opt_slot!(since_last_report);
     opt_slot!(private_macro_regime);
     vec_slot!(private_macro_scenarios);
     vec_slot!(private_macro_divergences);
@@ -5653,13 +5575,37 @@ pub fn assemble_public(ctx: &BuildContext) -> Result<String> {
 }
 
 /// Append the unconditional integrity footer to an assembled private body.
-fn with_integrity_footer(ctx: &BuildContext, body: String, outcomes: &[SectionOutcome]) -> String {
-    let footer = render_integrity_footer(&data_availability(ctx), outcomes, &ctx.staleness);
-    if body.trim().is_empty() {
-        footer
-    } else {
-        format!("{body}\n\n{footer}")
+/// Strip operator-facing "system chrome" from the rendered PRIVATE report
+/// (2026-06-25 reshape): the integrity footer and the inline staleness
+/// blockquotes are run-health meta-content the operator asked NOT to see in the
+/// PDF. The same data remains available to the report skill via the dry-run JSON
+/// (`DryRunSummary`) so the self-healing pass can still act on it — it is only
+/// removed from the human-facing document. The public report is untouched.
+fn strip_private_health_chrome(body: &str) -> String {
+    let filtered: Vec<&str> = body
+        .lines()
+        .filter(|line| {
+            let t = line.trim_start();
+            // Drop the per-section staleness annotation blockquotes.
+            !(t.starts_with("> ⚠")
+                && (t.contains("freshness SLA")
+                    || t.contains("may lag")
+                    || t.contains("older than report date")))
+        })
+        .collect();
+    // Collapse any blank-line runs left behind, then trim.
+    let mut out = String::new();
+    let mut prev_blank = false;
+    for line in filtered {
+        let blank = line.trim().is_empty();
+        if blank && prev_blank {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+        prev_blank = blank;
     }
+    out.trim_end().to_string()
 }
 
 /// Assemble the private markdown (uses private section plan only — the public
@@ -5669,8 +5615,9 @@ fn with_integrity_footer(ctx: &BuildContext, body: String, outcomes: &[SectionOu
 /// the composition step edits above it.
 pub fn assemble_private(ctx: &BuildContext) -> Result<String> {
     let plan = private_section_plan();
-    let (body, outcomes) = assemble_markdown_accounted(ctx, &plan)?;
-    Ok(with_integrity_footer(ctx, body, &outcomes))
+    let (body, _outcomes) = assemble_markdown_accounted(ctx, &plan)?;
+    // 2026-06-25 reshape: no integrity footer / staleness chrome in the PDF.
+    Ok(strip_private_health_chrome(&body))
 }
 
 /// Same as [`assemble_private`] but, before rendering, persists any decision
@@ -5700,12 +5647,13 @@ pub fn assemble_private_with_persist(
         }
     }
     let plan = private_section_plan();
-    let (body, outcomes) = assemble_markdown_with_override(ctx, &plan, |name| {
+    let (body, _outcomes) = assemble_markdown_with_override(ctx, &plan, |name| {
         (name == "private_decisions_pending").then(|| {
             crate::report::sections::private_decisions_pending::render_private_decisions_pending_with_cards(&annotated)
         })
     })?;
-    Ok(with_integrity_footer(ctx, body, &outcomes))
+    // 2026-06-25 reshape: no integrity footer / staleness chrome in the PDF.
+    Ok(strip_private_health_chrome(&body))
 }
 
 /// Persist every decision card derived from the context as a `recommendations`
@@ -5881,6 +5829,62 @@ pub fn render_dry_run(
 /// assembly persists each derived decision card to the `recommendations`
 /// table and inlines a `<!-- rec_id: N -->` marker per card. This is the
 /// mechanism that drives the Recommendation → action → outcome chain.
+/// Build the compact per-asset stance snapshot stored alongside an archived
+/// report: `{symbol: net_conviction}` (mean of non-probation layer convictions).
+/// This is a convenience for cheap programmatic since-last-report comparison;
+/// the full `content` markdown remains the source of truth.
+fn build_stance_json(ctx: &BuildContext) -> Option<String> {
+    if ctx.private_asset_convergence.is_empty() {
+        return None;
+    }
+    let mut map = serde_json::Map::new();
+    for row in &ctx.private_asset_convergence {
+        let voting: Vec<i64> = row
+            .views
+            .iter()
+            .filter(|v| !v.probation)
+            .map(|v| v.conviction)
+            .collect();
+        if voting.is_empty() {
+            continue;
+        }
+        let net = voting.iter().sum::<i64>() as f64 / voting.len() as f64;
+        map.insert(
+            row.symbol.clone(),
+            serde_json::json!({ "net_conviction": (net * 100.0).round() / 100.0 }),
+        );
+    }
+    if map.is_empty() {
+        return None;
+    }
+    serde_json::to_string(&serde_json::Value::Object(map)).ok()
+}
+
+/// Append a rendered report to the `report_archive` ledger (the Reporting Loop).
+/// Best-effort: an archive failure must never fail the build, so errors are
+/// swallowed after the markdown is already on disk. No-op on non-SQLite backends
+/// without the table — the lazy Postgres creator handles that path.
+fn persist_report_archive(
+    backend: &crate::db::backend::BackendConnection,
+    ctx: &BuildContext,
+    report_date: &str,
+    mode: &str,
+    body: &str,
+) {
+    let created_at = Utc::now().to_rfc3339();
+    let title = format!("{mode} daily {report_date}");
+    let stance = build_stance_json(ctx);
+    let _ = crate::db::report_archive::insert_report_backend(
+        backend,
+        report_date,
+        mode,
+        Some(title.as_str()),
+        body,
+        stance.as_deref(),
+        &created_at,
+    );
+}
+
 pub fn assemble_with_backend(
     ctx: &BuildContext,
     mode: BuildMode,
@@ -5905,6 +5909,9 @@ pub fn assemble_with_backend(
             .with_context(|| format!("failed to write {}", public_path.display()))?;
         outcome.bytes_written += body.len();
         outcome.public_written = Some(public_path.clone());
+        if let Some(b) = backend {
+            persist_report_archive(b, ctx, date, "public", &body);
+        }
     }
     if let Some(private_path) = plan.private_path.as_ref() {
         let body = match backend {
@@ -5920,6 +5927,9 @@ pub fn assemble_with_backend(
             .with_context(|| format!("failed to write {}", private_path.display()))?;
         outcome.bytes_written += body.len();
         outcome.private_written = Some(private_path.clone());
+        if let Some(b) = backend {
+            persist_report_archive(b, ctx, date, "private", &body);
+        }
     }
     Ok(outcome)
 }
@@ -6579,6 +6589,62 @@ fn parse_decision_card(raw: &str) -> Option<PortfolioDecisionCard> {
 /// BULL CASE / BEAR CASE / WHAT WOULD CHANGE MY MIND / RISK / REWARD
 /// sub-sections). Notes without a recognised header are ignored so the
 /// section never renders stray content.
+/// Latest close on or before `date` for `symbol`, as f64. None when no history.
+fn close_on_or_before(conn: &rusqlite::Connection, symbol: &str, date: &str) -> Option<f64> {
+    conn.query_row(
+        "SELECT close FROM price_history WHERE symbol = ?1 AND date <= ?2
+         ORDER BY date DESC LIMIT 1",
+        rusqlite::params![symbol, date],
+        |row| row.get::<_, String>(0),
+    )
+    .ok()
+    .and_then(|s| s.parse::<f64>().ok())
+}
+
+/// Build the deterministic since-last-report price-action snapshot by comparing
+/// each held asset's close at the prior archived private report's date vs the
+/// report date. Returns None when no prior private report has been archived.
+fn load_since_last_report(
+    conn: &rusqlite::Connection,
+    report_date: &str,
+    positions: &[PrivatePositionSnapshotRow],
+) -> Option<SinceLastReport> {
+    let prior =
+        crate::db::report_archive::latest_before(conn, Some("private"), report_date).ok()??;
+    let prior_date = prior.report_date;
+    let mut rows = Vec::new();
+    for p in positions {
+        // Cash carries no price move.
+        if p.symbol.eq_ignore_ascii_case("USD") {
+            continue;
+        }
+        let then = close_on_or_before(conn, &p.symbol, &prior_date);
+        let now = close_on_or_before(conn, &p.symbol, report_date);
+        if let (Some(t), Some(n)) = (then, now) {
+            if t != 0.0 {
+                rows.push(SinceLastReportRow {
+                    symbol: p.symbol.clone(),
+                    then_price: t,
+                    now_price: n,
+                    pct: (n - t) / t * 100.0,
+                });
+            }
+        }
+    }
+    let days = match (
+        chrono::NaiveDate::parse_from_str(&prior_date, "%Y-%m-%d"),
+        chrono::NaiveDate::parse_from_str(report_date, "%Y-%m-%d"),
+    ) {
+        (Ok(a), Ok(b)) => (b - a).num_days(),
+        _ => 0,
+    };
+    Some(SinceLastReport {
+        prior_date: Some(prior_date),
+        days,
+        rows,
+    })
+}
+
 fn load_synthesis_notes(conn: &rusqlite::Connection, report_date: &str) -> Result<SynthesisNotes> {
     let notes = crate::db::daily_notes::list_notes(
         conn,
@@ -6614,6 +6680,10 @@ fn load_synthesis_notes(conn: &rusqlite::Connection, report_date: &str) -> Resul
         } else if key.to_ascii_lowercase().starts_with("external-ta") {
             if out.external_ta.is_none() {
                 out.external_ta = Some(body);
+            }
+        } else if key.to_ascii_lowercase().starts_with("since-last-report") {
+            if out.since_last_report.is_none() {
+                out.since_last_report = Some(body);
             }
         } else {
             out.assets.push(SynthesisAssetNote { symbol: key, body });
@@ -7077,10 +7147,10 @@ mod assembler_tests {
         assert!(plan
             .iter()
             .all(|s| matches!(s.visibility, SectionVisibility::Private)));
-        assert!(plan.iter().any(|s| s.name == "private_bottom_line"));
-        assert!(plan.iter().any(|s| s.name == "private_decisions_pending"));
-        assert!(plan.iter().any(|s| s.name == "private_alerts"));
-        assert!(plan.iter().any(|s| s.name == "private_cycle_watch"));
+        // 2026-06-25 reshape: the private plan is exactly three sections.
+        assert!(plan.iter().any(|s| s.name == "private_since_last_report"));
+        assert!(plan.iter().any(|s| s.name == "private_synthesis"));
+        assert!(plan.iter().any(|s| s.name == "private_macro_news_outlook"));
     }
 
     #[test]
@@ -7111,31 +7181,11 @@ mod assembler_tests {
             "public_scenario_dashboard",
             "public_allocation_framework",
         ];
+        // 2026-06-25 reshape: three sections only.
         let expected_private: Vec<&str> = vec![
-            "private_overview",
-            "private_operator_deep_dive",
-            "private_bottom_line",
+            "private_since_last_report",
             "private_synthesis",
-            "private_portfolio_snapshot",
-            "private_portfolio_moves",
-            "private_alerts",
-            "private_cycle_watch",
-            "private_open_predictions",
-            "private_recent_journal",
             "private_macro_news_outlook",
-            "private_news_catalysts",
-            "private_upcoming_calendar",
-            "private_conviction_trajectory",
-            "private_outlook_by_horizon",
-            "private_risk_concentration",
-            "private_analytics_risk",
-            "private_basket_allocation",
-            "private_investor_panel",
-            "private_external_ta",
-            "private_parallels",
-            "private_closing",
-            "private_decisions_pending",
-            "private_epistemic_health",
         ];
         let pub_actual: Vec<&str> = public_section_plan().iter().map(|s| s.name).collect();
         let prv_actual: Vec<&str> = private_section_plan().iter().map(|s| s.name).collect();
@@ -7257,11 +7307,27 @@ mod assembler_tests {
     }
 
     #[test]
-    fn assemble_private_clean_context_includes_bottom_line() {
-        let ctx = BuildContext::for_date("2026-06-02");
+    fn assemble_private_renders_three_section_shape() {
+        // 2026-06-25 reshape: with a per-asset synthesis note present, the
+        // private report renders the Per-Asset Briefing and carries no
+        // dropped-section content (Bottom Line / Decisions Pending) and no
+        // health chrome (integrity footer).
+        let ctx = BuildContext {
+            synthesis_notes: SynthesisNotes {
+                assets: vec![SynthesisAssetNote {
+                    symbol: "BTC".to_string(),
+                    body: "BULL CASE\nStructurally cheap.\n\nBEAR CASE\nTape still down.".to_string(),
+                }],
+                ..SynthesisNotes::default()
+            },
+            ..BuildContext::for_date("2026-06-02")
+        };
         let body = assemble_private(&ctx).expect("private assembly should succeed");
-        assert!(body.contains("## Bottom Line"));
-        assert!(body.contains("## Decisions Pending"));
+        assert!(body.contains("## Per-Asset Briefing"));
+        assert!(body.contains("### BTC"));
+        assert!(!body.contains("## Bottom Line"));
+        assert!(!body.contains("## Decisions Pending"));
+        assert!(!body.contains(INTEGRITY_FOOTER_MARKER));
     }
 
     /// Make a fresh per-test temp directory. Removes on drop.
@@ -7778,22 +7844,24 @@ mod assembler_tests {
     }
 
     #[test]
-    fn assemble_private_appends_integrity_footer_after_last_section() {
+    fn assemble_private_omits_integrity_footer() {
+        // 2026-06-25 reshape: the integrity footer is run-health meta-content the
+        // operator asked NOT to see in the PDF. It must NOT appear in the rendered
+        // private report (it remains available to the skill via the dry-run JSON).
         let ctx = BuildContext::for_date("2026-06-02");
         let body = assemble_private(&ctx).unwrap();
-        let marker_pos = body
-            .find(INTEGRITY_FOOTER_MARKER)
-            .expect("private report must carry the integrity footer");
-        // The footer must be the LAST block: no section heading after it.
         assert!(
-            !body[marker_pos..].contains("\n## "),
-            "no section may render after the integrity footer"
+            !body.contains(INTEGRITY_FOOTER_MARKER),
+            "rendered private report must not carry the integrity footer"
         );
-        assert!(body[marker_pos..].contains("Report integrity:"));
+        assert!(!body.contains("Report integrity:"));
     }
 
     #[test]
-    fn assemble_private_footer_carries_loader_error_from_context() {
+    fn assemble_private_does_not_leak_loader_errors() {
+        // Loader errors used to surface in the integrity footer; with the footer
+        // removed from the PDF, a loader error must not leak into the rendered
+        // private report (the skill sees it via dry-run JSON instead).
         let mut ctx = BuildContext::for_date("2026-06-02");
         ctx.slot_issues.insert(
             "cross_layer_signals",
@@ -7801,8 +7869,8 @@ mod assembler_tests {
         );
         let body = assemble_private(&ctx).unwrap();
         assert!(
-            body.contains("**cross_layer_signals: synthetic failure for test**"),
-            "loader error must surface in the footer"
+            !body.contains("synthetic failure for test"),
+            "loader error must not leak into the rendered private report"
         );
     }
 
@@ -8026,53 +8094,54 @@ mod assembler_tests {
     fn dry_run_accounts_suppressed_sections_with_reasons() {
         let ctx = BuildContext::for_date("2026-06-02");
         let summary = render_dry_run(&ctx, BuildMode::Private, "2026-06-02", None, None);
-        let overview = summary
+        // Opener suppresses on an empty context (no prior archived report, no note).
+        let opener = summary
             .section_outcomes
             .iter()
-            .find(|o| o.name == "private_overview")
-            .expect("overview outcome present");
-        assert!(!overview.rendered);
-        assert!(overview
+            .find(|o| o.name == "private_since_last_report")
+            .expect("since-last-report outcome present");
+        assert!(!opener.rendered);
+        assert!(opener
             .suppression_reason
             .as_deref()
             .unwrap_or_default()
-            .contains("synthesis-economy"));
-        // Investor panel renders its own empty-state prose → rendered.
-        let panel = summary
+            .contains("no prior archived report"));
+        // Per-asset briefing suppresses with no synthesis asset notes.
+        let synth = summary
             .section_outcomes
             .iter()
-            .find(|o| o.name == "private_investor_panel")
-            .expect("panel outcome present");
-        assert!(panel.rendered);
+            .find(|o| o.name == "private_synthesis")
+            .expect("synthesis outcome present");
+        assert!(!synth.rendered);
     }
 
     #[test]
-    fn private_section_plan_contains_new_sections() {
+    fn private_section_plan_is_three_sections() {
+        // 2026-06-25 reshape: exactly three sections, in order, with all the
+        // previously-planned sections dropped from the default plan.
         let plan = private_section_plan();
         let names: Vec<&str> = plan.iter().map(|s| s.name).collect();
-        assert!(names.contains(&"private_macro_news_outlook"));
-        assert!(names.contains(&"private_closing"));
-        assert!(names.contains(&"private_external_ta"));
-        assert!(names.contains(&"private_parallels"));
-        assert!(names.contains(&"private_portfolio_moves"));
-        assert!(names.contains(&"private_alerts"));
-        assert!(names.contains(&"private_cycle_watch"));
-        assert!(names.contains(&"private_recent_journal"));
-        assert!(names.contains(&"private_news_catalysts"));
-        assert!(names.contains(&"private_open_predictions"));
-        assert!(names.contains(&"private_upcoming_calendar"));
-        assert!(names.contains(&"private_decisions_pending"));
-        // private_overview must be first.
-        assert_eq!(names[0], "private_overview");
-        // private_epistemic_health (meta) must be last, after decisions.
-        assert!(names.contains(&"private_epistemic_health"));
-        assert_eq!(*names.last().unwrap(), "private_epistemic_health");
-        assert_eq!(names[names.len() - 2], "private_decisions_pending");
-        // Sections intentionally dropped per 2026-06-08 polish:
-        assert!(!names.contains(&"private_per_asset_convergence"));
-        assert!(!names.contains(&"private_macro_context"));
-        assert!(!names.contains(&"private_lessons_applied"));
-        assert!(!names.contains(&"private_cross_layer_signals"));
+        assert_eq!(
+            names,
+            vec![
+                "private_since_last_report",
+                "private_synthesis",
+                "private_macro_news_outlook",
+            ]
+        );
+        // Dropped sections must NOT be in the default plan.
+        for dropped in [
+            "private_overview",
+            "private_bottom_line",
+            "private_closing",
+            "private_epistemic_health",
+            "private_decisions_pending",
+            "private_portfolio_snapshot",
+            "private_investor_panel",
+            "private_parallels",
+        ] {
+            assert!(!names.contains(&dropped), "{dropped} must be dropped");
+        }
     }
 
     #[test]

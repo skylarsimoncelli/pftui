@@ -2414,6 +2414,34 @@ fn run_cli(cli: Cli) -> Result<()> {
             },
         ),
 
+        Some(Command::Report {
+            command:
+                cli::ReportCommand::Archive {
+                    command:
+                        cli::ReportArchiveCommand::Import {
+                            file,
+                            mode,
+                            date,
+                            title,
+                            json,
+                        },
+                },
+        }) => commands::report::run_archive_import(
+            &backend,
+            &file,
+            mode,
+            &date,
+            title.as_deref(),
+            json,
+        ),
+
+        Some(Command::Report {
+            command:
+                cli::ReportCommand::Archive {
+                    command: cli::ReportArchiveCommand::List { mode, limit, json },
+                },
+        }) => commands::report::run_archive_list(&backend, mode, limit, json),
+
         Some(Command::Agent { command }) => match command {
             crate::cli::AgentCommand::Message { command } => match command {
                 cli::AgentMessageCommand::Send {

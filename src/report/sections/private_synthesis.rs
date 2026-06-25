@@ -28,6 +28,49 @@ use crate::report::build::daily::{
     PrivateAssetConvergenceView, SynthesisAssetNote,
 };
 
+/// Compact portfolio-context line for one held asset: allocation, daily change,
+/// unrealized P&L, and drift vs target band. Reads the already-loaded
+/// `private_positions` + `private_drift_rows` slots. Returns None when the asset
+/// isn't a held position (so non-portfolio assets render analysis-only).
+fn render_position_context(symbol: &str, ctx: &BuildContext) -> Option<String> {
+    let pos = ctx
+        .private_positions
+        .iter()
+        .find(|p| p.symbol.eq_ignore_ascii_case(symbol))?;
+    let mut parts: Vec<String> = Vec::new();
+    parts.push(format!("{:.1}% of book", pos.allocation_pct));
+    if let Some(px) = pos.price.as_deref() {
+        let chg = pos
+            .daily_change
+            .as_deref()
+            .map(|c| format!(" ({c}/day)"))
+            .unwrap_or_default();
+        parts.push(format!("${px}{chg}"));
+    }
+    if let Some(pnl) = pos.unrealized_pnl.as_deref() {
+        parts.push(format!("unrealized {pnl}"));
+    }
+    if let Some(drift) = ctx
+        .private_drift_rows
+        .iter()
+        .find(|d| d.symbol.eq_ignore_ascii_case(symbol))
+    {
+        let gap = drift.actual_pct - drift.target_pct;
+        let status = if gap.abs() <= drift.band_pct {
+            "in band"
+        } else if gap > 0.0 {
+            "over"
+        } else {
+            "under"
+        };
+        parts.push(format!(
+            "target {:.0}% ({} {:+.1}pp)",
+            drift.target_pct, status, gap
+        ));
+    }
+    Some(parts.join(" · "))
+}
+
 const TAGS: [&str; 4] = [
     "BULL CASE",
     "BEAR CASE",
@@ -71,6 +114,15 @@ fn render_asset_card(asset: &SynthesisAssetNote, ctx: &BuildContext) -> String {
     let parsed = parse_synthesis_body(&asset.body);
     let convergence = find_convergence(&ctx.private_asset_convergence, symbol);
     let intelligence = ctx.private_asset_intelligence.get(symbol);
+
+    // Portfolio context first — the 2026-06-25 reshape folds the operator's
+    // own position for this asset into its card (position/alloc/drift/unrealized)
+    // so each asset section is a self-contained operating block.
+    if let Some(position) = render_position_context(symbol, ctx) {
+        block.push_str("**Position**\n\n");
+        block.push_str(&position);
+        block.push_str("\n\n");
+    }
 
     if let Some(overview) = render_overview(asset, ctx, &parsed) {
         block.push_str("**Overview — this week**\n\n");
