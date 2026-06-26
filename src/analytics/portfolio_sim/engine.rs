@@ -18,10 +18,12 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 
+use super::actions::{resolve_targets, EvalContext, Rule, TargetResolution};
 use super::metrics::{self, PortfolioMetrics};
 use super::solver::{solve_targets, SolveBucket, SolveOutcome};
 use super::{
-    AssetSpec, CashYield, ClassTarget, PortfolioModel, PricePanel, RebalanceBandMode, WithinClass,
+    AssetSpec, CashYield, ClassTarget, PortfolioModel, PricePanel, RebalanceBandMode,
+    RebalanceCadence, WithinClass,
 };
 
 /// One marked-to-market point on the daily equity curve.
@@ -87,6 +89,31 @@ pub struct RebalanceEvent {
     /// `panel.next_tradable() == None`. (The `post_weights` reconciliation for
     /// these residuals is a noted TODO — see the post_weights NOTE below.)
     pub dropped_legs: Vec<String>,
+    /// Ids of the P3a rules that fired and were applied at this rebalance (in
+    /// apply order). Empty for a rule-free rebalance.
+    #[serde(default)]
+    pub applied_rule_ids: Vec<String>,
+}
+
+/// Push the standard "infeasible solve → hold prior weights" event.
+fn push_infeasible_event(
+    events: &mut Vec<RebalanceEvent>,
+    t: NaiveDate,
+    pre_weights: Vec<(String, Decimal)>,
+    applied_rule_ids: Vec<String>,
+) {
+    events.push(RebalanceEvent {
+        date: t,
+        orders: vec![],
+        turnover_pct: dec!(0),
+        total_cost: dec!(0),
+        pre_weights,
+        post_weights: vec![],
+        infeasible: true,
+        deferred_legs: vec![],
+        dropped_legs: vec![],
+        applied_rule_ids,
+    });
 }
 
 /// The portfolio backtest report. Money is `Decimal`; metrics are f64 from the
@@ -165,6 +192,10 @@ struct SimOptions {
     /// Stop generating new rebalances after this many cadence decisions (the
     /// `static_base_policy` benchmark buys once at the start, then holds).
     max_rebalances: Option<usize>,
+    /// Evaluate `model.rules` through the P3a action algebra. The three
+    /// benchmarks run with this OFF (base_policy only) so rule-alpha is isolated
+    /// from rebalance-harvesting (POSITIONING-MODELS.md §3.3).
+    apply_rules: bool,
 }
 
 /// One simulator run's raw output (before metrics/benchmarks).
@@ -176,19 +207,28 @@ struct SimRun {
 
 /// Run the P1 simulation: main result + the three benchmarks + full metrics.
 pub fn simulate(model: &PortfolioModel, panel: &PricePanel) -> Result<PortfolioBacktestReport> {
-    // Main result = base policy rebalanced on cadence (no rules in P1).
-    let main = run_sim(model, panel, SimOptions::default())?;
+    // Main result = base policy + the P3a action algebra (rules applied).
+    let main = run_sim(
+        model,
+        panel,
+        SimOptions {
+            max_rebalances: None,
+            apply_rules: true,
+        },
+    )?;
 
-    // Benchmark 1: static base policy — buy targets once, never rebalance.
+    // Benchmark 1: static base policy — buy targets once, never rebalance, no rules.
     let static_run = run_sim(
         model,
         panel,
         SimOptions {
             max_rebalances: Some(1),
+            apply_rules: false,
         },
     )?;
-    // Benchmark 2: base policy rebalanced on cadence — identical to `main` in P1
-    // (no rules), kept as its own curve so the report shape is stable into P3.
+    // Benchmark 2: base policy rebalanced on cadence with NO rules — isolates
+    // rule-alpha from rebalance-harvesting. Equals `main` exactly when the model
+    // declares no rules (the rule-free path is byte-identical).
     let rebal_run = run_sim(model, panel, SimOptions::default())?;
     // Benchmark 3: equal weight across the non-cash universe, same cadence/costs.
     let eq_model = equal_weight_model(model);
@@ -250,6 +290,8 @@ fn equal_weight_model(model: &PortfolioModel) -> PortfolioModel {
         commission_pct: model.commission_pct,
         slippage_pct: model.slippage_pct,
         cash_yield: model.cash_yield.clone(),
+        max_position: None,
+        rules: vec![],
     }
 }
 
@@ -287,6 +329,14 @@ fn run_sim(model: &PortfolioModel, panel: &PricePanel, opts: SimOptions) -> Resu
 
     let mut seen_week: std::collections::BTreeSet<(i32, u32)> = std::collections::BTreeSet::new();
     let mut seen_month: std::collections::BTreeSet<(i32, u32)> = std::collections::BTreeSet::new();
+    // Independent cadence-boundary tracking for per-rule cadence gating: a rule
+    // fires only on the FIRST model-rebalance of its own cadence bucket. Computed
+    // ONCE per rebalance (shared across all rules of a cadence) so two rules of the
+    // same cadence both fire on the same boundary.
+    let mut rule_seen_week: std::collections::BTreeSet<(i32, u32)> =
+        std::collections::BTreeSet::new();
+    let mut rule_seen_month: std::collections::BTreeSet<(i32, u32)> =
+        std::collections::BTreeSet::new();
     // Cash-yield proxy: last seen close, to compound the daily return.
     let mut prev_proxy: Option<Decimal> = None;
     let mut n_decisions = 0usize;
@@ -367,7 +417,32 @@ fn run_sim(model: &PortfolioModel, panel: &PricePanel, opts: SimOptions) -> Resu
                 continue;
             }
         }
+        // Per-rule cadence boundary flags, consumed once per rebalance.
+        let iso = t.iso_week();
+        let is_week_boundary = rule_seen_week.insert((iso.year(), iso.week()));
+        let is_month_boundary = rule_seen_month.insert((t.year(), t.month()));
+        let rebalance_index = n_decisions;
         n_decisions += 1;
+
+        // Collect the rules that FIRE at T: stub `when` true AND the rule's own
+        // cadence boundary coincides with T. Benchmarks pass `apply_rules = false`.
+        let fired: Vec<Rule> = if opts.apply_rules {
+            let ctx = EvalContext {
+                date: t,
+                rebalance_index,
+            };
+            model
+                .rules
+                .iter()
+                .filter(|r| {
+                    r.when.eval(&ctx) && cadence_active(r.cadence, is_week_boundary, is_month_boundary)
+                })
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         decide_rebalance(
             t,
             model,
@@ -379,6 +454,7 @@ fn run_sim(model: &PortfolioModel, panel: &PricePanel, opts: SimOptions) -> Resu
             &last_close,
             &class_symbols,
             cash,
+            &fired,
             &mut events,
             &mut pending,
         )?;
@@ -406,6 +482,17 @@ fn is_rebalance_date(
             seen_week.insert((iso.year(), iso.week()))
         }
         super::RebalanceCadence::Monthly => seen_month.insert((t.year(), t.month())),
+    }
+}
+
+/// Does a rule of `cadence` fire on THIS model-rebalance? A weekly rule fires on
+/// every model-rebalance that opens a new ISO week; a monthly rule only on the
+/// first model-rebalance of each calendar month. (A rule whose cadence is finer
+/// than the model's fires every model-rebalance.)
+fn cadence_active(cadence: RebalanceCadence, is_week_boundary: bool, is_month_boundary: bool) -> bool {
+    match cadence {
+        RebalanceCadence::Weekly => is_week_boundary,
+        RebalanceCadence::Monthly => is_month_boundary,
     }
 }
 
@@ -444,11 +531,13 @@ fn decide_rebalance(
     last_close: &HashMap<String, Decimal>,
     class_symbols: &HashMap<String, Vec<String>>,
     cash: Decimal,
+    fired: &[Rule],
     events: &mut Vec<RebalanceEvent>,
     pending: &mut BTreeMap<NaiveDate, Vec<PendingOrder>>,
 ) -> Result<()> {
     // Current marked weights per symbol (+ CASH), for pre_weights.
     let mut pre_weights: Vec<(String, Decimal)> = Vec::new();
+    let mut current_symbol_weights: BTreeMap<String, Decimal> = BTreeMap::new();
     for a in &model.universe {
         let v = marked_base_value(&a.symbol, holdings, last_close, sym_ccy, base, panel, t);
         let w = if equity > dec!(0) {
@@ -457,6 +546,7 @@ fn decide_rebalance(
             dec!(0)
         };
         pre_weights.push((a.symbol.clone(), w));
+        current_symbol_weights.insert(a.symbol.clone(), w);
     }
     pre_weights.push((
         CASH_KEY.to_string(),
@@ -467,35 +557,55 @@ fn decide_rebalance(
         },
     ));
 
-    // Build the class buckets from the model's fixed targets and solve.
-    let buckets: Vec<SolveBucket> = model
-        .targets
-        .iter()
-        .map(|ct| SolveBucket::new(ct.class.clone(), ct.target, ct.floor, ct.ceiling))
-        .collect();
-    let solved = match solve_targets(&buckets)? {
-        SolveOutcome::Infeasible => {
-            events.push(RebalanceEvent {
-                date: t,
-                orders: vec![],
-                turnover_pct: dec!(0),
-                total_cost: dec!(0),
-                pre_weights,
-                post_weights: vec![],
-                infeasible: true,
-                deferred_legs: vec![],
-                dropped_legs: vec![],
-            });
-            return Ok(());
-        }
-        SolveOutcome::Solved(w) => w,
-    };
-    let class_weight: HashMap<String, Decimal> = model
-        .targets
-        .iter()
-        .map(|ct| ct.class.clone())
-        .zip(solved.iter().copied())
-        .collect();
+    // Compute the desired class weights (and, when rules fire, per-symbol target
+    // overrides) via the P3a action algebra. The rule-FREE path is byte-identical
+    // to the old direct-solve equal-split: `resolve_targets` with no rules makes
+    // the same `solve_targets` call on the same base_policy buckets, and the
+    // engine keeps its tradable equal-split for the untouched symbols.
+    let mut applied_rule_ids: Vec<String> = Vec::new();
+    let (class_weight, symbol_targets): (HashMap<String, Decimal>, Option<BTreeMap<String, Decimal>>) =
+        if fired.is_empty() {
+            // OLD path verbatim — proven byte-identical by the 36 existing tests.
+            let buckets: Vec<SolveBucket> = model
+                .targets
+                .iter()
+                .map(|ct| SolveBucket::new(ct.class.clone(), ct.target, ct.floor, ct.ceiling))
+                .collect();
+            let solved = match solve_targets(&buckets)? {
+                SolveOutcome::Infeasible => {
+                    push_infeasible_event(events, t, pre_weights, applied_rule_ids);
+                    return Ok(());
+                }
+                SolveOutcome::Solved(w) => w,
+            };
+            let cw = model
+                .targets
+                .iter()
+                .map(|ct| ct.class.clone())
+                .zip(solved.iter().copied())
+                .collect();
+            (cw, None)
+        } else {
+            match resolve_targets(model, &current_symbol_weights, fired)? {
+                TargetResolution::Infeasible {
+                    applied_rule_ids: ids,
+                    ..
+                } => {
+                    push_infeasible_event(events, t, pre_weights, ids);
+                    return Ok(());
+                }
+                TargetResolution::Resolved {
+                    class_weights,
+                    symbol_weights,
+                    applied_rule_ids: ids,
+                    ..
+                } => {
+                    applied_rule_ids = ids;
+                    let cw: HashMap<String, Decimal> = class_weights.into_iter().collect();
+                    (cw, Some(symbol_weights))
+                }
+            }
+        };
 
     // Split each non-cash class weight equally across its TRADABLE symbols and
     // build orders = desired − current notional.
@@ -530,7 +640,13 @@ fn decide_rebalance(
         let current_notional =
             marked_base_value(&a.symbol, holdings, last_close, sym_ccy, base, panel, t);
         let target_w = if tradable.contains(&&a.symbol) && n > dec!(0) {
-            w_class / n
+            // Rule-driven path: use the resolved per-symbol target (which already
+            // applied the within-class split + symbol overrides + max_position).
+            // Rule-free path: the original tradable equal-split (byte-identical).
+            match &symbol_targets {
+                Some(st) => st.get(&a.symbol).copied().unwrap_or(dec!(0)),
+                None => w_class / n,
+            }
         } else {
             // Non-tradable on T: NEVER fabricate a fill. Keep the current weight
             // and DEFER the leg (the rest of the rebalance still executes).
@@ -637,6 +753,7 @@ fn decide_rebalance(
         infeasible: false,
         deferred_legs,
         dropped_legs,
+        applied_rule_ids,
     });
     for p in new_pending {
         pending.entry(p.fill_date).or_default().push(p);
@@ -813,6 +930,8 @@ mod tests {
             commission_pct: dec!(0.001),
             slippage_pct: dec!(0),
             cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
         };
         // All dates 2024-01-01..05 fall in ISO week 1 → exactly one rebalance.
         let mut panel = PricePanel::new();
@@ -902,6 +1021,8 @@ mod tests {
             commission_pct: dec!(0),
             slippage_pct: dec!(0),
             cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -945,6 +1066,8 @@ mod tests {
             commission_pct: dec!(0.001),
             slippage_pct: dec!(0),
             cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -988,6 +1111,8 @@ mod tests {
             commission_pct: dec!(0.0005),
             slippage_pct: dec!(0.001),
             cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1044,6 +1169,8 @@ mod tests {
             commission_pct: dec!(0),
             slippage_pct: dec!(0),
             cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1113,6 +1240,8 @@ mod tests {
             commission_pct: dec!(0),
             slippage_pct: dec!(0),
             cash_yield: CashYield::Proxy("BIL".into()),
+            max_position: None,
+            rules: vec![],
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1169,6 +1298,8 @@ mod tests {
             commission_pct: dec!(0),
             slippage_pct: dec!(0),
             cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
         };
         let mut panel = PricePanel::new();
         // AAA has a GAP on the Jan1 decision date (only trades Jan2/Jan3).
@@ -1223,6 +1354,8 @@ mod tests {
             commission_pct: dec!(0.25), // total_need = 1000×1.25 = 1250 > 1000 cash
             slippage_pct: dec!(0),
             cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1271,6 +1404,8 @@ mod tests {
             commission_pct: dec!(0.001),
             slippage_pct: dec!(0.001),
             cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1301,5 +1436,201 @@ mod tests {
             rep.benchmarks.static_base_policy.daily_equity_curve,
             rep.benchmarks.rebalanced_base_policy.daily_equity_curve
         );
+    }
+
+    use crate::analytics::portfolio_sim::actions::{
+        Action, Condition, Rule, TargetKey,
+    };
+
+    fn shift_model(rules: Vec<Rule>) -> PortfolioModel {
+        PortfolioModel {
+            base_currency: "USD".into(),
+            initial_capital: dec!(100000),
+            universe: vec![AssetSpec::new("SPY", "equity")],
+            cash_class: "cash".into(),
+            targets: vec![
+                ClassTarget::new("cash", dec!(0.5), dec!(0), dec!(1)),
+                ClassTarget::new("equity", dec!(0.5), dec!(0), dec!(1)),
+            ],
+            within_class: WithinClass::Equal,
+            rebalance_cadence: RebalanceCadence::Weekly,
+            rebalance_band_mode: RebalanceBandMode::ToTarget,
+            fill: FillMode::NextClose,
+            commission_pct: dec!(0),
+            slippage_pct: dec!(0),
+            cash_yield: CashYield::None,
+            max_position: None,
+            rules,
+        }
+    }
+
+    /// Weekly Mondays, SPY flat at $100; a tilt fires from 2024-01-15 onward.
+    fn weekly_panel() -> PricePanel {
+        let mut panel = PricePanel::new();
+        panel.insert_series(
+            "SPY",
+            vec![
+                (d(2024, 1, 1), dec!(100)),
+                (d(2024, 1, 8), dec!(100)),
+                (d(2024, 1, 15), dec!(100)),
+                (d(2024, 1, 22), dec!(100)),
+            ],
+        );
+        panel
+    }
+
+    /// End-to-end: a stub `AfterDate` rule reshapes the allocation on/after it
+    /// fires, vs an identical no-rule run; the ledger stays balanced throughout.
+    #[test]
+    fn rule_shifts_allocation_end_to_end() {
+        let tilt = Rule::new(
+            "tilt-eq",
+            Condition::AfterDate(d(2024, 1, 15)),
+            Action::Tilt {
+                class: "equity".into(),
+                by: dec!(0.3),
+                from: "cash".into(),
+                to: "cash".into(),
+            },
+            10,
+            RebalanceCadence::Weekly,
+        );
+        let with_rule = simulate(&shift_model(vec![tilt]), &weekly_panel()).unwrap();
+        let no_rule = simulate(&shift_model(vec![]), &weekly_panel()).unwrap();
+
+        let spy_post = |rep: &PortfolioBacktestReport, day: u32| -> Decimal {
+            let ev = rep
+                .rebalance_events
+                .iter()
+                .find(|e| e.date == d(2024, 1, day))
+                .unwrap();
+            ev.post_weights.iter().find(|(k, _)| k == "SPY").unwrap().1
+        };
+
+        // Before the rule date: equity target 0.5 in both runs, no rule applied.
+        let ev_wk1 = with_rule
+            .rebalance_events
+            .iter()
+            .find(|e| e.date == d(2024, 1, 1))
+            .unwrap();
+        assert!(ev_wk1.applied_rule_ids.is_empty());
+        assert_eq!(spy_post(&with_rule, 1), dec!(0.5));
+
+        // On/after the rule date: the tilt fires and equity lands 0.8.
+        let ev_wk3 = with_rule
+            .rebalance_events
+            .iter()
+            .find(|e| e.date == d(2024, 1, 15))
+            .unwrap();
+        assert_eq!(ev_wk3.applied_rule_ids, vec!["tilt-eq".to_string()]);
+        assert_eq!(spy_post(&with_rule, 15), dec!(0.8));
+        // The no-rule run stays at 0.5 on the same date — the rule moved it.
+        assert_eq!(spy_post(&no_rule, 15), dec!(0.5));
+
+        // Ledger balanced every day: equity == cash + invested, cash never < 0.
+        for p in &with_rule.daily_equity_curve {
+            assert_eq!(p.equity, p.cash + p.invested);
+            assert!(p.cash >= dec!(0));
+        }
+    }
+
+    /// Cadence gate: a MONTHLY rule in a WEEKLY model fires only on the first
+    /// model-rebalance of each calendar month.
+    #[test]
+    fn monthly_rule_in_weekly_model_fires_on_month_boundaries() {
+        let monthly = Rule::new(
+            "monthly-tilt",
+            Condition::Always,
+            Action::Tilt {
+                class: "equity".into(),
+                by: dec!(0.1),
+                from: "cash".into(),
+                to: "cash".into(),
+            },
+            10,
+            RebalanceCadence::Monthly,
+        );
+        let mut panel = PricePanel::new();
+        panel.insert_series(
+            "SPY",
+            vec![
+                (d(2024, 1, 1), dec!(100)),
+                (d(2024, 1, 8), dec!(100)),
+                (d(2024, 1, 15), dec!(100)),
+                (d(2024, 1, 22), dec!(100)),
+                (d(2024, 1, 29), dec!(100)),
+                (d(2024, 2, 5), dec!(100)),
+                (d(2024, 2, 12), dec!(100)),
+                (d(2024, 2, 19), dec!(100)),
+                (d(2024, 2, 26), dec!(100)),
+            ],
+        );
+        let rep = simulate(&shift_model(vec![monthly]), &panel).unwrap();
+        let fired_dates: Vec<NaiveDate> = rep
+            .rebalance_events
+            .iter()
+            .filter(|e| !e.applied_rule_ids.is_empty())
+            .map(|e| e.date)
+            .collect();
+        // First rebalance of January (Jan 1) and of February (Feb 5) only.
+        assert_eq!(fired_dates, vec![d(2024, 1, 1), d(2024, 2, 5)]);
+    }
+
+    /// Infeasible rule set → the rebalance is flagged infeasible, NO orders are
+    /// emitted, and the book holds prior weights (here: stays all cash).
+    #[test]
+    fn infeasible_rule_holds_prior_weights() {
+        let mut model = PortfolioModel {
+            base_currency: "USD".into(),
+            initial_capital: dec!(100000),
+            universe: vec![
+                AssetSpec::new("SPY", "equity"),
+                AssetSpec::new("IEF", "bond"),
+            ],
+            cash_class: "cash".into(),
+            targets: vec![
+                ClassTarget::new("cash", dec!(0.4), dec!(0.2), dec!(1)),
+                ClassTarget::new("equity", dec!(0.3), dec!(0), dec!(1)),
+                ClassTarget::new("bond", dec!(0.3), dec!(0.2), dec!(1)),
+            ],
+            within_class: WithinClass::Equal,
+            rebalance_cadence: RebalanceCadence::Weekly,
+            rebalance_band_mode: RebalanceBandMode::ToTarget,
+            fill: FillMode::NextClose,
+            commission_pct: dec!(0),
+            slippage_pct: dec!(0),
+            cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
+        };
+        // Pin equity to 0.9 → Σfloor (0.9 + 0.2 + 0.2) = 1.3 > 1 → infeasible.
+        model.rules = vec![Rule::new(
+            "pin-eq",
+            Condition::Always,
+            Action::SetTarget {
+                key: TargetKey::Class("equity".into()),
+                weight: dec!(0.9),
+            },
+            10,
+            RebalanceCadence::Weekly,
+        )];
+        let mut panel = PricePanel::new();
+        panel.insert_series(
+            "SPY",
+            vec![(d(2024, 1, 1), dec!(100)), (d(2024, 1, 8), dec!(100))],
+        );
+        panel.insert_series(
+            "IEF",
+            vec![(d(2024, 1, 1), dec!(100)), (d(2024, 1, 8), dec!(100))],
+        );
+        let rep = simulate(&model, &panel).unwrap();
+        let ev = &rep.rebalance_events[0];
+        assert!(ev.infeasible);
+        assert!(ev.orders.is_empty());
+        // Book held: equity stays the all-cash initial capital throughout.
+        for p in &rep.daily_equity_curve {
+            assert_eq!(p.equity, dec!(100000));
+            assert_eq!(p.invested, dec!(0));
+        }
     }
 }

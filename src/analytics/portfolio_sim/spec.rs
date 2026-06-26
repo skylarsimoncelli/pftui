@@ -520,6 +520,11 @@ pub fn resolve(spec: ModelSpec) -> Result<ResolvedModel> {
         commission_pct: dec_from(spec.constraints.commission_pct)?,
         slippage_pct: dec_from(spec.constraints.slippage_pct)?,
         cash_yield,
+        max_position,
+        // P3a: TOML `when` strings are parsed but NOT evaluated as signal rules
+        // here (P3b connects the DSL). The simulated model therefore carries no
+        // executable rules and runs as base_policy.
+        rules: Vec::new(),
     };
 
     Ok(ResolvedModel {

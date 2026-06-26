@@ -164,6 +164,8 @@ mod tests {
             commission_pct: dec!(0),
             slippage_pct: dec!(0),
             cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
         }
     }
 

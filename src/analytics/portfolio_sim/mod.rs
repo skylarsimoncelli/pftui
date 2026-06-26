@@ -20,11 +20,17 @@
 // exist ahead of its wiring without polluting the workspace warning budget.
 #![allow(dead_code)]
 
+pub mod actions;
 pub mod engine;
 pub mod loader;
 pub mod metrics;
 pub mod solver;
 pub mod spec;
+
+#[allow(unused_imports)]
+pub use actions::{
+    resolve_targets, Action, Condition, EvalContext, Rule, TargetKey, TargetResolution,
+};
 
 #[allow(unused_imports)]
 pub use engine::{
@@ -161,6 +167,15 @@ pub struct PortfolioModel {
     /// How the cash bucket accrues carry. Default `None` preserves P0 behaviour.
     #[serde(default)]
     pub cash_yield: CashYield,
+    /// Per-symbol absolute weight ceiling, enforced by the symbol-layer
+    /// projection in [`actions::resolve_targets`]. `None` → no cap (P0/P1
+    /// behaviour preserved).
+    #[serde(default)]
+    pub max_position: Option<Decimal>,
+    /// Rebalancing rules (P3a action algebra). Default empty → byte-identical to
+    /// the rule-free base_policy path.
+    #[serde(default)]
+    pub rules: Vec<actions::Rule>,
 }
 
 /// In-memory price panel: per-symbol `date → close`. The simulator's master
