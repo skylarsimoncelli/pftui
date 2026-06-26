@@ -21,7 +21,7 @@
 //! a price target. All math is `f64`; no money flows through.
 
 use chrono::{Datelike, NaiveDate};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::analytics::cyber::{self, bands::QbState};
 use crate::indicators::{dss_bressert, ehlers_roofing, rsi_ma};
@@ -30,7 +30,7 @@ use crate::models::price::HistoryRecord;
 /// Requested evaluation timeframe for the TF-relative criteria
 /// (RSI-MA / DSS / ERF). The fixed-TF criteria (bands=daily, dots=weekly+
 /// monthly, line=weekly, pi=daily) always run on their own aggregation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SignalTimeframe {
     Daily,

@@ -1,0 +1,1400 @@
+//! CLI handlers for `pftui analytics models {list|show|backtest}`.
+//!
+//! The "operable bridge" stage (POSITIONING-MODELS.md §3.5, P2-CLI): wires the
+//! TOML spec parser ([`analytics::portfolio_sim::spec`]) and the price-panel
+//! loader ([`analytics::portfolio_sim::loader`]) to the P0/P1 in-memory
+//! simulator, and renders the [`PortfolioBacktestReport`] for humans + `--json`.
+//!
+//! NO SQLite storage yet (the `positioning_models` catalog + run cache land in
+//! the next stage). Specs are discovered from a `models/` directory in the
+//! current working directory; a `<name|path>` argument is either a bare model
+//! name (resolved to `models/<name>.toml`) or a direct path to a `.toml` file.
+//!
+//! Rules are PARSED but NOT evaluated here (the signal-rule engine is P3): a
+//! model that declares rules runs as its `base_policy` with a loud warning.
+
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Context, Result};
+use chrono::NaiveDate;
+use rust_decimal::Decimal;
+use serde_json::json;
+
+use crate::analytics::portfolio_sim::engine::{simulate, BenchmarkResult, PortfolioBacktestReport};
+use crate::analytics::portfolio_sim::loader::{load_panel, CloseSeriesLoader};
+use crate::analytics::portfolio_sim::optimize::{
+    self, OptimizeReport, ParamAxis, SensitivityPoint, Verdict,
+};
+use crate::analytics::portfolio_sim::spec::{parse_str, resolve, resolve_str, ResolvedModel};
+use crate::db::backend::BackendConnection;
+use crate::db::model_optimize_runs::{self, NewOptimizeRun};
+
+/// Directory (relative to cwd) scanned for `models/*.toml` specs.
+const MODELS_DIR: &str = "models";
+
+// ---------------------------------------------------------------------------
+// DB-backed close loader (price_history) — market closes ONLY, never portfolio
+// dollars. Mirrors `commands::strategy::PriceHistoryLoader`.
+// ---------------------------------------------------------------------------
+
+struct PriceHistoryCloseLoader<'a> {
+    conn: &'a rusqlite::Connection,
+}
+
+impl CloseSeriesLoader for PriceHistoryCloseLoader<'_> {
+    fn load_closes(&self, symbol: &str) -> Result<Vec<(NaiveDate, Decimal)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT date, close FROM price_history WHERE symbol = ?1 AND close IS NOT NULL ORDER BY date ASC",
+        )?;
+        let rows = stmt.query_map([symbol], |row| {
+            let date: String = row.get(0)?;
+            let close: String = row.get(1)?;
+            Ok((date, close))
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            let (date, close) = r?;
+            let (Ok(d), Ok(c)) = (
+                NaiveDate::parse_from_str(&date, "%Y-%m-%d"),
+                close.parse::<Decimal>(),
+            ) else {
+                continue;
+            };
+            out.push((d, c));
+        }
+        Ok(out)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Spec discovery / resolution.
+// ---------------------------------------------------------------------------
+
+/// Resolve a `<name|path>` argument to a spec file path: a value ending in
+/// `.toml` or containing a path separator is treated as a direct path;
+/// otherwise it's a bare model name resolved to `models/<name>.toml`.
+fn spec_path(name_or_path: &str) -> PathBuf {
+    if name_or_path.ends_with(".toml") || name_or_path.contains('/') {
+        PathBuf::from(name_or_path)
+    } else {
+        Path::new(MODELS_DIR).join(format!("{name_or_path}.toml"))
+    }
+}
+
+/// Load + resolve a spec by name or path.
+fn load_resolved(name_or_path: &str) -> Result<ResolvedModel> {
+    let path = spec_path(name_or_path);
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("could not read model spec '{}'", path.display()))?;
+    resolve_str(&text).with_context(|| format!("invalid model spec '{}'", path.display()))
+}
+
+/// Scan `models/` for `*.toml` specs, returning sorted paths.
+fn discover_specs() -> Result<Vec<PathBuf>> {
+    let dir = Path::new(MODELS_DIR);
+    if !dir.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir)
+        .with_context(|| format!("could not read models directory '{}'", dir.display()))?
+    {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("toml") {
+            out.push(path);
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// list
+// ---------------------------------------------------------------------------
+
+pub fn run_list(json_output: bool) -> Result<()> {
+    let paths = discover_specs()?;
+
+    if json_output {
+        let items: Vec<_> = paths
+            .iter()
+            .map(|path| {
+                let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                match std::fs::read_to_string(path)
+                    .map_err(anyhow::Error::from)
+                    .and_then(|t| resolve_str(&t))
+                {
+                    Ok(rm) => json!({
+                        "name": rm.name,
+                        "file": name,
+                        "path": path.to_string_lossy(),
+                        "version": rm.version,
+                        "universe_size": rm.model.universe.len(),
+                        "rules": rm.rules.len(),
+                        "valid": true,
+                    }),
+                    Err(e) => json!({
+                        "name": name,
+                        "file": name,
+                        "path": path.to_string_lossy(),
+                        "valid": false,
+                        "error": e.to_string(),
+                    }),
+                }
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "command": "analytics models list",
+                "models_dir": MODELS_DIR,
+                "count": items.len(),
+                "models": items,
+            }))?
+        );
+        return Ok(());
+    }
+
+    if paths.is_empty() {
+        println!("No model specs found in ./{MODELS_DIR}/ (add a *.toml spec there).");
+        return Ok(());
+    }
+    println!("Model specs in ./{MODELS_DIR}/:\n");
+    println!("{:<24} {:>3} {:>8} {:>6}  FILE", "NAME", "VER", "UNIVERSE", "RULES");
+    for path in &paths {
+        let file = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
+        match std::fs::read_to_string(path)
+            .map_err(anyhow::Error::from)
+            .and_then(|t| resolve_str(&t))
+        {
+            Ok(rm) => println!(
+                "{:<24} {:>3} {:>8} {:>6}  {}.toml",
+                rm.name,
+                rm.version,
+                rm.model.universe.len(),
+                rm.rules.len(),
+                file
+            ),
+            Err(e) => {
+                println!("{file:<24}   -        -      -  {file}.toml  [INVALID: {e}]")
+            }
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// show
+// ---------------------------------------------------------------------------
+
+pub fn run_show(name_or_path: &str, json_output: bool) -> Result<()> {
+    let rm = load_resolved(name_or_path)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&resolved_to_json(&rm))?);
+        return Ok(());
+    }
+
+    println!("Model: {} (v{})", rm.name, rm.version);
+    println!("Base currency: {}   Initial capital: {}", rm.model.base_currency, rm.model.initial_capital);
+    println!(
+        "Cadence: {:?}   Band: {:?}   Fill: {:?}",
+        rm.model.rebalance_cadence, rm.model.rebalance_band_mode, rm.model.fill
+    );
+    println!(
+        "Commission: {}   Slippage: {}   Cash yield: {:?}",
+        rm.model.commission_pct, rm.model.slippage_pct, rm.model.cash_yield
+    );
+    if let Some(mp) = rm.max_position {
+        println!("Max position (advisory, not yet enforced): {mp}");
+    }
+    println!("\nUniverse ({}):", rm.model.universe.len());
+    for a in &rm.model.universe {
+        println!("  {:<10} class={:<12} ccy={}", a.symbol, a.class, a.price_currency);
+    }
+    println!("\nClass targets:");
+    println!("  {:<14} {:>8} {:>8} {:>8}", "CLASS", "TARGET", "FLOOR", "CEILING");
+    for t in &rm.model.targets {
+        println!("  {:<14} {:>8} {:>8} {:>8}", t.class, t.target, t.floor, t.ceiling);
+    }
+    println!("\nRules: {} (parsed, NOT evaluated in this stage — signal-rule engine lands in P3)", rm.rules.len());
+    for r in &rm.rules {
+        println!("  [{}] priority={} when: {}", r.id, r.priority, r.when);
+    }
+    if !rm.params.is_empty() {
+        println!("\nParams:");
+        for (k, v) in &rm.params {
+            println!("  {k} = {v}");
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// backtest
+// ---------------------------------------------------------------------------
+
+pub fn run_backtest(
+    backend: &BackendConnection,
+    name_or_path: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let rm = load_resolved(name_or_path)?;
+    let from_d = parse_date_opt(from, "--from")?;
+    let to_d = parse_date_opt(to, "--to")?;
+    if let (Some(f), Some(t)) = (from_d, to_d) {
+        if f > t {
+            bail!("--from ({f}) is after --to ({t})");
+        }
+    }
+
+    let loader = PriceHistoryCloseLoader {
+        conn: backend.sqlite(),
+    };
+    let panel = load_panel(&loader, &rm.model, from_d, to_d)?;
+    let report = simulate(&rm.model, &panel)?;
+
+    // Warnings: any deferred/dropped legs, infeasible rebalances. (Rules now
+    // evaluate as real signal rules — see the engine; a bad rule fails at
+    // resolve time rather than running silently as base_policy.)
+    let mut warnings: Vec<String> = Vec::new();
+    let deferred: usize = report.rebalance_events.iter().map(|e| e.deferred_legs.len()).sum();
+    let dropped: usize = report.rebalance_events.iter().map(|e| e.dropped_legs.len()).sum();
+    if deferred > 0 {
+        warnings.push(format!("{deferred} leg(s) deferred (non-tradable on a rebalance date)"));
+    }
+    if dropped > 0 {
+        warnings.push(format!("{dropped} leg(s) dropped (no future close to fill against)"));
+    }
+    let n_infeasible = report.rebalance_events.iter().filter(|e| e.infeasible).count();
+    if n_infeasible > 0 {
+        warnings.push(format!("{n_infeasible} rebalance(s) flagged infeasible (held prior weights)"));
+    }
+
+    if json_output {
+        let mut payload = json!({
+            "command": "analytics models backtest",
+            "model": resolved_to_json(&rm),
+            "window": window_json(&report),
+            "warnings": warnings,
+            "report": report,
+        });
+        // hoist a compact headline so consumers don't have to dig through `report`.
+        payload["headline"] = headline_json(&report);
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
+    render_text(&rm, &report, &warnings);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// compare
+// ---------------------------------------------------------------------------
+
+/// One model's resolved backtest, carried into the comparison.
+pub struct ModelRun {
+    pub name: String,
+    pub version: u32,
+    pub report: PortfolioBacktestReport,
+}
+
+/// Run 2+ models over the SAME window + cost assumptions and compare them.
+///
+/// Each model loads its own price panel over the shared `[from, to]` window
+/// (`load_panel` errors loudly if a universe symbol lacks history in-window), so
+/// every model is graded on the same calendar. The text output is an aligned
+/// table — one row per model plus its three benchmarks — with the best model per
+/// metric marked, and a one-line verdict (best risk-adjusted by Calmar).
+pub fn run_compare(
+    backend: &BackendConnection,
+    names: &[String],
+    from: Option<&str>,
+    to: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    if names.len() < 2 {
+        bail!("compare needs at least 2 models (got {})", names.len());
+    }
+    let from_d = parse_date_opt(from, "--from")?;
+    let to_d = parse_date_opt(to, "--to")?;
+    if let (Some(f), Some(t)) = (from_d, to_d) {
+        if f > t {
+            bail!("--from ({f}) is after --to ({t})");
+        }
+    }
+
+    let loader = PriceHistoryCloseLoader {
+        conn: backend.sqlite(),
+    };
+    let mut runs: Vec<ModelRun> = Vec::with_capacity(names.len());
+    for name in names {
+        let rm = load_resolved(name)?;
+        let panel = load_panel(&loader, &rm.model, from_d, to_d)
+            .with_context(|| format!("loading price panel for model '{}'", rm.name))?;
+        let report = simulate(&rm.model, &panel)
+            .with_context(|| format!("simulating model '{}'", rm.name))?;
+        runs.push(ModelRun {
+            name: rm.name,
+            version: rm.version,
+            report,
+        });
+    }
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&compare_json(&runs))?);
+        return Ok(());
+    }
+    print!("{}", render_compare_text(&runs));
+    Ok(())
+}
+
+/// The metric columns of the comparison, with their "better" direction. `higher`
+/// = a larger value is better (CAGR, Sharpe, Sortino, Calmar); otherwise lower is
+/// better (MaxDD magnitude, Vol). Time-in-cash / turnover / costs / nRebalances
+/// are descriptive (no "best" mark).
+struct MetricCol {
+    key: &'static str,
+    higher_is_better: bool,
+}
+
+const RANKED_METRICS: &[MetricCol] = &[
+    MetricCol { key: "cagr", higher_is_better: true },
+    MetricCol { key: "sharpe", higher_is_better: true },
+    MetricCol { key: "sortino", higher_is_better: true },
+    MetricCol { key: "maxdd", higher_is_better: false },
+    MetricCol { key: "calmar", higher_is_better: true },
+    MetricCol { key: "vol", higher_is_better: false },
+];
+
+fn metric_value(report: &PortfolioBacktestReport, key: &str) -> f64 {
+    let m = &report.metrics;
+    match key {
+        "cagr" => m.cagr_pct,
+        "sharpe" => m.sharpe,
+        "sortino" => m.sortino,
+        "maxdd" => m.max_drawdown_pct,
+        "calmar" => m.calmar,
+        "vol" => m.ann_vol_pct,
+        _ => f64::NAN,
+    }
+}
+
+/// Index of the best model run for one ranked metric (None if all NaN). Best is
+/// computed across the MODEL rows only — benchmarks are reference lines.
+fn best_model_idx(runs: &[ModelRun], col: &MetricCol) -> Option<usize> {
+    let mut best: Option<(usize, f64)> = None;
+    for (i, r) in runs.iter().enumerate() {
+        let v = metric_value(&r.report, col.key);
+        if v.is_nan() {
+            continue;
+        }
+        let better = match best {
+            None => true,
+            Some((_, bv)) => {
+                if col.higher_is_better {
+                    v > bv
+                } else {
+                    v < bv
+                }
+            }
+        };
+        if better {
+            best = Some((i, v));
+        }
+    }
+    best.map(|(i, _)| i)
+}
+
+fn window_of(runs: &[ModelRun]) -> serde_json::Value {
+    // Use the union span across every model's curve (they share the requested
+    // window, but trading calendars can differ at the edges).
+    let mut from: Option<NaiveDate> = None;
+    let mut to: Option<NaiveDate> = None;
+    let mut bars = 0usize;
+    for r in runs {
+        let c = &r.report.daily_equity_curve;
+        if let Some(f) = c.first() {
+            from = Some(from.map_or(f.date, |x: NaiveDate| x.min(f.date)));
+        }
+        if let Some(l) = c.last() {
+            to = Some(to.map_or(l.date, |x: NaiveDate| x.max(l.date)));
+        }
+        bars = bars.max(c.len());
+    }
+    json!({
+        "from": from.map(|d| d.to_string()),
+        "to": to.map(|d| d.to_string()),
+        "bars": bars,
+    })
+}
+
+fn metrics_block(report: &PortfolioBacktestReport) -> serde_json::Value {
+    let m = &report.metrics;
+    json!({
+        "cagr_pct": m.cagr_pct,
+        "sharpe": m.sharpe,
+        "sortino": m.sortino,
+        "max_drawdown_pct": m.max_drawdown_pct,
+        "calmar": m.calmar,
+        "ann_vol_pct": m.ann_vol_pct,
+        "time_in_cash_pct": m.time_in_cash_pct,
+        "avg_turnover_pct_per_yr": m.avg_turnover_pct_per_yr,
+        "total_costs": report.total_costs,
+        "n_rebalances": report.n_rebalances,
+    })
+}
+
+fn bench_metrics_block(b: &BenchmarkResult) -> serde_json::Value {
+    let m = &b.metrics;
+    json!({
+        "cagr_pct": m.cagr_pct,
+        "sharpe": m.sharpe,
+        "sortino": m.sortino,
+        "max_drawdown_pct": m.max_drawdown_pct,
+        "calmar": m.calmar,
+        "ann_vol_pct": m.ann_vol_pct,
+        "time_in_cash_pct": m.time_in_cash_pct,
+        "avg_turnover_pct_per_yr": m.avg_turnover_pct_per_yr,
+        "total_costs": m.total_costs,
+    })
+}
+
+/// Structured comparison: `{ window, best, verdict, models: [...] }`.
+pub fn compare_json(runs: &[ModelRun]) -> serde_json::Value {
+    let mut best = serde_json::Map::new();
+    for col in RANKED_METRICS {
+        if let Some(i) = best_model_idx(runs, col) {
+            best.insert(col.key.to_string(), json!(runs[i].name));
+        }
+    }
+    let models: Vec<_> = runs
+        .iter()
+        .map(|r| {
+            json!({
+                "name": r.name,
+                "version": r.version,
+                "metrics": metrics_block(&r.report),
+                "benchmarks": {
+                    "static_base_policy": bench_metrics_block(&r.report.benchmarks.static_base_policy),
+                    "rebalanced_base_policy": bench_metrics_block(&r.report.benchmarks.rebalanced_base_policy),
+                    "equal_weight": bench_metrics_block(&r.report.benchmarks.equal_weight),
+                },
+            })
+        })
+        .collect();
+    json!({
+        "command": "analytics models compare",
+        "window": window_of(runs),
+        "best": best,
+        "verdict": verdict_line(runs),
+        "models": models,
+    })
+}
+
+/// "best risk-adjusted: <model> by Calmar (<v>)" — or a neutral note if nothing
+/// ranks. Calmar is the headline risk-adjusted metric (CAGR per unit max DD).
+fn verdict_line(runs: &[ModelRun]) -> String {
+    let calmar = RANKED_METRICS.iter().find(|c| c.key == "calmar").unwrap();
+    match best_model_idx(runs, calmar) {
+        Some(i) => format!(
+            "best risk-adjusted: {} by Calmar ({:.2})",
+            runs[i].name,
+            metric_value(&runs[i].report, "calmar")
+        ),
+        None => "no rankable result (degenerate curves)".to_string(),
+    }
+}
+
+/// The aligned comparison table (returned as a string so it's unit-testable).
+pub fn render_compare_text(runs: &[ModelRun]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let w = window_of(runs);
+    let from = w["from"].as_str().unwrap_or("?");
+    let to = w["to"].as_str().unwrap_or("?");
+    let _ = writeln!(
+        out,
+        "Positioning model comparison — {} models over {} → {}",
+        runs.len(),
+        from,
+        to
+    );
+    let _ = writeln!(out);
+
+    // Header. Model/benchmark label + the ranked metrics + descriptive columns.
+    let _ = writeln!(
+        out,
+        "{:<28} {:>8} {:>7} {:>7} {:>8} {:>7} {:>7} {:>7} {:>8} {:>10} {:>5}",
+        "MODEL / benchmark",
+        "CAGR%",
+        "Sharpe",
+        "Sortino",
+        "MaxDD%",
+        "Calmar",
+        "Vol%",
+        "Cash%",
+        "Turn/yr",
+        "Costs",
+        "nReb",
+    );
+
+    // Best model index per ranked metric (for the `*` mark on model rows).
+    let best: Vec<Option<usize>> = RANKED_METRICS
+        .iter()
+        .map(|c| best_model_idx(runs, c))
+        .collect();
+
+    for (i, r) in runs.iter().enumerate() {
+        let m = &r.report.metrics;
+        // Marked cells for the ranked metrics (append '*' when this row is best).
+        let mark = |col_i: usize, v: f64, prec: usize| -> String {
+            let star = best[col_i] == Some(i);
+            let s = format!("{v:.prec$}");
+            if star {
+                format!("{s}*")
+            } else {
+                s
+            }
+        };
+        let _ = writeln!(
+            out,
+            "{:<28} {:>8} {:>7} {:>7} {:>8} {:>7} {:>7} {:>7.1} {:>8.1} {:>10} {:>5}",
+            truncate(&r.name, 28),
+            mark(0, m.cagr_pct, 2),
+            mark(1, m.sharpe, 2),
+            mark(2, m.sortino, 2),
+            mark(3, m.max_drawdown_pct, 2),
+            mark(4, m.calmar, 2),
+            mark(5, m.ann_vol_pct, 2),
+            m.time_in_cash_pct,
+            m.avg_turnover_pct_per_yr,
+            r.report.total_costs.round_dp(2).to_string(),
+            r.report.n_rebalances,
+        );
+        // Benchmark rows (no best-mark; nRebalances not tracked per benchmark).
+        let b = &r.report.benchmarks;
+        bench_row(&mut out, "  static base policy", &b.static_base_policy);
+        bench_row(&mut out, "  rebalanced base policy", &b.rebalanced_base_policy);
+        bench_row(&mut out, "  equal weight", &b.equal_weight);
+    }
+
+    let _ = writeln!(out);
+    let _ = writeln!(out, "{}", verdict_line(runs));
+    let _ = writeln!(out, "(* = best across models for that metric)");
+    out
+}
+
+fn bench_row(out: &mut String, label: &str, b: &BenchmarkResult) {
+    use std::fmt::Write as _;
+    let m = &b.metrics;
+    let _ = writeln!(
+        out,
+        "{:<28} {:>8.2} {:>7.2} {:>7.2} {:>8.2} {:>7.2} {:>7.2} {:>7.1} {:>8.1} {:>10} {:>5}",
+        label,
+        m.cagr_pct,
+        m.sharpe,
+        m.sortino,
+        m.max_drawdown_pct,
+        m.calmar,
+        m.ann_vol_pct,
+        m.time_in_cash_pct,
+        m.avg_turnover_pct_per_yr,
+        m.total_costs.round_dp(2).to_string(),
+        "-",
+    );
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max.saturating_sub(1)])
+    }
+}
+
+// ---------------------------------------------------------------------------
+// optimize (P5a — walk-forward parameter optimization)
+// ---------------------------------------------------------------------------
+
+/// The standing caveat printed on EVERY optimize run. P5b: PBO/DSR are NOW
+/// computed and cumulative trials NOW tracked — but the honest framing is
+/// unchanged: this is the best OBSERVED OOS config under a FROZEN search space,
+/// not an optimal parameter or a proven edge. A `robust` verdict now ALSO
+/// requires PBO ≤ 0.25 and DSR ≥ 0.95.
+const STANDING_CAVEAT: &str = "CAVEAT: this is the BEST OBSERVED OOS config under this frozen search space — \
+NOT an 'optimal parameter', 'expected return', or 'proven edge'. Multiple-testing \
+correction (PBO via CSCV + Deflated Sharpe) is NOW computed and cumulative trials \
+for this topology are NOW tracked in the optimization ledger; a 'robust' verdict \
+additionally requires PBO ≤ 0.25 and DSR ≥ 0.95. The ledger cannot see search you \
+did OUTSIDE this tool, and the lockbox window is reserved for a one-time final check.";
+
+/// Ledger context surfaced alongside the report: the topology family this run
+/// belongs to and the cumulative trials recorded for it BEFORE this run.
+#[derive(Debug, Clone)]
+pub struct LedgerContext {
+    pub topology_hash: String,
+    /// SUM(n_configs) over prior runs of this topology (excludes this run).
+    pub prior_cumulative_trials: i64,
+    pub prior_runs: i64,
+    /// Cumulative trials INCLUDING this run (prior + this run's n_configs).
+    pub cumulative_trials_incl: i64,
+    /// True when a ledger row was appended for this run.
+    pub recorded: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_optimize(
+    backend: &BackendConnection,
+    name_or_path: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+    params: &[String],
+    folds: Option<usize>,
+    slices: Option<usize>,
+    objective: &str,
+    no_ledger: bool,
+    json_output: bool,
+) -> Result<()> {
+    let from_d = parse_date_opt(from, "--from")?;
+    let to_d = parse_date_opt(to, "--to")?;
+    if let (Some(f), Some(t)) = (from_d, to_d) {
+        if f > t {
+            bail!("--from ({f}) is after --to ({t})");
+        }
+    }
+    let obj = optimize::Objective::parse(objective)?;
+
+    // Parse axes from the raw --param strings.
+    let axes: Vec<ParamAxis> = params
+        .iter()
+        .map(|s| optimize::parse_axis(s))
+        .collect::<Result<Vec<_>>>()?;
+
+    // Load the raw spec + a resolved model (the latter only to load the panel).
+    let path = spec_path(name_or_path);
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("could not read model spec '{}'", path.display()))?;
+    let base_spec = parse_str(&text)
+        .with_context(|| format!("invalid model spec '{}'", path.display()))?;
+    let resolved = resolve(base_spec.clone())
+        .with_context(|| format!("invalid model spec '{}'", path.display()))?;
+
+    // Fail FAST on a frozen-topology / grid-size violation BEFORE the (expensive)
+    // panel load — no point sourcing prices for a search we'll refuse.
+    optimize::validate_axes(&base_spec, &axes)?;
+    optimize::refusal_gate(axes.len(), optimize::build_grid(&axes).len())?;
+
+    let loader = PriceHistoryCloseLoader {
+        conn: backend.sqlite(),
+    };
+    let panel = load_panel(&loader, &resolved.model, from_d, to_d)?;
+
+    let report = optimize::run_optimize(&base_spec, &panel, &axes, obj, folds, slices)?;
+
+    // Topology hash = the research-family identity. The fold-scheme descriptor
+    // is the partitioning POLICY (folds/warmup/lockbox/slices), not the data
+    // window (the window is recorded separately in the ledger columns).
+    let fold_descriptor = format!(
+        "folds={:?};warmup={};lockbox={};slices={}",
+        folds,
+        report.scheme.warmup_days,
+        report.lockbox.lockbox_days,
+        slices.unwrap_or(optimize::DEFAULT_SLICES),
+    );
+    let topology_hash =
+        model_optimize_runs::topology_hash(&base_spec, &axes, obj, &fold_descriptor);
+
+    // Read PRIOR cumulative trials for this topology (before appending this run).
+    let conn = backend.sqlite();
+    let prior_cumulative_trials =
+        model_optimize_runs::cumulative_trials_for_topology(conn, &topology_hash)?;
+    let prior_runs = model_optimize_runs::run_count_for_topology(conn, &topology_hash)?;
+
+    // Append this run to the ledger (append-only), unless suppressed.
+    let recorded = if no_ledger {
+        false
+    } else {
+        let winner_params = report.winner_idx.map(|i| {
+            serde_json::to_string(&report.configs[i].params).unwrap_or_default()
+        });
+        let new_run = NewOptimizeRun {
+            topology_hash: topology_hash.clone(),
+            model_name: report.model_name.clone(),
+            model_version: report.model_version as i64,
+            objective: report.objective.clone(),
+            n_configs: report.n_configs as i64,
+            winner_params,
+            verdict: report.verdict.label().to_string(),
+            pbo: report.pbo.as_ref().map(|p| p.pbo),
+            dsr: report.dsr.as_ref().map(|d| d.dsr),
+            window_start: Some(report.scheme.post_warmup_start.to_string()),
+            window_end: Some(report.scheme.data_end.to_string()),
+            lockbox_start: Some(report.lockbox.lockbox_start.to_string()),
+            lockbox_end: Some(report.lockbox.lockbox_end.to_string()),
+        };
+        model_optimize_runs::append_run(conn, &new_run)?;
+        true
+    };
+
+    let ledger = LedgerContext {
+        topology_hash,
+        prior_cumulative_trials,
+        prior_runs,
+        cumulative_trials_incl: prior_cumulative_trials + report.n_configs as i64,
+        recorded,
+    };
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&optimize_json(&report, &ledger))?
+        );
+        return Ok(());
+    }
+    print!("{}", render_optimize_text(&report, &ledger));
+    Ok(())
+}
+
+/// List the optimization ledger: cumulative trials per topology family, and the
+/// most recent runs. The meta-overfitting audit trail.
+pub fn run_optimize_history(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let conn = backend.sqlite();
+    let families = model_optimize_runs::topology_summaries(conn)?;
+    let recent = model_optimize_runs::list_runs(conn, 50)?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "command": "analytics models optimize-history",
+                "families": families,
+                "recent_runs": recent,
+            }))?
+        );
+        return Ok(());
+    }
+
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    if families.is_empty() {
+        let _ = writeln!(out, "No optimize runs recorded yet (the ledger is empty).");
+        print!("{out}");
+        return Ok(());
+    }
+    let _ = writeln!(
+        out,
+        "Optimization ledger — cumulative trials per topology family:"
+    );
+    let _ = writeln!(
+        out,
+        "{:<14} {:<16} {:>8} {:>6} {:>12}  {:<14} lastRun",
+        "TOPOLOGY", "MODEL", "objective", "runs", "cumTrials", "lastVerdict"
+    );
+    for f in &families {
+        let _ = writeln!(
+            out,
+            "{:<14} {:<16} {:>8} {:>6} {:>12}  {:<14} {}",
+            truncate(&f.topology_hash, 14),
+            truncate(&f.model_name, 16),
+            f.objective,
+            f.n_runs,
+            f.cumulative_trials,
+            f.last_verdict,
+            f.last_run_at,
+        );
+    }
+    print!("{out}");
+    Ok(())
+}
+
+fn optimize_json(r: &OptimizeReport, ledger: &LedgerContext) -> serde_json::Value {
+    let configs: Vec<_> = r
+        .configs
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            json!({
+                "params": c.params,
+                "mean_is": c.mean_is,
+                "mean_oos": c.mean_oos,
+                "gap": c.gap,
+                "ratio": c.ratio,
+                "total_oos_rebalances": c.total_oos_rebalances,
+                "min_oos_events_per_fold": c.min_oos_events_per_fold,
+                "mean_oos_turnover_pct_per_yr": c.mean_oos_turnover_pct_per_yr,
+                "below_activity_gate": c.below_activity_gate,
+                "overfit_flag": c.overfit_flag,
+                "is_winner": r.winner_idx == Some(i),
+                "per_fold": c.per_fold,
+            })
+        })
+        .collect();
+    json!({
+        "command": "analytics models optimize",
+        "model": { "name": r.model_name, "version": r.model_version },
+        "objective": r.objective,
+        "search_space": {
+            "axes": r.axes,
+            "k_params": r.k_params,
+            "n_configs": r.n_configs,
+        },
+        "fold_scheme": {
+            "warmup_days": r.scheme.warmup_days,
+            "warmup_cutoff": r.scheme.warmup_cutoff.to_string(),
+            "post_warmup_start": r.scheme.post_warmup_start.to_string(),
+            "data_end": r.scheme.data_end.to_string(),
+            "train_days": r.scheme.train_days,
+            "test_days": r.scheme.test_days,
+            "step_days": r.scheme.step_days,
+            "n_folds": r.scheme.folds.len(),
+            "folds": r.scheme.folds,
+        },
+        "configs": configs,
+        "winner": r.winner_idx.map(|i| json!({
+            "params": r.configs[i].params,
+            "mean_is": r.configs[i].mean_is,
+            "mean_oos": r.configs[i].mean_oos,
+            "gap": r.configs[i].gap,
+            "ratio": r.configs[i].ratio,
+            "overfit_flag": r.configs[i].overfit_flag,
+        })),
+        "walk_forward": {
+            "folds": r.walk_forward,
+            "mean_oos": r.walk_forward_mean_oos,
+        },
+        "benchmark_rebalanced_base_policy_oos": r.benchmark_rebalanced_oos,
+        "sensitivity": r.sensitivity.iter().map(sensitivity_json).collect::<Vec<_>>(),
+        "overfit_stats": {
+            "pbo": r.pbo,
+            "dsr": r.dsr,
+        },
+        "lockbox": {
+            "lockbox_days": r.lockbox.lockbox_days,
+            "lockbox_start": r.lockbox.lockbox_start.to_string(),
+            "lockbox_end": r.lockbox.lockbox_end.to_string(),
+            "n_slices": r.lockbox.n_slices,
+            "note": "reserved holdout — NEVER scored in this run; for a one-time final candidate check only",
+        },
+        "ledger": {
+            "topology_hash": ledger.topology_hash,
+            "prior_runs_this_topology": ledger.prior_runs,
+            "prior_cumulative_trials_this_topology": ledger.prior_cumulative_trials,
+            "cumulative_trials_incl_this_run": ledger.cumulative_trials_incl,
+            "recorded": ledger.recorded,
+        },
+        "verdict": r.verdict.label(),
+        "warnings": r.warnings,
+        "caveat": STANDING_CAVEAT,
+    })
+}
+
+fn sensitivity_json(s: &SensitivityPoint) -> serde_json::Value {
+    json!({
+        "axis": s.axis,
+        "value": s.value,
+        "mean_oos": s.mean_oos,
+        "present": s.present,
+    })
+}
+
+/// Render the optimize report as honest text (returned as a String so it is
+/// unit-testable).
+pub fn render_optimize_text(r: &OptimizeReport, ledger: &LedgerContext) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+
+    let _ = writeln!(
+        out,
+        "Walk-forward optimization: {} (v{})  objective={} (net)",
+        r.model_name, r.model_version, r.objective
+    );
+    // Search space.
+    let axes_desc: Vec<String> = r
+        .axes
+        .iter()
+        .map(|a| format!("{}={}:{}:{} [{} pts]", a.name, a.min, a.max, a.step, a.values.len()))
+        .collect();
+    let _ = writeln!(
+        out,
+        "Search space: {} param(s), {} configs — {}",
+        r.k_params,
+        r.n_configs,
+        axes_desc.join(", ")
+    );
+    // Fold scheme.
+    let s = &r.scheme;
+    let _ = writeln!(
+        out,
+        "Folds: {} rolling (train {}d / test {}d / step {}d), warmup {}d burned (≤ {} never scored); scored span {} → {}",
+        s.folds.len(),
+        s.train_days,
+        s.test_days,
+        s.step_days,
+        s.warmup_days,
+        s.warmup_cutoff,
+        s.post_warmup_start,
+        s.data_end
+    );
+    let _ = writeln!(out);
+
+    // Per-config table.
+    let _ = writeln!(
+        out,
+        "{:<20} {:>9} {:>9} {:>8} {:>7} {:>7} {:>8}  FLAGS",
+        "CONFIG", "IS", "OOS", "GAP", "RATIO", "minEv", "Turn/yr",
+    );
+    for (i, c) in r.configs.iter().enumerate() {
+        let pstr: Vec<String> = c
+            .params
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        let mut flags = String::new();
+        if r.winner_idx == Some(i) {
+            flags.push_str("WINNER ");
+        }
+        if c.below_activity_gate {
+            flags.push_str("below-activity-gate ");
+        }
+        if c.overfit_flag {
+            flags.push_str("IS≫OOS-overfit ");
+        }
+        let ratio = if c.ratio.is_finite() {
+            format!("{:.2}", c.ratio)
+        } else {
+            "—".to_string()
+        };
+        let _ = writeln!(
+            out,
+            "{:<20} {:>9.3} {:>9.3} {:>8.3} {:>7} {:>7} {:>8.1}  {}",
+            truncate(&pstr.join(","), 20),
+            c.mean_is,
+            c.mean_oos,
+            c.gap,
+            ratio,
+            c.min_oos_events_per_fold,
+            c.mean_oos_turnover_pct_per_yr,
+            flags.trim_end(),
+        );
+    }
+    let _ = writeln!(out);
+
+    // Benchmark + walk-forward honesty lines.
+    let _ = writeln!(
+        out,
+        "Rebalanced-base-policy benchmark OOS {}: {:.3}",
+        r.objective, r.benchmark_rebalanced_oos
+    );
+    let _ = writeln!(
+        out,
+        "Walk-forward (train-pick each fold) realised mean OOS: {:.3}",
+        r.walk_forward_mean_oos
+    );
+    let _ = writeln!(out);
+
+    // Winner + sensitivity.
+    match r.winner_idx {
+        Some(wi) => {
+            let w = &r.configs[wi];
+            let pstr: Vec<String> = w.params.iter().map(|(k, v)| format!("{k}={v}")).collect();
+            let _ = writeln!(
+                out,
+                "Best observed OOS config: {{{}}}  IS={:.3}  OOS={:.3}  gap={:.3}",
+                pstr.join(", "),
+                w.mean_is,
+                w.mean_oos,
+                w.gap
+            );
+            if !r.sensitivity.is_empty() {
+                let _ = writeln!(out, "Sensitivity (adjacent grid points, OOS):");
+                for sp in &r.sensitivity {
+                    if sp.present {
+                        let _ = writeln!(
+                            out,
+                            "  {} = {:<8} OOS={:.3}",
+                            sp.axis, sp.value, sp.mean_oos
+                        );
+                    } else {
+                        let _ = writeln!(
+                            out,
+                            "  {} = {:<8} (off-grid — winner is on an edge)",
+                            sp.axis, sp.value
+                        );
+                    }
+                }
+            }
+        }
+        None => {
+            let _ = writeln!(out, "No winner crowned (no config cleared the activity gate).");
+        }
+    }
+    let _ = writeln!(out);
+
+    // P5b — multiple-testing overfit statistics.
+    match &r.pbo {
+        Some(p) => {
+            let _ = writeln!(
+                out,
+                "PBO (CSCV, {} slices, {} splits): {:.3}  [{}]",
+                p.s_slices, p.n_splits, p.pbo, p.band
+            );
+        }
+        None => {
+            let _ = writeln!(
+                out,
+                "PBO (CSCV): n/a — pre-lockbox span too short to slice"
+            );
+        }
+    }
+    match &r.dsr {
+        Some(d) => {
+            let _ = writeln!(
+                out,
+                "DSR (winner OOS, deflated for {} trials): {:.3}  ({}; SR_oos={:.3}, SR*={:.3}, T={})",
+                d.n_trials,
+                d.dsr,
+                if d.passes { "≥0.95 pass" } else { "<0.95 weak" },
+                d.sharpe_oos,
+                d.sr_star,
+                d.t_obs,
+            );
+        }
+        None => {
+            let _ = writeln!(
+                out,
+                "DSR: n/a — no winner or OOS return stream too short / ill-conditioned"
+            );
+        }
+    }
+
+    // P5b — lockbox reservation (never scored).
+    let _ = writeln!(
+        out,
+        "LOCKBOX reserved (NEVER scored this run): {} → {} ({}d) — held for a one-time final candidate check",
+        r.lockbox.lockbox_start, r.lockbox.lockbox_end, r.lockbox.lockbox_days
+    );
+
+    // P5b — cumulative-trial accounting (the meta-overfitting guardrail).
+    let _ = writeln!(
+        out,
+        "TOPOLOGY {}: {} prior run(s), {} prior cumulative trials → {} cumulative incl. this run{}",
+        truncate(&ledger.topology_hash, 12),
+        ledger.prior_runs,
+        ledger.prior_cumulative_trials,
+        ledger.cumulative_trials_incl,
+        if ledger.recorded { " (recorded)" } else { " (NOT recorded: --no-ledger)" },
+    );
+    let _ = writeln!(out);
+
+    // Verdict + warnings + caveat.
+    let _ = writeln!(out, "VERDICT: {}  ({})", r.verdict.label(), verdict_rationale(r.verdict));
+    if ledger.cumulative_trials_incl as u64 > optimize::CUMULATIVE_TRIALS_WARN_THRESHOLD {
+        let _ = writeln!(
+            out,
+            "WARNING: {} cumulative trials for this topology exceeds {} — repeated re-runs of the same family are SILENT multiple testing the per-run PBO/DSR cannot see; treat the best observed config with heavy skepticism.",
+            ledger.cumulative_trials_incl,
+            optimize::CUMULATIVE_TRIALS_WARN_THRESHOLD
+        );
+    }
+    for w in &r.warnings {
+        let _ = writeln!(out, "WARNING: {w}");
+    }
+    let _ = writeln!(out, "{STANDING_CAVEAT}");
+    out
+}
+
+fn verdict_rationale(v: Verdict) -> &'static str {
+    match v {
+        Verdict::InsufficientData => "too few OOS folds / rebalances / activity to judge",
+        Verdict::OverfitLikely => "OOS edge collapses (IS≫OOS) or fails PBO≤0.25 / DSR≥0.95",
+        Verdict::Fragile => "isolated grid spike, or PBO/DSR clearance unavailable",
+        Verdict::Robust => "survives every gate incl. PBO≤0.25 + DSR≥0.95 — still NOT proven (see caveat)",
+    }
+}
+
+// ---------------------------------------------------------------------------
+// rendering helpers
+// ---------------------------------------------------------------------------
+
+fn render_text(rm: &ResolvedModel, report: &PortfolioBacktestReport, warnings: &[String]) {
+    let curve = &report.daily_equity_curve;
+    let (first, last) = match (curve.first(), curve.last()) {
+        (Some(f), Some(l)) => (f, l),
+        _ => {
+            println!("(empty backtest — no daily curve)");
+            return;
+        }
+    };
+    let m = &report.metrics;
+    println!("Positioning backtest: {} (v{})", rm.name, rm.version);
+    println!(
+        "Window: {} → {}  ({} bars, {} rebalances)",
+        first.date, last.date, curve.len(), report.n_rebalances
+    );
+    println!();
+    println!("  Final equity        {}", last.equity.round_dp(2));
+    println!("  CAGR                {:>8.2}%", m.cagr_pct);
+    println!("  Max drawdown        {:>8.2}%", m.max_drawdown_pct);
+    println!("  Ann. volatility     {:>8.2}%", m.ann_vol_pct);
+    println!("  Sharpe              {:>8.2}", m.sharpe);
+    println!("  Sortino             {:>8.2}", m.sortino);
+    println!("  Calmar              {:>8.2}", m.calmar);
+    println!("  CDaR-95             {:>8.2}%", m.cdar_95_pct);
+    println!("  Ulcer index         {:>8.2}%", m.ulcer_index_pct);
+    println!("  Time in cash        {:>8.2}%", m.time_in_cash_pct);
+    println!("  Avg turnover/yr     {:>8.2}%", m.avg_turnover_pct_per_yr);
+    println!("  Total costs         {}", report.total_costs.round_dp(2));
+    println!();
+    println!("  Benchmarks                       CAGR     MaxDD");
+    print_bench("    static base policy", &report.benchmarks.static_base_policy);
+    print_bench("    rebalanced base policy", &report.benchmarks.rebalanced_base_policy);
+    print_bench("    equal weight", &report.benchmarks.equal_weight);
+
+    if !warnings.is_empty() {
+        println!();
+        for w in warnings {
+            println!("  WARNING: {w}");
+        }
+    }
+}
+
+fn print_bench(label: &str, b: &BenchmarkResult) {
+    println!(
+        "{label:<32} {:>7.2}% {:>7.2}%",
+        b.metrics.cagr_pct, b.metrics.max_drawdown_pct
+    );
+}
+
+fn resolved_to_json(rm: &ResolvedModel) -> serde_json::Value {
+    json!({
+        "name": rm.name,
+        "version": rm.version,
+        "base_currency": rm.model.base_currency,
+        "initial_capital": rm.model.initial_capital,
+        "cash_class": rm.model.cash_class,
+        "rebalance_cadence": format!("{:?}", rm.model.rebalance_cadence),
+        "rebalance_band_mode": format!("{:?}", rm.model.rebalance_band_mode),
+        "fill": format!("{:?}", rm.model.fill),
+        "commission_pct": rm.model.commission_pct,
+        "slippage_pct": rm.model.slippage_pct,
+        "cash_yield": format!("{:?}", rm.model.cash_yield),
+        "max_position": rm.max_position,
+        "no_average_down": rm.no_average_down,
+        "universe": rm.model.universe.iter().map(|a| json!({
+            "symbol": a.symbol, "class": a.class, "price_currency": a.price_currency,
+        })).collect::<Vec<_>>(),
+        "targets": rm.model.targets.iter().map(|t| json!({
+            "class": t.class, "target": t.target, "floor": t.floor, "ceiling": t.ceiling,
+        })).collect::<Vec<_>>(),
+        "rules": rm.rules,
+        "rules_evaluated": false,
+        "params": rm.params,
+    })
+}
+
+fn window_json(report: &PortfolioBacktestReport) -> serde_json::Value {
+    let curve = &report.daily_equity_curve;
+    json!({
+        "from": curve.first().map(|p| p.date.to_string()),
+        "to": curve.last().map(|p| p.date.to_string()),
+        "bars": curve.len(),
+    })
+}
+
+fn headline_json(report: &PortfolioBacktestReport) -> serde_json::Value {
+    let final_equity = report
+        .daily_equity_curve
+        .last()
+        .map(|p| p.equity)
+        .unwrap_or_default();
+    json!({
+        "final_equity": final_equity,
+        "cagr_pct": report.metrics.cagr_pct,
+        "max_drawdown_pct": report.metrics.max_drawdown_pct,
+        "sharpe": report.metrics.sharpe,
+        "n_rebalances": report.n_rebalances,
+        "total_costs": report.total_costs,
+        "bench_static_cagr_pct": report.benchmarks.static_base_policy.metrics.cagr_pct,
+        "bench_rebalanced_cagr_pct": report.benchmarks.rebalanced_base_policy.metrics.cagr_pct,
+        "bench_equal_weight_cagr_pct": report.benchmarks.equal_weight.metrics.cagr_pct,
+    })
+}
+
+fn parse_date_opt(s: Option<&str>, flag: &str) -> Result<Option<NaiveDate>> {
+    match s {
+        None => Ok(None),
+        Some(v) => NaiveDate::parse_from_str(v, "%Y-%m-%d")
+            .map(Some)
+            .with_context(|| format!("{flag} must be a YYYY-MM-DD date (got '{v}')")),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// tests — compare logic over SYNTHETIC in-memory panels (no DB, no real money)
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analytics::portfolio_sim::{
+        AssetSpec, CashYield, ClassTarget, FillMode, PortfolioModel, PricePanel, RebalanceBandMode,
+        RebalanceCadence, WithinClass,
+    };
+    use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal_macros::dec;
+
+    /// A single-growth-asset model rebalanced weekly to 80% growth / 20% cash.
+    fn growth_model(symbol: &str) -> PortfolioModel {
+        PortfolioModel {
+            base_currency: "USD".into(),
+            initial_capital: dec!(100000),
+            universe: vec![AssetSpec::new(symbol, "growth")],
+            cash_class: "cash".into(),
+            targets: vec![
+                ClassTarget::new("cash", dec!(0.2), dec!(0), dec!(1)),
+                ClassTarget::new("growth", dec!(0.8), dec!(0), dec!(1)),
+            ],
+            within_class: WithinClass::Equal,
+            rebalance_cadence: RebalanceCadence::Weekly,
+            rebalance_band_mode: RebalanceBandMode::ToTarget,
+            fill: FillMode::NextClose,
+            commission_pct: dec!(0.001),
+            slippage_pct: dec!(0),
+            cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
+            no_average_down: false,
+        }
+    }
+
+    /// 70 consecutive daily closes starting at 100, compounding at `daily_pct`/day.
+    fn ramp_series(daily_pct: f64) -> Vec<(NaiveDate, Decimal)> {
+        let mut out = Vec::new();
+        let mut px = 100.0_f64;
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        for i in 0..70 {
+            let d = start + chrono::Duration::days(i);
+            out.push((d, Decimal::from_f64(px).unwrap().round_dp(4)));
+            px *= 1.0 + daily_pct;
+        }
+        out
+    }
+
+    fn run(symbol: &str, daily_pct: f64) -> ModelRun {
+        let model = growth_model(symbol);
+        let mut panel = PricePanel::new();
+        panel.insert_series(symbol, ramp_series(daily_pct));
+        let report = super::simulate(&model, &panel).unwrap();
+        ModelRun {
+            name: format!("m-{symbol}"),
+            version: 1,
+            report,
+        }
+    }
+
+    #[test]
+    fn compare_json_has_a_row_per_model_and_marks_the_best() {
+        // FAST ramps harder than SLOW → FAST should win CAGR/Calmar.
+        let runs = vec![run("FAST", 0.004), run("SLOW", 0.001)];
+
+        let v = compare_json(&runs);
+        // one row per model
+        let models = v["models"].as_array().unwrap();
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0]["name"], "m-FAST");
+        assert_eq!(models[1]["name"], "m-SLOW");
+        // each row carries its three benchmarks
+        for m in models {
+            let b = &m["benchmarks"];
+            assert!(b["static_base_policy"]["cagr_pct"].is_number());
+            assert!(b["rebalanced_base_policy"]["cagr_pct"].is_number());
+            assert!(b["equal_weight"]["cagr_pct"].is_number());
+        }
+        // best CAGR + Calmar both belong to the faster model
+        assert_eq!(v["best"]["cagr"], "m-FAST");
+        assert_eq!(v["best"]["calmar"], "m-FAST");
+        // verdict names the risk-adjusted winner
+        assert!(v["verdict"].as_str().unwrap().contains("m-FAST"));
+        // window present
+        assert!(v["window"]["from"].is_string());
+        assert!(v["window"]["bars"].as_u64().unwrap() > 0);
+    }
+
+    #[test]
+    fn compare_text_table_marks_winner_and_lists_benchmarks() {
+        let runs = vec![run("FAST", 0.004), run("SLOW", 0.001)];
+        let txt = render_compare_text(&runs);
+        // header + both model rows + their benchmark rows
+        assert!(txt.contains("MODEL / benchmark"));
+        assert!(txt.contains("m-FAST"));
+        assert!(txt.contains("m-SLOW"));
+        assert!(txt.contains("static base policy"));
+        assert!(txt.contains("rebalanced base policy"));
+        assert!(txt.contains("equal weight"));
+        // at least one best-mark star, and the verdict + legend
+        assert!(txt.contains('*'));
+        assert!(txt.contains("best risk-adjusted"));
+        assert!(txt.contains("(* = best across models"));
+    }
+
+    /// Drive the REAL optimizer + renderer on the synthetic planted-edge panel and
+    /// assert the honest text surfaces the winner, verdict, and standing caveat.
+    /// (Also the source of the pasted TEXT output in the P5a report.)
+    #[test]
+    fn optimize_text_reports_winner_verdict_and_caveat() {
+        use crate::analytics::portfolio_sim::optimize::{
+            self, test_fixtures::{planted_model_toml, planted_panel},
+        };
+        use crate::analytics::portfolio_sim::spec::parse_str;
+
+        let panel = planted_panel(11.0);
+        let spec = parse_str(&planted_model_toml(0.0005)).unwrap();
+        let axes = vec![optimize::parse_axis("tilt_size=0.0:0.8:0.1").unwrap()];
+        let rep =
+            optimize::run_optimize(&spec, &panel, &axes, optimize::Objective::Cagr, Some(4), None)
+                .unwrap();
+        let ledger = super::LedgerContext {
+            topology_hash: "deadbeefcafef00d".to_string(),
+            prior_cumulative_trials: 0,
+            prior_runs: 0,
+            cumulative_trials_incl: rep.n_configs as i64,
+            recorded: true,
+        };
+        let txt = super::render_optimize_text(&rep, &ledger);
+        if std::env::var("PFTUI_PRINT_OPTIMIZE").is_ok() {
+            eprintln!("\n{txt}");
+        }
+        assert!(txt.contains("Walk-forward optimization: planted-edge"));
+        assert!(txt.contains("WINNER"));
+        // P5b: the CAGR/leverage winner does not clear DSR≥0.95, so the verdict
+        // is honestly downgraded (not `robust`).
+        assert!(txt.contains("VERDICT: overfit-likely"));
+        assert!(txt.contains("Sensitivity"));
+        assert!(txt.contains("Multiple-testing correction"));
+        // P5b stats surfaced.
+        assert!(txt.contains("PBO (CSCV"));
+        assert!(txt.contains("DSR ("));
+        assert!(txt.contains("LOCKBOX reserved"));
+        assert!(txt.contains("TOPOLOGY"));
+        // benchmark + walk-forward honesty lines present
+        assert!(txt.contains("Rebalanced-base-policy benchmark OOS"));
+        assert!(txt.contains("Walk-forward (train-pick each fold)"));
+    }
+
+    #[test]
+    fn best_direction_lower_is_better_for_drawdown_and_vol() {
+        // Equal CAGR target but FAST is more volatile via a deeper interim dip is
+        // hard to force deterministically; instead assert the directional helper
+        // picks the lower value for a lower-is-better column.
+        let runs = vec![run("FAST", 0.004), run("SLOW", 0.001)];
+        let vol_col = RANKED_METRICS.iter().find(|c| c.key == "vol").unwrap();
+        let idx = best_model_idx(&runs, vol_col).unwrap();
+        let v0 = metric_value(&runs[0].report, "vol");
+        let v1 = metric_value(&runs[1].report, "vol");
+        let expected = if v0 <= v1 { 0 } else { 1 };
+        assert_eq!(idx, expected, "lower vol must win the vol column");
+    }
+}

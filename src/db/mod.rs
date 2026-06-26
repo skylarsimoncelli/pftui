@@ -51,6 +51,7 @@ pub mod groups;
 pub mod journal;
 pub mod macro_events;
 pub mod mobile_timeframe_scores;
+pub mod model_optimize_runs;
 pub mod narrative_snapshots;
 pub mod report_archive;
 pub mod news_silence;

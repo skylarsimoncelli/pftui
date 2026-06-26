@@ -5075,6 +5075,102 @@ pub enum AnalyticsTechnicalsCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsModelsCommand {
+    /// List available model specs in ./models/ (name, version, universe size, rule count)
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Parse + validate a spec and print the resolved model (classes, targets, rules)
+    Show {
+        /// Model name (resolves to ./models/<name>.toml) or a path to a .toml spec
+        name: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Load a spec, load its price panel, run the simulator, and render the backtest report
+    Backtest {
+        /// Model name (resolves to ./models/<name>.toml) or a path to a .toml spec
+        name: String,
+        /// Window start (YYYY-MM-DD); defaults to the earliest shared history
+        #[arg(long)]
+        from: Option<String>,
+        /// Window end (YYYY-MM-DD); defaults to the latest shared history
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run 2+ models over the SAME window + cost assumptions and compare them
+    /// (CAGR/Sharpe/Sortino/MaxDD/Calmar/Vol/Cash/Turnover/Costs), best-marked,
+    /// each with its three benchmarks. A verdict names the best risk-adjusted model.
+    #[command(
+        after_help = "Examples:\n  pftui analytics models compare m1-static m2-hard-money-cycles\n  pftui analytics models compare m1 m2 m3 --from 2020-01-01 --to 2024-12-31 --json\n\nEach NAME is a bare model (./models/<name>.toml) or a path to a .toml spec.\nAll models run over the same --from/--to window with their own cost models;\na model whose universe symbol lacks history in-window errors clearly."
+    )]
+    Compare {
+        /// Two or more model names (./models/<name>.toml) or paths to .toml specs
+        #[arg(required = true, num_args = 2..)]
+        names: Vec<String>,
+        /// Window start (YYYY-MM-DD); defaults to the earliest shared history
+        #[arg(long)]
+        from: Option<String>,
+        /// Window end (YYYY-MM-DD); defaults to the latest shared history
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// WALK-FORWARD parameter optimization (P5a) — search ONLY the declared
+    /// numeric [params] of a model over rolling, warmup-aware train/test folds,
+    /// pick each fold's best config on TRAIN, score it OUT-OF-SAMPLE on TEST, and
+    /// report the full grid with IS→OOS degradation flags + a conservative verdict.
+    #[command(
+        after_help = "Searches the cartesian grid of the named --param axes (each NAME=min:max:step,\ninclusive). Every searched NAME must be a declared AND referenced [params] knob\n(frozen topology — no inventing knobs). Refuses k_params>6 or N_configs>2000.\n\nDiscipline: the first ~4y of history are burned as signal warmup (never scored);\nfolds roll ~6y train / ~1y test (or sized from --folds N). Params are chosen on\nTRAIN only; the reported winner is the best OBSERVED OOS config — NOT a proven\nedge. Multiple-testing correction (PBO/DSR) lands in P5b; this is in-run hygiene\nonly.\n\nExamples:\n  pftui analytics models optimize m2-hard-money-cycles --param tilt_size=0.05:0.25:0.05\n  pftui analytics models optimize m2 --param dip_threshold=3:6:1 --param tilt_size=0.05:0.2:0.05 --folds 5 --objective calmar --json"
+    )]
+    Optimize {
+        /// Model name (resolves to ./models/<name>.toml) or a path to a .toml spec
+        name: String,
+        /// Window start (YYYY-MM-DD); pass it ~4y before the period you want
+        /// scored — the first ~4y are burned as signal warmup
+        #[arg(long)]
+        from: Option<String>,
+        /// Window end (YYYY-MM-DD); defaults to the latest shared history
+        #[arg(long)]
+        to: Option<String>,
+        /// A grid axis NAME=min:max:step over a declared+referenced [params] knob
+        /// (repeatable). Inclusive of both endpoints.
+        #[arg(long = "param", value_name = "NAME=min:max:step", required = true)]
+        param: Vec<String>,
+        /// Number of walk-forward folds to size from the post-warmup span
+        /// (default: ~6y train / ~1y test rolling, as many folds as fit)
+        #[arg(long)]
+        folds: Option<usize>,
+        /// Number of equal CSCV time-slices for the PBO statistic (even; default 8)
+        #[arg(long)]
+        slices: Option<usize>,
+        /// Selection/reporting objective (all higher-is-better, on NET returns)
+        #[arg(long, default_value = "calmar")]
+        objective: String,
+        /// Do NOT append this run to the persistent optimization ledger
+        /// (cumulative-trial accounting); a dry run that leaves no provenance
+        #[arg(long)]
+        no_ledger: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Optimization LEDGER audit: cumulative trials per topology family + recent
+    /// runs (P5b). The meta-overfitting guardrail — repeated re-runs of the same
+    /// frozen search space are silent multiple testing the per-run PBO/DSR miss.
+    #[command(
+        after_help = "Lists every recorded `analytics models optimize` run grouped by topology_hash\n(model + universe + rules + cadence + objective + cost model + fold scheme +\nparam names/ranges + benchmark). A changed topology is a NEW family, not\nconfirmation of the old one.\n\nExamples:\n  pftui analytics models optimize-history\n  pftui analytics models optimize-history --json"
+    )]
+    OptimizeHistory {
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsCyclesCommand {
     /// Cycle-position read (BTC halving/4yr cycle, gold ~6.9yr cycle (8yr is folklore)).
     /// Position only — never a price prediction.
@@ -5377,6 +5473,14 @@ pub enum AnalyticsCommand {
     Cycles {
         #[command(subcommand)]
         command: AnalyticsCyclesCommand,
+    },
+    /// Portfolio positioning models: parse a TOML model spec and backtest it against price history
+    #[command(
+        after_help = "Define a diversification model (class targets + floors/ceilings, cadence, costs,\nand optional signal rules) as a TOML spec in ./models/, then backtest it against\nthe historical price database with the deterministic positioning simulator.\n\nA <name> resolves to ./models/<name>.toml; a path ending in .toml (or containing\n'/') is read directly.\n\nNOTE: signal [[rules]] are PARSED but NOT yet evaluated (the rule engine lands in\na later stage). A model with rules runs as its base_policy with a clear warning.\n\nExamples:\n  pftui analytics models list\n  pftui analytics models show static-60-40\n  pftui analytics models backtest static-60-40 --from 2018-01-01 --json"
+    )]
+    Models {
+        #[command(subcommand)]
+        command: AnalyticsModelsCommand,
     },
     /// Market structure levels: support, resistance, moving averages, swing points, 52-week range
     Levels {

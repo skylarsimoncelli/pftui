@@ -22,6 +22,7 @@ pub mod kelly;
 pub mod levels;
 pub mod market_structure;
 pub mod narrative;
+pub mod portfolio_sim;
 pub mod positioning;
 pub mod regime_quad;
 pub mod risk;

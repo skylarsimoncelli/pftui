@@ -1,0 +1,40 @@
+# Static 60/40-with-cash positioning model.
+#
+# A simple, rule-less reference model: a cash-buffered classic stock/bond split,
+# rebalanced monthly to target with realistic costs. It runs end-to-end through
+# the positioning simulator (`analytics models backtest static-60-40`) and
+# doubles as the canonical example of the spec format.
+#
+# Allocation: 20% cash (floor 10 / ceiling 40), 48% equity (SPY), 32% bond (IEF).
+# Targets incl. cash sum to 1.00; every floor <= target <= ceiling; feasible.
+
+[model]
+name = "static-60-40"
+version = 1
+base_currency = "USD"
+initial_capital = 100000
+
+[universe]
+assets = [
+  { symbol = "SPY", class = "equity" },
+  { symbol = "IEF", class = "bond" },
+]
+cash_class = "cash"
+
+[base_policy]
+targets = [
+  { class = "cash",   target = 0.20, floor = 0.10, ceiling = 0.40 },
+  { class = "equity", target = 0.48, floor = 0.00, ceiling = 0.70 },
+  { class = "bond",   target = 0.32, floor = 0.00, ceiling = 0.50 },
+]
+within_class = "equal"
+
+[constraints]
+max_position = 0.60
+no_average_down = false
+rebalance_cadence = "monthly"
+rebalance_band_mode = "to_target"
+fill = "next_close"
+cash_yield_proxy = "none"
+commission_pct = 0.001
+slippage_pct = 0.0005

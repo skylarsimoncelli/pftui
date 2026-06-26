@@ -25,6 +25,7 @@ unavailable renders to an empty string, so a report never breaks.
 | `portfolio_viz.py` | Risk-sizing charts: `drawdown` (drawdown-survival composite), `riskbars` (risk fingerprint). CLI + `expand()` token handler. |
 | `analog_viz.py` | Analog-engine chart: `dist` (forward-return distribution box/whisker). CLI + `expand()` token handler. |
 | `backtest_viz.py` | Strategy backtest chart: `tearsheet` (native equity curve + underwater strip + stat line + true per-step Monte-Carlo cone, terminal-fan fallback). CLI + `expand()` token handler. |
+| `model_viz.py` | Positioning-model tearsheet (family `MODEL_VIZ`, distinct from `PORTFOLIO_VIZ`): `tearsheet` (stat header + rule-alpha delta vs rebalanced-base, equity panel with the model curve + 3 benchmark reference curves, underwater drawdown strip, event-stepped allocation band) from `analytics models backtest <name> --json`; `compare` (overlaid rebased equity of 2..N models). CLI + `expand()` token handler. |
 | `scenario_viz.py` | Macro scenario chart: `dashboard` (ranked active-scenario probability bars + normalized-set fill / residual). CLI + `expand()` token handler. |
 | `macro_viz.py` | Macro env + catalyst charts: `environment` (z-scored feature strip) and `catalysts` (date-grouped event timeline). CLI + `expand()` token handler. |
 | `rates_viz.py` | Real-rates chart: `realrates` (US 10Y nominal = real (TIPS) + breakeven decomposition + US-minus-G10 differential bars). CLI + `expand()` token handler. |
@@ -42,6 +43,8 @@ just before markdown→HTML. A report's markdown embeds tokens:
 <!--CYCLE_SIGNALS_VIZ:checklist:BTC-->  <!--CYCLE_SIGNALS_VIZ:checklist:GC=F-->
 <!--CYCLE_SIGNALS_VIZ:tracked:all-->
 <!--CYCLE_BACKTEST_VIZ:expectancy:BTC?polarity=bottom&timeframe=monthly-->
+<!--MODEL_VIZ:tearsheet:m2-hard-money-cycles?from=2020-01-01&to=2024-12-31-->
+<!--MODEL_VIZ:compare:m1-regime-balanced,m2-hard-money-cycles,m3-stage-breakout-->
 <!--SCENARIO_VIZ:dashboard:-->
 <!--MACRO_VIZ:environment:-->  <!--MACRO_VIZ:catalysts:-->
 <!--RATES_VIZ:realrates:-->
@@ -90,6 +93,8 @@ so a token can *silently* yield nothing. This matrix says where that happens:
 | Cycle-bottom **checklist** | `CYCLE_SIGNALS_VIZ:checklist:SYM` | any asset with deep enough history for `cycles bottom-signals` (~120+ daily bars) | the N-of-7 confluence ✓/✗ list + gauge; payload may carry `?timeframe=daily\|weekly\|monthly` (default monthly). Renders nothing on shallow history. Public-safe / name-free. |
 | Cycle-signal **tracked** | `CYCLE_SIGNALS_VIZ:tracked:all` | the whole armed cycle-signal alert set | heat-strip of every tracked signal (live met/total bar colored by closeness, dist-to-target, fired?, time-since-last). Payload = `all` or `SYM[?polarity=bottom\|top]`. Renders nothing when no signals are armed. |
 | Cycle-signal **backtest card** | `CYCLE_BACKTEST_VIZ:expectancy:SYM?polarity=bottom` | any asset the `cycles {bottom,top}-signals backtest --expectancy` engine accepts | forward-return signal-vs-baseline bars (sign-aware: bottoms want +, tops want −) per 30/90/180/365d for the headline ≥4/7 threshold, plus a per-threshold hit-rate + closeness table. Payload may carry `&timeframe=…`. Honest "reliability unmeasurable" caveat card on zero anchors / firings. |
+| Positioning **tearsheet** | `MODEL_VIZ:tearsheet:NAME` | any model spec whose `analytics models backtest NAME --json` succeeds | NAME is a `./models/<name>.toml` model (or path); optional `?from=…&to=…` window. Stat header + rule-alpha delta vs rebalanced-base, equity panel with the model curve plus the 3 benchmark reference curves (static / rebalanced-base / equal-weight), underwater drawdown strip, event-stepped allocation band. Honest "Tearsheet unavailable" caveat card on an errored / empty / too-short backtest. Dollar-free (rebased-100 index). |
+| Positioning **compare** | `MODEL_VIZ:compare:M1,M2,…` | 2..N model specs that each backtest | overlaid rebased-100 equity of every named model over a shared `?from=…&to=…`. Renders nothing with fewer than 2 usable curves. |
 | **cocrash** | `RISK_VIZ:cocrash:A,B,…` | any 2–6 assets with `tail-dependence` history | each pair needs Pearson and/or λ_L; missing pairs draw a `--` cell |
 | Analog **dist** | `ANALOG_VIZ:dist:SYM` | any asset with an `analytics analog` report | needs the summary quantiles OR ≥1 per-analog forward return |
 | **drawdown** | `PORTFOLIO_VIZ:drawdown:SYM` | any asset with a `survival` block | falls back to the `survival` block embedded in `risk-dashboard` |

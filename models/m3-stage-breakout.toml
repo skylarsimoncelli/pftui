@@ -1,0 +1,80 @@
+# Model M3 — Weinstein stage-2 breakout, never average down.
+#
+# The operator model that comes alive on the P3c machinery: a single-equity
+# book (SPY) that ENTERS only on a fresh weekly Weinstein **stage-2 advance**
+# confirmed by a Cyber-Dots up-dot, EXITS on a **stage-4 decline**, and NEVER
+# adds to a losing position (`no_average_down`).
+#
+# Signals are evaluated point-in-time at each weekly rebalance against
+# COMPLETED-bucket reads (no lookahead). `stage_proxy` is the unvalidated-name
+# Weinstein-stage *proxy* (validated for DIRECTION by the event-study in
+# `portfolio_sim::stage_proxy::tests`); it omits relative-strength and volume,
+# so it is a proxy, not canonical Weinstein.
+#
+# ## Action shape (documented)
+# Equity is a SINGLE-symbol class (SPY), so a class-level `set_target(equity,
+# entry_weight)` is operationally identical to `set_target(symbol=SPY,
+# entry_weight)`: the whole equity budget flows to the one tradable symbol. The
+# P3a algebra raises a CLASS budget (symbol actions are intra-class and cannot
+# lift their class budget from 0), which is why the ENTER action pins the class.
+# Base policy holds 100% cash; the enter rule lifts equity to `entry_weight`
+# only while the stage-2 + up-dot confluence holds, and the position reverts to
+# cash when it stops (a natural "hold while stage 2"). The exit rule zeroes SPY
+# on a stage-4 breakdown.
+#
+# ## Level vs edge (documented approximation)
+# `stage_proxy('SPY') == 2` is a LEVEL condition ("currently in stage 2"), the
+# P3c approximation of the economic intent "entered stage 2 THIS bar". An
+# edge-triggered "just transitioned into stage 2" accessor is a future
+# refinement; the level form captures the core hold-while-stage-2 / exit-at-
+# stage-4 behaviour.
+
+[model]
+name = "m3-stage-breakout"
+version = 1
+base_currency = "USD"
+initial_capital = 100000
+
+[universe]
+assets = [
+  { symbol = "SPY", class = "equity" },
+]
+cash_class = "cash"
+
+[base_policy]
+# 100% cash by default; the box permits lifting equity up to entry_weight.
+targets = [
+  { class = "cash",   target = 1.00, floor = 0.00, ceiling = 1.00 },
+  { class = "equity", target = 0.00, floor = 0.00, ceiling = 0.80 },
+]
+within_class = "equal"
+
+[constraints]
+max_position = 0.80
+no_average_down = true
+rebalance_cadence = "weekly"
+rebalance_band_mode = "to_target"
+fill = "next_close"
+cash_yield_proxy = "none"
+commission_pct = 0.001
+slippage_pct = 0.0005
+
+# ENTER: a fresh weekly stage-2 advance confirmed by a Cyber-Dots up-dot lifts
+# the equity (SPY) budget to entry_weight.
+[[rules]]
+id = "enter-on-stage2-breakout"
+when = "stage_proxy('SPY') == 2 and cyber_dot_up('SPY')@weekly == 1"
+then = { kind = "set_target", class = "equity", by = "entry_weight" }
+priority = 10
+cadence = "weekly"
+
+# EXIT: a weekly stage-4 decline zeroes the SPY position.
+[[rules]]
+id = "exit-on-stage4-breakdown"
+when = "stage_proxy('SPY') == 4"
+then = { kind = "exit", symbol = "SPY" }
+priority = 20
+cadence = "weekly"
+
+[params]
+entry_weight = 0.6

@@ -305,6 +305,13 @@ writers = ["src/db/mobile_timeframe_scores.rs"]
 readers = ["src/db/mobile_timeframe_scores.rs"]
 rebuildable = true
 
+[tables.model_optimize_runs]
+layer = "L3"
+purpose = "Append-only optimization ledger: one row per `analytics models optimize` run (topology_hash, n_configs tried, winner, verdict, PBO, DSR, scored/lockbox windows). Cumulative trials per topology = SUM(n_configs) over a hash — the meta-overfitting guardrail across repeated runs (lazily created)"
+writers = ["src/db/model_optimize_runs.rs", "src/commands/models_cmd.rs"]
+readers = ["src/commands/models_cmd.rs", "src/db/model_optimize_runs.rs"]
+append_only = true
+
 [tables.narrative_snapshots]
 layer = "L3"
 purpose = "Structured narrative recaps (analytical memory)"
