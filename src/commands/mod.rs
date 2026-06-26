@@ -30,6 +30,7 @@ pub mod crisis;
 pub mod cycle_clock_cmd;
 pub mod cycle_engine_cmd;
 pub mod cycle_signals_cmd;
+pub mod cycle_tracked_cmd;
 pub mod daily_pnl;
 pub mod daemon;
 pub mod data_audit;

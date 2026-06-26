@@ -348,4 +348,32 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn inverted_v_fires_turn_down_and_cross_from_overbought() {
+        // Long rally drives DSS to overbought, then a sharp selloff makes it
+        // turn down and cross below its (lagging) trigger — the TOP mirror.
+        let mut close: Vec<f64> = (0..120).map(|i| 100.0 + i as f64 * 1.2).collect();
+        let base = *close.last().unwrap();
+        for j in 1..=30 {
+            close.push(base - j as f64 * 2.4);
+        }
+        let s = compute_dss_default(&close, &close, &close).expect("dss");
+        assert_eq!(turned_down(&s), Some(true), "DSS should turn down after a top");
+        let d = current_dss(&s).unwrap();
+        let t = current_trigger(&s).unwrap();
+        assert!(d < t, "DSS {d} should be below trigger {t} post-reversal");
+    }
+
+    #[test]
+    fn overbought_flag_at_top() {
+        // Pure advance: DSS pinned near 100.
+        let close: Vec<f64> = (0..150).map(|i| 100.0 + i as f64 * 2.0).collect();
+        let s = compute_dss_default(&close, &close, &close).expect("dss");
+        assert_eq!(
+            is_overbought(&s, 80.0),
+            Some(true),
+            "DSS should be overbought in an uptrend"
+        );
+    }
 }

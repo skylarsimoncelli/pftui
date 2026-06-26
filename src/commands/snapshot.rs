@@ -362,6 +362,37 @@ mod tests {
     }
 
     #[test]
+    fn cycles_matrix_renders_top_confluence_column() {
+        // Top/bottom parity: the Matrix must also surface the monthly cycle-TOP
+        // confluence column — a plain "Top N/7" header next to "Low N/7" — and a
+        // per-row "N/7" count (or the missing dash). Name-free / ticker-free.
+        let config = Config::default();
+        let buf = render_view_buffer(&config, 160, 48, Some("cycles"), Some(0), true)
+            .expect("matrix render");
+        let text = buffer_to_plain_string(&buf, 160, 48);
+        assert!(text.contains("Low N/7"), "bottom column header missing: {text}");
+        assert!(text.contains("Top N/7"), "top-confluence column header missing: {text}");
+    }
+
+    #[test]
+    fn cycles_engine_subtab_surfaces_confluence_checklist() {
+        // The Engine sub-tab must surface the per-criterion ✓/✗ confluence
+        // checklist for the focused asset (which signals are firing, not just
+        // how many) under clear cycle-bottom / cycle-top headers — OR a clean
+        // insufficient-history state. Synthetic demo data only.
+        let config = Config::default();
+        let buf = render_view_buffer(&config, 160, 60, Some("cycles"), Some(3), true)
+            .expect("engine render");
+        let text = buffer_to_plain_string(&buf, 160, 60).to_lowercase();
+        assert!(
+            text.contains("cycle-bottom signals")
+                || text.contains("cycle-top signals")
+                || text.contains("insufficient history"),
+            "engine confluence checklist missing: {text}"
+        );
+    }
+
+    #[test]
     fn cycles_render_is_free_of_jargon_and_tickers() {
         // Guards the operator's #1 constraint: NO practitioner/author names and
         // NO raw tickers may appear in the rendered Cycles UI. Renders every

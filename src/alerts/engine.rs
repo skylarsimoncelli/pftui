@@ -553,17 +553,25 @@ fn evaluate_cycle_signal_alert(
         Ok(tf) => tf,
         Err(_) => crate::analytics::cycle_signals::SignalTimeframe::Monthly,
     };
-    let eval = if cycle_signal_alert::is_cycle_top_condition(condition) {
-        let signals =
-            crate::analytics::cycle_signals::cycle_top_signals(&alert.symbol, history, timeframe);
-        cycle_signal_alert::evaluate_top(&alert.symbol, &parsed, signals.as_ref())
-    } else {
-        let signals = crate::analytics::cycle_signals::cycle_bottom_signals(
-            &alert.symbol,
-            history,
-            timeframe,
-        );
-        cycle_signal_alert::evaluate(&alert.symbol, &parsed, signals.as_ref())
+    let polarity = cycle_signal_alert::condition_polarity(condition)
+        .unwrap_or(cycle_signal_alert::Polarity::Bottom);
+    let eval = match polarity {
+        cycle_signal_alert::Polarity::Top => {
+            let signals = crate::analytics::cycle_signals::cycle_top_signals(
+                &alert.symbol,
+                history,
+                timeframe,
+            );
+            cycle_signal_alert::evaluate_top(&alert.symbol, &parsed, signals.as_ref())
+        }
+        cycle_signal_alert::Polarity::Bottom => {
+            let signals = crate::analytics::cycle_signals::cycle_bottom_signals(
+                &alert.symbol,
+                history,
+                timeframe,
+            );
+            cycle_signal_alert::evaluate(&alert.symbol, &parsed, signals.as_ref())
+        }
     };
     AlertEvaluation {
         current_value: eval.current_value,

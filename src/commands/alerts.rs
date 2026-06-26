@@ -600,62 +600,48 @@ fn default_label(kind: &AlertKind, symbol: &str, condition: &str) -> String {
     }
 }
 
-/// Friendly, name-free default label for a cycle-bottom signal alert.
+/// Friendly, name-free default label for a cycle-signal alert. Polarity-aware:
+/// `cycle_top_*` conditions render "cycle-top …" with the top criterion/component
+/// labels, while `cycle_bottom_*`/legacy conditions render "cycle-bottom …".
 fn cycle_signal_label(symbol: &str, condition: &str) -> String {
     use crate::alerts::cycle_signal_alert::{
-        component_label, criterion_label, friendly_asset, parse_condition, top_component_label,
-        top_criterion_label, CycleSignalCondition,
+        component_label, condition_polarity, criterion_label, friendly_asset, parse_condition,
+        top_component_label, top_criterion_label, CycleSignalCondition, Polarity,
     };
     let asset = friendly_asset(symbol);
+    let polarity = condition_polarity(condition).unwrap_or(Polarity::Bottom);
+    let side = match polarity {
+        Polarity::Bottom => "cycle-bottom",
+        Polarity::Top => "cycle-high",
+    };
     match parse_condition(condition) {
         Ok(CycleSignalCondition::Confluence { timeframe, target }) => format!(
-            "{} {} cycle-bottom signals ≥ {}/7",
+            "{} {} {} signals ≥ {}/7",
             asset,
             timeframe.label(),
+            side,
             target
         ),
         Ok(CycleSignalCondition::Criterion {
             timeframe,
             criterion_key,
-        }) => format!(
-            "{} {} {}",
-            asset,
-            timeframe.label(),
-            criterion_label(&criterion_key)
-        ),
+        }) => {
+            let label = match polarity {
+                Polarity::Bottom => criterion_label(&criterion_key),
+                Polarity::Top => top_criterion_label(&criterion_key),
+            };
+            format!("{} {} {}", asset, timeframe.label(), label)
+        }
         Ok(CycleSignalCondition::Component {
             timeframe,
             component_key,
-        }) => format!(
-            "{} {} {}",
-            asset,
-            timeframe.label(),
-            component_label(&component_key)
-        ),
-        Ok(CycleSignalCondition::TopConfluence { timeframe, target }) => format!(
-            "{} {} cycle-high signals ≥ {}/7",
-            asset,
-            timeframe.label(),
-            target
-        ),
-        Ok(CycleSignalCondition::TopCriterion {
-            timeframe,
-            criterion_key,
-        }) => format!(
-            "{} {} {}",
-            asset,
-            timeframe.label(),
-            top_criterion_label(&criterion_key)
-        ),
-        Ok(CycleSignalCondition::TopComponent {
-            timeframe,
-            component_key,
-        }) => format!(
-            "{} {} {}",
-            asset,
-            timeframe.label(),
-            top_component_label(&component_key)
-        ),
+        }) => {
+            let label = match polarity {
+                Polarity::Bottom => component_label(&component_key),
+                Polarity::Top => top_component_label(&component_key),
+            };
+            format!("{} {} {}", asset, timeframe.label(), label)
+        }
         Err(_) => format!("{} {}", symbol, condition.replace('_', " ")),
     }
 }
@@ -1672,6 +1658,61 @@ mod tests {
             urgency_filter: None,
             all_triggered: false,
         }
+    }
+
+    #[test]
+    fn test_cycle_signal_label_is_polarity_aware() {
+        // (a) a cycle-top confluence condition must render the top side
+        // ("cycle-high"), never "cycle-bottom".
+        let top = cycle_signal_label("BTC-USD", "cycle_top_monthly_4");
+        assert!(top.contains("cycle-high"), "top label: {top}");
+        assert!(!top.contains("cycle-bottom"), "top label leaked bottom: {top}");
+        assert!(top.contains("4/7"), "top label missing threshold: {top}");
+
+        // (b) a top criterion + top component condition render their TOP labels.
+        let top_crit = cycle_signal_label("BTC-USD", "cycle_top_criterion_weekly_trend_line_lost");
+        assert_eq!(
+            top_crit,
+            format!(
+                "Bitcoin weekly {}",
+                crate::alerts::cycle_signal_alert::top_criterion_label("trend_line_lost")
+            ),
+            "top criterion label: {top_crit}"
+        );
+        let top_comp =
+            cycle_signal_label("BTC-USD", "cycle_top_component_monthly_erf_turned_down");
+        assert_eq!(
+            top_comp,
+            format!(
+                "Bitcoin monthly {}",
+                crate::alerts::cycle_signal_alert::top_component_label("erf_turned_down")
+            ),
+            "top component label: {top_comp}"
+        );
+
+        // (c) existing bottom labels are unchanged (no regression).
+        assert_eq!(
+            cycle_signal_label("BTC-USD", "cycle_bottom_monthly_4"),
+            "Bitcoin monthly cycle-bottom signals ≥ 4/7"
+        );
+        let bot_crit =
+            cycle_signal_label("BTC-USD", "cycle_criterion_weekly_trend_line_reclaimed");
+        assert_eq!(
+            bot_crit,
+            format!(
+                "Bitcoin weekly {}",
+                crate::alerts::cycle_signal_alert::criterion_label("trend_line_reclaimed")
+            )
+        );
+        let bot_comp =
+            cycle_signal_label("BTC-USD", "cycle_component_monthly_erf_turned_up");
+        assert_eq!(
+            bot_comp,
+            format!(
+                "Bitcoin monthly {}",
+                crate::alerts::cycle_signal_alert::component_label("erf_turned_up")
+            )
+        );
     }
 
     #[test]

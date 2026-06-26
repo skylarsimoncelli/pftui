@@ -3447,7 +3447,7 @@ pub enum AnalyticsCorrelationsCommand {
 pub enum AnalyticsAlertsCommand {
     /// Add an alert rule
     #[command(
-        after_help = "Cycle-bottom signal conditions (evaluated mechanically on `data refresh`):\n  Confluence threshold — fires when met/7 reaches a target on a timeframe:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_bottom_monthly_4\n  Single criterion — fires when one named composite criterion becomes met:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_criterion_weekly_trend_line_reclaimed\n  Single component — fires when one atomic subcondition becomes met:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_component_monthly_erf_turned_up\n\n  Timeframes: daily | weekly | monthly.\n  Criterion keys: momentum_turning_up, momentum_above_price, dss_bottoming,\n    roofing_confirming_up, volatility_bands_bullish, reversal_dots,\n    trend_line_reclaimed.\n  Component keys: rsi_ma_turned_up, rsi_ma_cross_above_rsi, dss_turned_up,\n    dss_cross_above_trigger, dss_oversold, erf_bottom_zone, erf_turned_up,\n    erf_positive, cyberbands_bullish, cyberdots_bullish, cyberline_reclaim,\n    pi_cycle_bottom.\n  One-shot by default (fires once per transition; re-arm to re-enable). Add\n  --recurring --cooldown-minutes N to auto-rearm with a cooldown floor."
+        after_help = "Cycle-bottom signal conditions (evaluated mechanically on `data refresh`):\n  Confluence threshold — fires when met/7 reaches a target on a timeframe:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_bottom_monthly_4\n  Single criterion — fires when one named composite criterion becomes met:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_criterion_weekly_trend_line_reclaimed\n  Single component — fires when one atomic subcondition becomes met:\n    pftui analytics alerts add --kind technical --symbol BTC-USD \\\n      --condition cycle_component_monthly_erf_turned_up\n\n  Criterion keys: momentum_turning_up, momentum_above_price, dss_bottoming,\n    roofing_confirming_up, volatility_bands_bullish, reversal_dots,\n    trend_line_reclaimed.\n  Component keys: rsi_ma_turned_up, rsi_ma_cross_above_rsi, dss_turned_up,\n    dss_cross_above_trigger, dss_oversold, erf_bottom_zone, erf_turned_up,\n    erf_positive, cyberbands_bullish, cyberdots_bullish, cyberline_reclaim,\n    pi_cycle_bottom.\n\nCycle-TOP signal conditions (symmetric mirror — evaluated on `data refresh`):\n  Confluence threshold:  --condition cycle_top_monthly_4\n  Single criterion:      --condition cycle_top_criterion_weekly_trend_line_lost\n  Single component:      --condition cycle_top_component_monthly_erf_turned_down\n\n  Criterion keys: momentum_turning_down, momentum_below_price, dss_topping,\n    roofing_confirming_down, volatility_bands_bearish, reversal_dots_bearish,\n    trend_line_lost.\n  Component keys: rsi_ma_turned_down, rsi_ma_cross_below_rsi, dss_turned_down,\n    dss_cross_below_trigger, dss_overbought, erf_top_zone, erf_turned_down,\n    erf_negative, cyberbands_bearish, cyberdots_bearish, cyberline_lost,\n    pi_cycle_top.\n\n  Timeframes: daily | weekly | monthly.\n  One-shot by default (fires once per transition; re-arm to re-enable). Add\n  --recurring --cooldown-minutes N to auto-rearm with a cooldown floor."
     )]
     Add {
         /// Legacy natural-language rule form: "BTC below 55000"
@@ -5129,10 +5129,12 @@ pub enum AnalyticsCyclesCommand {
         #[command(subcommand)]
         sub: Option<BottomSignalsCommand>,
     },
-    /// Mechanical cycle-high / exhaustion signal suite: symmetric N-of-7
-    /// confluence of independent top-risk confirmations.
+    /// Mechanical cycle-TOP / cycle-high exhaustion signal suite: the symmetric
+    /// mirror of bottom-signals — a deterministic confluence of independent
+    /// cycle-TOP confirmations, each at its natural timeframe.
+    /// Position/measurement only.
     #[command(
-        after_help = "Scores 7 composite cycle-high criteria, each at its natural timeframe and\nchecked on the latest bar (N/7 confluence):\n  1. Momentum line turning down               the RSI's moving average ticked down\n  2. Momentum line below price momentum       the RSI average lost the RSI\n  3. Double-smoothed stochastic topping       stochastic ticked down AND crossed below its trigger (overbought = context)\n  4. Roofing filter confirming down           de-trended cycle filter in top zone (>0) AND ticked down\n  5. Volatility bands bearish (daily)         daily momentum bands in the bearish state\n  6. Significant exhaustion dots (wk/mo)      weekly/monthly strength dots net-bearish\n  7. Trend line lost (weekly)                 price lost the weekly trackline\n  bonus: pi-cycle top (daily)                 fired recently — reported, NOT counted in the 7\n\nExamples:\n  pftui analytics cycles top-signals --asset BTC\n  pftui analytics cycles top-signals --asset BTC --timeframe monthly --json\n  pftui analytics cycles top-signals backtest --asset BTC --json"
+        after_help = "Scores 7 composite cycle-top / cycle-high criteria, each at its natural timeframe and\nchecked on the latest bar (N/7 confluence) — the inverted mirror of bottom-signals:\n  1. Momentum line turning down               the RSI's moving average ticked down\n  2. Momentum line below price momentum        the RSI average crossed below the RSI\n  3. Double-smoothed stochastic topping        stochastic ticked down AND crossed below its trigger (overbought = context)\n  4. Roofing filter confirming down            de-trended cycle filter in top zone (>0) AND ticked down\n  5. Volatility bands bearish (daily)          daily momentum bands in the bearish state\n  6. Significant exhaustion/reversal dots (wk/mo) weekly/monthly strength dots net-bearish\n  7. Trend line lost (weekly)                  price lost the weekly trackline\n  bonus: pi-cycle top (daily)                  fired recently — reported, NOT counted in the 7\n\nThe momentum/stochastic/roofing criteria run on the --timeframe (default monthly);\nthe band/dot/line/pi criteria always run on their own natural aggregation.\n\nExamples:\n  pftui analytics cycles top-signals --asset BTC\n  pftui analytics cycles top-signals --asset BTC --timeframe monthly --json\n  pftui analytics cycles top-signals backtest --asset BTC --json"
     )]
     TopSignals {
         /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
@@ -5145,10 +5147,30 @@ pub enum AnalyticsCyclesCommand {
         timeframe: String,
         #[arg(long)]
         json: bool,
-        /// Reliability backtest: measure each criterion's lead/lag + hit-rate
-        /// vs completed native cycle highs (no-lookahead, point-in-time).
+        /// Reliability backtest vs completed native cycle highs AND forward-
+        /// return expectancy vs price-structure swing HIGHS (no-lookahead,
+        /// point-in-time), plus the flexible trigger-backtest event study.
         #[command(subcommand)]
         sub: Option<TopSignalsCommand>,
+    },
+    /// Dashboard of every armed cycle-signal alert (cycle-BOTTOM and
+    /// cycle-TOP), with per-signal detail: decoded label/timeframe/polarity/
+    /// target, armed-at + recurring/cooldown, fired-yet + last-fired +
+    /// time-since + fire count, and a fast CURRENT LIVE READ (met N/7 for a
+    /// confluence rule, met/unmet + distance for a criterion/component).
+    /// Status view only — never runs the backtest.
+    #[command(
+        after_help = "Lists every alert whose condition is a cycle signal — confluence threshold\n(cycle_bottom_<tf>_<N> / cycle_top_<tf>_<N>), single criterion, or single\ncomponent — in either polarity, with its live state and firing history.\n\nThe live read is computed once per (asset, timeframe, polarity) and reused\nacross rules that share it; assets with no price history degrade gracefully\n(\"no price history\") rather than erroring. Signal metadata + counts only — no\ndollar values.\n\nExamples:\n  pftui analytics cycles tracked\n  pftui analytics cycles tracked --asset BTC --json\n  pftui analytics cycles tracked --polarity top"
+    )]
+    Tracked {
+        /// Restrict to one asset (e.g. BTC, gold, GC=F). BTC matches BTC-USD.
+        #[arg(long)]
+        asset: Option<String>,
+        /// Restrict to one side: top | bottom (default: both)
+        #[arg(long)]
+        polarity: Option<String>,
+        #[arg(long)]
+        json: bool,
     },
     /// Translation ledger for one degree: per completed cycle the length,
     /// top position, LT/MID/RT class, and failed flag
@@ -5191,6 +5213,19 @@ pub enum BottomSignalsCommand {
         /// Match window in DAYS (+/-) around a verified low for a firing to count as a hit
         #[arg(long)]
         window: Option<i64>,
+        /// Also compute the asset-agnostic forward-return EXPECTANCY block:
+        /// mean/median/positive-rate forward returns at 30/90/180/365d per
+        /// confluence threshold and per criterion, expectancy LIFT vs the
+        /// unconditioned baseline, and closeness (days + price-%) to the
+        /// nearest price-structure swing low. Works for any symbol with history.
+        #[arg(long)]
+        expectancy: bool,
+        /// DRIFT-DETRENDED expectancy: report each forward return as EXCESS over
+        /// the asset's trailing-365d local drift (isolates the signal's edge
+        /// from secular/time-local trend). Implies --expectancy; drops bars
+        /// without a full trailing year (smaller sample). Default off → raw.
+        #[arg(long)]
+        detrend: bool,
         #[arg(long)]
         json: bool,
     },
@@ -5198,7 +5233,7 @@ pub enum BottomSignalsCommand {
     /// combinations, including forward returns at custom horizons.
     #[command(
         name = "trigger-backtest",
-        after_help = "Backtests arbitrary cycle-low trigger combinations. Keys can be either\ncomposite criteria (e.g. momentum_above_price, dss_bottoming) or atomic\ncomponents (e.g. rsi_ma_cross_above_rsi, dss_cross_above_trigger,\ndss_turned_up). The trigger fires on the false->true edge of the combined\ncondition, then reports timing and price distance to the nearest verified cycle\nlow plus forward returns at each requested horizon.\n\nExamples:\n  pftui analytics cycles bottom-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_above_rsi --horizons 7d,30d,365d --json\n  pftui analytics cycles bottom-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_above_rsi,dss_cross_above_trigger,dss_turned_up --mode all --json\n  pftui analytics cycles bottom-signals trigger-backtest --asset gold \\\n    --trigger dss_bottoming --timeframe monthly --horizons 30d,180d,365d"
+        after_help = "Backtests arbitrary cycle-low trigger combinations. Keys can be either\ncomposite criteria (e.g. momentum_above_price, dss_bottoming) or atomic\ncomponents (e.g. rsi_ma_cross_above_rsi, dss_cross_above_trigger,\ndss_turned_up). The trigger fires on the false->true edge of the combined\ncondition, then reports timing and price distance to the nearest verified cycle\nlow plus forward returns at each requested horizon.\n\nExamples:\n  pftui analytics cycles bottom-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_above_rsi --horizons 7d,30d,365d --json"
     )]
     TriggerBacktest {
         /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
@@ -5228,12 +5263,14 @@ pub enum BottomSignalsCommand {
 
 #[derive(Subcommand)]
 pub enum TopSignalsCommand {
-    /// Reliability backtest of the 7 cycle-high criteria (+ N/7 confluence)
-    /// against completed native cycle highs derived from verified low-to-low
-    /// intervals. Point-in-time (no lookahead). Honest about the tiny anchor
-    /// count.
+    /// Reliability backtest of the 7 cycle-top criteria (+ N/7 confluence)
+    /// against NATIVE CYCLE HIGHS — the maximum close between each pair of
+    /// verified cycle lows (the unfinished current cycle is excluded).
+    /// Point-in-time (no lookahead). Add `--expectancy` for the forward-return
+    /// lift block (vs price-structure swing highs), `--detrend` for
+    /// drift-excess. Honest about the tiny anchor count — emits a small_n caveat.
     #[command(
-        after_help = "Measures each top/exhaustion criterion and N/7 confluence against completed\nnative cycle highs. A cycle high is derived mechanically as the maximum close\nbetween two verified cycle lows; the unfinished current cycle is excluded.\n\nExamples:\n  pftui analytics cycles top-signals backtest --asset BTC --json\n  pftui analytics cycles top-signals backtest --asset gold --timeframe weekly --window 120"
+        after_help = "Measures, for each of the 7 composite top criteria and the N/7 confluence at\nthresholds >=3 / >=4 / >=5, how reliably the signal marks a NATIVE CYCLE HIGH.\n\nDefault read is RELIABILITY vs native cycle highs (max close between two verified\ncycle lows). Method (no lookahead): at each historical bar i the engine reads ONLY\nhistory[..=i]; a criterion 'fires' on the rising edge (newly true). Each firing is\nmatched to the nearest native cycle high within +/- the match window:\n  precision (hit-rate)  fraction of firings near a native cycle high\n  lead/lag              signed days fired->high (negative = led the high); median + range\n  coverage (recall)     fraction of native highs the criterion flagged in-window\n  false positives       firings with no nearby high\n\nAdd --expectancy for the forward-return lift block (mean/median/negative-rate at\n30/90/180/365d, lift vs baseline, closeness to the nearest price-structure swing\nHIGH — a SECOND, independent ground truth). Add --detrend for drift-excess returns.\nA good top signal precedes a DECLINE, so the expectancy headline is the NEGATIVE\nforward-return rate.\n\nHONESTY: native cycle highs are derived mechanically and few; a small-sample\nhit-rate is NOT robust. The result carries small_n / insufficient_anchors flags.\n\nExamples:\n  pftui analytics cycles top-signals backtest --asset BTC --json\n  pftui analytics cycles top-signals backtest --asset BTC --expectancy --json\n  pftui analytics cycles top-signals backtest --asset gold --timeframe weekly --window 120 --expectancy"
     )]
     Backtest {
         /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
@@ -5244,17 +5281,29 @@ pub enum TopSignalsCommand {
         /// Timeframe for the RSI/stochastic/roofing criteria: monthly (default), weekly, or daily
         #[arg(long, default_value = "monthly")]
         timeframe: String,
-        /// Match window in DAYS (+/-) around a completed high for a firing to count as a hit
+        /// Match window in DAYS (+/-) around a swing high for closeness matching
         #[arg(long)]
         window: Option<i64>,
+        /// Compute the forward-return EXPECTANCY block (mean/median/negative-rate
+        /// forward returns at 30/90/180/365d per confluence threshold and per
+        /// criterion, lift vs the unconditioned baseline, and closeness to the
+        /// nearest price-structure swing high). Works for any symbol with history.
+        #[arg(long)]
+        expectancy: bool,
+        /// DRIFT-DETRENDED expectancy: report each forward return as EXCESS over
+        /// the asset's trailing-365d local drift (isolates the signal's edge
+        /// from secular/time-local trend). Implies --expectancy; drops bars
+        /// without a full trailing year (smaller sample). Default off → raw.
+        #[arg(long)]
+        detrend: bool,
         #[arg(long)]
         json: bool,
     },
     /// Flexible event-study backtest for arbitrary criterion/component trigger
-    /// combinations against completed native cycle highs.
+    /// combinations, including forward returns at custom horizons.
     #[command(
         name = "trigger-backtest",
-        after_help = "Backtests arbitrary cycle-high/exhaustion trigger combinations. Keys can be\ncriteria (e.g. momentum_below_price, dss_topping) or atomic components\n(e.g. rsi_ma_cross_below_rsi, dss_cross_below_trigger, dss_turned_down).\nReports timing and price distance to completed native cycle highs plus forward\nreturns at custom horizons. For top signals, a 'good' forward return is negative.\n\nExamples:\n  pftui analytics cycles top-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_below_rsi --horizons 7d,30d,365d --json\n  pftui analytics cycles top-signals trigger-backtest --asset gold \\\n    --trigger dss_topping,roofing_confirming_down --mode all --json"
+        after_help = "Backtests arbitrary cycle-high trigger combinations. Keys can be either\ncomposite criteria (e.g. momentum_below_price, dss_topping) or atomic\ncomponents (e.g. rsi_ma_cross_below_rsi, dss_cross_below_trigger,\ndss_turned_down). The trigger fires on the false->true edge of the combined\ncondition, then reports timing and price distance to the nearest verified cycle\nhigh plus forward returns at each requested horizon.\n\nExamples:\n  pftui analytics cycles top-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_below_rsi --horizons 7d,30d,365d --json\n  pftui analytics cycles top-signals trigger-backtest --asset BTC \\\n    --trigger rsi_ma_cross_below_rsi,dss_cross_below_trigger,dss_turned_down --mode all --json\n  pftui analytics cycles top-signals trigger-backtest --asset gold \\\n    --trigger dss_topping,roofing_confirming_down --timeframe monthly --horizons 30d,180d,365d"
     )]
     TriggerBacktest {
         /// Symbol/asset, positional (BTC falls back to deep BTC-USD).
@@ -5274,7 +5323,7 @@ pub enum TopSignalsCommand {
         /// Timeframe for the RSI/stochastic/roofing criteria: monthly (default), weekly, or daily
         #[arg(long, default_value = "monthly")]
         timeframe: String,
-        /// Match window in DAYS (+/-) around a completed high for a firing to count as a hit
+        /// Match window in DAYS (+/-) around a verified low for a firing to count as a hit
         #[arg(long)]
         window: Option<i64>,
         #[arg(long)]

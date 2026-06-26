@@ -3480,6 +3480,8 @@ fn load_private_cycle_watch(backend: &BackendConnection) -> Option<PrivateCycleW
         crate::analytics::cycle_signals::SignalTimeframe::Monthly,
         None,
         &crate::analytics::cycle_signal_backtest::DEFAULT_CONFLUENCE_THRESHOLDS,
+        false,
+        false,
     );
     let top_signals = crate::analytics::cycle_signals::cycle_top_signals(
         "BTC",
@@ -3494,6 +3496,8 @@ fn load_private_cycle_watch(backend: &BackendConnection) -> Option<PrivateCycleW
             crate::analytics::cycle_signals::SignalTimeframe::Monthly,
             None,
             &crate::analytics::cycle_signal_backtest::DEFAULT_CONFLUENCE_THRESHOLDS,
+            false,
+            false,
         )
     });
 

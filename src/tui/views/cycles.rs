@@ -28,7 +28,9 @@ use crate::analytics::cycle_engine::{
     age_display, analyze, days_per_year_for, default_config, BandPosition, CycleReport,
     DegreeStatus,
 };
-use crate::analytics::cycle_signals::{cycle_bottom_signals, SignalTimeframe};
+use crate::analytics::cycle_signals::{
+    cycle_bottom_signals, cycle_top_signals, BonusSignal, Criterion, SignalTimeframe,
+};
 use crate::analytics::hurst_rs;
 use crate::app::App;
 use crate::models::price::HistoryRecord;
@@ -133,6 +135,10 @@ struct MatrixRow {
     /// operator's primary monthly bottom-watch timeframe. `None` when the
     /// cached history is too shallow to aggregate monthly bars.
     bottom_n7: Option<usize>,
+    /// Count of the 7 cycle-TOP confluence criteria currently firing on the
+    /// same monthly timeframe — the symmetric mirror of `bottom_n7` (higher =
+    /// cycle-top building). `None` when history is too shallow.
+    top_n7: Option<usize>,
     /// Sort key: bars/days until the next-low window opens (smaller = sooner).
     sort_key: i64,
 }
@@ -177,6 +183,8 @@ fn band_glyph(pos: Option<BandPosition>) -> &'static str {
 
 /// Build a Matrix row from the longest degree of an engine report plus a
 /// stance/regime read. Pure given its inputs (testable without an `App`).
+/// `n7` carries the paired `(cycle-bottom, cycle-top)` monthly confluence
+/// counts (0–7 each, `None` when history is too shallow).
 fn matrix_row(
     asset_idx: usize,
     name: &str,
@@ -184,8 +192,9 @@ fn matrix_row(
     report: Option<&CycleReport>,
     stance: Option<&str>,
     expected_degree: &str,
-    bottom_n7: Option<usize>,
+    n7: (Option<usize>, Option<usize>),
 ) -> MatrixRow {
+    let (bottom_n7, top_n7) = n7;
     let regime = regime_glyph(closes).to_string();
     let bpw = report.map(|r| r.bars_per_week).unwrap_or(7);
     // The longest degree is the cycle-defining one (engine emits longest-first).
@@ -310,6 +319,7 @@ fn matrix_row(
         regime,
         stance,
         bottom_n7,
+        top_n7,
         sort_key,
     }
 }
@@ -426,6 +436,10 @@ fn build_matrix_rows(app: &App) -> Vec<MatrixRow> {
         // `None` when too shallow to aggregate monthly bars.
         let bottom_n7 = cycle_bottom_signals(a.ticker, hist, SignalTimeframe::Monthly)
             .map(|s| s.met_count);
+        // Symmetric monthly cycle-TOP confluence (same deep daily history, same
+        // timeframe) — the topping mirror of `bottom_n7`. `None` when shallow.
+        let top_n7 = cycle_top_signals(a.ticker, hist, SignalTimeframe::Monthly)
+            .map(|s| s.met_count);
         rows.push(matrix_row(
             idx,
             a.name,
@@ -433,7 +447,7 @@ fn build_matrix_rows(app: &App) -> Vec<MatrixRow> {
             report.as_ref(),
             stance.as_deref(),
             expected_long_degree(a.ticker),
-            bottom_n7,
+            (bottom_n7, top_n7),
         ));
     }
     // Sort by next-low proximity (soonest first).
@@ -497,18 +511,18 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
     let cols = area.width;
 
     // Responsive column plan keyed to the cumulative fixed-column widths:
-    // marker(3)+Asset(8)+Stance(22)+Degree(20)+Band(8)+Low-N/7(8) = 69 base,
-    // then each optional column adds its width. Drop right-to-left as width
-    // shrinks, but the base columns — including Stance (the actionable verdict)
-    // and the bottom-confluence count — ALWAYS survive narrowing (B2d). The
-    // "Low N/7" column slots in right after Band / before Opens-in: it is the
-    // accumulator's cycle-bottom signal (monthly confluence, 0–7 criteria).
-    let show_opens = cols >= 79; // +Opens-in(10) — the accumulator's key number
-    let show_age = cols >= 92; // +Age/%band(13)
-    let show_tr = cols >= 105; // +Trans.(13)
-    let show_lastlow = cols >= 118; // +Last low(13)
-    let show_nextlow = cols >= 142; // +Next-low(24)
-    let show_regime = cols >= 148; // +Regime(6)
+    // marker(3)+Asset(8)+Stance(22)+Degree(20)+Band(8)+Low-N/7(8)+Top-N/7(8) =
+    // 77 base, then each optional column adds its width. Drop right-to-left as
+    // width shrinks, but the base columns — including Stance (the actionable
+    // verdict) and BOTH confluence counts — ALWAYS survive narrowing (B2d). The
+    // "Low N/7" and "Top N/7" columns slot in right after Band / before
+    // Opens-in: paired cycle-bottom and cycle-top confluence (monthly, 0–7).
+    let show_opens = cols >= 87; // +Opens-in(10) — the accumulator's key number
+    let show_age = cols >= 100; // +Age/%band(13)
+    let show_tr = cols >= 113; // +Trans.(13)
+    let show_lastlow = cols >= 126; // +Last low(13)
+    let show_nextlow = cols >= 150; // +Next-low(24)
+    let show_regime = cols >= 156; // +Regime(6)
 
     // Header.
     let mut header = String::from("   "); // marker gutter
@@ -517,6 +531,7 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
     header.push_str(&format!("{:<20}", "Degree"));
     header.push_str(&format!("{:<8}", "Band"));
     header.push_str(&format!("{:<8}", "Low N/7"));
+    header.push_str(&format!("{:<8}", "Top N/7"));
     if show_opens {
         header.push_str(&format!("{:<10}", "Opens-in"));
     }
@@ -569,8 +584,14 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
         // Bottom-confluence count — color-graded toward green as confluence
         // builds (the accumulator's cycle-bottom signal).
         spans.push(Span::styled(
-            format!("{:<8}", bottom_n7_cell(r.bottom_n7)),
+            format!("{:<8}", n7_cell(r.bottom_n7)),
             Style::default().fg(bottom_n7_color(r.bottom_n7, &app.theme)),
+        ));
+        // Top-confluence count — the topping mirror, color-graded toward the
+        // loss/warning hue as cycle-top criteria fire (higher = top building).
+        spans.push(Span::styled(
+            format!("{:<8}", n7_cell(r.top_n7)),
+            Style::default().fg(top_n7_color(r.top_n7, &app.theme)),
         ));
         if show_opens {
             spans.push(Span::raw(format!("{:<10}", ellipsize(&r.opens_in, 9))));
@@ -602,7 +623,7 @@ fn render_matrix(frame: &mut Frame, area: Rect, app: &App) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "j/k select · Enter → asset tab. Band <pre / =in / >over the low-to-low timing window. Low N/7 = monthly cycle-bottom criteria firing (higher = bottom building). Sorted by next-low proximity.",
+        "j/k select · Enter → asset tab. Band <pre / =in / >over the low-to-low timing window. Low N/7 = monthly cycle-bottom criteria firing (higher = bottom building); Top N/7 = the topping mirror (higher = top building). Sorted by next-low proximity.",
         Style::default().fg(app.theme.text_muted),
     )));
     lines.push(Line::from(Span::styled(
@@ -643,10 +664,10 @@ fn stance_color(stance: &str, app: &App) -> Color {
     }
 }
 
-/// The bottom-confluence cell text: "N/7" when computable, else the page's
-/// missing-value dash. A high count = cycle-bottom confluence building =
-/// the accumulator's buy signal.
-fn bottom_n7_cell(n: Option<usize>) -> String {
+/// The confluence cell text: "N/7" when computable, else the page's
+/// missing-value dash. Polarity-free — shared by both the cycle-bottom and
+/// cycle-top columns (only their color ramp differs).
+fn n7_cell(n: Option<usize>) -> String {
     match n {
         Some(n) => format!("{n}/7"),
         None => "—".to_string(),
@@ -658,6 +679,19 @@ fn bottom_n7_cell(n: Option<usize>) -> String {
 fn bottom_n7_color(n: Option<usize>, theme: &Theme) -> Color {
     match n {
         Some(c) if c >= 5 => theme.gain_green,
+        Some(c) if c >= 3 => theme.stale_yellow,
+        Some(_) => theme.text_secondary,
+        None => theme.text_muted,
+    }
+}
+
+/// Color-grade the TOP-confluence count: the topping mirror of
+/// [`bottom_n7_color`]. Dim/neutral at 0–1 firing, ramping toward the
+/// loss/warning hue as cycle-top criteria stack (higher = distribution risk
+/// rising). Theme-aware — never hardcodes a color.
+fn top_n7_color(n: Option<usize>, theme: &Theme) -> Color {
+    match n {
+        Some(c) if c >= 5 => theme.loss_red,
         Some(c) if c >= 3 => theme.stale_yellow,
         Some(_) => theme.text_secondary,
         None => theme.text_muted,
@@ -918,6 +952,50 @@ fn render_engine(frame: &mut Frame, area: Rect, app: &App) {
         Style::default().fg(app.theme.text_muted),
     )));
 
+    // Per-criterion cycle-bottom / cycle-top confluence checklist for the
+    // focused asset — surfaces WHICH of the mechanical monthly signals are
+    // firing, not just how many (the Matrix Low/Top N/7 counts). Computed from
+    // the SAME in-hand daily history (pure CPU; no blocking I/O in render).
+    lines.push(Line::from(""));
+    let bottom = cycle_bottom_signals(asset.ticker, hist, SignalTimeframe::Monthly);
+    let top = cycle_top_signals(asset.ticker, hist, SignalTimeframe::Monthly);
+    if bottom.is_none() && top.is_none() {
+        lines.push(Line::from(Span::styled(
+            "Confluence checklist: insufficient history to aggregate the monthly cycle-bottom / cycle-top criteria.",
+            Style::default().fg(app.theme.text_muted),
+        )));
+    } else {
+        if let Some(b) = &bottom {
+            let rows = checklist_rows(&b.criteria, b.bonus.as_ref());
+            render_checklist(
+                "Cycle-bottom signals",
+                b.met_count,
+                b.total,
+                bottom_n7_color(Some(b.met_count), &app.theme),
+                &rows,
+                &mut lines,
+                app,
+            );
+        }
+        if let Some(t) = &top {
+            lines.push(Line::from(""));
+            let rows = checklist_rows(&t.criteria, t.bonus.as_ref());
+            render_checklist(
+                "Cycle-top signals",
+                t.met_count,
+                t.total,
+                top_n7_color(Some(t.met_count), &app.theme),
+                &rows,
+                &mut lines,
+                app,
+            );
+        }
+        lines.push(Line::from(Span::styled(
+            "✓ = criterion firing on the latest monthly bar · ✗ = not firing. Bonus rows are informational and never counted in N/7.",
+            Style::default().fg(app.theme.text_muted),
+        )));
+    }
+
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
@@ -1089,6 +1167,82 @@ fn engine_degree_lines(d: &DegreeStatus, bars_per_week: u32, lines: &mut Vec<Lin
                 Style::default().fg(color),
             )));
         }
+    }
+}
+
+/// One per-criterion checklist row for the Engine sub-tab: the plain label, a
+/// firing flag, and whether it is the non-counted bonus signal. Pure data so
+/// the assembly logic is unit-testable without a live frame.
+#[derive(Debug, Clone, PartialEq)]
+struct ChecklistRow {
+    label: String,
+    met: bool,
+    /// True for the non-counted pi-cycle bonus row (rendered, never tallied).
+    is_bonus: bool,
+}
+
+/// Build the checklist rows for one polarity from a signal's 7 composite
+/// criteria plus its optional non-counted bonus signal. Returns the 7 criterion
+/// rows in order, then the bonus row (when present) flagged `is_bonus`. Pure /
+/// testable: takes only the criteria slice + bonus, never an `App` or a frame.
+fn checklist_rows(criteria: &[Criterion], bonus: Option<&BonusSignal>) -> Vec<ChecklistRow> {
+    let mut out: Vec<ChecklistRow> = criteria
+        .iter()
+        .map(|c| ChecklistRow {
+            label: c.label.clone(),
+            met: c.met,
+            is_bonus: false,
+        })
+        .collect();
+    if let Some(b) = bonus {
+        out.push(ChecklistRow {
+            label: b.label.clone(),
+            met: b.met,
+            is_bonus: true,
+        });
+    }
+    out
+}
+
+/// Render one polarity's checklist (header tally + per-criterion ✓/✗ rows) into
+/// `lines`. Theme-aware: a met criterion reads ✓ in the positive hue, an unmet
+/// one ✗ muted; the header tally takes the caller-supplied polarity color
+/// (green-ramp for bottoms, loss-ramp for tops). Stateless.
+fn render_checklist(
+    title: &str,
+    met_count: usize,
+    total: usize,
+    tally_color: Color,
+    rows: &[ChecklistRow],
+    lines: &mut Vec<Line<'static>>,
+    app: &App,
+) {
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("{title}  "),
+            Style::default()
+                .fg(app.theme.text_accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("{met_count}/{total} firing"),
+            Style::default().fg(tally_color).add_modifier(Modifier::BOLD),
+        ),
+    ]));
+    for r in rows {
+        let (glyph, color) = if r.met {
+            ("✓", app.theme.gain_green)
+        } else {
+            ("✗", app.theme.text_muted)
+        };
+        let suffix = if r.is_bonus { "  (bonus — not counted)" } else { "" };
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {glyph} "), Style::default().fg(color)),
+            Span::styled(
+                format!("{}{suffix}", r.label),
+                Style::default().fg(app.theme.text_primary),
+            ),
+        ]));
     }
 }
 
@@ -1319,13 +1473,14 @@ mod tests {
     #[test]
     fn matrix_row_with_no_report_is_all_dashes_but_keeps_regime() {
         let closes: Vec<f64> = (0..300).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
-        let row = matrix_row(0, "Bitcoin", &closes, None, Some("ACCUMULATE ●"), "4-year", Some(4));
+        let row = matrix_row(0, "Bitcoin", &closes, None, Some("ACCUMULATE ●"), "4-year", (Some(4), Some(1)));
         assert_eq!(row.asset_idx, 0);
         assert_eq!(row.name, "Bitcoin");
         assert_eq!(row.degree, "—");
         assert_eq!(row.band, "—");
         assert_eq!(row.stance, "ACCUMULATE ●");
         assert_eq!(row.bottom_n7, Some(4));
+        assert_eq!(row.top_n7, Some(1));
         // Regime is computed from closes even without an engine report.
         assert!(!row.regime.is_empty());
         assert_eq!(row.sort_key, i64::MAX / 2);
@@ -1341,18 +1496,19 @@ mod tests {
         let closes: Vec<f64> = (0..400).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
         // Claim a long degree that differs from what the report actually has.
         let bogus = if actual == "zzz" { "qqq" } else { "zzz" };
-        let row = matrix_row(1, "Gold", &closes, Some(&report), None, bogus, None);
+        let row = matrix_row(1, "Gold", &closes, Some(&report), None, bogus, (None, None));
         assert!(row.degree.contains("n/a"), "expected fallback label, got {}", row.degree);
     }
 
     #[test]
-    fn bottom_n7_cell_formats_count_or_dash() {
+    fn n7_cell_formats_count_or_dash() {
         // A known count renders "N/7"; insufficient history (None) renders the
         // page's missing-value dash — never panics, never leaks anything else.
-        assert_eq!(bottom_n7_cell(Some(0)), "0/7");
-        assert_eq!(bottom_n7_cell(Some(4)), "4/7");
-        assert_eq!(bottom_n7_cell(Some(7)), "7/7");
-        assert_eq!(bottom_n7_cell(None), "—");
+        // Shared (polarity-free) by both the Low and Top confluence columns.
+        assert_eq!(n7_cell(Some(0)), "0/7");
+        assert_eq!(n7_cell(Some(4)), "4/7");
+        assert_eq!(n7_cell(Some(7)), "7/7");
+        assert_eq!(n7_cell(None), "—");
     }
 
     #[test]
@@ -1366,6 +1522,95 @@ mod tests {
         assert_eq!(bottom_n7_color(Some(3), &theme), theme.stale_yellow);
         assert_eq!(bottom_n7_color(Some(5), &theme), theme.gain_green);
         assert_eq!(bottom_n7_color(Some(7), &theme), theme.gain_green);
+    }
+
+    #[test]
+    fn top_n7_color_ramps_toward_loss_hue() {
+        // The topping mirror: dim/neutral at low counts, ramping toward the
+        // loss/warning hue as cycle-top criteria stack. Theme-aware.
+        let theme = crate::tui::theme::theme_by_name("midnight");
+        assert_eq!(top_n7_color(None, &theme), theme.text_muted);
+        assert_eq!(top_n7_color(Some(0), &theme), theme.text_secondary);
+        assert_eq!(top_n7_color(Some(1), &theme), theme.text_secondary);
+        assert_eq!(top_n7_color(Some(3), &theme), theme.stale_yellow);
+        assert_eq!(top_n7_color(Some(5), &theme), theme.loss_red);
+        assert_eq!(top_n7_color(Some(7), &theme), theme.loss_red);
+    }
+
+    #[test]
+    fn checklist_rows_yields_seven_criteria_plus_bonus_with_correct_flags() {
+        // The pure assembly logic: 7 criterion rows in order (is_bonus=false)
+        // carrying each criterion's met flag, then the non-counted bonus row
+        // (is_bonus=true) when present.
+        use crate::analytics::cycle_signals::{BonusSignal, Criterion};
+        let criteria: Vec<Criterion> = (0..7)
+            .map(|i| Criterion {
+                key: format!("k{i}"),
+                label: format!("Criterion {i}"),
+                met: i % 2 == 0, // 0,2,4,6 met → 4 firing
+                detail: String::new(),
+                components: Vec::new(),
+            })
+            .collect();
+        let bonus = BonusSignal {
+            key: "pi_cycle".into(),
+            label: "Pi-cycle confirmation".into(),
+            met: true,
+            detail: String::new(),
+            last_bottom: None,
+            last_top: None,
+        };
+
+        // Without a bonus → exactly 7 rows, none flagged bonus.
+        let no_bonus = checklist_rows(&criteria, None);
+        assert_eq!(no_bonus.len(), 7);
+        assert!(no_bonus.iter().all(|r| !r.is_bonus));
+        // Met flags preserved in order.
+        for (i, r) in no_bonus.iter().enumerate() {
+            assert_eq!(r.met, i % 2 == 0, "row {i} met flag");
+            assert_eq!(r.label, format!("Criterion {i}"));
+        }
+
+        // With a bonus → 8 rows, the last flagged bonus and carrying its met.
+        let with_bonus = checklist_rows(&criteria, Some(&bonus));
+        assert_eq!(with_bonus.len(), 8);
+        assert_eq!(with_bonus.iter().filter(|r| r.is_bonus).count(), 1);
+        let last = with_bonus.last().expect("bonus row");
+        assert!(last.is_bonus);
+        assert!(last.met);
+        assert_eq!(last.label, "Pi-cycle confirmation");
+    }
+
+    #[test]
+    fn top_n7_engine_populated_alongside_bottom_on_deep_history() {
+        // Parity guard: an asset with deep enough synthetic daily history yields
+        // BOTH a cycle-bottom AND a cycle-top monthly count (the Matrix Low/Top
+        // N/7 columns are computed from the same history) — never panics.
+        use crate::analytics::cycle_signals::{
+            cycle_bottom_signals, cycle_top_signals, SignalTimeframe,
+        };
+        use chrono::{Duration, NaiveDate};
+        use rust_decimal::Decimal;
+
+        let start = NaiveDate::from_ymd_opt(2018, 1, 1).expect("date");
+        let deep: Vec<HistoryRecord> = (0..900)
+            .map(|i| {
+                let px = 100.0 + (i as f64 / 30.0).sin() * 10.0 + i as f64 * 0.01;
+                HistoryRecord {
+                    date: (start + Duration::days(i as i64)).format("%Y-%m-%d").to_string(),
+                    close: Decimal::from_f64_retain(px).unwrap_or_default(),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                }
+            })
+            .collect();
+
+        let bottom = cycle_bottom_signals("BTC-USD", &deep, SignalTimeframe::Monthly).map(|s| s.met_count);
+        let top = cycle_top_signals("BTC-USD", &deep, SignalTimeframe::Monthly).map(|s| s.met_count);
+        assert!(matches!(bottom, Some(n) if n <= 7), "bottom count expected, got {bottom:?}");
+        assert!(matches!(top, Some(n) if n <= 7), "top count expected alongside bottom, got {top:?}");
     }
 
     #[test]
@@ -1475,7 +1720,7 @@ mod tests {
         // a raw bar count.
         let report = synthetic_btc_report();
         let closes: Vec<f64> = (0..400).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
-        let row = matrix_row(0, "Bitcoin", &closes, Some(&report), None, "4-year", None);
+        let row = matrix_row(0, "Bitcoin", &closes, Some(&report), None, "4-year", (None, None));
         // Age is "<n><unit> ..." — extract the leading number + unit.
         let first = row.age.split_whitespace().next().unwrap_or("");
         if first.ends_with("yr") {
@@ -1510,7 +1755,7 @@ mod tests {
             "test fixture invalid: no shorter degree has a band"
         );
         let closes: Vec<f64> = (0..400).map(|i| 100.0 + (i as f64 / 7.0).sin()).collect();
-        let row = matrix_row(0, "Bitcoin", &closes, Some(&report), None, "", None);
+        let row = matrix_row(0, "Bitcoin", &closes, Some(&report), None, "", (None, None));
         assert_ne!(row.band, "—", "band should fall back to the shorter degree");
         assert!(
             row.degree.contains("long n/a"),

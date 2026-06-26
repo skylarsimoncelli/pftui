@@ -16,9 +16,18 @@ Public-safe by construction: the labels carry no practitioner/indicator names
 (they come straight from the name-free Rust `label` fields), and the chart shows
 NO portfolio holdings — only a market-data read.
 
+  tracked   — a heat-strip table of EVERY armed cycle-signal alert from
+              `analytics cycles tracked --json` (both polarities): asset, label,
+              timeframe, live met/total confluence bar (colored by closeness to
+              firing), distance-to-target, fired?, and time-since-last. The
+              status view, not a study. Privacy-safe (metadata + counts only).
+
 CLI:   python cycle_signals_viz.py checklist --asset BTC [--timeframe monthly]
+       python cycle_signals_viz.py tracked [--asset BTC] [--polarity top]
 Token: <!--CYCLE_SIGNALS_VIZ:checklist:BTC--> (expanded by viz/render.py)
        payload = ASSET[?timeframe=daily|weekly|monthly]  (timeframe optional)
+       <!--CYCLE_SIGNALS_VIZ:tracked:all-->
+       payload = all | ASSET[?polarity=bottom|top]  (filter optional)
 """
 import os
 import re
@@ -26,7 +35,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from theme import (  # noqa: E402
-    BORDER, GREEN, MONO, MUTED, RED, SANS, TEXT,
+    AMBER, BORDER, GREEN, MONO, MUTED, RED, SANS, TEXT,
     OP_FILL_STRONG, OP_TRACK, OP_WASH,
     caption, esc, pftui_json, ramp, svg_open, title,
 )
@@ -150,6 +159,143 @@ def _band_word(met, total):
     return "very strong confluence (all 7)"
 
 
+# --------------------------------------------------------- VIZ: TRACKED DASHBOARD
+def cycle_signals_tracked(data):
+    """Heat-strip table of every tracked cycle-signal alert from
+    `analytics cycles tracked --json`. Color-coded by closeness-to-firing.
+    '' on no data. Privacy-safe: signal metadata + counts only, no dollars."""
+    if not data:
+        return ""
+    signals = data.get("signals") or []
+    if not signals:
+        return ""
+    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+
+    # Cap the row count so the card stays one screen; order armed-and-close
+    # first (most actionable), then the rest, deterministically.
+    def _close_frac(sig):
+        live = sig.get("live") if isinstance(sig.get("live"), dict) else {}
+        met = _ival(live.get("met_count"))
+        tot = _ival(live.get("total"))
+        return (met / tot) if (met is not None and tot) else -1.0
+    rows = sorted(
+        signals,
+        key=lambda s: (0 if s.get("fired") else 1, -_close_frac(s),
+                       str(s.get("asset") or ""), str(s.get("label") or "")),
+    )
+    capped = rows[:18]
+    overflow = len(rows) - len(capped)
+
+    W, ml, mr = 720, 16, 16
+    top = 70
+    rowh = 22
+    H = top + len(capped) * rowh + (16 if overflow else 0) + 24
+
+    s = [svg_open(W, H), title(ml, 24, "Tracked cycle signals")]
+
+    # --- header summary (counts) ---
+    tot = _ival(summary.get("total")) or len(signals)
+    nb = _ival(summary.get("bottom")) or 0
+    nt = _ival(summary.get("top")) or 0
+    fired = _ival(summary.get("fired")) or 0
+    close = _ival(summary.get("close_to_firing")) or 0
+    sumtxt = f"{tot} tracked · {nb} bottom · {nt} top · {fired} fired · {close} close"
+    s.append(f'<text x="{W-mr}" y="22" text-anchor="end" fill="{MUTED}" '
+             f'font-size="9" font-family={MONO!r}>{esc(sumtxt)}</text>')
+
+    # --- column headers ---
+    cols = [ml, ml + 120, ml + 210, ml + 470, ml + 560, ml + 640]
+    hdrs = ["asset / signal", "timeframe", "live confluence", "dist", "fired", "last"]
+    for cx, hd in zip(cols, hdrs):
+        s.append(f'<text x="{cx}" y="{top-12}" fill="{MUTED}" font-size="7.5" '
+                 f'font-weight="700" font-family={MONO!r}>{esc(hd)}</text>')
+    s.append(f'<line x1="{ml}" y1="{top-8}" x2="{W-mr}" y2="{top-8}" '
+             f'stroke="{BORDER}" stroke-opacity="{OP_TRACK}"/>')
+
+    y = top
+    for sig in capped:
+        polarity = str(sig.get("polarity") or "").lower()
+        pol_mark = "▼" if polarity == "top" else "▲"
+        pol_col = RED if polarity == "top" else GREEN
+        live = sig.get("live") if isinstance(sig.get("live"), dict) else {}
+        met = _ival(live.get("met_count"))
+        ltot = _ival(live.get("total"))
+        frac = (met / ltot) if (met is not None and ltot) else 0.0
+        # closeness color: closer to firing = hotter (ramp 0=green..1=red is for
+        # risk; here closeness IS the signal so invert: more met = more amber/red
+        # "attention"). Use ramp(frac) so a near-full bar reads hot.
+        heat = ramp(frac) if (met is not None and ltot) else MUTED
+        fired = bool(sig.get("fired"))
+
+        if fired:
+            s.append(f'<rect x="{ml-4}" y="{y-2}" width="{W-2*ml+8}" '
+                     f'height="{rowh-3}" rx="3" fill="{heat}" fill-opacity="{OP_WASH}"/>')
+
+        asset = _nice(sig.get("asset"))
+        label = str(sig.get("label") or "")
+        lbl = label if len(label) <= 22 else label[:21] + "…"
+        s.append(f'<text x="{cols[0]}" y="{y+13}" fill="{pol_col}" font-size="9" '
+                 f'font-weight="700" font-family={MONO!r}>{pol_mark}</text>')
+        s.append(f'<text x="{cols[0]+12}" y="{y+13}" fill="{TEXT}" font-size="9" '
+                 f'font-weight="600" font-family={SANS!r}>{esc(asset)} '
+                 f'<tspan fill="{MUTED}" font-size="8">{esc(lbl)}</tspan></text>')
+        tf = str(sig.get("timeframe") or "")
+        s.append(f'<text x="{cols[1]}" y="{y+13}" fill="{MUTED}" font-size="8.5" '
+                 f'font-family={MONO!r}>{esc(tf)}</text>')
+
+        # live confluence bar (met/total) or summary text
+        if met is not None and ltot:
+            gx, gw = cols[2], 180
+            s.append(f'<rect x="{gx}" y="{y+3}" width="{gw}" height="11" rx="2" '
+                     f'fill="{BORDER}" fill-opacity="{OP_TRACK}"/>')
+            s.append(f'<rect x="{gx}" y="{y+3}" width="{max(2.0, frac*gw):.1f}" '
+                     f'height="11" rx="2" fill="{heat}" fill-opacity="{OP_FILL_STRONG}"/>')
+            s.append(f'<text x="{gx+gw+6}" y="{y+12}" fill="{heat}" font-size="8.5" '
+                     f'font-weight="700" font-family={MONO!r}>{met}/{ltot}</text>')
+        else:
+            summ = str(live.get("summary") or "—")
+            s.append(f'<text x="{cols[2]}" y="{y+12}" fill="{MUTED}" font-size="8.5" '
+                     f'font-family={MONO!r}>{esc(summ[:34])}</text>')
+
+        # distance-to-target
+        dist = live.get("distance_to_target")
+        dtxt = ""
+        if isinstance(dist, (int, float)):
+            dtxt = f"{float(dist):+.2f}"
+        elif dist is not None:
+            dtxt = str(dist)[:8]
+        s.append(f'<text x="{cols[3]}" y="{y+12}" fill="{MUTED}" font-size="8" '
+                 f'font-family={MONO!r}>{esc(dtxt)}</text>')
+
+        # fired flag
+        fcol = AMBER if fired else MUTED
+        s.append(f'<text x="{cols[4]}" y="{y+12}" fill="{fcol}" font-size="8" '
+                 f'font-weight="{700 if fired else 400}" '
+                 f'font-family={MONO!r}>{"yes" if fired else "armed"}</text>')
+
+        # time since last
+        tsl = str(sig.get("time_since_last") or "never")
+        s.append(f'<text x="{W-mr}" y="{y+12}" text-anchor="end" fill="{MUTED}" '
+                 f'font-size="8" font-family={MONO!r}>{esc(tsl[:10])}</text>')
+        y += rowh
+
+    if overflow:
+        s.append(f'<text x="{ml}" y="{y+11}" fill="{MUTED}" font-size="8" '
+                 f'font-style="italic" font-family={SANS!r}>+{overflow} more tracked '
+                 f'signals (run `analytics cycles tracked`)</text>')
+        y += 16
+
+    s.append(caption(ml, H - 8, "live met-count vs target · color = closeness to firing"))
+    return "\n".join(s) + "\n</svg>"
+
+
+def _ival(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
 # --------------------------------------------------------- orchestration / API
 def _parse_payload(arg):
     """ASSET[?timeframe=monthly] -> (asset, timeframe). Default monthly."""
@@ -163,9 +309,29 @@ def _parse_payload(arg):
     return asset.strip(), tf.strip()
 
 
+def _tracked_cli(arg):
+    """Parse the tracked payload (ALL | ASSET[?polarity=top]) into CLI flags."""
+    cli = ["analytics", "cycles", "tracked"]
+    asset, _, qs = arg.partition("?")
+    asset = asset.strip()
+    if asset and asset.lower() != "all":
+        cli += ["--asset", asset]
+    for part in qs.split("&"):
+        k, _, v = part.partition("=")
+        if k.strip() == "polarity" and v.strip() in ("top", "bottom"):
+            cli += ["--polarity", v.strip()]
+    return cli
+
+
 def render(viz_type, arg="", pftui=None):
-    """Render the checklist. '' on any failure (additive, never load-bearing)."""
+    """Render a cycle-signal viz. '' on any failure (additive, never load-bearing).
+
+    Types: `checklist` (the N/7 bottom confluence list) and `tracked` (the
+    tracked-signals dashboard over every armed cycle-signal alert)."""
     try:
+        if viz_type == "tracked":
+            data = pftui_json(_tracked_cli(arg), pftui)
+            return cycle_signals_tracked(data)
         if viz_type != "checklist":
             return ""
         asset, tf = _parse_payload(arg)
@@ -195,13 +361,18 @@ def expand(md, pftui=None):
 def main(argv):
     import argparse
     p = argparse.ArgumentParser(
-        description="Render the pftui cycle-bottom signal checklist as inline SVG.")
-    p.add_argument("viz", choices=["checklist"])
-    p.add_argument("--asset", required=True)
+        description="Render the pftui cycle-signal checklist / tracked dashboard as inline SVG.")
+    p.add_argument("viz", choices=["checklist", "tracked"])
+    p.add_argument("--asset", default="all")
     p.add_argument("--timeframe", default="monthly")
+    p.add_argument("--polarity", choices=["bottom", "top"], default=None)
     p.add_argument("--pftui", default=None)
     args = p.parse_args(argv)
-    svg = render(args.viz, f"{args.asset}?timeframe={args.timeframe}", args.pftui)
+    if args.viz == "tracked":
+        arg = args.asset + (f"?polarity={args.polarity}" if args.polarity else "")
+    else:
+        arg = f"{args.asset}?timeframe={args.timeframe}"
+    svg = render(args.viz, arg, args.pftui)
     if not svg:
         sys.stderr.write(f"no cycle-signal viz available for {args.asset}\n")
         return 1

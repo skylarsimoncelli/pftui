@@ -19,7 +19,8 @@ unavailable renders to an empty string, so a report never breaks.
 |---|---|
 | `theme.py` | Brand palette (synced with `gen-report.py` CSS), SVG helpers, and `pftui_json()` — the Rust data boundary. |
 | `cycle_viz.py` | Cycle charts: `map`, `dial`, `ledger`. CLI + `expand()` token handler. |
-| `cycle_signals_viz.py` | Cycle-bottom signal checklist: `checklist` (the N-of-7 confluence ✓/✗ list + gauge from `analytics cycles bottom-signals`). CLI + `expand()` token handler. |
+| `cycle_signals_viz.py` | Cycle-signal status: `checklist` (the N-of-7 bottom confluence ✓/✗ list + gauge from `analytics cycles bottom-signals`) and `tracked` (the tracked-signals dashboard over every armed cycle-signal alert from `analytics cycles tracked`). CLI + `expand()` token handler. |
+| `cycle_backtest_viz.py` | Per-signal backtest report card: `expectancy` (forward-return signal-vs-baseline bars + hit-rate/closeness table from `analytics cycles {bottom,top}-signals backtest --expectancy`, sign-aware bottom/top). CLI + `expand()` token handler. |
 | `risk_viz.py` | Risk/regime charts: `cocrash` (co-crash matrix). CLI + `expand()` token handler. |
 | `portfolio_viz.py` | Risk-sizing charts: `drawdown` (drawdown-survival composite), `riskbars` (risk fingerprint). CLI + `expand()` token handler. |
 | `analog_viz.py` | Analog-engine chart: `dist` (forward-return distribution box/whisker). CLI + `expand()` token handler. |
@@ -39,6 +40,8 @@ just before markdown→HTML. A report's markdown embeds tokens:
 <!--CYCLE_VIZ:dial:BTC-->  <!--CYCLE_VIZ:dial:GC=F-->
 <!--CYCLE_VIZ:ledger:BTC-->
 <!--CYCLE_SIGNALS_VIZ:checklist:BTC-->  <!--CYCLE_SIGNALS_VIZ:checklist:GC=F-->
+<!--CYCLE_SIGNALS_VIZ:tracked:all-->
+<!--CYCLE_BACKTEST_VIZ:expectancy:BTC?polarity=bottom&timeframe=monthly-->
 <!--SCENARIO_VIZ:dashboard:-->
 <!--MACRO_VIZ:environment:-->  <!--MACRO_VIZ:catalysts:-->
 <!--RATES_VIZ:realrates:-->
@@ -85,6 +88,8 @@ so a token can *silently* yield nothing. This matrix says where that happens:
 | Cycle **dial** | `CYCLE_VIZ:dial:SYM` | **BTC + gold-family ONLY** | dial is driven by `cycles clock`, which only emits a `btc` clock (BTC/BTC-USD) or a `gold` clock (GC=F/GOLD/SI=F/SILVER). **Tokenizing a dial for SPY/QQQ/etc. silently renders nothing.** |
 | Cycle **ledger** | `CYCLE_VIZ:ledger:SYM` | any asset with a `cycles analyze` degree | needs a `ledger` + `band` on the degree |
 | Cycle-bottom **checklist** | `CYCLE_SIGNALS_VIZ:checklist:SYM` | any asset with deep enough history for `cycles bottom-signals` (~120+ daily bars) | the N-of-7 confluence ✓/✗ list + gauge; payload may carry `?timeframe=daily\|weekly\|monthly` (default monthly). Renders nothing on shallow history. Public-safe / name-free. |
+| Cycle-signal **tracked** | `CYCLE_SIGNALS_VIZ:tracked:all` | the whole armed cycle-signal alert set | heat-strip of every tracked signal (live met/total bar colored by closeness, dist-to-target, fired?, time-since-last). Payload = `all` or `SYM[?polarity=bottom\|top]`. Renders nothing when no signals are armed. |
+| Cycle-signal **backtest card** | `CYCLE_BACKTEST_VIZ:expectancy:SYM?polarity=bottom` | any asset the `cycles {bottom,top}-signals backtest --expectancy` engine accepts | forward-return signal-vs-baseline bars (sign-aware: bottoms want +, tops want −) per 30/90/180/365d for the headline ≥4/7 threshold, plus a per-threshold hit-rate + closeness table. Payload may carry `&timeframe=…`. Honest "reliability unmeasurable" caveat card on zero anchors / firings. |
 | **cocrash** | `RISK_VIZ:cocrash:A,B,…` | any 2–6 assets with `tail-dependence` history | each pair needs Pearson and/or λ_L; missing pairs draw a `--` cell |
 | Analog **dist** | `ANALOG_VIZ:dist:SYM` | any asset with an `analytics analog` report | needs the summary quantiles OR ≥1 per-analog forward return |
 | **drawdown** | `PORTFOLIO_VIZ:drawdown:SYM` | any asset with a `survival` block | falls back to the `survival` block embedded in `risk-dashboard` |
@@ -183,6 +188,21 @@ Curated by value, not volume (quality over quantity). Each maps to existing
   falls back to the freshest snapshot with a nominal yield or a G10 pair. A Rust
   follow-up could backfill nominal/TIPS on the trailing snapshot so the headline
   is always the literal newest date.
+
+- **Cycle-signal backtest card + tracked dashboard** (`cycle_backtest_viz.py`
+  `expectancy` + `cycle_signals_viz.py` `tracked`). The backtest card renders the
+  `--expectancy` block from `analytics cycles {bottom,top}-signals backtest`: a
+  forward-return panel (grouped signal-vs-baseline mean bars per 30/90/180/365d
+  for the headline ≥4/7 confluence threshold, sign-aware so a cycle-bottom wants
+  POSITIVE and a cycle-top wants NEGATIVE returns — colored green=good/red=bad),
+  a per-threshold hit-rate (positive_rate for bottoms / negative_rate for tops) +
+  closeness table (lead/lag days, price-gap %, confidence %), and an honest
+  "reliability unmeasurable — directional only" caveat card when anchors or
+  matched firings are insufficient. The tracked dashboard heat-strips every armed
+  cycle-signal alert (`analytics cycles tracked`): live met/total confluence bar
+  colored by closeness, distance-to-target, fired?, time-since-last. Tokens
+  `<!--CYCLE_BACKTEST_VIZ:expectancy:BTC?polarity=bottom-->` and
+  `<!--CYCLE_SIGNALS_VIZ:tracked:all-->`.
 
 **High value, next**
 - **Regime quad (Growth×Inflation)** — a 2×2 with the current regime dot + a short

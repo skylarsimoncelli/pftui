@@ -1,9 +1,14 @@
-# CYCLE-SIGNALS.md — The Mechanical Cycle-Bottom Signal Suite
+# CYCLE-SIGNALS.md — The Mechanical Cycle-Bottom & Cycle-Top Signal Suites
 
 > Read before touching `src/analytics/cycle_signals.rs`, the `analytics cycles
-> bottom-signals` CLI, or any report/analyst prose that itemizes cycle-bottom
-> confirmations. Companion to [CYCLE-THEORY.md](CYCLE-THEORY.md) (the timing
-> engine) and [EPISTEMICS.md](EPISTEMICS.md) (the measurement discipline).
+> bottom-signals` / `top-signals` CLI, or any report/analyst prose that itemizes
+> cycle-bottom or cycle-top confirmations. Companion to
+> [CYCLE-THEORY.md](CYCLE-THEORY.md) (the timing engine) and
+> [EPISTEMICS.md](EPISTEMICS.md) (the measurement discipline).
+>
+> The bulk of this doc describes the cycle-**bottom** suite; the **symmetric
+> cycle-TOP suite** at the end is its exact inverted mirror (same engine,
+> bearish side).
 
 ## What it is
 
@@ -219,7 +224,8 @@ component reports `current - previous`.
   in **name-free** public prose.
 - **Report chart:** `viz/cycle_signals_viz.py` renders the checklist + N/7 gauge
   as inline SVG. Token `<!--CYCLE_SIGNALS_VIZ:checklist:BTC-->` (auto-injected at
-  the Bitcoin/Gold section headings by `viz/report_charts.py`).
+  the Bitcoin/Gold section headings by `viz/report_charts.py`). See **Report
+  rendering** below for the backtest report card and tracked dashboard tokens.
 
 ## How to backtest reliability and trigger expectancy
 
@@ -315,10 +321,195 @@ of 1 (`--window 0` is rejected as meaningless, since a firing would then have to
 land exactly on the verified-low date). Omit `--window` for the default
 ±90-day window.
 
-For `top-signals backtest`, `anchors[]` are completed native cycle highs rather
-than lows: max closes between consecutive verified lows. This keeps the high
-side deterministic without hand-entered top dates, but it also means the
-current unfinished cycle is deliberately absent from the reliability math.
+### Native cycle-high anchors (`top-signals backtest`)
+
+For `top-signals backtest`, `anchors[]` are completed **native cycle highs**
+rather than lows: the max close between each pair of consecutive verified cycle
+lows. This keeps the high side deterministic without hand-entered top dates, but
+it also means the current unfinished cycle is deliberately absent from the
+reliability math. The top backtest reports the same per-criterion reliability
+rows as the bottom suite (graded against these native highs) AND, with
+`--expectancy`, the asset-agnostic forward-return block below (graded against
+price-structure swing highs). See also `top-signals trigger-backtest` for the
+flexible arbitrary-trigger event study.
+
+### Forward-return expectancy (`--expectancy`, asset-agnostic)
+
+The reliability rows above answer *did the signal land near a doctrine low?* — but
+they need hand-curated doctrine anchors (BTC/gold only) and report **no forward
+returns**. Add `--expectancy` to also compute an **asset-agnostic expectancy
+block** that works for any symbol with enough history:
+
+```bash
+pftui analytics cycles bottom-signals backtest --asset BTC --expectancy --json
+pftui analytics cycles bottom-signals backtest --asset SPY --expectancy            # arbitrary symbol
+```
+
+It adds an `expectancy` object to the result (omitted entirely without the flag, so
+the legacy payload is byte-for-byte unchanged):
+
+- **Price-structure anchors.** Significant swing lows are derived *from price alone*
+  via a prominence-filtered pivot scan (lowest low in a ±90-daily-bar window that is
+  followed by a ≥20% recovery). These are **independent of the confluence signal
+  being graded** (no circularity) and work for an arbitrary symbol. When doctrine
+  anchors exist they are merged in (stronger ground truth), but are not required.
+  *Epistemic caveat:* price-derived anchors are weaker ground truth than doctrine
+  anchors — read their numbers as directional.
+- **Forward-return expectancy conditioned on confluence.** Walking history
+  point-in-time (same no-lookahead discipline — at bar `i` the engine sees only
+  `history[..=i]`), for each confluence threshold (≥3/≥4/≥5 of 7) and each single
+  criterion: `mean`/`median`/`positive_rate_pct` forward return at **30/90/180/365
+  calendar-day** horizons, plus the unconditioned same-horizon `baseline` and the
+  resulting `lift_vs_baseline_pct` (signal mean − baseline mean). Forward returns
+  inherently consume future bars — that is the *outcome*, not the signal; the
+  no-lookahead rule governs only the signal read.
+- **Dispersion + scale-aware effect size (statistical honesty).** A big lift on
+  a handful of noisy firings reads as robust unless the reader can see the noise
+  behind the mean. Each horizon (signal row AND `baseline`) carries
+  `stdev_return_pct` — the **population** standard deviation (variance divides by
+  `n`, not `n−1`) of that horizon's forward returns in percent, `None` when
+  `samples < 2`. Each signal horizon also carries `effect_size` =
+  `lift_vs_baseline_pct ÷ baseline.stdev_return_pct` for the same horizon: how
+  many baseline-return standard deviations the signal shifts the mean. This
+  contextualizes lift against return dispersion — a +67 lift against a 180%-std
+  baseline is only ~0.37σ — and is **directional context, NOT a significance
+  test** (no p-value is claimed). `effect_size` is `None` when the baseline stdev
+  is missing or zero. The text renderer prints the σ context inline next to every
+  lift, e.g. `365d +218.0%(lift +67.5, ~0.4σ, base σ 180%)`. *Determinism note:*
+  the sqrt converts the Decimal variance to `f64` for the single `f64::sqrt`
+  (IEEE-754 correctly-rounded, identical on every platform) and rounds back to a
+  fixed 6 dp — fully reproducible, no randomness.
+- **Closeness to the actual extreme.** Each firing is matched to the nearest
+  price-structure low within the match window, reporting BOTH signed lead/lag in
+  days AND the signed `price_gap_pct` `(fire_price − low_price)/low_price·100`.
+  Aggregated as `median_lead_lag_days`, `median_price_gap_pct`, `matched_firings`,
+  and `confidence_pct` (= matched / firings). **Sign convention for
+  `median_lead_lag_days`: positive = the signal fired AFTER the extreme
+  (confirmation / lag), negative = fired BEFORE it. A positive value is NOT
+  predictive lead time** — the text renderer prints this convention inline.
+- **Per-row firing-count guard.** Each confluence/criterion row also carries
+  `low_firings: bool` — true when that row's `firings` count is below
+  `MIN_SIGNIFICANT_FIRINGS` (20). It is keyed to the per-row firing count, NOT to
+  the anchor-count-driven `small_n`, so a row with plenty of anchors but only a
+  handful of firings is still flagged. When true, the row's forward-return / lift
+  numbers are directional only, never a probability; the text renderer appends an
+  inline `(n=… — too few firings; directional only)` marker. Additive field,
+  omitted from JSON when false.
+
+### Drift-detrended expectancy (`--detrend`)
+
+On a secular-bull asset the raw expectancy is confounded by drift: BTC's baseline
+365d forward return is ≈ +150% because almost all of its history is one uptrend.
+The existing `lift_vs_baseline_pct` (signal mean − **global** baseline mean)
+controls for the *average* drift, but the drift is **non-stationary** (2013–2017
+drift ≫ 2022–2025 drift), so a cluster of firings in a high-drift era (e.g.
+2020–2021) still inflates the lift even with no real edge. `--detrend` closes
+this gap:
+
+```bash
+pftui analytics cycles bottom-signals backtest --asset BTC --detrend --json
+pftui analytics cycles top-signals    backtest --asset BTC --detrend --json
+```
+
+`--detrend` implies `--expectancy` (it only reshapes that block). It changes how
+each forward return is measured. Instead of the raw `(P_{i+h} − P_i)/P_i`, it
+reports the **EXCESS over the asset's contemporaneous (time-local) drift**:
+
+1. Estimate a per-day local log drift at bar `i` from a trailing log-price slope:
+   `g_i = (ln P_i − ln P_trail) / Δdays`, where `P_trail` is the most recent bar
+   on/before `date(i) − DETREND_TRAILING_DAYS` (**365 calendar days** — one year:
+   long enough to average a sub-annual cycle's swings into a representative
+   secular slope, short enough to stay *time-local*), and `Δdays` is the actual
+   calendar gap to that bar.
+2. Expected horizon drift return = `exp(g_i · h) − 1` (in percent).
+3. **Excess return = raw − expected drift return.**
+
+The SAME detrending is applied to BOTH the per-firing returns AND the baseline
+returns, so `lift_vs_baseline_pct` stays a like-for-like "signal excess −
+baseline excess" comparison. This isolates the signal's edge from "the asset
+trends up."
+
+**Determinism.** The `ln`/`exp` are the only transcendental step (libm f64, NOT
+IEEE-correctly-rounded — they can differ in the last ulp across libm versions).
+They are isolated: the per-bar drift % is computed in f64 then immediately
+rounded to 6 dp (`DRIFT_DP`) and converted back to `Decimal` BEFORE the
+subtraction, so all stored returns/means/lift stay Decimal and reproducible.
+(Their cross-platform variation is sub-ulp ~1e-15 — far below the 1e-6 rounding —
+so 6 dp absorbs it; the only residual risk is an exact 6-dp half-way boundary,
+astronomically unlikely on real return data.)
+
+**Honest caveats.** Detrending (a) **assumes log-LINEAR local drift** over the
+trailing year (a regime that is bending within the window is mis-estimated, most
+visibly right at a regime change), and (b) **reduces the sample size** — bars
+without a full trailing year have no drift estimate and are dropped from the
+detrended path. (c) Because the baseline is detrended too, the detrended
+`lift_vs_baseline_pct` is **not guaranteed to be smaller** than the raw lift — it
+can move either way depending on whether a row's firings clustered in a higher- or
+lower-drift era than the baseline. The drift-removal evidence is the per-firing
+**means** dropping toward excess-over-trend, not the lift shrinking.
+
+**Surfacing.** When detrended, the expectancy block carries a top-level
+`"detrended": true` flag and `"detrend_trailing_days": 365`, so a consumer knows
+the returns are excess-over-local-drift. The per-horizon stat field **names are
+unchanged** (`mean_return_pct`, `median_return_pct`, `lift_vs_baseline_pct`,
+`stdev_return_pct`, `effect_size`, …) — they simply carry excess values; the
+`detrended` flag tells the reader how to interpret them. Both fields are
+**omitted from JSON in raw (default) mode**, so the legacy payload is byte-for-byte
+unchanged. The text renderer prints a header line in the expectancy section —
+`Mode: DRIFT-DETRENDED (excess over trailing 365d local drift) — returns are
+excess-over-trend, not raw` — so detrended numbers can't be confused with raw.
+
+The block carries its own honest `small_n` / `insufficient_anchors` flags and
+`caveat`. JSON shape (raw mode; `--detrend` adds `detrended` + `detrend_trailing_days`):
+
+```jsonc
+"expectancy": {
+  "price_structure_anchors": ["2018-12-15", "2020-03-13", "2022-11-21", "..."],
+  "price_low_pivot_window": 90,
+  "price_low_prominence_pct": 20,
+  "doctrine_anchors_used": true,
+  "anchors_used": 13,
+  "insufficient_anchors": false,
+  "small_n": false,
+  "baseline": [
+    { "horizon_days": 30, "samples": 593, "mean_return_pct": "6.25",
+      "median_return_pct": "2.76", "positive_rate_pct": "56.8",
+      "stdev_return_pct": "18.40" }   // population σ of baseline fwd returns
+    // 90 / 180 / 365 …
+  ],
+  "confluence": [
+    {
+      "key": "confluence_ge_3", "threshold": 3,
+      "label": "Confluence ≥3/7 criteria firing", "firings": 23,
+      "low_firings": false,   // true & present only when firings < MIN_SIGNIFICANT_FIRINGS (20)
+      "horizons": [
+        { "horizon_days": 30, "samples": 23, "mean_return_pct": "7.18",
+          "median_return_pct": "8.55", "positive_rate_pct": "65.2",
+          "baseline_mean_return_pct": "6.25", "lift_vs_baseline_pct": "0.93",
+          "stdev_return_pct": "21.07",  // population σ of THIS signal's fwd returns
+          "effect_size": "0.05" }       // lift ÷ baseline σ (here ~0.05σ — tiny)
+        // 90 / 180 / 365 …
+      ],
+      "closeness": {
+        "matched_firings": 14, "firings": 23, "median_lead_lag_days": 26,
+        "median_price_gap_pct": "32.89", "confidence_pct": "60.9"
+      }
+    }
+    // ≥4 / ≥5 …
+  ],
+  "criteria": [ /* same shape, one row per criterion */ ],
+  "caveat": "Expectancy conditioned on 13 cycle-low anchor(s); …"
+}
+```
+
+**Polarity-correct pivot keys.** The two swing-pivot parameter keys carry the
+block's polarity in their NAME. The bottom path (above) emits
+`price_low_pivot_window` / `price_low_prominence_pct`; the **top path**
+(`top-signals backtest --expectancy`) emits `price_high_pivot_window` /
+`price_high_prominence_pct` for the same values — so a top payload never
+advertises "low" field names. Every other key (`price_structure_anchors`,
+`anchors_used`, `doctrine_anchors_used`, `baseline`, `confluence`, `criteria`,
+…) is polarity-neutral and identical on both paths.
 
 ### Structured error reasons
 
@@ -332,3 +523,173 @@ Under `--json`, a failed `bottom-signals` / backtest run emits
 - `insufficient_history` — the series resolved with some bars but fewer than the
   ~120-daily-bar floor the smoothing chains need; `bars_available` reports how
   many were found.
+
+---
+
+## The symmetric cycle-TOP suite (`analytics cycles top-signals`)
+
+`analytics cycles top-signals` is the **exact inverted mirror** of
+`bottom-signals`. It answers the opposite narrow question: *is a cycle TOP being
+put in right now?* Same engine, same 10→7 collapse, same struct shape
+(`criteria[]` with atomic `components[]`, `core_watch[]`, `met_count/total`,
+non-counted bonus) — every sub-signal just reads the **bearish/topping side** of
+the identical underlying indicators. It is position / measurement only; no price
+target, all `f64`, no money flows through it. Built in
+`src/analytics/cycle_signals.rs::cycle_top_signals` (mirror of
+`cycle_bottom_signals`).
+
+### The 7 composite cycle-TOP criteria
+
+| # | Composite (plain label) | Natural TF | Fires when |
+|---|---|---|---|
+| 1 | **Momentum line turning down** | requested | the RSI average's slope flips negative (`rsi_ma_turned_down`) |
+| 2 | **Momentum line crossed below price momentum** | requested | RSI-avg crosses below the raw RSI (`rsi_ma_cross_below_rsi`) |
+| 3 | **Double-smoothed stochastic topping** | requested | DSS ticked down **AND** crossed below its trigger (overbought >80 = qualifying context, not a firing condition) |
+| 4 | **Roofing filter confirming down** | requested | filter in top zone (>0) **AND** ticked down |
+| 5 | **Volatility bands bearish** | **daily** | daily band state == bearish |
+| 6 | **Significant reversal dots bearish** | **weekly + monthly** | a down-dot is active and ≥ any up-dot on either higher TF |
+| 7 | **Trend line lost** | **weekly** | price below the weekly trackline, or a fresh bearish cross on the latest weekly bar |
+| bonus | **Pi-cycle top (not counted)** | **daily** | last pi-cycle TOP within the trailing ~120 daily bars |
+
+The N/7 verdict bands mirror the bottom suite (`no/early/building/strong/very
+strong cycle-top confluence`). Same timeframe model: criteria 1–4 run on the
+requested `--timeframe` (default `monthly`); bands=daily, dots=weekly+monthly,
+line=weekly, pi=daily are fixed.
+
+### Running it
+
+```bash
+pftui analytics cycles top-signals --asset BTC                       # text, monthly
+pftui analytics cycles top-signals --asset BTC --timeframe monthly --json
+pftui analytics cycles top-signals --asset gold --timeframe weekly
+```
+
+The `--json` payload is the symmetric twin of the bottom payload: top-side flag
+fields (`rsi_ma_turned_down`, `dss_turned_down`, `dss_cross_below_trigger`,
+`dss_overbought`, `erf_top_zone`, `erf_turned_down`, `erf_negative`,
+`cyberbands_bearish`, `cyberdots_bearish`, `cyberline_lost`, `pi_cycle_top`),
+the 7 `criteria[]` rows (keys `momentum_turning_down`, `momentum_below_price`,
+`dss_topping`, `roofing_confirming_down`, `volatility_bands_bearish`,
+`reversal_dots_bearish`, `trend_line_lost`), `core_watch[]` (the four
+momentum/stochastic/roofing watch items), `met_count`/`total`, the bonus, and
+`verdict`.
+
+### Top backtest — forward-return expectancy vs swing HIGHS
+
+```bash
+pftui analytics cycles top-signals backtest --asset BTC --expectancy --json
+pftui analytics cycles top-signals backtest --asset gold --timeframe weekly --window 120 --expectancy
+```
+
+The top backtest is the asset-agnostic forward-return mirror of the bottom one,
+with two honest differences:
+
+1. **No doctrine top anchors.** The documented doctrine anchors (BTC 4-year,
+   gold ~6.9-year) are cycle **LOWS** — there are no doctrine TOP anchors. So the
+   top backtest's verified-anchor reliability section is **always empty**
+   (`anchors: []`, `small_n: true`, `caveat: insufficient_anchors`). The real
+   read lives in the **expectancy block**, which conditions forward returns on
+   **price-structure swing HIGHS** (prominence-filtered pivot highs followed by
+   a ≥20% decline — the mirror of the swing-low detector).
+   *(Implementation note: the shared `CycleSignalExpectancy` struct exposes the
+   polarity-neutral `price_structure_anchors` field — it carries swing LOWS on
+   the bottom path and swing HIGHS on the top path; the field is the anchor-date
+   list regardless of polarity.)*
+2. **A good top signal precedes a DECLINE.** So the headline hit-rate is the
+   **negative** forward-return rate. Each per-horizon row adds
+   `negative_rate_pct` (fraction of firings followed by a strictly-negative
+   forward return). `mean_return_pct` / `median_return_pct` are expected to be
+   **negative** after a real top, and `lift_vs_baseline_pct`
+   (`mean - baseline_mean`) is expected to be **negative** (the asset
+   underperformed a random bar after the signal fired). Closeness is measured to
+   the nearest swing **high** (days + price-% gap).
+
+No-lookahead discipline is identical: at each evaluated bar `i` the engine reads
+only `history[..=i]`, so a firing's index set cannot shift when future bars
+arrive. Forward returns deliberately consume future bars — that is the outcome
+being graded, not the signal.
+
+### Cycle-TOP alert conditions
+
+Three condition shapes, the mirror of the bottom set, evaluated mechanically on
+`data refresh` (same `Technical` alert kind, same edge-trigger machinery; the
+engine dispatches on polarity — anything starting `cycle_top_` reads the top
+suite):
+
+- **Confluence threshold** — `cycle_top_<timeframe>_<N>` (e.g.
+  `cycle_top_monthly_4`): fires when the top `met/7` reaches `<N>`.
+- **Single criterion** — `cycle_top_criterion_<timeframe>_<criterion_key>`
+  (e.g. `cycle_top_criterion_weekly_trend_line_lost`).
+- **Single component** — `cycle_top_component_<timeframe>_<component_key>`
+  (e.g. `cycle_top_component_monthly_erf_turned_down`).
+
+Top criterion keys: `momentum_turning_down`, `momentum_below_price`,
+`dss_topping`, `roofing_confirming_down`, `volatility_bands_bearish`,
+`reversal_dots_bearish`, `trend_line_lost`.
+Top component keys: `rsi_ma_turned_down`, `rsi_ma_cross_below_rsi`,
+`dss_turned_down`, `dss_cross_below_trigger`, `dss_overbought`, `erf_top_zone`,
+`erf_turned_down`, `erf_negative`, `cyberbands_bearish`, `cyberdots_bearish`,
+`cyberline_lost`, `pi_cycle_top`.
+
+```bash
+pftui analytics alerts add --kind technical --symbol BTC-USD \
+  --condition cycle_top_monthly_4
+```
+
+## Tracked-signals dashboard (`analytics cycles tracked`)
+
+A single fast status view over **every armed cycle-signal alert** — both
+polarities and all three shapes (confluence threshold, single criterion, single
+component). For each it shows what's being watched and its live state at a
+glance. It does **not** run the backtest; it is a status view, not a study.
+
+```bash
+pftui analytics cycles tracked                 # every tracked cycle signal
+pftui analytics cycles tracked --asset BTC     # one asset (BTC matches BTC-USD)
+pftui analytics cycles tracked --polarity top  # only cycle-TOP conditions
+pftui analytics cycles tracked --json          # structured array for agents
+```
+
+Per-signal detail per row:
+
+- **asset / polarity / shape / human label / timeframe / target** — decoded from
+  the alert condition string. The label/decoder logic is reused verbatim from
+  `src/alerts/cycle_signal_alert.rs` (`parse_condition`, `condition_polarity`,
+  `criterion_label` / `top_criterion_label` / `component_label` /
+  `top_component_label`) — no label strings are re-invented in the dashboard.
+- **armed-at, recurring + cooldown** — from the alert rule row.
+- **fired-yet, last-fired, time-since-last (humanized: `3d 4h ago` / `never`),
+  fire count** — derived from the `triggered_alerts` log (per `alert_id`) plus
+  the rule's own `triggered_at` / status.
+- **current live read** — the matching `cycle_{bottom,top}_signals` for the
+  rule's asset + timeframe + polarity: `met N/7` and how many more criteria are
+  needed for a confluence rule, or met/unmet + signed `distance_to_trigger` for
+  a criterion/component. Computed **once per (asset, timeframe, polarity)** and
+  reused across rules that share it. Assets with no/shallow price history
+  degrade gracefully per-row (`no price history` / `insufficient history`) — no
+  panic, no false read.
+
+The header summarizes counts by polarity, how many have fired, and how many
+confluence rows are currently *close* to firing (armed and within one criterion
+of their target). Privacy-safe: signal metadata + counts only, no dollar values.
+
+Wired in `src/commands/cycle_tracked_cmd.rs`; CLI variant `Tracked` in
+`src/cli.rs`, dispatched in `src/main.rs`.
+
+## Report rendering (inline-SVG viz tokens)
+
+The Python report layer (`viz/`, "Rust computes, Python draws") turns these JSON
+contracts into inline-SVG report assets via the `<!--FAMILY_VIZ:type:arg-->`
+token mechanism (`viz/render.py`). Three cycle-signal tokens exist:
+
+| Token | Source CLI | Renders |
+|---|---|---|
+| `<!--CYCLE_SIGNALS_VIZ:checklist:BTC-->` | `analytics cycles bottom-signals` | the N-of-7 bottom confluence ✓/✗ list + gauge (auto-injected at the Bitcoin/Gold section headings) |
+| `<!--CYCLE_BACKTEST_VIZ:expectancy:BTC?polarity=bottom&timeframe=monthly-->` | `analytics cycles {bottom,top}-signals backtest --expectancy` | a per-signal **backtest report card**: forward-return signal-vs-baseline bars per 30/90/180/365d for the headline ≥4/7 threshold (sign-aware — bottoms want positive returns, tops want negative), a per-threshold hit-rate + closeness table, and an honest "reliability unmeasurable — directional only" caveat card when `insufficient_anchors`/zero firings |
+| `<!--CYCLE_SIGNALS_VIZ:tracked:all-->` | `analytics cycles tracked` | a **tracked-signals dashboard**: heat-strip of every armed cycle-signal alert (live met/total bar colored by closeness, distance-to-target, fired?, time-since-last). Payload = `all` or `SYM[?polarity=bottom\|top]` |
+
+The backtest card consumes the `expectancy` block documented above (numbers are
+rust_decimal strings; bottoms read `positive_rate_pct`, tops read
+`negative_rate_pct`). Renderers: `viz/cycle_backtest_viz.py` (card) and
+`viz/cycle_signals_viz.py` (checklist + tracked). All three are public-safe
+(name-free, no holdings) and degrade to an empty string on missing data.
