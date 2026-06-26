@@ -595,10 +595,28 @@ mod tests {
 
     #[test]
     fn rejects_unknown_accessor() {
-        let err = parse_and_validate("cyber_dot_up('BTC-USD') >= 1", &params(), &universe())
+        let err = parse_and_validate("bogus_signal('BTC-USD') >= 1", &params(), &universe())
             .unwrap_err()
             .to_string();
         assert!(err.contains("unknown signal accessor"), "got: {err}");
+    }
+
+    #[test]
+    fn accepts_stage_and_cyber_accessors() {
+        // The P3c accessors are now registry-known and validate.
+        for src in [
+            "stage_proxy('BTC-USD') == 2",
+            "stage_proxy('BTC-USD')@weekly == 4",
+            "cyber_dot_up('BTC-USD') == 1",
+            "cyber_dot_down('GC=F') >= 1",
+            "cyberline_lost('BTC-USD') == 1",
+            "cyberline_reclaimed('GC=F') == 1",
+        ] {
+            assert!(
+                parse_and_validate(src, &params(), &universe()).is_ok(),
+                "expected '{src}' to validate"
+            );
+        }
     }
 
     #[test]

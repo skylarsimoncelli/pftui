@@ -528,6 +528,8 @@ pub fn resolve(spec: ModelSpec) -> Result<ResolvedModel> {
         // P3b: `when`/`then` are compiled into executable signal rules that the
         // engine evaluates point-in-time at each rebalance date.
         rules: compiled_rules,
+        // P3c: the `no_average_down` veto is enforced by the engine at fill time.
+        no_average_down: spec.constraints.no_average_down,
     };
 
     Ok(ResolvedModel {
@@ -806,7 +808,7 @@ commission_pct = 0.001
     #[test]
     fn rejects_rule_with_unknown_accessor() {
         let bad = format!(
-            "{SAMPLE}\n[[rules]]\nid = \"bad\"\nwhen = \"cyber_dot_up('SPY') >= 1\"\nthen = {{ kind = \"tilt\", class = \"equity\", by = \"0.1\", from = \"cash\" }}\n"
+            "{SAMPLE}\n[[rules]]\nid = \"bad\"\nwhen = \"bogus_signal('SPY') >= 1\"\nthen = {{ kind = \"tilt\", class = \"equity\", by = \"0.1\", from = \"cash\" }}\n"
         );
         let err = format!("{:#}", resolve_str(&bad).unwrap_err());
         assert!(err.contains("unknown signal accessor"), "unexpected error: {err}");

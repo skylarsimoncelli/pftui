@@ -100,6 +100,12 @@ pub struct RebalanceEvent {
     /// apply order). Empty for a rule-free rebalance.
     #[serde(default)]
     pub applied_rule_ids: Vec<String>,
+    /// Symbols whose BUY leg was VETOED by `no_average_down` at this rebalance:
+    /// the position was already open AND the fill price (base) was below the
+    /// position's average entry cost (base). The buy is skipped (cash kept, qty
+    /// unchanged); no fill is fabricated (POSITIONING-MODELS.md §3.2 step 8).
+    #[serde(default)]
+    pub blocked_no_average_down: Vec<String>,
 }
 
 /// Push the standard "infeasible solve → hold prior weights" event.
@@ -120,6 +126,7 @@ fn push_infeasible_event(
         deferred_legs: vec![],
         dropped_legs: vec![],
         applied_rule_ids,
+        blocked_no_average_down: vec![],
     });
 }
 
@@ -299,6 +306,10 @@ fn equal_weight_model(model: &PortfolioModel) -> PortfolioModel {
         cash_yield: model.cash_yield.clone(),
         max_position: None,
         rules: vec![],
+        // The equal-weight benchmark is a clean reference basket; the
+        // no_average_down veto is a model-policy constraint, not part of the
+        // reference, so it is intentionally off here.
+        no_average_down: false,
     }
 }
 
@@ -641,6 +652,7 @@ fn decide_rebalance(
     let mut new_pending: Vec<PendingOrder> = Vec::new();
     let mut deferred_legs: Vec<String> = Vec::new();
     let mut dropped_legs: Vec<String> = Vec::new();
+    let mut blocked_no_average_down: Vec<String> = Vec::new();
     let mut turnover_notional = dec!(0);
     let mut post_weights: Vec<(String, Decimal)> = Vec::new();
     let mut deployed_weight = dec!(0);
@@ -714,6 +726,29 @@ fn decide_rebalance(
             Side::Buy => next_close * (dec!(1) + model.slippage_pct),
             Side::Sell => next_close * (dec!(1) - model.slippage_pct),
         };
+
+        // `no_average_down` veto (§3.2 step 8): block a BUY that would add to an
+        // already-open position below its average entry cost (base). Evaluated
+        // against the simulator's own average-cost ledger; a first entry (qty==0)
+        // or a buy at/above the average proceeds. The fill price is converted to
+        // base at the decision-date FX (USD assets → fx 1).
+        if model.no_average_down && side == Side::Buy {
+            if let Some(h) = holdings.get(&a.symbol) {
+                if h.qty > dec!(0) {
+                    let avg_entry_base = h.total_cost / h.qty;
+                    let ccy = sym_ccy.get(&a.symbol).map(|s| s.as_str()).unwrap_or(base);
+                    let fx = panel.fx_rate(ccy, base, t).unwrap_or(Decimal::ONE);
+                    let fill_price_base = fill_price * fx;
+                    if fill_price_base < avg_entry_base {
+                        // Skip the buy leg entirely: keep cash, leave qty unchanged,
+                        // fabricate no fill. Record it for observability.
+                        blocked_no_average_down.push(a.symbol.clone());
+                        continue;
+                    }
+                }
+            }
+        }
+
         let notional_abs = order_notional.abs(); // base currency
         turnover_notional += notional_abs;
         let order_idx = orders.len();
@@ -779,6 +814,7 @@ fn decide_rebalance(
         deferred_legs,
         dropped_legs,
         applied_rule_ids,
+        blocked_no_average_down,
     });
     for p in new_pending {
         pending.entry(p.fill_date).or_default().push(p);
@@ -957,6 +993,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         };
         // All dates 2024-01-01..05 fall in ISO week 1 → exactly one rebalance.
         let mut panel = PricePanel::new();
@@ -1048,6 +1085,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1093,6 +1131,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1138,6 +1177,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1196,6 +1236,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1267,6 +1308,7 @@ mod tests {
             cash_yield: CashYield::Proxy("BIL".into()),
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1325,6 +1367,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         };
         let mut panel = PricePanel::new();
         // AAA has a GAP on the Jan1 decision date (only trades Jan2/Jan3).
@@ -1381,6 +1424,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1431,6 +1475,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         };
         let mut panel = PricePanel::new();
         panel.insert_series(
@@ -1486,6 +1531,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules,
+            no_average_down: false,
         }
     }
 
@@ -1627,6 +1673,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         };
         // Pin equity to 0.9 → Σfloor (0.9 + 0.2 + 0.2) = 1.3 > 1 → infeasible.
         model.rules = vec![Rule::new(
@@ -1710,6 +1757,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules,
+            no_average_down: false,
         };
         let tilt_rule = Rule::new(
             "add-hm",
@@ -1937,5 +1985,202 @@ mod tests {
             "risk-on must lower IEF below base, got {ief_on_ruled}"
         );
         assert_eq!(ief_on_ruled, dec!(0.15000000));
+    }
+
+    /// HAND-COMPUTED `no_average_down` veto. A 50/50 cash/AAA book, weekly
+    /// Mondays, 0 commission/slippage, $1,000 start. AAA: 100,100,90,90,110,110.
+    ///
+    /// - Jan 1 → buy $500 AAA, fills Jan 8 @100 → **5 sh, avg cost $100**, cash $500.
+    /// - Jan 8: marked $500 = target → no trade.
+    /// - Jan 15 (price 90): equity 950, AAA marked $450 (47.4%) < 50% → wants to
+    ///   BUY $25, which would fill Jan 22 @ **90 < avg 100** → **BLOCKED** (cash
+    ///   stays $500, qty stays 5, no fill fabricated).
+    /// - Jan 22 (price 90): again wants $25; the next close is Jan 29 @ **110 >
+    ///   avg 100** → the add is **ALLOWED** (a real Buy order is emitted).
+    ///
+    /// A control run with `no_average_down = false` instead BUYS on Jan 15.
+    #[test]
+    fn no_average_down_blocks_add_below_avg() {
+        let make = |veto: bool| PortfolioModel {
+            base_currency: "USD".into(),
+            initial_capital: dec!(1000),
+            universe: vec![AssetSpec::new("AAA", "equity")],
+            cash_class: "cash".into(),
+            targets: vec![
+                ClassTarget::new("cash", dec!(0.5), dec!(0), dec!(1)),
+                ClassTarget::new("equity", dec!(0.5), dec!(0), dec!(1)),
+            ],
+            within_class: WithinClass::Equal,
+            rebalance_cadence: RebalanceCadence::Weekly,
+            rebalance_band_mode: RebalanceBandMode::ToTarget,
+            fill: FillMode::NextClose,
+            commission_pct: dec!(0),
+            slippage_pct: dec!(0),
+            cash_yield: CashYield::None,
+            max_position: None,
+            rules: vec![],
+            no_average_down: veto,
+        };
+        let mut panel = PricePanel::new();
+        panel.insert_series(
+            "AAA",
+            vec![
+                (d(2024, 1, 1), dec!(100)),
+                (d(2024, 1, 8), dec!(100)),
+                (d(2024, 1, 15), dec!(90)),
+                (d(2024, 1, 22), dec!(90)),
+                (d(2024, 1, 29), dec!(110)),
+                (d(2024, 2, 5), dec!(110)),
+            ],
+        );
+
+        let rep = simulate(&make(true), &panel).unwrap();
+        let ev = |day: u32| {
+            rep.rebalance_events
+                .iter()
+                .find(|e| e.date == d(2024, 1, day))
+                .unwrap()
+        };
+        // Jan 15: the add is vetoed — recorded, no order generated.
+        let jan15 = ev(15);
+        assert_eq!(jan15.blocked_no_average_down, vec!["AAA".to_string()]);
+        assert!(
+            jan15.orders.is_empty(),
+            "the below-average add must generate no order"
+        );
+        // Ledger held: after the blocked add, cash is still $500 and qty still 5.
+        let jan22_pt = rep
+            .daily_equity_curve
+            .iter()
+            .find(|p| p.date == d(2024, 1, 22))
+            .unwrap();
+        assert_eq!(jan22_pt.cash, dec!(500), "blocked add must keep cash");
+        assert_eq!(jan22_pt.invested, dec!(450)); // 5 sh × 90
+        assert_eq!(jan22_pt.equity, dec!(950));
+
+        // Jan 22: the next-close fill (110) is above avg cost → the add proceeds.
+        let jan22 = ev(22);
+        assert!(jan22.blocked_no_average_down.is_empty());
+        assert!(
+            jan22.orders.iter().any(|o| o.symbol == "AAA" && matches!(o.side, Side::Buy)),
+            "an at/above-average add must emit a Buy order"
+        );
+
+        // Control: WITHOUT the veto, Jan 15 buys instead of blocking.
+        let ctrl = simulate(&make(false), &panel).unwrap();
+        let ctrl_jan15 = ctrl
+            .rebalance_events
+            .iter()
+            .find(|e| e.date == d(2024, 1, 15))
+            .unwrap();
+        assert!(ctrl_jan15.blocked_no_average_down.is_empty());
+        assert!(
+            ctrl_jan15.orders.iter().any(|o| o.symbol == "AAA" && matches!(o.side, Side::Buy)),
+            "without the veto the below-average add must buy"
+        );
+    }
+
+    /// A basing→advance→top→decline daily arc (≈6y) for the M3 stage-breakout
+    /// model: long enough for the weekly 40wk MA + slope to warm up before any
+    /// labelled stage.
+    fn m3_breakout_series(start: NaiveDate) -> Vec<(NaiveDate, Decimal)> {
+        use rust_decimal::prelude::FromPrimitive;
+        let segs: [(usize, f64, f64); 5] = [
+            (450, 100.0, 60.0),  // warm-up decline
+            (200, 60.0, 60.0),   // base
+            (520, 60.0, 185.0),  // advance → Stage 2
+            (80, 185.0, 176.0),  // top
+            (320, 176.0, 70.0),  // decline → Stage 4
+        ];
+        let mut out = Vec::new();
+        let mut i = 0usize;
+        for (len, from, to) in segs {
+            for k in 0..len {
+                let t = if len <= 1 { 0.0 } else { k as f64 / (len - 1) as f64 };
+                let p = from + (to - from) * t;
+                out.push((start + chrono::Days::new(i as u64), Decimal::from_f64(p.max(1.0)).unwrap().round_dp(2)));
+                i += 1;
+            }
+        }
+        out
+    }
+
+    /// M3 end-to-end (the shipped spec coming alive). On the planted arc the model
+    /// ENTERS (SPY → entry_weight) on the confirmed weekly stage-2 advance and
+    /// EXITS (SPY → 0) on the stage-4 decline; the ledger stays balanced; a no-rule
+    /// run differs; and `no_average_down` is wired through resolve → model.
+    #[test]
+    fn m3_stage_breakout_enters_and_exits() {
+        let toml = include_str!("../../../models/m3-stage-breakout.toml");
+        let rm = crate::analytics::portfolio_sim::spec::resolve_str(toml).unwrap();
+        // The veto is wired end-to-end.
+        assert!(rm.no_average_down, "M3 declares no_average_down");
+        assert!(rm.model.no_average_down, "the veto must reach the sim model");
+
+        let model = rm.model.clone();
+        let mut no_rule = model.clone();
+        no_rule.rules = vec![];
+
+        let mut panel = PricePanel::new();
+        panel.insert_series("SPY", m3_breakout_series(d(2015, 1, 1)));
+
+        let ruled = simulate(&model, &panel).unwrap();
+        let plain = simulate(&no_rule, &panel).unwrap();
+
+        // (0) Ledger balanced every day (both runs).
+        for p in ruled.daily_equity_curve.iter().chain(plain.daily_equity_curve.iter()) {
+            assert_eq!(p.equity, p.cash + p.invested, "ledger must balance at {}", p.date);
+            assert!(p.cash >= dec!(0));
+        }
+
+        let spy_post = |e: &RebalanceEvent| -> Decimal {
+            e.post_weights
+                .iter()
+                .find(|(k, _)| k == "SPY")
+                .map(|(_, w)| *w)
+                .unwrap_or(dec!(0))
+        };
+
+        // (1) ENTER: the stage-2 rule fires and pins SPY to entry_weight (0.6).
+        let enter: Vec<&RebalanceEvent> = ruled
+            .rebalance_events
+            .iter()
+            .filter(|e| e.applied_rule_ids.iter().any(|r| r == "enter-on-stage2-breakout"))
+            .collect();
+        assert!(!enter.is_empty(), "M3 must ENTER on the planted stage-2 advance");
+        assert!(
+            enter.iter().any(|e| spy_post(e) == dec!(0.60000000)),
+            "an enter event must drive SPY to entry_weight 0.6"
+        );
+
+        // (2) EXIT: the stage-4 rule fires in the final decline (2018+) and SPY → 0.
+        let exit_in_decline: Vec<&RebalanceEvent> = ruled
+            .rebalance_events
+            .iter()
+            .filter(|e| {
+                e.date.year() >= 2018
+                    && e.applied_rule_ids.iter().any(|r| r == "exit-on-stage4-breakdown")
+            })
+            .collect();
+        assert!(!exit_in_decline.is_empty(), "M3 must EXIT in the stage-4 decline");
+
+        // By the end of the run the model is flat (out of SPY).
+        let last = ruled.rebalance_events.last().unwrap();
+        assert_eq!(spy_post(last), dec!(0), "M3 must end flat after the decline");
+
+        // (3) The no-rule run NEVER invests (base equity target 0) and differs.
+        assert!(
+            plain.rebalance_events.iter().all(|e| spy_post(e) == dec!(0)),
+            "the no-rule base policy holds 0% SPY"
+        );
+        assert_ne!(
+            ruled.daily_equity_curve, plain.daily_equity_curve,
+            "the stage rules must move the curve vs a no-rule run"
+        );
+        // The ruled run actually deployed capital at some point.
+        assert!(
+            ruled.daily_equity_curve.iter().any(|p| p.invested > dec!(0)),
+            "M3 must hold SPY at some point during the advance"
+        );
     }
 }

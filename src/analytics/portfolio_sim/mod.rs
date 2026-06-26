@@ -28,6 +28,7 @@ pub mod metrics;
 pub mod rule_expr;
 pub mod solver;
 pub mod spec;
+pub mod stage_proxy;
 
 #[allow(unused_imports)]
 pub use actions::{
@@ -178,6 +179,12 @@ pub struct PortfolioModel {
     /// the rule-free base_policy path.
     #[serde(default)]
     pub rules: Vec<actions::Rule>,
+    /// `no_average_down` veto (POSITIONING-MODELS.md §3.2 step 8): when true, the
+    /// engine BLOCKS a BUY leg for a symbol whose position is already open and
+    /// whose fill price (base) is below the position's average entry cost (base) —
+    /// "don't add below your average". Default `false` preserves prior behaviour.
+    #[serde(default)]
+    pub no_average_down: bool,
 }
 
 /// In-memory price panel: per-symbol `date → close`. The simulator's master

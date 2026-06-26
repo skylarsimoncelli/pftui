@@ -42,7 +42,9 @@ use std::collections::HashMap;
 use anyhow::{bail, Result};
 use chrono::{Datelike, Days, NaiveDate};
 
+use super::stage_proxy::{stage_proxy, StageProxy};
 use super::PricePanel;
+use crate::analytics::cyber::{self, CyberSnapshot, CyberTimeframe};
 use crate::analytics::cycle_signals::{cycle_bottom_signals, cycle_top_signals, SignalTimeframe};
 use crate::models::price::HistoryRecord;
 use crate::regime::{compute_regime, RegimeScore, REGIME_YAHOO_SYMBOLS};
@@ -56,6 +58,19 @@ pub enum SnapshotKind {
     CycleTop,
 }
 
+/// Which scalar a Cyber-Dots accessor reads off the [`CyberSnapshot`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CyberKind {
+    /// `dots.up_dot` → 1.0 / 0.0.
+    DotUp,
+    /// `dots.down_dot` → 1.0 / 0.0.
+    DotDown,
+    /// `!line.price_above` (price below the CyberLine) → 1.0 / 0.0.
+    LineLost,
+    /// `line.price_above` (price reclaimed the CyberLine) → 1.0 / 0.0.
+    LineReclaimed,
+}
+
 /// What an accessor computes. A `Cycle` accessor takes ONE symbol arg and reads a
 /// per-symbol confluence snapshot; a `Regime` accessor takes ZERO args and reads
 /// the cross-asset risk-on/off composite (sourced from the macro `REGIME_SYMBOLS`
@@ -66,6 +81,11 @@ pub enum AccessorImpl {
     Cycle(SnapshotKind),
     /// The as-of regime composite total (`regime_score`).
     Regime,
+    /// Per-symbol `stage_proxy_v1` Weinstein-stage proxy (`stage_proxy`).
+    Stage,
+    /// Per-symbol Cyber-Dots scalar (`cyber_dot_up`/`cyber_dot_down`/
+    /// `cyberline_lost`/`cyberline_reclaimed`).
+    Cyber(CyberKind),
 }
 
 /// One registry entry. Adding a new accessor is a single row here plus (if it
@@ -77,9 +97,10 @@ pub struct AccessorDef {
     pub imp: AccessorImpl,
 }
 
-/// The accessor registry. **M1/M2 stage:** the two cycle-confluence counters plus
-/// the regime composite. (`cyber_*`/`stage_proxy` are deferred to later stages —
-/// each is a one-row addition here.)
+/// The accessor registry. The two cycle-confluence counters, the regime
+/// composite (M1/M2), the `stage_proxy_v1` Weinstein-stage proxy, and the four
+/// Cyber-Dots scalars (M3). Adding a new accessor is a single row here plus (if
+/// it reads a new snapshot kind) an [`AccessorImpl`] arm in [`eval_accessor`].
 static REGISTRY: &[AccessorDef] = &[
     AccessorDef {
         name: "cycle_bottom_met",
@@ -96,7 +117,37 @@ static REGISTRY: &[AccessorDef] = &[
         arity: 0,
         imp: AccessorImpl::Regime,
     },
+    AccessorDef {
+        name: "stage_proxy",
+        arity: 1,
+        imp: AccessorImpl::Stage,
+    },
+    AccessorDef {
+        name: "cyber_dot_up",
+        arity: 1,
+        imp: AccessorImpl::Cyber(CyberKind::DotUp),
+    },
+    AccessorDef {
+        name: "cyber_dot_down",
+        arity: 1,
+        imp: AccessorImpl::Cyber(CyberKind::DotDown),
+    },
+    AccessorDef {
+        name: "cyberline_lost",
+        arity: 1,
+        imp: AccessorImpl::Cyber(CyberKind::LineLost),
+    },
+    AccessorDef {
+        name: "cyberline_reclaimed",
+        arity: 1,
+        imp: AccessorImpl::Cyber(CyberKind::LineReclaimed),
+    },
 ];
+
+/// `stage_proxy(...)` is a WEEKLY read (M3 is a weekly model): when written
+/// without an explicit `@tf` it defaults to weekly regardless of the engine's
+/// monthly cycle default. (`@tf` still overrides.)
+const STAGE_DEFAULT_TF: SignalTimeframe = SignalTimeframe::Weekly;
 
 /// Does `name` resolve to a regime (macro-series) accessor? Used by the panel
 /// loader to decide whether it must also source the `REGIME_SYMBOLS` series.
@@ -127,6 +178,16 @@ pub struct Memo {
     /// Number of regime computations (cache misses) — exposed so tests can prove
     /// the macro composite is computed only once even with several regime reads.
     pub regime_compute_count: usize,
+    /// Per-`(symbol, tf)` stage_proxy read, computed at most once per date.
+    stage_cache: HashMap<(String, SignalTimeframe), StageProxy>,
+    /// Number of stage_proxy computations (cache misses).
+    pub stage_compute_count: usize,
+    /// Per-`(symbol, tf)` Cyber snapshot, computed at most once per date and
+    /// shared by every `cyber_*` accessor on the same `(symbol, tf)`. `None` =
+    /// insufficient history (every reader then returns the NaN sentinel).
+    cyber_cache: HashMap<(String, SignalTimeframe), Option<CyberSnapshot>>,
+    /// Number of Cyber-snapshot computations (cache misses).
+    pub cyber_compute_count: usize,
 }
 
 impl Memo {
@@ -176,7 +237,95 @@ pub fn eval_accessor(
         // `regime_score()` is symbol-independent and date-keyed; `@tf` is
         // meaningless for it (regime is a daily cross-asset read) and ignored.
         AccessorImpl::Regime => Ok(regime_score_memo(ctx)),
+        AccessorImpl::Stage => {
+            let symbol = &args[0];
+            // stage_proxy defaults to WEEKLY (M3 is weekly), not the engine's
+            // monthly cycle default; an explicit `@tf` still overrides.
+            let tf = tf.unwrap_or(STAGE_DEFAULT_TF);
+            Ok(stage_snapshot(symbol, tf, ctx).as_f64())
+        }
+        AccessorImpl::Cyber(kind) => {
+            let symbol = &args[0];
+            let tf = tf.unwrap_or(ctx.default_tf);
+            Ok(match cyber_snapshot(symbol, tf, ctx) {
+                Some(snap) => cyber_value(kind, snap),
+                None => f64::NAN, // insufficient history → comparison false → no fire
+            })
+        }
     }
+}
+
+/// Read the requested Cyber scalar off a snapshot. A missing sub-read (`dots`/
+/// `line` is `None` because that component had too little history) returns the
+/// `NaN` sentinel — the same insufficient-data contract as a missing snapshot.
+fn cyber_value(kind: CyberKind, snap: &CyberSnapshot) -> f64 {
+    let bool_to_f64 = |b: bool| if b { 1.0 } else { 0.0 };
+    match kind {
+        CyberKind::DotUp => snap
+            .dots
+            .as_ref()
+            .map(|d| bool_to_f64(d.up_dot))
+            .unwrap_or(f64::NAN),
+        CyberKind::DotDown => snap
+            .dots
+            .as_ref()
+            .map(|d| bool_to_f64(d.down_dot))
+            .unwrap_or(f64::NAN),
+        CyberKind::LineLost => snap
+            .line
+            .as_ref()
+            .map(|l| bool_to_f64(!l.price_above))
+            .unwrap_or(f64::NAN),
+        CyberKind::LineReclaimed => snap
+            .line
+            .as_ref()
+            .map(|l| bool_to_f64(l.price_above))
+            .unwrap_or(f64::NAN),
+    }
+}
+
+/// Map a signal timeframe onto the Cyber engine's run timeframe.
+fn cyber_timeframe(tf: SignalTimeframe) -> CyberTimeframe {
+    match tf {
+        SignalTimeframe::Daily => CyberTimeframe::Daily,
+        SignalTimeframe::Weekly => CyberTimeframe::Weekly,
+        SignalTimeframe::Monthly => CyberTimeframe::Monthly,
+    }
+}
+
+/// Compute (memoized) the `stage_proxy` for `symbol` at `tf`, on the
+/// COMPLETED-bucket-trimmed daily history (the same chokepoint every accessor
+/// inherits — no lookahead).
+fn stage_snapshot(symbol: &str, tf: SignalTimeframe, ctx: &mut AtDateCtx) -> StageProxy {
+    let key = (symbol.to_string(), tf);
+    if let Some(cached) = ctx.memo.stage_cache.get(&key) {
+        return *cached;
+    }
+    let history = completed_bucket_history(ctx.panel, symbol, tf, ctx.as_of);
+    ctx.memo.stage_compute_count += 1;
+    let sp = stage_proxy(symbol, tf, &history);
+    ctx.memo.stage_cache.insert(key, sp);
+    sp
+}
+
+/// Compute (memoized) the Cyber snapshot for `symbol` at `tf`, on the
+/// COMPLETED-bucket-trimmed daily history. Computed at most once per
+/// `(symbol, tf)` per date and shared by every `cyber_*` reader.
+fn cyber_snapshot<'a>(
+    symbol: &str,
+    tf: SignalTimeframe,
+    ctx: &'a mut AtDateCtx,
+) -> Option<&'a CyberSnapshot> {
+    let key = (symbol.to_string(), tf);
+    if !ctx.memo.cyber_cache.contains_key(&key) {
+        let history = completed_bucket_history(ctx.panel, symbol, tf, ctx.as_of);
+        ctx.memo.cyber_compute_count += 1;
+        // `lookback_signals = 1`: the accessor reads only the latest-bar state
+        // (up_dot / down_dot / price_above), not the dated event history.
+        let snap = cyber::analyze(symbol, cyber_timeframe(tf), &history, 1);
+        ctx.memo.cyber_cache.insert(key.clone(), snap);
+    }
+    ctx.memo.cyber_cache.get(&key).and_then(|o| o.as_ref())
 }
 
 /// The memoized as-of regime composite total for `ctx.as_of`. Computed at most
@@ -584,5 +733,130 @@ mod tests {
             before, after,
             "regime at T changed after appending future bars → lookahead leak"
         );
+    }
+
+    // --- stage_proxy + cyber accessors (P3c) --------------------------------
+
+    /// A monotone-rising daily panel: 900 bars, price = 100 + i (a clean
+    /// uptrend → stage_proxy weekly = Stage 2 once the 40wk MA + slope warm up).
+    fn rising_panel(sym: &str, start: NaiveDate, n: u64) -> PricePanel {
+        let mut p = PricePanel::new();
+        let series: Vec<(NaiveDate, Decimal)> = (0..n)
+            .map(|i| (start + Days::new(i), Decimal::from(100 + i as i64)))
+            .collect();
+        p.insert_series(sym, series);
+        p
+    }
+
+    #[test]
+    fn stage_accessor_insufficient_yields_nan() {
+        // Far too few bars for a 40wk-MA posture read → NaN sentinel.
+        let panel = daily_panel("X", d(2024, 1, 1), 30);
+        let mut memo = Memo::new();
+        let mut ctx = AtDateCtx {
+            as_of: d(2024, 1, 30),
+            panel: &panel,
+            default_tf: SignalTimeframe::Monthly,
+            memo: &mut memo,
+        };
+        let v = eval_accessor("stage_proxy", &["X".to_string()], None, &mut ctx).unwrap();
+        assert!(v.is_nan(), "shallow history must yield the NaN sentinel");
+    }
+
+    #[test]
+    fn stage_accessor_is_stage2_on_rising_panel_and_memoizes() {
+        let panel = rising_panel("X", d(2017, 1, 1), 900);
+        let mut memo = Memo::new();
+        let mut ctx = AtDateCtx {
+            as_of: d(2019, 1, 1),
+            panel: &panel,
+            // default_tf is monthly, but stage_proxy defaults to WEEKLY.
+            default_tf: SignalTimeframe::Monthly,
+            memo: &mut memo,
+        };
+        let a = eval_accessor("stage_proxy", &["X".to_string()], None, &mut ctx).unwrap();
+        let b = eval_accessor("stage_proxy", &["X".to_string()], None, &mut ctx).unwrap();
+        assert_eq!(a, 2.0, "a clean rising panel must read Stage 2");
+        assert_eq!(a, b);
+        assert_eq!(ctx.memo.stage_compute_count, 1, "stage computed exactly once");
+    }
+
+    #[test]
+    fn cyber_accessors_read_dot_and_line_and_share_one_snapshot() {
+        let panel = rising_panel("X", d(2017, 1, 1), 900);
+        let mut memo = Memo::new();
+        let mut ctx = AtDateCtx {
+            as_of: d(2019, 1, 1),
+            panel: &panel,
+            default_tf: SignalTimeframe::Weekly,
+            memo: &mut memo,
+        };
+        // up_dot and line_lost both read the SAME (X, weekly) Cyber snapshot.
+        let up = eval_accessor("cyber_dot_up", &["X".to_string()], None, &mut ctx).unwrap();
+        let lost = eval_accessor("cyberline_lost", &["X".to_string()], None, &mut ctx).unwrap();
+        let down = eval_accessor("cyber_dot_down", &["X".to_string()], None, &mut ctx).unwrap();
+        let reclaimed =
+            eval_accessor("cyberline_reclaimed", &["X".to_string()], None, &mut ctx).unwrap();
+        // Each is a 0/1 indicator (never NaN once the snapshot computes).
+        for v in [up, lost, down, reclaimed] {
+            assert!(v == 0.0 || v == 1.0, "cyber accessor must be 0/1, got {v}");
+        }
+        // On a clean uptrend price is above the line → not lost / reclaimed.
+        assert_eq!(lost, 0.0, "rising panel: price above the CyberLine → not lost");
+        assert_eq!(reclaimed, 1.0);
+        assert_eq!(
+            ctx.memo.cyber_compute_count, 1,
+            "all four cyber reads share one snapshot computation"
+        );
+    }
+
+    #[test]
+    fn cyber_accessor_insufficient_yields_nan() {
+        let panel = daily_panel("X", d(2024, 1, 1), 30);
+        let mut memo = Memo::new();
+        let mut ctx = AtDateCtx {
+            as_of: d(2024, 1, 30),
+            panel: &panel,
+            default_tf: SignalTimeframe::Weekly,
+            memo: &mut memo,
+        };
+        let v = eval_accessor("cyber_dot_up", &["X".to_string()], None, &mut ctx).unwrap();
+        assert!(v.is_nan(), "shallow history → cyber accessor is the NaN sentinel");
+    }
+
+    /// As-of invariance through the COMPLETED-bucket chokepoint: the stage_proxy
+    /// and cyber accessors at `T` must NOT change when strictly-future bars (here
+    /// a sharp DROP that would flip the stage to 4 if it leaked) are appended.
+    #[test]
+    fn stage_and_cyber_accessors_are_future_data_invariant() {
+        let start = d(2017, 1, 1);
+        let t = d(2019, 1, 1);
+        let panel = rising_panel("X", start, 731); // bars through ~2019-01-01
+
+        let read = |p: &PricePanel, name: &str| -> f64 {
+            let mut memo = Memo::new();
+            let mut ctx = AtDateCtx {
+                as_of: t,
+                panel: p,
+                default_tf: SignalTimeframe::Weekly,
+                memo: &mut memo,
+            };
+            eval_accessor(name, &["X".to_string()], Some(SignalTimeframe::Weekly), &mut ctx).unwrap()
+        };
+
+        let stage_before = read(&panel, "stage_proxy");
+        let lost_before = read(&panel, "cyberline_lost");
+        assert_eq!(stage_before, 2.0);
+
+        // Append 300 strictly-future bars that crash the price (would force Stage 4
+        // / a lost CyberLine if any of them leaked into the read at T).
+        let mut panel2 = panel.clone();
+        let future: Vec<(NaiveDate, Decimal)> = (0..300)
+            .map(|i| (d(2019, 1, 2) + Days::new(i), Decimal::from(800 - 2 * i as i64).max(Decimal::ONE)))
+            .collect();
+        panel2.insert_series("X", future);
+
+        assert_eq!(read(&panel2, "stage_proxy"), stage_before, "stage leaked future data");
+        assert_eq!(read(&panel2, "cyberline_lost"), lost_before, "cyber leaked future data");
     }
 }

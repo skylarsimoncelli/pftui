@@ -200,6 +200,7 @@ mod tests {
             cash_yield: CashYield::None,
             max_position: None,
             rules: vec![],
+            no_average_down: false,
         }
     }
 
