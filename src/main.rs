@@ -2776,6 +2776,22 @@ fn run_cli(cli: Cli) -> Result<()> {
                         json,
                     ),
                 ),
+                cli::AnalyticsModelsCommand::Compare {
+                    names,
+                    from,
+                    to,
+                    json,
+                } => commands::cli_json::or_json_error(
+                    "analytics models compare",
+                    json,
+                    commands::models_cmd::run_compare(
+                        &backend,
+                        &names,
+                        from.as_deref(),
+                        to.as_deref(),
+                        json,
+                    ),
+                ),
             },
             cli::AnalyticsCommand::Cycles { command } => match command {
                 // Wrap in or_json_error so a failure emits the same

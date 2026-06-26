@@ -5101,6 +5101,25 @@ pub enum AnalyticsModelsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Run 2+ models over the SAME window + cost assumptions and compare them
+    /// (CAGR/Sharpe/Sortino/MaxDD/Calmar/Vol/Cash/Turnover/Costs), best-marked,
+    /// each with its three benchmarks. A verdict names the best risk-adjusted model.
+    #[command(
+        after_help = "Examples:\n  pftui analytics models compare m1-static m2-hard-money-cycles\n  pftui analytics models compare m1 m2 m3 --from 2020-01-01 --to 2024-12-31 --json\n\nEach NAME is a bare model (./models/<name>.toml) or a path to a .toml spec.\nAll models run over the same --from/--to window with their own cost models;\na model whose universe symbol lacks history in-window errors clearly."
+    )]
+    Compare {
+        /// Two or more model names (./models/<name>.toml) or paths to .toml specs
+        #[arg(required = true, num_args = 2..)]
+        names: Vec<String>,
+        /// Window start (YYYY-MM-DD); defaults to the earliest shared history
+        #[arg(long)]
+        from: Option<String>,
+        /// Window end (YYYY-MM-DD); defaults to the latest shared history
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

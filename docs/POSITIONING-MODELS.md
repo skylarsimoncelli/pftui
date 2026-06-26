@@ -167,6 +167,26 @@ adapter — no per-call ad-hoc slicing.
   <name> [--from --to --json] | compare <a> <b> … | simulate <name>` (`simulate` = "what
   would this model do now" against the live portfolio).
 
+### 3.6 Reporting (P4 — shipped)
+- **`analytics models compare <a> <b> [<c> …] [--from --to] [--json]`** runs 2+ models over
+  the **same window + cost assumptions** and prints an aligned table — one row per model plus
+  its three benchmarks (static / rebalanced-base / equal-weight) — across CAGR / Sharpe /
+  Sortino / MaxDD / Calmar / Vol / TimeInCash / Turnover-per-yr / TotalCosts / nRebalances,
+  with the **best model per ranked metric marked `*`** (CAGR/Sharpe/Sortino/Calmar = higher
+  wins; MaxDD/Vol = lower wins) and a one-line **verdict** (best risk-adjusted by Calmar).
+  Each model loads its own price panel over the shared window; a universe symbol lacking
+  in-window history errors clearly rather than running a degenerate compare. `--json` emits
+  `{ window, best, verdict, models: [ {name, version, metrics, benchmarks} ] }`.
+- **Tearsheet viz** — `viz/model_viz.py` (token family **`MODEL_VIZ`**, distinct from the
+  existing `PORTFOLIO_VIZ` asset-risk family). `<!--MODEL_VIZ:tearsheet:<name>?from=…&to=…-->`
+  consumes `analytics models backtest <name> --json` and renders ONE card: a stat header with
+  the **rule-alpha delta vs rebalanced-base** (CAGR + MaxDD), an equity panel drawing the model
+  curve **plus all three benchmark reference curves** (so rule-alpha-vs-rebalance is visible),
+  an underwater drawdown strip, and an **event-stepped allocation band** (class weights held flat
+  between rebalance `post_weights` — the report carries weights only at rebalance decisions, not
+  daily). `<!--MODEL_VIZ:compare:m1,m2,m3-->` overlays rebased-100 equity for 2..N models. Both
+  are dollar-free indices and degrade to an honest caveat card on an empty / too-short backtest.
+
 ## 4. Staged build plan
 
 Each stage is a shippable, independently-graded increment. **The ordering is
