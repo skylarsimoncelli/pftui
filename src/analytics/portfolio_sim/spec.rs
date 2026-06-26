@@ -378,6 +378,26 @@ pub fn resolve(spec: ModelSpec) -> Result<ResolvedModel> {
         }
     }
 
+    // ...and the reverse: every NON-cash target class must have >= 1 universe
+    // symbol. A target class with no asset would silently allocate that weight
+    // to idle cash, so the engine would run a DIFFERENT allocation than the
+    // spec declares. (The cash class is exempt — it intentionally holds no
+    // symbol.) The P3 set_target/tilt actions inherit this bucket, so the
+    // foundation must reject a phantom class now.
+    {
+        let universe_classes: BTreeSet<&String> = universe.iter().map(|a| &a.class).collect();
+        for t in &targets {
+            if t.class != cash_class && !universe_classes.contains(&t.class) {
+                bail!(
+                    "[base_policy] class '{}' has a {} target but no universe asset is tagged class='{}'",
+                    t.class,
+                    t.target,
+                    t.class
+                );
+            }
+        }
+    }
+
     // --- enums ---
     let within_class = match spec.base_policy.within_class.as_str() {
         "equal" => WithinClass::Equal,
@@ -438,7 +458,7 @@ pub fn resolve(spec: ModelSpec) -> Result<ResolvedModel> {
 
     let max_position = match spec.constraints.max_position {
         Some(mp) => {
-            if !(0.0..=1.0).contains(&mp) {
+            if mp <= 0.0 || mp > 1.0 {
                 bail!("max_position = {} is out of range (0, 1]", mp);
             }
             Some(dec_from(mp)?)
@@ -639,6 +659,37 @@ commission_pct = 0.001
             err.contains("sum") || err.contains("infeasible") || err.contains("ceiling"),
             "unexpected error: {err}"
         );
+    }
+
+    /// A [base_policy] target class with no universe asset (e.g. a `gold` target
+    /// but no asset tagged class='gold') must be rejected — otherwise that weight
+    /// silently becomes idle cash and the engine runs a DIFFERENT allocation than
+    /// the spec declares.
+    #[test]
+    fn rejects_phantom_target_class() {
+        // Re-weight so the book still sums to 1: shrink equity 0.48 → 0.18 and
+        // add a phantom `gold` class at 0.30 with no asset tagged gold.
+        let bad = SAMPLE
+            .replace("target = 0.48", "target = 0.18")
+            .replace(
+                "{ class = \"bond\", target = 0.32, floor = 0.0, ceiling = 0.50 } ]",
+                "{ class = \"bond\", target = 0.32, floor = 0.0, ceiling = 0.50 },\n            { class = \"gold\", target = 0.30, floor = 0.0, ceiling = 0.50 } ]",
+            );
+        let err = resolve_str(&bad).unwrap_err().to_string();
+        assert!(
+            err.contains("gold") && err.contains("no universe asset"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// max_position = 0.0 must be rejected: the field's contract is the half-open
+    /// range (0, 1], so a zero ceiling (which would forbid every position) is not
+    /// a valid advisory value.
+    #[test]
+    fn rejects_zero_max_position() {
+        let bad = SAMPLE.replace("max_position = 0.50", "max_position = 0.0");
+        let err = resolve_str(&bad).unwrap_err().to_string();
+        assert!(err.contains("max_position"), "unexpected error: {err}");
     }
 
     #[test]
