@@ -1,10 +1,13 @@
 # POSITIONING-MODELS.md — Portfolio Strategy Modeller (design + staged build)
 
-> Status: **design / build-in-progress**. This is the canonical design for the
-> positioning modeller. Read before touching `src/analytics/portfolio_sim/` (the
-> simulator), `src/models/positioning_model.rs` (the spec), or `analytics models`
-> CLI. Two independent design reviews (Codex GPT-5.x, sessions `019f039e…`) shaped
-> the contracts here — their corrections are folded in and called out as **[R]**.
+> Status: **SHIPPED** (P0–P5b complete, merged to master). This is the canonical
+> design + reference for the positioning modeller. Read before touching
+> `src/analytics/portfolio_sim/` (the simulator/solver/optimizer), `src/db/model_optimize_runs.rs`
+> (the optimization ledger), or the `analytics models` CLI. CLI quick-reference also in
+> AGENTS.md. Two independent design reviews (Codex GPT-5.x, sessions `019f039e…`) shaped
+> the contracts here — their corrections are folded in and called out as **[R]**. The
+> P0→P5b staging in §4 is the as-built history; the only documented future item is a
+> "promote-candidate → score-once-on-lockbox" command (the lockbox is reserved for it).
 
 ## 1. Objective
 
