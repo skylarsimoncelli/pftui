@@ -21,10 +21,16 @@
 #![allow(dead_code)]
 
 pub mod engine;
+pub mod metrics;
 pub mod solver;
 
 #[allow(unused_imports)]
-pub use engine::{simulate, DailyEquityPoint, Order, PortfolioBacktestReport, RebalanceEvent, Side};
+pub use engine::{
+    simulate, BenchmarkResult, Benchmarks, DailyEquityPoint, Order, PortfolioBacktestReport,
+    RebalanceEvent, Side,
+};
+#[allow(unused_imports)]
+pub use metrics::PortfolioMetrics;
 #[allow(unused_imports)]
 pub use solver::{solve_targets, SolveBucket, SolveOutcome};
 
@@ -61,18 +67,37 @@ pub enum FillMode {
     NextClose,
 }
 
-/// A symbol in the model's universe, tagged with its class.
+/// A symbol in the model's universe, tagged with its class and the currency its
+/// prices are quoted in (P1: marks/fills FX-convert this → `base_currency`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssetSpec {
     pub symbol: String,
     pub class: String,
+    /// Currency the panel quotes this symbol's closes in. Defaults to `"USD"`;
+    /// use [`AssetSpec::with_currency`] for a non-USD instrument.
+    pub price_currency: String,
 }
 
 impl AssetSpec {
+    /// USD-priced asset (P0-compatible default).
     pub fn new(symbol: impl Into<String>, class: impl Into<String>) -> Self {
         Self {
             symbol: symbol.into(),
             class: class.into(),
+            price_currency: "USD".to_string(),
+        }
+    }
+
+    /// Asset priced in `price_currency`.
+    pub fn with_currency(
+        symbol: impl Into<String>,
+        class: impl Into<String>,
+        price_currency: impl Into<String>,
+    ) -> Self {
+        Self {
+            symbol: symbol.into(),
+            class: class.into(),
+            price_currency: price_currency.into(),
         }
     }
 }
@@ -103,7 +128,17 @@ impl ClassTarget {
     }
 }
 
-/// A P0 portfolio model: a fixed diversification structure with no rules.
+/// How the cash bucket earns (or doesn't) carry between days.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CashYield {
+    /// Cash earns nothing (P0 behaviour).
+    #[default]
+    None,
+    /// Cash earns the daily return of this panel symbol (e.g. `BIL`).
+    Proxy(String),
+}
+
+/// A P0/P1 portfolio model: a fixed diversification structure with no rules.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PortfolioModel {
     pub base_currency: String,
@@ -121,6 +156,9 @@ pub struct PortfolioModel {
     pub commission_pct: Decimal,
     /// Slippage as a fraction of the fill close (buys pay more, sells receive less).
     pub slippage_pct: Decimal,
+    /// How the cash bucket accrues carry. Default `None` preserves P0 behaviour.
+    #[serde(default)]
+    pub cash_yield: CashYield,
 }
 
 /// In-memory price panel: per-symbol `date → close`. The simulator's master
@@ -128,6 +166,9 @@ pub struct PortfolioModel {
 #[derive(Debug, Clone, Default)]
 pub struct PricePanel {
     closes: BTreeMap<String, BTreeMap<chrono::NaiveDate, Decimal>>,
+    /// FX series keyed by ordered pair `"<FROM><TO>"` (e.g. `"GBPUSD"` = how many
+    /// units of TO one unit of FROM buys), `date → rate`.
+    fx: BTreeMap<String, BTreeMap<chrono::NaiveDate, Decimal>>,
 }
 
 impl PricePanel {
@@ -165,6 +206,55 @@ impl PricePanel {
             ))
             .next()
             .map(|(d, c)| (*d, *c))
+        })
+    }
+
+    /// Insert an FX series for an ordered currency pair. `pair` is the
+    /// concatenation `"<FROM><TO>"` (e.g. `"GBPUSD"`), and each `rate` is the
+    /// number of TO units per one FROM unit on that date.
+    pub fn insert_fx(
+        &mut self,
+        from_ccy: &str,
+        to_ccy: &str,
+        series: impl IntoIterator<Item = (chrono::NaiveDate, Decimal)>,
+    ) {
+        let key = format!("{from_ccy}{to_ccy}");
+        let map = self.fx.entry(key).or_default();
+        for (d, r) in series {
+            map.insert(d, r);
+        }
+    }
+
+    /// FX rate converting one unit of `from_ccy` into `to_ccy` **as of `date`**
+    /// (the mark/fill date — never the decision date). Same currency → `1`.
+    /// Looks up the pair on/just-before `date` (carry-forward last known rate);
+    /// falls back to the inverse of the reverse pair. `None` if neither known.
+    pub fn fx_rate(
+        &self,
+        from_ccy: &str,
+        to_ccy: &str,
+        date: chrono::NaiveDate,
+    ) -> Option<Decimal> {
+        if from_ccy == to_ccy {
+            return Some(Decimal::ONE);
+        }
+        let as_of = |key: &str| -> Option<Decimal> {
+            self.fx.get(key).and_then(|m| {
+                m.range((std::ops::Bound::Unbounded, std::ops::Bound::Included(date)))
+                    .next_back()
+                    .map(|(_, r)| *r)
+            })
+        };
+        if let Some(r) = as_of(&format!("{from_ccy}{to_ccy}")) {
+            return Some(r);
+        }
+        // Inverse pair: invert the reverse rate.
+        as_of(&format!("{to_ccy}{from_ccy}")).and_then(|r| {
+            if r != Decimal::ZERO {
+                Some(Decimal::ONE / r)
+            } else {
+                None
+            }
         })
     }
 
