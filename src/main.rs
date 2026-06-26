@@ -2749,6 +2749,34 @@ fn run_cli(cli: Cli) -> Result<()> {
                     json,
                 ),
             },
+            cli::AnalyticsCommand::Models { command } => match command {
+                cli::AnalyticsModelsCommand::List { json } => commands::cli_json::or_json_error(
+                    "analytics models list",
+                    json,
+                    commands::models_cmd::run_list(json),
+                ),
+                cli::AnalyticsModelsCommand::Show { name, json } => commands::cli_json::or_json_error(
+                    "analytics models show",
+                    json,
+                    commands::models_cmd::run_show(&name, json),
+                ),
+                cli::AnalyticsModelsCommand::Backtest {
+                    name,
+                    from,
+                    to,
+                    json,
+                } => commands::cli_json::or_json_error(
+                    "analytics models backtest",
+                    json,
+                    commands::models_cmd::run_backtest(
+                        &backend,
+                        &name,
+                        from.as_deref(),
+                        to.as_deref(),
+                        json,
+                    ),
+                ),
+            },
             cli::AnalyticsCommand::Cycles { command } => match command {
                 // Wrap in or_json_error so a failure emits the same
                 // {"error":{command,message}} envelope on stdout (nonzero exit)

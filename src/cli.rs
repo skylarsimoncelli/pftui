@@ -5075,6 +5075,35 @@ pub enum AnalyticsTechnicalsCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsModelsCommand {
+    /// List available model specs in ./models/ (name, version, universe size, rule count)
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Parse + validate a spec and print the resolved model (classes, targets, rules)
+    Show {
+        /// Model name (resolves to ./models/<name>.toml) or a path to a .toml spec
+        name: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Load a spec, load its price panel, run the simulator, and render the backtest report
+    Backtest {
+        /// Model name (resolves to ./models/<name>.toml) or a path to a .toml spec
+        name: String,
+        /// Window start (YYYY-MM-DD); defaults to the earliest shared history
+        #[arg(long)]
+        from: Option<String>,
+        /// Window end (YYYY-MM-DD); defaults to the latest shared history
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsCyclesCommand {
     /// Cycle-position read (BTC halving/4yr cycle, gold ~6.9yr cycle (8yr is folklore)).
     /// Position only — never a price prediction.
@@ -5377,6 +5406,14 @@ pub enum AnalyticsCommand {
     Cycles {
         #[command(subcommand)]
         command: AnalyticsCyclesCommand,
+    },
+    /// Portfolio positioning models: parse a TOML model spec and backtest it against price history
+    #[command(
+        after_help = "Define a diversification model (class targets + floors/ceilings, cadence, costs,\nand optional signal rules) as a TOML spec in ./models/, then backtest it against\nthe historical price database with the deterministic positioning simulator.\n\nA <name> resolves to ./models/<name>.toml; a path ending in .toml (or containing\n'/') is read directly.\n\nNOTE: signal [[rules]] are PARSED but NOT yet evaluated (the rule engine lands in\na later stage). A model with rules runs as its base_policy with a clear warning.\n\nExamples:\n  pftui analytics models list\n  pftui analytics models show static-60-40\n  pftui analytics models backtest static-60-40 --from 2018-01-01 --json"
+    )]
+    Models {
+        #[command(subcommand)]
+        command: AnalyticsModelsCommand,
     },
     /// Market structure levels: support, resistance, moving averages, swing points, 52-week range
     Levels {

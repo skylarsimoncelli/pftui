@@ -21,8 +21,10 @@
 #![allow(dead_code)]
 
 pub mod engine;
+pub mod loader;
 pub mod metrics;
 pub mod solver;
+pub mod spec;
 
 #[allow(unused_imports)]
 pub use engine::{

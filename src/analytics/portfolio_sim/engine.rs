@@ -81,6 +81,12 @@ pub struct RebalanceEvent {
     /// non-tradable on `date` (missing close). The rest of the rebalance still
     /// executes (cash-only / partial); deferred legs fabricate **no** fill.
     pub deferred_legs: Vec<String>,
+    /// Symbols whose leg WAS tradable on `date` but had **no future close** to
+    /// fill against (the order would have nothing to settle on), so the order
+    /// was dropped. Records the silent-drop observability gap at
+    /// `panel.next_tradable() == None`. (The `post_weights` reconciliation for
+    /// these residuals is a noted TODO — see the post_weights NOTE below.)
+    pub dropped_legs: Vec<String>,
 }
 
 /// The portfolio backtest report. Money is `Decimal`; metrics are f64 from the
@@ -478,6 +484,7 @@ fn decide_rebalance(
                 post_weights: vec![],
                 infeasible: true,
                 deferred_legs: vec![],
+                dropped_legs: vec![],
             });
             return Ok(());
         }
@@ -498,6 +505,7 @@ fn decide_rebalance(
     let mut orders: Vec<Order> = Vec::new();
     let mut new_pending: Vec<PendingOrder> = Vec::new();
     let mut deferred_legs: Vec<String> = Vec::new();
+    let mut dropped_legs: Vec<String> = Vec::new();
     let mut turnover_notional = dec!(0);
     let mut post_weights: Vec<(String, Decimal)> = Vec::new();
     let mut deployed_weight = dec!(0);
@@ -548,7 +556,12 @@ fn decide_rebalance(
         }
         let (next_date, next_close) = match panel.next_tradable(&a.symbol, t) {
             Some(v) => v,
-            None => continue, // no future close to fill against — drop (P0 edge).
+            None => {
+                // No future close to fill against — drop the leg. Record it so
+                // the silent-drop is observable instead of vanishing.
+                dropped_legs.push(a.symbol.clone());
+                continue;
+            }
         };
         let side = if order_notional > dec!(0) {
             Side::Buy
@@ -623,6 +636,7 @@ fn decide_rebalance(
         post_weights,
         infeasible: false,
         deferred_legs,
+        dropped_legs,
     });
     for p in new_pending {
         pending.entry(p.fill_date).or_default().push(p);

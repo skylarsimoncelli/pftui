@@ -74,6 +74,7 @@ pub mod market_hours;
 pub mod market_snapshot;
 pub mod migrate_journal;
 pub mod mirror;
+pub mod models_cmd;
 pub mod morning_brief;
 pub mod movers;
 pub mod narrative_divergence;
