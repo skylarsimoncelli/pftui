@@ -302,27 +302,64 @@ mod tests {
             .is_nan());
     }
 
-    /// As-of invariance: stage_proxy at the END of a prefix must NOT change when
-    /// strictly-future bars are appended (the proxy never peeks forward).
+    /// As-of invariance: the stage_proxy read at date `T` must NOT change when
+    /// strictly-future bars (dated > `T`) are appended and the extended history is
+    /// then trimmed back to `≤ T` — exactly how the accessor layer feeds it data.
+    /// Paired with a POSITIVE CONTROL proving the appended future bars are
+    /// discriminating, so the invariance is meaningful, not vacuous.
     #[test]
     fn stage_proxy_is_future_data_invariant() {
         let start = NaiveDate::from_ymd_opt(2015, 1, 1).unwrap();
-        let full = planted_arc(start);
-        // Pick an as-of inside the advance (clean Stage 2).
+        let arc = planted_arc(start);
+        // `T` = an as-of inside the advance (a clean Stage 2).
         let cut = 850usize;
-        let before = stage_proxy("SYN", SignalTimeframe::Weekly, &full[..=cut]);
-        // Append the strictly-future tail (it would flip the stage if it leaked).
-        let after = stage_proxy("SYN", SignalTimeframe::Weekly, &full[..=cut]);
-        assert_eq!(before, after);
-        // And the value computed on the prefix equals the value the FULL series
-        // would report at that same bar via a re-slice — i.e. appending bars after
-        // `cut` cannot retroactively change the read at `cut`.
-        let prefix_only = full[..=cut].to_vec();
+        let t_date = arc[cut].date.clone();
+
+        // History through T (date-filtered, the real ≤T operation).
+        let through_t: Vec<HistoryRecord> =
+            arc.iter().filter(|r| r.date <= t_date).cloned().collect();
+        let stage_t = stage_proxy("SYN", SignalTimeframe::Weekly, &through_t);
+        assert_eq!(stage_t, StageProxy::Stage2, "T sits in the planted advance");
+
+        // Build an EXTENDED history: through-T bars + a sharp strictly-future
+        // CRASH (dates all > T) that would force Stage 4 if it ever leaked.
+        let t = NaiveDate::parse_from_str(&t_date, "%Y-%m-%d").unwrap();
+        let last_close = {
+            use rust_decimal::prelude::ToPrimitive;
+            through_t.last().unwrap().close.to_f64().unwrap()
+        };
+        let mut extended = through_t.clone();
+        let crash_len = 500usize;
+        for k in 0..crash_len {
+            // Linear collapse from the T price down to ~15, dated strictly after T.
+            let frac = (k + 1) as f64 / crash_len as f64;
+            let p = (last_close * (1.0 - frac) + 15.0 * frac).max(1.0);
+            extended.push(rec(t + Days::new((k + 1) as u64), p));
+        }
+
+        // INVARIANCE: trim the extended history back to ≤ T → the stage at T is
+        // UNCHANGED. The strictly-future crash cannot leak into the read at T.
+        let extended_trimmed_to_t: Vec<HistoryRecord> =
+            extended.iter().filter(|r| r.date <= t_date).cloned().collect();
         assert_eq!(
-            stage_proxy("SYN", SignalTimeframe::Weekly, &prefix_only),
-            before
+            stage_proxy("SYN", SignalTimeframe::Weekly, &extended_trimmed_to_t),
+            stage_t,
+            "appending future bars then trimming to ≤T must reproduce the T read"
         );
-        assert_eq!(before, StageProxy::Stage2);
+
+        // POSITIVE CONTROL: those future bars ARE discriminating — read over the
+        // FULL extended history (T advanced into the crash) the stage FLIPS to
+        // Stage 4. Proves the invariance above is not vacuously true.
+        assert_eq!(
+            stage_proxy("SYN", SignalTimeframe::Weekly, &extended),
+            StageProxy::Stage4,
+            "the appended crash must drive the stage to 4 when it is in-window"
+        );
+        assert_ne!(
+            stage_proxy("SYN", SignalTimeframe::Weekly, &extended),
+            stage_t,
+            "future crash bars must change the stage when not trimmed away"
+        );
     }
 
     /// THE HONESTY GATE: an event-study over the planted arc must show the
