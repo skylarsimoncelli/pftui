@@ -2792,6 +2792,28 @@ fn run_cli(cli: Cli) -> Result<()> {
                         json,
                     ),
                 ),
+                cli::AnalyticsModelsCommand::Optimize {
+                    name,
+                    from,
+                    to,
+                    param,
+                    folds,
+                    objective,
+                    json,
+                } => commands::cli_json::or_json_error(
+                    "analytics models optimize",
+                    json,
+                    commands::models_cmd::run_optimize(
+                        &backend,
+                        &name,
+                        from.as_deref(),
+                        to.as_deref(),
+                        &param,
+                        folds,
+                        &objective,
+                        json,
+                    ),
+                ),
             },
             cli::AnalyticsCommand::Cycles { command } => match command {
                 // Wrap in or_json_error so a failure emits the same

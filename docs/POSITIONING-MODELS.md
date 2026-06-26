@@ -233,6 +233,25 @@ inside the validation loop.** This is the honest version of "generate an optimal
 strategy"; structural generation (proposing new rules/indicators) is explicitly **out of
 scope** until P5's numeric version is trustworthy.
 
+#### P5a — the harness + honest in-run reporting (shipped)
+`analytics models optimize <model> --param NAME=min:max:step … [--folds N]
+[--objective calmar|sortino|sharpe|cagr] [--json]` in
+`src/analytics/portfolio_sim/optimize.rs`. Searches ONLY declared **and referenced**
+`[params]` (frozen topology — errors on an unknown/unused knob). **Refuses** `k_params>6`
+or `N_configs>2000`; warns in the 5–6 / 101–2000 bands. **Warmup-aware folds:** the first
+~4y (`WARMUP_DAYS=1461`) are burned for signal computation and **never scored**; rolling
+~6y-train / ~1y-test (or sized from `--folds`). Per fold the best config is chosen on
+**TRAIN only** (`select_best_on_train` is handed just the train objective row — type-level
+no-leakage), scored OOS on TEST; every config's OOS is also recorded (the P5b PBO input).
+Metrics are **net** (the daily curve already carries costs). Output: full grid IS/OOS +
+`gap`/`ratio`, an `IS≫OOS-overfit` flag, the rebalanced-base-policy OOS benchmark, a
+walk-forward realised-OOS line, a sensitivity block around the winner, and a conservative
+**verdict** (`robust | fragile | overfit-likely | insufficient-data`). Language is
+disciplined: "best **observed** OOS config under this frozen search space," never "optimal"
+/ "proven edge." **Deferred to P5b:** PBO/CSCV + DSR statistics, the persistent
+optimization ledger (cumulative trials, topology hash), the lockbox holdout — so this run
+is **in-run hygiene only**, not research-process proof.
+
 ## 5. Non-negotiable principles / red flags (from both reviews)
 1. **New `PortfolioBacktestReport` over a daily MTM curve** — never extend `TradeReport`.
 2. **One lookahead/projection policy**, completed-bucket; `RegimeAtDate` aligned.

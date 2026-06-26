@@ -22,7 +22,10 @@ use serde_json::json;
 
 use crate::analytics::portfolio_sim::engine::{simulate, BenchmarkResult, PortfolioBacktestReport};
 use crate::analytics::portfolio_sim::loader::{load_panel, CloseSeriesLoader};
-use crate::analytics::portfolio_sim::spec::{resolve_str, ResolvedModel};
+use crate::analytics::portfolio_sim::optimize::{
+    self, OptimizeReport, ParamAxis, SensitivityPoint, Verdict,
+};
+use crate::analytics::portfolio_sim::spec::{parse_str, resolve, resolve_str, ResolvedModel};
 use crate::db::backend::BackendConnection;
 
 /// Directory (relative to cwd) scanned for `models/*.toml` specs.
@@ -613,6 +616,295 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// optimize (P5a — walk-forward parameter optimization)
+// ---------------------------------------------------------------------------
+
+/// The standing caveat printed on EVERY optimize run: this is in-run hygiene
+/// only, not research-process proof — multiple-testing correction is deferred.
+const STANDING_CAVEAT: &str = "CAVEAT: this is the BEST OBSERVED OOS config under this frozen search space — \
+NOT an 'optimal parameter', 'expected return', or 'proven edge'. Multiple-testing \
+correction (PBO/DSR) and cumulative-trial accounting land in P5b; this run is \
+in-run hygiene only, not research-process proof.";
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_optimize(
+    backend: &BackendConnection,
+    name_or_path: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+    params: &[String],
+    folds: Option<usize>,
+    objective: &str,
+    json_output: bool,
+) -> Result<()> {
+    let from_d = parse_date_opt(from, "--from")?;
+    let to_d = parse_date_opt(to, "--to")?;
+    if let (Some(f), Some(t)) = (from_d, to_d) {
+        if f > t {
+            bail!("--from ({f}) is after --to ({t})");
+        }
+    }
+    let obj = optimize::Objective::parse(objective)?;
+
+    // Parse axes from the raw --param strings.
+    let axes: Vec<ParamAxis> = params
+        .iter()
+        .map(|s| optimize::parse_axis(s))
+        .collect::<Result<Vec<_>>>()?;
+
+    // Load the raw spec + a resolved model (the latter only to load the panel).
+    let path = spec_path(name_or_path);
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("could not read model spec '{}'", path.display()))?;
+    let base_spec = parse_str(&text)
+        .with_context(|| format!("invalid model spec '{}'", path.display()))?;
+    let resolved = resolve(base_spec.clone())
+        .with_context(|| format!("invalid model spec '{}'", path.display()))?;
+
+    // Fail FAST on a frozen-topology / grid-size violation BEFORE the (expensive)
+    // panel load — no point sourcing prices for a search we'll refuse.
+    optimize::validate_axes(&base_spec, &axes)?;
+    optimize::refusal_gate(axes.len(), optimize::build_grid(&axes).len())?;
+
+    let loader = PriceHistoryCloseLoader {
+        conn: backend.sqlite(),
+    };
+    let panel = load_panel(&loader, &resolved.model, from_d, to_d)?;
+
+    let report = optimize::run_optimize(&base_spec, &panel, &axes, obj, folds)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&optimize_json(&report))?);
+        return Ok(());
+    }
+    print!("{}", render_optimize_text(&report));
+    Ok(())
+}
+
+fn optimize_json(r: &OptimizeReport) -> serde_json::Value {
+    let configs: Vec<_> = r
+        .configs
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            json!({
+                "params": c.params,
+                "mean_is": c.mean_is,
+                "mean_oos": c.mean_oos,
+                "gap": c.gap,
+                "ratio": c.ratio,
+                "total_oos_rebalances": c.total_oos_rebalances,
+                "min_oos_events_per_fold": c.min_oos_events_per_fold,
+                "mean_oos_turnover_pct_per_yr": c.mean_oos_turnover_pct_per_yr,
+                "below_activity_gate": c.below_activity_gate,
+                "overfit_flag": c.overfit_flag,
+                "is_winner": r.winner_idx == Some(i),
+                "per_fold": c.per_fold,
+            })
+        })
+        .collect();
+    json!({
+        "command": "analytics models optimize",
+        "model": { "name": r.model_name, "version": r.model_version },
+        "objective": r.objective,
+        "search_space": {
+            "axes": r.axes,
+            "k_params": r.k_params,
+            "n_configs": r.n_configs,
+        },
+        "fold_scheme": {
+            "warmup_days": r.scheme.warmup_days,
+            "warmup_cutoff": r.scheme.warmup_cutoff.to_string(),
+            "post_warmup_start": r.scheme.post_warmup_start.to_string(),
+            "data_end": r.scheme.data_end.to_string(),
+            "train_days": r.scheme.train_days,
+            "test_days": r.scheme.test_days,
+            "step_days": r.scheme.step_days,
+            "n_folds": r.scheme.folds.len(),
+            "folds": r.scheme.folds,
+        },
+        "configs": configs,
+        "winner": r.winner_idx.map(|i| json!({
+            "params": r.configs[i].params,
+            "mean_is": r.configs[i].mean_is,
+            "mean_oos": r.configs[i].mean_oos,
+            "gap": r.configs[i].gap,
+            "ratio": r.configs[i].ratio,
+            "overfit_flag": r.configs[i].overfit_flag,
+        })),
+        "walk_forward": {
+            "folds": r.walk_forward,
+            "mean_oos": r.walk_forward_mean_oos,
+        },
+        "benchmark_rebalanced_base_policy_oos": r.benchmark_rebalanced_oos,
+        "sensitivity": r.sensitivity.iter().map(sensitivity_json).collect::<Vec<_>>(),
+        "verdict": r.verdict.label(),
+        "warnings": r.warnings,
+        "caveat": STANDING_CAVEAT,
+    })
+}
+
+fn sensitivity_json(s: &SensitivityPoint) -> serde_json::Value {
+    json!({
+        "axis": s.axis,
+        "value": s.value,
+        "mean_oos": s.mean_oos,
+        "present": s.present,
+    })
+}
+
+/// Render the optimize report as honest text (returned as a String so it is
+/// unit-testable).
+pub fn render_optimize_text(r: &OptimizeReport) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+
+    let _ = writeln!(
+        out,
+        "Walk-forward optimization: {} (v{})  objective={} (net)",
+        r.model_name, r.model_version, r.objective
+    );
+    // Search space.
+    let axes_desc: Vec<String> = r
+        .axes
+        .iter()
+        .map(|a| format!("{}={}:{}:{} [{} pts]", a.name, a.min, a.max, a.step, a.values.len()))
+        .collect();
+    let _ = writeln!(
+        out,
+        "Search space: {} param(s), {} configs — {}",
+        r.k_params,
+        r.n_configs,
+        axes_desc.join(", ")
+    );
+    // Fold scheme.
+    let s = &r.scheme;
+    let _ = writeln!(
+        out,
+        "Folds: {} rolling (train {}d / test {}d / step {}d), warmup {}d burned (≤ {} never scored); scored span {} → {}",
+        s.folds.len(),
+        s.train_days,
+        s.test_days,
+        s.step_days,
+        s.warmup_days,
+        s.warmup_cutoff,
+        s.post_warmup_start,
+        s.data_end
+    );
+    let _ = writeln!(out);
+
+    // Per-config table.
+    let _ = writeln!(
+        out,
+        "{:<20} {:>9} {:>9} {:>8} {:>7} {:>7} {:>8}  FLAGS",
+        "CONFIG", "IS", "OOS", "GAP", "RATIO", "minEv", "Turn/yr",
+    );
+    for (i, c) in r.configs.iter().enumerate() {
+        let pstr: Vec<String> = c
+            .params
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        let mut flags = String::new();
+        if r.winner_idx == Some(i) {
+            flags.push_str("WINNER ");
+        }
+        if c.below_activity_gate {
+            flags.push_str("below-activity-gate ");
+        }
+        if c.overfit_flag {
+            flags.push_str("IS≫OOS-overfit ");
+        }
+        let ratio = if c.ratio.is_finite() {
+            format!("{:.2}", c.ratio)
+        } else {
+            "—".to_string()
+        };
+        let _ = writeln!(
+            out,
+            "{:<20} {:>9.3} {:>9.3} {:>8.3} {:>7} {:>7} {:>8.1}  {}",
+            truncate(&pstr.join(","), 20),
+            c.mean_is,
+            c.mean_oos,
+            c.gap,
+            ratio,
+            c.min_oos_events_per_fold,
+            c.mean_oos_turnover_pct_per_yr,
+            flags.trim_end(),
+        );
+    }
+    let _ = writeln!(out);
+
+    // Benchmark + walk-forward honesty lines.
+    let _ = writeln!(
+        out,
+        "Rebalanced-base-policy benchmark OOS {}: {:.3}",
+        r.objective, r.benchmark_rebalanced_oos
+    );
+    let _ = writeln!(
+        out,
+        "Walk-forward (train-pick each fold) realised mean OOS: {:.3}",
+        r.walk_forward_mean_oos
+    );
+    let _ = writeln!(out);
+
+    // Winner + sensitivity.
+    match r.winner_idx {
+        Some(wi) => {
+            let w = &r.configs[wi];
+            let pstr: Vec<String> = w.params.iter().map(|(k, v)| format!("{k}={v}")).collect();
+            let _ = writeln!(
+                out,
+                "Best observed OOS config: {{{}}}  IS={:.3}  OOS={:.3}  gap={:.3}",
+                pstr.join(", "),
+                w.mean_is,
+                w.mean_oos,
+                w.gap
+            );
+            if !r.sensitivity.is_empty() {
+                let _ = writeln!(out, "Sensitivity (adjacent grid points, OOS):");
+                for sp in &r.sensitivity {
+                    if sp.present {
+                        let _ = writeln!(
+                            out,
+                            "  {} = {:<8} OOS={:.3}",
+                            sp.axis, sp.value, sp.mean_oos
+                        );
+                    } else {
+                        let _ = writeln!(
+                            out,
+                            "  {} = {:<8} (off-grid — winner is on an edge)",
+                            sp.axis, sp.value
+                        );
+                    }
+                }
+            }
+        }
+        None => {
+            let _ = writeln!(out, "No winner crowned (no config cleared the activity gate).");
+        }
+    }
+    let _ = writeln!(out);
+
+    // Verdict + warnings + caveat.
+    let _ = writeln!(out, "VERDICT: {}  ({})", r.verdict.label(), verdict_rationale(r.verdict));
+    for w in &r.warnings {
+        let _ = writeln!(out, "WARNING: {w}");
+    }
+    let _ = writeln!(out, "{STANDING_CAVEAT}");
+    out
+}
+
+fn verdict_rationale(v: Verdict) -> &'static str {
+    match v {
+        Verdict::InsufficientData => "too few OOS folds / rebalances / activity to judge",
+        Verdict::OverfitLikely => "winner's edge collapses out-of-sample (IS≫OOS)",
+        Verdict::Fragile => "winner is an isolated grid spike (neighbours much worse)",
+        Verdict::Robust => "survives every in-run gate — still NOT proven (see caveat)",
+    }
+}
+
+// ---------------------------------------------------------------------------
 // rendering helpers
 // ---------------------------------------------------------------------------
 
@@ -834,6 +1126,36 @@ mod tests {
         assert!(txt.contains('*'));
         assert!(txt.contains("best risk-adjusted"));
         assert!(txt.contains("(* = best across models"));
+    }
+
+    /// Drive the REAL optimizer + renderer on the synthetic planted-edge panel and
+    /// assert the honest text surfaces the winner, verdict, and standing caveat.
+    /// (Also the source of the pasted TEXT output in the P5a report.)
+    #[test]
+    fn optimize_text_reports_winner_verdict_and_caveat() {
+        use crate::analytics::portfolio_sim::optimize::{
+            self, test_fixtures::{planted_model_toml, planted_panel},
+        };
+        use crate::analytics::portfolio_sim::spec::parse_str;
+
+        let panel = planted_panel(11.0);
+        let spec = parse_str(&planted_model_toml(0.0005)).unwrap();
+        let axes = vec![optimize::parse_axis("tilt_size=0.0:0.8:0.1").unwrap()];
+        let rep =
+            optimize::run_optimize(&spec, &panel, &axes, optimize::Objective::Cagr, Some(4)).unwrap();
+        let txt = super::render_optimize_text(&rep);
+        if std::env::var("PFTUI_PRINT_OPTIMIZE").is_ok() {
+            eprintln!("\n{txt}");
+        }
+        assert!(txt.contains("Walk-forward optimization: planted-edge"));
+        assert!(txt.contains("WINNER"));
+        assert!(txt.contains("tilt_size=0.4"));
+        assert!(txt.contains("VERDICT: robust"));
+        assert!(txt.contains("Sensitivity"));
+        assert!(txt.contains("Multiple-testing correction"));
+        // benchmark + walk-forward honesty lines present
+        assert!(txt.contains("Rebalanced-base-policy benchmark OOS"));
+        assert!(txt.contains("Walk-forward (train-pick each fold)"));
     }
 
     #[test]
