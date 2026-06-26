@@ -22,7 +22,9 @@ use anyhow::{bail, Result};
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
-use super::{CashYield, PortfolioModel, PricePanel};
+use super::actions::Condition;
+use super::{rule_expr, CashYield, PortfolioModel, PricePanel};
+use crate::regime::REGIME_YAHOO_SYMBOLS;
 
 /// Minimum number of closes a tradable symbol must have for the backtest to be
 /// honest (a 1-bar series can't even produce a next-close fill).
@@ -124,7 +126,39 @@ pub fn load_panel(
         panel.insert_fx(ccy, base, series);
     }
 
+    // --- macro REGIME series (only when a rule references a regime accessor) ---
+    // The `regime_score()` accessor reads the cross-asset `REGIME_SYMBOLS` out of
+    // the panel by their known tickers; they are NOT in the model universe, so the
+    // panel must carry them. We load them on-demand (a model with no regime rule
+    // pays nothing). If a regime rule IS present but a macro series can't be
+    // sourced, FAIL LOUDLY here — never let the score silently read as 0/NaN.
+    if model_uses_regime(model) {
+        for &sym in REGIME_YAHOO_SYMBOLS {
+            let series: Vec<(NaiveDate, Decimal)> = loader
+                .load_closes(sym)?
+                .into_iter()
+                .filter(|(d, _)| in_window(*d))
+                .collect();
+            if series.is_empty() {
+                bail!(
+                    "a rule references regime_score() but macro symbol '{}' has no price history in the requested window (the regime composite needs all of: {})",
+                    sym,
+                    REGIME_YAHOO_SYMBOLS.join(", ")
+                );
+            }
+            panel.insert_series(sym, series);
+        }
+    }
+
     Ok(panel)
+}
+
+/// Does any compiled rule's `when` reference a `regime_score()` accessor?
+fn model_uses_regime(model: &PortfolioModel) -> bool {
+    model.rules.iter().any(|r| match &r.when {
+        Condition::Signal(expr) => rule_expr::uses_regime(expr),
+        _ => false,
+    })
 }
 
 #[cfg(test)]
@@ -291,6 +325,85 @@ commission_pct = 0.001
             serde_json::to_string(&a).unwrap(),
             serde_json::to_string(&b).unwrap()
         );
+    }
+
+    /// A regime rule on the model → load_panel ALSO sources every macro
+    /// REGIME_SYMBOL into the panel (so `regime_score()` can read them as-of).
+    #[test]
+    fn loads_regime_symbols_when_rule_present() {
+        use super::super::actions::{Action, Condition, Rule, TargetKey};
+        use super::super::rule_expr::{CmpOp, Expr};
+        let mut model = usd_model();
+        // when = regime_score() <= -2  → set cash target to 0.6 (arbitrary action).
+        let when = Condition::Signal(Box::new(Expr::Compare {
+            op: CmpOp::Le,
+            lhs: Box::new(Expr::Accessor {
+                name: "regime_score".into(),
+                args: vec![],
+                tf: None,
+            }),
+            rhs: Box::new(Expr::Num(-2.0)),
+        }));
+        model.rules = vec![Rule::new(
+            "risk-off",
+            when,
+            Action::SetTarget {
+                key: TargetKey::Class("cash".into()),
+                weight: dec!(0.6),
+            },
+            10,
+            super::super::RebalanceCadence::Weekly,
+        )];
+
+        let mut m = HashMap::new();
+        m.insert("SPY".to_string(), vec![(d(2024, 1, 1), dec!(100)), (d(2024, 1, 2), dec!(101))]);
+        for &sym in crate::regime::REGIME_YAHOO_SYMBOLS {
+            m.insert(
+                sym.to_string(),
+                vec![(d(2024, 1, 1), dec!(10)), (d(2024, 1, 2), dec!(11))],
+            );
+        }
+        let loader = MapLoader(m);
+        let panel = load_panel(&loader, &model, None, None).unwrap();
+        for &sym in crate::regime::REGIME_YAHOO_SYMBOLS {
+            assert!(
+                panel.close_on(sym, d(2024, 1, 2)).is_some(),
+                "macro symbol '{sym}' must be loaded into the panel"
+            );
+        }
+    }
+
+    /// A regime rule but a missing macro series → load_panel fails LOUDLY (never a
+    /// silent 0/NaN regime read).
+    #[test]
+    fn errors_when_regime_symbol_missing() {
+        use super::super::actions::{Action, Condition, Rule, TargetKey};
+        use super::super::rule_expr::{CmpOp, Expr};
+        let mut model = usd_model();
+        model.rules = vec![Rule::new(
+            "risk-off",
+            Condition::Signal(Box::new(Expr::Compare {
+                op: CmpOp::Le,
+                lhs: Box::new(Expr::Accessor {
+                    name: "regime_score".into(),
+                    args: vec![],
+                    tf: None,
+                }),
+                rhs: Box::new(Expr::Num(-2.0)),
+            })),
+            Action::SetTarget {
+                key: TargetKey::Class("cash".into()),
+                weight: dec!(0.6),
+            },
+            10,
+            super::super::RebalanceCadence::Weekly,
+        )];
+        // SPY present, but NO macro series at all.
+        let mut m = HashMap::new();
+        m.insert("SPY".to_string(), vec![(d(2024, 1, 1), dec!(100)), (d(2024, 1, 2), dec!(101))]);
+        let loader = MapLoader(m);
+        let err = load_panel(&loader, &model, None, None).unwrap_err().to_string();
+        assert!(err.contains("regime_score()") && err.contains("no price history"), "got: {err}");
     }
 
     #[test]

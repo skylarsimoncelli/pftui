@@ -1,0 +1,64 @@
+# Model M1 — regime-balanced equity/bond with a permanent cash buffer.
+#
+# Holds a 20-40% cash band at all times; the rest is split equity (SPY) / bond
+# (IEF). The split TILTS with the as-of risk-on/off regime composite
+# (`regime_score()` — the 9-signal cross-asset read over the macro REGIME_SYMBOLS,
+# evaluated point-in-time with NO lookahead via RegimeAtDate):
+#   - risk-OFF (regime_score() <= risk_off_threshold) → raise bonds (equity → bond)
+#   - risk-ON  (regime_score() >= risk_on_threshold)  → raise equity (bond → equity)
+#
+# This is the model that brings the regime read alive (POSITIONING-MODELS.md M1).
+# Base book (incl. cash) sums to 1.00; every floor <= target <= ceiling; feasible.
+# Thresholds + tilt size are numeric [params] so P5 can optimize them later.
+
+[model]
+name = "m1-regime-balanced"
+version = 1
+base_currency = "USD"
+initial_capital = 100000
+
+[universe]
+assets = [
+  { symbol = "SPY", class = "equity" },
+  { symbol = "IEF", class = "bond" },
+]
+cash_class = "cash"
+
+[base_policy]
+targets = [
+  { class = "cash",   target = 0.30, floor = 0.20, ceiling = 0.40 },
+  { class = "equity", target = 0.40, floor = 0.00, ceiling = 0.60 },
+  { class = "bond",   target = 0.30, floor = 0.00, ceiling = 0.55 },
+]
+within_class = "equal"
+
+[constraints]
+max_position = 0.60
+no_average_down = false
+rebalance_cadence = "weekly"
+rebalance_band_mode = "to_target"
+fill = "next_close"
+cash_yield_proxy = "none"
+commission_pct = 0.001
+slippage_pct = 0.0005
+
+# Risk-off: shift the equity sleeve into bonds (defensive).
+[[rules]]
+id = "tilt-to-bonds-on-risk-off"
+when = "regime_score() <= risk_off_threshold"
+then = { kind = "tilt", class = "bond", by = "tilt_size", from = "equity" }
+priority = 10
+cadence = "weekly"
+
+# Risk-on: shift the bond sleeve into equities (offensive).
+[[rules]]
+id = "tilt-to-equity-on-risk-on"
+when = "regime_score() >= risk_on_threshold"
+then = { kind = "tilt", class = "equity", by = "tilt_size", from = "bond" }
+priority = 10
+cadence = "weekly"
+
+[params]
+risk_off_threshold = -2
+risk_on_threshold = 2
+tilt_size = 0.15

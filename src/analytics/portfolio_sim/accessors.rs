@@ -45,8 +45,9 @@ use chrono::{Datelike, Days, NaiveDate};
 use super::PricePanel;
 use crate::analytics::cycle_signals::{cycle_bottom_signals, cycle_top_signals, SignalTimeframe};
 use crate::models::price::HistoryRecord;
+use crate::regime::{compute_regime, RegimeScore, REGIME_YAHOO_SYMBOLS};
 
-/// Which mechanical confluence snapshot an accessor reads.
+/// Which mechanical confluence snapshot a cycle accessor reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SnapshotKind {
     /// `cycle_bottom_signals(...).met_count`
@@ -55,30 +56,53 @@ pub enum SnapshotKind {
     CycleTop,
 }
 
+/// What an accessor computes. A `Cycle` accessor takes ONE symbol arg and reads a
+/// per-symbol confluence snapshot; a `Regime` accessor takes ZERO args and reads
+/// the cross-asset risk-on/off composite (sourced from the macro `REGIME_SYMBOLS`
+/// the panel carries — see [`regime_at_date`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessorImpl {
+    /// Per-symbol cycle confluence (`cycle_bottom_met`/`cycle_top_met`).
+    Cycle(SnapshotKind),
+    /// The as-of regime composite total (`regime_score`).
+    Regime,
+}
+
 /// One registry entry. Adding a new accessor is a single row here plus (if it
-/// reads a new snapshot) a `SnapshotKind` arm in [`snapshot_met`].
+/// reads a new snapshot) an [`AccessorImpl`] arm in [`eval_accessor`].
 #[derive(Debug, Clone, Copy)]
 pub struct AccessorDef {
     pub name: &'static str,
     pub arity: usize,
-    pub kind: SnapshotKind,
+    pub imp: AccessorImpl,
 }
 
-/// The accessor registry. **M2 stage:** the two cycle-confluence counters.
-/// (`regime_score`/`cyber_*`/`stage_proxy` are deferred to later stages — each
-/// is a one-row addition here.)
+/// The accessor registry. **M1/M2 stage:** the two cycle-confluence counters plus
+/// the regime composite. (`cyber_*`/`stage_proxy` are deferred to later stages —
+/// each is a one-row addition here.)
 static REGISTRY: &[AccessorDef] = &[
     AccessorDef {
         name: "cycle_bottom_met",
         arity: 1,
-        kind: SnapshotKind::CycleBottom,
+        imp: AccessorImpl::Cycle(SnapshotKind::CycleBottom),
     },
     AccessorDef {
         name: "cycle_top_met",
         arity: 1,
-        kind: SnapshotKind::CycleTop,
+        imp: AccessorImpl::Cycle(SnapshotKind::CycleTop),
+    },
+    AccessorDef {
+        name: "regime_score",
+        arity: 0,
+        imp: AccessorImpl::Regime,
     },
 ];
+
+/// Does `name` resolve to a regime (macro-series) accessor? Used by the panel
+/// loader to decide whether it must also source the `REGIME_SYMBOLS` series.
+pub fn is_regime_accessor(name: &str) -> bool {
+    matches!(lookup(name).map(|d| d.imp), Some(AccessorImpl::Regime))
+}
 
 /// Look up an accessor definition by name.
 pub fn lookup(name: &str) -> Option<&'static AccessorDef> {
@@ -97,6 +121,12 @@ pub struct Memo {
     /// Number of actual signal computations (cache misses) — exposed so tests
     /// can prove a `(sym, tf)` snapshot is computed only once per date.
     pub compute_count: usize,
+    /// The date-keyed regime composite, computed at most once per date. `Some(v)`
+    /// where `v` is the total as f64, or `NaN` when the macro history is too thin.
+    regime: Option<f64>,
+    /// Number of regime computations (cache misses) — exposed so tests can prove
+    /// the macro composite is computed only once even with several regime reads.
+    pub regime_compute_count: usize,
 }
 
 impl Memo {
@@ -133,13 +163,76 @@ pub fn eval_accessor(
             args.len()
         );
     }
-    let symbol = &args[0];
-    let tf = tf.unwrap_or(ctx.default_tf);
-    let met = snapshot_met(def.kind, symbol, tf, ctx);
-    Ok(match met {
-        Some(m) => m as f64,
-        None => f64::NAN, // insufficient history → comparison is false → no fire
-    })
+    match def.imp {
+        AccessorImpl::Cycle(kind) => {
+            let symbol = &args[0];
+            let tf = tf.unwrap_or(ctx.default_tf);
+            let met = snapshot_met(kind, symbol, tf, ctx);
+            Ok(match met {
+                Some(m) => m as f64,
+                None => f64::NAN, // insufficient history → comparison false → no fire
+            })
+        }
+        // `regime_score()` is symbol-independent and date-keyed; `@tf` is
+        // meaningless for it (regime is a daily cross-asset read) and ignored.
+        AccessorImpl::Regime => Ok(regime_score_memo(ctx)),
+    }
+}
+
+/// The memoized as-of regime composite total for `ctx.as_of`. Computed at most
+/// once per date (date-keyed, symbol-independent) so multiple regime accessors in
+/// one rule set share the work. Returns `NaN` when the macro history is too thin
+/// to form a regime read (`active_count < 3`) → the rule does not fire.
+fn regime_score_memo(ctx: &mut AtDateCtx) -> f64 {
+    if let Some(v) = ctx.memo.regime {
+        return v;
+    }
+    let score = regime_at_date(ctx.panel, ctx.as_of);
+    let v = if score.has_data() {
+        score.total as f64
+    } else {
+        f64::NAN
+    };
+    ctx.memo.regime = Some(v);
+    ctx.memo.regime_compute_count += 1;
+    v
+}
+
+/// **RegimeAtDate** — the as-of regime risk-on/off composite (POSITIONING-MODELS.md
+/// §3.4). Builds the per-symbol macro history map from the panel trimmed to closes
+/// with `date <= as_of`, and the "latest" price map from each series' last close
+/// `<= as_of`, then feeds the existing [`compute_regime`]. Because every series is
+/// truncated to `<= as_of` BEFORE `compute_regime` sees it, every signal (VIX
+/// level/trend, yield trend, curve, DXY trend, gold/SPX, BTC/SPX corr, HY, copper/
+/// gold) reads only data through `as_of`'s close — "latest" == "latest as of T", so
+/// no signal can peek beyond `T`. Regime is a daily read, so the cutoff is `as_of`
+/// itself (no completed-bucket lag).
+pub fn regime_at_date(panel: &PricePanel, as_of: NaiveDate) -> RegimeScore {
+    let mut prices: HashMap<String, rust_decimal::Decimal> = HashMap::new();
+    let mut history: HashMap<String, Vec<HistoryRecord>> = HashMap::new();
+    for &sym in REGIME_YAHOO_SYMBOLS {
+        let closes = panel.closes_through(sym, as_of); // oldest-first, all <= as_of
+        if closes.is_empty() {
+            continue;
+        }
+        // "Latest" scalar price = the last close on/before as_of.
+        if let Some((_, last)) = closes.last() {
+            prices.insert(sym.to_string(), *last);
+        }
+        let recs: Vec<HistoryRecord> = closes
+            .into_iter()
+            .map(|(d, c)| HistoryRecord {
+                date: d.format("%Y-%m-%d").to_string(),
+                close: c,
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            })
+            .collect();
+        history.insert(sym.to_string(), recs);
+    }
+    compute_regime(&prices, &history)
 }
 
 /// Compute (memoized) the `met_count` of `kind`'s confluence snapshot for
@@ -374,4 +467,122 @@ mod tests {
         assert_eq!(ctx.memo.compute_count, 2);
     }
 
+    // --- regime accessor ---------------------------------------------------
+
+    /// Insert `n` daily bars for `sym` starting `start`, value = `f(i)`.
+    fn fill(p: &mut PricePanel, sym: &str, start: NaiveDate, n: u64, f: impl Fn(u64) -> f64) {
+        use rust_decimal::prelude::FromPrimitive;
+        let series: Vec<(NaiveDate, Decimal)> = (0..n)
+            .map(|i| {
+                (
+                    start + Days::new(i),
+                    Decimal::from_f64(f(i)).unwrap().round_dp(4),
+                )
+            })
+            .collect();
+        p.insert_series(sym, series);
+    }
+
+    /// A risk-OFF macro panel: VIX high & rising, 10Y falling, curve inverted,
+    /// DXY rising, gold/SPX rising, BTC/SPX anti-correlated, HY falling, Cu/Au
+    /// falling. `n` daily bars from `start`. Engineered to score strongly negative.
+    fn risk_off_panel(start: NaiveDate, n: u64) -> PricePanel {
+        let mut p = PricePanel::new();
+        fill(&mut p, "^VIX", start, n, |i| 25.0 + 0.10 * i as f64); // high, rising
+        fill(&mut p, "^TNX", start, n, |i| 5.0 - 0.01 * i as f64); // falling
+        fill(&mut p, "^IRX", start, n, |_| 6.0); // > TNX → inverted curve
+        fill(&mut p, "DX-Y.NYB", start, n, |i| 100.0 + 0.05 * i as f64); // rising
+        fill(&mut p, "GC=F", start, n, |i| 2000.0 + 1.0 * i as f64); // gold rising
+        fill(&mut p, "^GSPC", start, n, |i| 4800.0 - 2.0 * i as f64); // SPX falling
+        fill(&mut p, "BTC-USD", start, n, |i| 60000.0 + 10.0 * i as f64); // up vs SPX down → neg corr
+        fill(&mut p, "HYG", start, n, |i| 80.0 - 0.05 * i as f64); // falling
+        fill(&mut p, "LQD", start, n, |_| 110.0);
+        fill(&mut p, "HG=F", start, n, |i| 4.5 - 0.005 * i as f64); // copper falling
+        p
+    }
+
+    #[test]
+    fn regime_accessor_insufficient_yields_nan() {
+        // No macro series at all → regime has no data → NaN sentinel.
+        let panel = PricePanel::new();
+        let mut memo = Memo::new();
+        let mut ctx = AtDateCtx {
+            as_of: d(2024, 6, 12),
+            panel: &panel,
+            default_tf: SignalTimeframe::Monthly,
+            memo: &mut memo,
+        };
+        let v = eval_accessor("regime_score", &[], None, &mut ctx).unwrap();
+        assert!(v.is_nan(), "no macro history → regime must be the NaN sentinel");
+    }
+
+    #[test]
+    fn regime_accessor_arity_zero_rejects_argument() {
+        // A symbol arg to the zero-arity regime accessor is an error, not a silent
+        // ignore (caught at eval time as well as at validate time).
+        let panel = risk_off_panel(d(2024, 1, 1), 60);
+        let mut memo = Memo::new();
+        let mut ctx = AtDateCtx {
+            as_of: d(2024, 2, 20),
+            panel: &panel,
+            default_tf: SignalTimeframe::Monthly,
+            memo: &mut memo,
+        };
+        let err = eval_accessor("regime_score", &["SPY".to_string()], None, &mut ctx)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("takes 0 argument"), "got: {err}");
+    }
+
+    #[test]
+    fn regime_score_is_negative_on_risk_off_panel() {
+        let panel = risk_off_panel(d(2024, 1, 1), 60);
+        let score = regime_at_date(&panel, d(2024, 2, 20));
+        assert!(score.has_data(), "60 bars must yield an active regime read");
+        assert!(
+            score.total <= -2,
+            "engineered risk-off panel must score <= -2, got {}",
+            score.total
+        );
+    }
+
+    #[test]
+    fn regime_memo_computes_once_per_date() {
+        let panel = risk_off_panel(d(2024, 1, 1), 60);
+        let mut memo = Memo::new();
+        let mut ctx = AtDateCtx {
+            as_of: d(2024, 2, 20),
+            panel: &panel,
+            default_tf: SignalTimeframe::Monthly,
+            memo: &mut memo,
+        };
+        let a = eval_accessor("regime_score", &[], None, &mut ctx).unwrap();
+        let b = eval_accessor("regime_score", &[], None, &mut ctx).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(ctx.memo.regime_compute_count, 1, "regime computed exactly once");
+    }
+
+    /// Lookahead guard: the regime score at `T` must NOT change when strictly-future
+    /// macro bars are appended. This is the as-of invariance that proves no signal
+    /// peeks beyond `T` (every series is trimmed to `<= T` before `compute_regime`).
+    #[test]
+    fn regime_at_date_is_future_data_invariant() {
+        let t = d(2024, 2, 20);
+        let panel = risk_off_panel(d(2024, 1, 1), 51); // bars through 2024-02-20
+        let before = regime_at_date(&panel, t).total;
+
+        // Append 40 strictly-future bars (continuing the risk-off trend AND, for
+        // good measure, flipping some series so a peek would visibly change T).
+        let mut panel2 = panel.clone();
+        let future_start = d(2024, 2, 21);
+        fill(&mut panel2, "^VIX", future_start, 40, |i| 12.0 - 0.05 * i as f64); // would flip low/falling
+        fill(&mut panel2, "^TNX", future_start, 40, |i| 3.0 + 0.02 * i as f64); // would flip rising
+        fill(&mut panel2, "DX-Y.NYB", future_start, 40, |i| 105.0 - 0.05 * i as f64); // would flip falling
+        let after = regime_at_date(&panel2, t).total;
+
+        assert_eq!(
+            before, after,
+            "regime at T changed after appending future bars → lookahead leak"
+        );
+    }
 }

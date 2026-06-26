@@ -806,7 +806,7 @@ commission_pct = 0.001
     #[test]
     fn rejects_rule_with_unknown_accessor() {
         let bad = format!(
-            "{SAMPLE}\n[[rules]]\nid = \"bad\"\nwhen = \"regime_score('SPY') >= 1\"\nthen = {{ kind = \"tilt\", class = \"equity\", by = \"0.1\", from = \"cash\" }}\n"
+            "{SAMPLE}\n[[rules]]\nid = \"bad\"\nwhen = \"cyber_dot_up('SPY') >= 1\"\nthen = {{ kind = \"tilt\", class = \"equity\", by = \"0.1\", from = \"cash\" }}\n"
         );
         let err = format!("{:#}", resolve_str(&bad).unwrap_err());
         assert!(err.contains("unknown signal accessor"), "unexpected error: {err}");
@@ -961,6 +961,35 @@ commission_pct = 0.001
         if let Action::Tilt { by, from, .. } = &add.then {
             assert_eq!(*by, dec!(0.10));
             assert_eq!(from, "cash");
+        } else {
+            panic!("expected tilt");
+        }
+    }
+
+    /// The shipped Model M1 spec must validate, resolve, and compile its two
+    /// regime rules into executable `Condition::Signal` tilt rules (regime_score
+    /// is now a known accessor — P3b only listed cycle_*).
+    #[test]
+    fn m1_regime_spec_validates_and_compiles() {
+        let toml = include_str!("../../../models/m1-regime-balanced.toml");
+        let rm = resolve_str(toml).expect("M1 spec must resolve");
+        assert_eq!(rm.name, "m1-regime-balanced");
+        assert_eq!(rm.model.rules.len(), 2);
+        for r in &rm.model.rules {
+            assert!(matches!(r.when, Condition::Signal(_)), "rule {} is a signal rule", r.id);
+            assert!(matches!(r.then, Action::Tilt { .. }));
+        }
+        // risk-off tilt raises bonds out of equity by +tilt_size (0.15).
+        let off = rm
+            .model
+            .rules
+            .iter()
+            .find(|r| r.id == "tilt-to-bonds-on-risk-off")
+            .unwrap();
+        if let Action::Tilt { class, by, from, .. } = &off.then {
+            assert_eq!(class, "bond");
+            assert_eq!(*by, dec!(0.15));
+            assert_eq!(from, "equity");
         } else {
             panic!("expected tilt");
         }

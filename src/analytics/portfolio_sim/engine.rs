@@ -1797,4 +1797,145 @@ mod tests {
         // The no-rule run holds the base 0.2 target (no tilt ever).
         assert!(plain_max <= dec!(0.2000001), "no-rule HMX must stay at base, got {plain_max}");
     }
+
+    /// M1 end-to-end (the regime model coming alive). A SYNTHETIC panel carries the
+    /// macro REGIME_SYMBOLS engineered to be risk-ON for the first ~half and
+    /// risk-OFF after a known flip date (VIX spikes, yields fall, curve inverts,
+    /// DXY rises, …). The M1 spec's `regime_score()`-driven rules must:
+    ///  - NOT fire risk-off on the first rebalance (insufficient macro history → NaN),
+    ///  - fire the risk-off (raise-bonds) rule only on/after the flip date,
+    ///  - lift the bond (IEF) weight above the no-rule base in the risk-off regime,
+    ///  - lower IEF below base in the risk-on regime (risk-on rule),
+    ///  - keep the ledger balanced throughout.
+    #[test]
+    fn m1_regime_rule_shifts_allocation() {
+        use rust_decimal::prelude::FromPrimitive;
+
+        // The shipped M1 spec is the source of truth for the model + rules.
+        let toml = include_str!("../../../models/m1-regime-balanced.toml");
+        let rm = crate::analytics::portfolio_sim::spec::resolve_str(toml).unwrap();
+        let model = rm.model.clone();
+        let mut no_rule = model.clone();
+        no_rule.rules = vec![];
+
+        // --- build the synthetic macro + universe panel ---
+        let start = d(2024, 1, 1); // a Monday
+        let n: u64 = 120;
+        let flip: u64 = 60; // global bar 60 == 2024-03-01: risk-on → risk-off
+        let macro_val = |sym: &str, i: u64| -> f64 {
+            let on = i < flip;
+            let j = if on { i } else { i - flip } as f64;
+            match sym {
+                "^VIX" => if on { 18.0 - 0.05 * j } else { 25.0 + 0.10 * j },
+                "^TNX" => if on { 3.0 + 0.01 * j } else { 5.0 - 0.01 * j },
+                "^IRX" => if on { 2.0 } else { 6.0 },
+                "DX-Y.NYB" => if on { 105.0 - 0.02 * j } else { 100.0 + 0.05 * j },
+                "GC=F" => if on { 2000.0 } else { 2000.0 + 1.0 * j },
+                "^GSPC" => if on { 4000.0 + 2.0 * j } else { 4800.0 - 2.0 * j },
+                "BTC-USD" => if on { 50000.0 + 10.0 * j } else { 60000.0 + 10.0 * j },
+                "HYG" => if on { 75.0 + 0.05 * j } else { 80.0 - 0.05 * j },
+                "LQD" => 110.0,
+                "HG=F" => if on { 4.0 + 0.005 * j } else { 4.5 - 0.005 * j },
+                _ => 100.0,
+            }
+        };
+        let mut panel = PricePanel::new();
+        for &sym in crate::regime::REGIME_YAHOO_SYMBOLS {
+            let series: Vec<(NaiveDate, Decimal)> = (0..n)
+                .map(|i| {
+                    (
+                        start + chrono::Days::new(i),
+                        Decimal::from_f64(macro_val(sym, i)).unwrap().round_dp(4),
+                    )
+                })
+                .collect();
+            panel.insert_series(sym, series);
+        }
+        // Tradable universe: SPY (rising), IEF (flat). Present on every date.
+        let spy: Vec<(NaiveDate, Decimal)> = (0..n)
+            .map(|i| (start + chrono::Days::new(i), Decimal::from_f64(400.0 + 0.1 * i as f64).unwrap().round_dp(4)))
+            .collect();
+        let ief: Vec<(NaiveDate, Decimal)> = (0..n)
+            .map(|i| (start + chrono::Days::new(i), dec!(100)))
+            .collect();
+        panel.insert_series("SPY", spy);
+        panel.insert_series("IEF", ief);
+
+        let ruled = simulate(&model, &panel).unwrap();
+        let plain = simulate(&no_rule, &panel).unwrap();
+
+        // (0) Ledger balanced on every day (both runs).
+        for p in ruled.daily_equity_curve.iter().chain(plain.daily_equity_curve.iter()) {
+            assert_eq!(p.equity, p.cash + p.invested, "ledger must balance at {}", p.date);
+            assert!(p.cash >= dec!(0));
+        }
+
+        // (1) First rebalance (2024-01-01): too little macro history → regime NaN →
+        //     NEITHER regime rule fires.
+        let first = &ruled.rebalance_events[0];
+        assert_eq!(first.date, start);
+        assert!(
+            first.applied_rule_ids.is_empty(),
+            "first rebalance must not fire (insufficient macro history)"
+        );
+
+        // (2) The risk-off rule fires, and ONLY on/after the flip date (2024-03-01).
+        let off_fires: Vec<&RebalanceEvent> = ruled
+            .rebalance_events
+            .iter()
+            .filter(|e| e.applied_rule_ids.iter().any(|id| id == "tilt-to-bonds-on-risk-off"))
+            .collect();
+        assert!(!off_fires.is_empty(), "risk-off rule must fire in the risk-off regime");
+        assert!(
+            off_fires.iter().all(|e| e.date >= d(2024, 3, 1)),
+            "risk-off must fire only on/after the flip, got {:?}",
+            off_fires.iter().map(|e| e.date).collect::<Vec<_>>()
+        );
+
+        // (3) The risk-on rule fires in the early (risk-on) regime, before the flip.
+        let on_fires: Vec<NaiveDate> = ruled
+            .rebalance_events
+            .iter()
+            .filter(|e| e.applied_rule_ids.iter().any(|id| id == "tilt-to-equity-on-risk-on"))
+            .map(|e| e.date)
+            .collect();
+        assert!(!on_fires.is_empty(), "risk-on rule must fire in the risk-on regime");
+        assert!(
+            on_fires.iter().any(|&dt| dt < d(2024, 3, 1)),
+            "risk-on must fire before the flip, got {on_fires:?}"
+        );
+
+        // post-rebalance weight of `sym` on `date` (intended target weight).
+        let post = |rep: &PortfolioBacktestReport, date: NaiveDate, sym: &str| -> Decimal {
+            rep.rebalance_events
+                .iter()
+                .find(|e| e.date == date)
+                .and_then(|e| e.post_weights.iter().find(|(k, _)| k == sym).map(|(_, w)| *w))
+                .unwrap_or(dec!(-1))
+        };
+
+        // (4) Deep risk-off rebalance (2024-04-22, last clean OFF): the bond (IEF)
+        //     weight RISES above the no-rule base (0.30) and above the plain run.
+        let off_date = d(2024, 4, 22);
+        let ief_off_ruled = post(&ruled, off_date, "IEF");
+        let ief_off_plain = post(&plain, off_date, "IEF");
+        assert_eq!(ief_off_plain, dec!(0.30000000), "no-rule bond holds base 0.30");
+        assert!(
+            ief_off_ruled > ief_off_plain && ief_off_ruled > dec!(0.30),
+            "risk-off must lift IEF above base: ruled={ief_off_ruled} plain={ief_off_plain}"
+        );
+        // tilt_size 0.15 → bond 0.30 + 0.15 = 0.45.
+        assert_eq!(ief_off_ruled, dec!(0.45000000));
+
+        // (5) Deep risk-on rebalance (2024-02-26, clean ON): the risk-on rule lowers
+        //     IEF below base (bond 0.30 − 0.15 = 0.15).
+        let on_date = d(2024, 2, 26);
+        let ief_on_ruled = post(&ruled, on_date, "IEF");
+        assert_eq!(post(&plain, on_date, "IEF"), dec!(0.30000000));
+        assert!(
+            ief_on_ruled < dec!(0.30),
+            "risk-on must lower IEF below base, got {ief_on_ruled}"
+        );
+        assert_eq!(ief_on_ruled, dec!(0.15000000));
+    }
 }

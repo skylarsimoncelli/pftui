@@ -454,36 +454,69 @@ fn validate(expr: &Expr, universe: &BTreeSet<String>) -> Result<Kind> {
 
 /// Evaluate a validated expression to a bool at the date held by `ctx`. The
 /// expression is known boolean at the top level (validated at parse time).
+///
+/// ## Insufficient-history hardening (the `not` footgun, [R])
+/// An accessor with too-shallow history returns `NaN`. A bare comparison touching
+/// `NaN` is already FALSE ([`compare`]), but `not(<NaN comparison>)` would flip
+/// that FALSE to TRUE and fire a rule on *missing data* — exactly backwards. So
+/// we track whether ANY accessor evaluated during the `when` was insufficient
+/// (`NaN`); if so the whole rule is treated as **not-firing**, regardless of the
+/// boolean structure (`not`/`and`/`or`). A rule that cannot be computed never
+/// fires. (Trade-off: an `or` whose evaluated branch hit a `NaN` is also
+/// suppressed — the conservative, safe-by-default choice.)
 pub fn eval_bool(expr: &Expr, ctx: &mut AtDateCtx) -> Result<bool> {
-    match eval(expr, ctx)? {
-        Value::Bool(b) => Ok(b),
-        Value::Num(_) => bail!("internal: `when` top-level evaluated to a number (validation bug)"),
-    }
+    let mut insufficient = false;
+    let v = eval(expr, ctx, &mut insufficient)?;
+    let b = match v {
+        Value::Bool(b) => b,
+        Value::Num(_) => {
+            bail!("internal: `when` top-level evaluated to a number (validation bug)")
+        }
+    };
+    // Any insufficient-history accessor reached during evaluation → no fire.
+    Ok(if insufficient { false } else { b })
 }
 
-fn eval(expr: &Expr, ctx: &mut AtDateCtx) -> Result<Value> {
+fn eval(expr: &Expr, ctx: &mut AtDateCtx, insufficient: &mut bool) -> Result<Value> {
     Ok(match expr {
         Expr::Num(n) => Value::Num(*n),
         Expr::Accessor { name, args, tf } => {
-            Value::Num(accessors::eval_accessor(name, args, *tf, ctx)?)
+            let n = accessors::eval_accessor(name, args, *tf, ctx)?;
+            if n.is_nan() {
+                *insufficient = true;
+            }
+            Value::Num(n)
         }
         Expr::Compare { op, lhs, rhs } => {
-            let l = as_num(eval(lhs, ctx)?)?;
-            let r = as_num(eval(rhs, ctx)?)?;
+            let l = as_num(eval(lhs, ctx, insufficient)?)?;
+            let r = as_num(eval(rhs, ctx, insufficient)?)?;
             Value::Bool(compare(*op, l, r))
         }
         Expr::And(a, b) => {
             // Short-circuit so an insufficient-history accessor on the rhs is
             // never reached once the lhs is already false.
-            let l = as_bool(eval(a, ctx)?)?;
-            Value::Bool(l && as_bool(eval(b, ctx)?)?)
+            let l = as_bool(eval(a, ctx, insufficient)?)?;
+            Value::Bool(l && as_bool(eval(b, ctx, insufficient)?)?)
         }
         Expr::Or(a, b) => {
-            let l = as_bool(eval(a, ctx)?)?;
-            Value::Bool(l || as_bool(eval(b, ctx)?)?)
+            let l = as_bool(eval(a, ctx, insufficient)?)?;
+            Value::Bool(l || as_bool(eval(b, ctx, insufficient)?)?)
         }
-        Expr::Not(a) => Value::Bool(!as_bool(eval(a, ctx)?)?),
+        Expr::Not(a) => Value::Bool(!as_bool(eval(a, ctx, insufficient)?)?),
     })
+}
+
+/// Does `expr` reference a regime (macro-series) accessor anywhere? The panel
+/// loader uses this to decide whether it must also source the `REGIME_SYMBOLS`
+/// macro series for a rule set.
+pub fn uses_regime(expr: &Expr) -> bool {
+    match expr {
+        Expr::Accessor { name, .. } => accessors::is_regime_accessor(name),
+        Expr::Num(_) => false,
+        Expr::Compare { lhs, rhs, .. } => uses_regime(lhs) || uses_regime(rhs),
+        Expr::And(a, b) | Expr::Or(a, b) => uses_regime(a) || uses_regime(b),
+        Expr::Not(a) => uses_regime(a),
+    }
 }
 
 /// Compare two numbers. **Insufficient-history sentinel:** an accessor with too
@@ -562,7 +595,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_accessor() {
-        let err = parse_and_validate("regime_score('BTC-USD') >= 1", &params(), &universe())
+        let err = parse_and_validate("cyber_dot_up('BTC-USD') >= 1", &params(), &universe())
             .unwrap_err()
             .to_string();
         assert!(err.contains("unknown signal accessor"), "got: {err}");
@@ -598,6 +631,62 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("unknown identifier 'mystery'"), "got: {err}");
+    }
+
+    #[test]
+    fn accepts_regime_score_accessor() {
+        // regime_score() is a known zero-arity accessor → validation accepts it
+        // (P3b previously listed only cycle_* and rejected regime rules).
+        // (Negative thresholds are carried via [params]; the DSL has no negative
+        // literal token, so test acceptance with a non-negative comparison here.)
+        let e = parse_and_validate("regime_score() >= 2", &params(), &universe()).unwrap();
+        assert!(matches!(e, Expr::Compare { op: CmpOp::Ge, .. }));
+        assert!(uses_regime(&e));
+    }
+
+    #[test]
+    fn rejects_regime_score_with_argument() {
+        // Arity 0: a symbol argument to regime_score is a clear error.
+        let err = parse_and_validate("regime_score('SPY') >= 1", &params(), &universe())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("takes 0 argument"), "got: {err}");
+    }
+
+    /// The `not` footgun fix: a `not(<insufficient-history comparison>)` must NOT
+    /// fire. With shallow BTC-USD history `cycle_bottom_met` is `NaN`; the inner
+    /// comparison is FALSE, and naive `not` would flip it TRUE. The insufficient
+    /// flag suppresses firing.
+    #[test]
+    fn not_of_insufficient_history_does_not_fire() {
+        use super::super::accessors::{AtDateCtx, Memo};
+        use super::super::PricePanel;
+        use chrono::{Days, NaiveDate};
+        use rust_decimal::Decimal;
+
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        // Far too few bars for cycle_bottom_signals → NaN.
+        let series: Vec<(NaiveDate, Decimal)> = (0..20)
+            .map(|i| (start + Days::new(i), Decimal::from(100 + i as i64)))
+            .collect();
+        let mut panel = PricePanel::new();
+        panel.insert_series("BTC-USD", series);
+
+        let uni: BTreeSet<String> = ["BTC-USD".to_string()].into_iter().collect();
+        let expr =
+            parse_and_validate("not cycle_bottom_met('BTC-USD') >= 5", &params(), &uni).unwrap();
+
+        let mut memo = Memo::new();
+        let mut ctx = AtDateCtx {
+            as_of: start + Days::new(19),
+            panel: &panel,
+            default_tf: SignalTimeframe::Monthly,
+            memo: &mut memo,
+        };
+        assert!(
+            !eval_bool(&expr, &mut ctx).unwrap(),
+            "not(insufficient) must NOT fire (NaN suppresses the rule)"
+        );
     }
 
     #[test]
