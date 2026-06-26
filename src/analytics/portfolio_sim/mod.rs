@@ -26,6 +26,7 @@ pub mod engine;
 pub mod loader;
 pub mod metrics;
 pub mod optimize;
+pub mod overfit;
 pub mod rule_expr;
 pub mod solver;
 pub mod spec;

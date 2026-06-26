@@ -5145,9 +5145,26 @@ pub enum AnalyticsModelsCommand {
         /// (default: ~6y train / ~1y test rolling, as many folds as fit)
         #[arg(long)]
         folds: Option<usize>,
+        /// Number of equal CSCV time-slices for the PBO statistic (even; default 8)
+        #[arg(long)]
+        slices: Option<usize>,
         /// Selection/reporting objective (all higher-is-better, on NET returns)
         #[arg(long, default_value = "calmar")]
         objective: String,
+        /// Do NOT append this run to the persistent optimization ledger
+        /// (cumulative-trial accounting); a dry run that leaves no provenance
+        #[arg(long)]
+        no_ledger: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Optimization LEDGER audit: cumulative trials per topology family + recent
+    /// runs (P5b). The meta-overfitting guardrail — repeated re-runs of the same
+    /// frozen search space are silent multiple testing the per-run PBO/DSR miss.
+    #[command(
+        after_help = "Lists every recorded `analytics models optimize` run grouped by topology_hash\n(model + universe + rules + cadence + objective + cost model + fold scheme +\nparam names/ranges + benchmark). A changed topology is a NEW family, not\nconfirmation of the old one.\n\nExamples:\n  pftui analytics models optimize-history\n  pftui analytics models optimize-history --json"
+    )]
+    OptimizeHistory {
         #[arg(long)]
         json: bool,
     },

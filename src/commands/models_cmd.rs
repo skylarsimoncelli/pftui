@@ -27,6 +27,7 @@ use crate::analytics::portfolio_sim::optimize::{
 };
 use crate::analytics::portfolio_sim::spec::{parse_str, resolve, resolve_str, ResolvedModel};
 use crate::db::backend::BackendConnection;
+use crate::db::model_optimize_runs::{self, NewOptimizeRun};
 
 /// Directory (relative to cwd) scanned for `models/*.toml` specs.
 const MODELS_DIR: &str = "models";
@@ -619,12 +620,31 @@ fn truncate(s: &str, max: usize) -> String {
 // optimize (P5a — walk-forward parameter optimization)
 // ---------------------------------------------------------------------------
 
-/// The standing caveat printed on EVERY optimize run: this is in-run hygiene
-/// only, not research-process proof — multiple-testing correction is deferred.
+/// The standing caveat printed on EVERY optimize run. P5b: PBO/DSR are NOW
+/// computed and cumulative trials NOW tracked — but the honest framing is
+/// unchanged: this is the best OBSERVED OOS config under a FROZEN search space,
+/// not an optimal parameter or a proven edge. A `robust` verdict now ALSO
+/// requires PBO ≤ 0.25 and DSR ≥ 0.95.
 const STANDING_CAVEAT: &str = "CAVEAT: this is the BEST OBSERVED OOS config under this frozen search space — \
 NOT an 'optimal parameter', 'expected return', or 'proven edge'. Multiple-testing \
-correction (PBO/DSR) and cumulative-trial accounting land in P5b; this run is \
-in-run hygiene only, not research-process proof.";
+correction (PBO via CSCV + Deflated Sharpe) is NOW computed and cumulative trials \
+for this topology are NOW tracked in the optimization ledger; a 'robust' verdict \
+additionally requires PBO ≤ 0.25 and DSR ≥ 0.95. The ledger cannot see search you \
+did OUTSIDE this tool, and the lockbox window is reserved for a one-time final check.";
+
+/// Ledger context surfaced alongside the report: the topology family this run
+/// belongs to and the cumulative trials recorded for it BEFORE this run.
+#[derive(Debug, Clone)]
+pub struct LedgerContext {
+    pub topology_hash: String,
+    /// SUM(n_configs) over prior runs of this topology (excludes this run).
+    pub prior_cumulative_trials: i64,
+    pub prior_runs: i64,
+    /// Cumulative trials INCLUDING this run (prior + this run's n_configs).
+    pub cumulative_trials_incl: i64,
+    /// True when a ledger row was appended for this run.
+    pub recorded: bool,
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn run_optimize(
@@ -634,7 +654,9 @@ pub fn run_optimize(
     to: Option<&str>,
     params: &[String],
     folds: Option<usize>,
+    slices: Option<usize>,
     objective: &str,
+    no_ledger: bool,
     json_output: bool,
 ) -> Result<()> {
     let from_d = parse_date_opt(from, "--from")?;
@@ -671,17 +693,125 @@ pub fn run_optimize(
     };
     let panel = load_panel(&loader, &resolved.model, from_d, to_d)?;
 
-    let report = optimize::run_optimize(&base_spec, &panel, &axes, obj, folds)?;
+    let report = optimize::run_optimize(&base_spec, &panel, &axes, obj, folds, slices)?;
+
+    // Topology hash = the research-family identity. The fold-scheme descriptor
+    // is the partitioning POLICY (folds/warmup/lockbox/slices), not the data
+    // window (the window is recorded separately in the ledger columns).
+    let fold_descriptor = format!(
+        "folds={:?};warmup={};lockbox={};slices={}",
+        folds,
+        report.scheme.warmup_days,
+        report.lockbox.lockbox_days,
+        slices.unwrap_or(optimize::DEFAULT_SLICES),
+    );
+    let topology_hash =
+        model_optimize_runs::topology_hash(&base_spec, &axes, obj, &fold_descriptor);
+
+    // Read PRIOR cumulative trials for this topology (before appending this run).
+    let conn = backend.sqlite();
+    let prior_cumulative_trials =
+        model_optimize_runs::cumulative_trials_for_topology(conn, &topology_hash)?;
+    let prior_runs = model_optimize_runs::run_count_for_topology(conn, &topology_hash)?;
+
+    // Append this run to the ledger (append-only), unless suppressed.
+    let recorded = if no_ledger {
+        false
+    } else {
+        let winner_params = report.winner_idx.map(|i| {
+            serde_json::to_string(&report.configs[i].params).unwrap_or_default()
+        });
+        let new_run = NewOptimizeRun {
+            topology_hash: topology_hash.clone(),
+            model_name: report.model_name.clone(),
+            model_version: report.model_version as i64,
+            objective: report.objective.clone(),
+            n_configs: report.n_configs as i64,
+            winner_params,
+            verdict: report.verdict.label().to_string(),
+            pbo: report.pbo.as_ref().map(|p| p.pbo),
+            dsr: report.dsr.as_ref().map(|d| d.dsr),
+            window_start: Some(report.scheme.post_warmup_start.to_string()),
+            window_end: Some(report.scheme.data_end.to_string()),
+            lockbox_start: Some(report.lockbox.lockbox_start.to_string()),
+            lockbox_end: Some(report.lockbox.lockbox_end.to_string()),
+        };
+        model_optimize_runs::append_run(conn, &new_run)?;
+        true
+    };
+
+    let ledger = LedgerContext {
+        topology_hash,
+        prior_cumulative_trials,
+        prior_runs,
+        cumulative_trials_incl: prior_cumulative_trials + report.n_configs as i64,
+        recorded,
+    };
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&optimize_json(&report))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&optimize_json(&report, &ledger))?
+        );
         return Ok(());
     }
-    print!("{}", render_optimize_text(&report));
+    print!("{}", render_optimize_text(&report, &ledger));
     Ok(())
 }
 
-fn optimize_json(r: &OptimizeReport) -> serde_json::Value {
+/// List the optimization ledger: cumulative trials per topology family, and the
+/// most recent runs. The meta-overfitting audit trail.
+pub fn run_optimize_history(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let conn = backend.sqlite();
+    let families = model_optimize_runs::topology_summaries(conn)?;
+    let recent = model_optimize_runs::list_runs(conn, 50)?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "command": "analytics models optimize-history",
+                "families": families,
+                "recent_runs": recent,
+            }))?
+        );
+        return Ok(());
+    }
+
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    if families.is_empty() {
+        let _ = writeln!(out, "No optimize runs recorded yet (the ledger is empty).");
+        print!("{out}");
+        return Ok(());
+    }
+    let _ = writeln!(
+        out,
+        "Optimization ledger — cumulative trials per topology family:"
+    );
+    let _ = writeln!(
+        out,
+        "{:<14} {:<16} {:>8} {:>6} {:>12}  {:<14} lastRun",
+        "TOPOLOGY", "MODEL", "objective", "runs", "cumTrials", "lastVerdict"
+    );
+    for f in &families {
+        let _ = writeln!(
+            out,
+            "{:<14} {:<16} {:>8} {:>6} {:>12}  {:<14} {}",
+            truncate(&f.topology_hash, 14),
+            truncate(&f.model_name, 16),
+            f.objective,
+            f.n_runs,
+            f.cumulative_trials,
+            f.last_verdict,
+            f.last_run_at,
+        );
+    }
+    print!("{out}");
+    Ok(())
+}
+
+fn optimize_json(r: &OptimizeReport, ledger: &LedgerContext) -> serde_json::Value {
     let configs: Vec<_> = r
         .configs
         .iter()
@@ -738,6 +868,24 @@ fn optimize_json(r: &OptimizeReport) -> serde_json::Value {
         },
         "benchmark_rebalanced_base_policy_oos": r.benchmark_rebalanced_oos,
         "sensitivity": r.sensitivity.iter().map(sensitivity_json).collect::<Vec<_>>(),
+        "overfit_stats": {
+            "pbo": r.pbo,
+            "dsr": r.dsr,
+        },
+        "lockbox": {
+            "lockbox_days": r.lockbox.lockbox_days,
+            "lockbox_start": r.lockbox.lockbox_start.to_string(),
+            "lockbox_end": r.lockbox.lockbox_end.to_string(),
+            "n_slices": r.lockbox.n_slices,
+            "note": "reserved holdout — NEVER scored in this run; for a one-time final candidate check only",
+        },
+        "ledger": {
+            "topology_hash": ledger.topology_hash,
+            "prior_runs_this_topology": ledger.prior_runs,
+            "prior_cumulative_trials_this_topology": ledger.prior_cumulative_trials,
+            "cumulative_trials_incl_this_run": ledger.cumulative_trials_incl,
+            "recorded": ledger.recorded,
+        },
         "verdict": r.verdict.label(),
         "warnings": r.warnings,
         "caveat": STANDING_CAVEAT,
@@ -755,7 +903,7 @@ fn sensitivity_json(s: &SensitivityPoint) -> serde_json::Value {
 
 /// Render the optimize report as honest text (returned as a String so it is
 /// unit-testable).
-pub fn render_optimize_text(r: &OptimizeReport) -> String {
+pub fn render_optimize_text(r: &OptimizeReport, ledger: &LedgerContext) -> String {
     use std::fmt::Write as _;
     let mut out = String::new();
 
@@ -886,8 +1034,72 @@ pub fn render_optimize_text(r: &OptimizeReport) -> String {
     }
     let _ = writeln!(out);
 
+    // P5b — multiple-testing overfit statistics.
+    match &r.pbo {
+        Some(p) => {
+            let _ = writeln!(
+                out,
+                "PBO (CSCV, {} slices, {} splits): {:.3}  [{}]",
+                p.s_slices, p.n_splits, p.pbo, p.band
+            );
+        }
+        None => {
+            let _ = writeln!(
+                out,
+                "PBO (CSCV): n/a — pre-lockbox span too short to slice"
+            );
+        }
+    }
+    match &r.dsr {
+        Some(d) => {
+            let _ = writeln!(
+                out,
+                "DSR (winner OOS, deflated for {} trials): {:.3}  ({}; SR_oos={:.3}, SR*={:.3}, T={})",
+                d.n_trials,
+                d.dsr,
+                if d.passes { "≥0.95 pass" } else { "<0.95 weak" },
+                d.sharpe_oos,
+                d.sr_star,
+                d.t_obs,
+            );
+        }
+        None => {
+            let _ = writeln!(
+                out,
+                "DSR: n/a — no winner or OOS return stream too short / ill-conditioned"
+            );
+        }
+    }
+
+    // P5b — lockbox reservation (never scored).
+    let _ = writeln!(
+        out,
+        "LOCKBOX reserved (NEVER scored this run): {} → {} ({}d) — held for a one-time final candidate check",
+        r.lockbox.lockbox_start, r.lockbox.lockbox_end, r.lockbox.lockbox_days
+    );
+
+    // P5b — cumulative-trial accounting (the meta-overfitting guardrail).
+    let _ = writeln!(
+        out,
+        "TOPOLOGY {}: {} prior run(s), {} prior cumulative trials → {} cumulative incl. this run{}",
+        truncate(&ledger.topology_hash, 12),
+        ledger.prior_runs,
+        ledger.prior_cumulative_trials,
+        ledger.cumulative_trials_incl,
+        if ledger.recorded { " (recorded)" } else { " (NOT recorded: --no-ledger)" },
+    );
+    let _ = writeln!(out);
+
     // Verdict + warnings + caveat.
     let _ = writeln!(out, "VERDICT: {}  ({})", r.verdict.label(), verdict_rationale(r.verdict));
+    if ledger.cumulative_trials_incl as u64 > optimize::CUMULATIVE_TRIALS_WARN_THRESHOLD {
+        let _ = writeln!(
+            out,
+            "WARNING: {} cumulative trials for this topology exceeds {} — repeated re-runs of the same family are SILENT multiple testing the per-run PBO/DSR cannot see; treat the best observed config with heavy skepticism.",
+            ledger.cumulative_trials_incl,
+            optimize::CUMULATIVE_TRIALS_WARN_THRESHOLD
+        );
+    }
     for w in &r.warnings {
         let _ = writeln!(out, "WARNING: {w}");
     }
@@ -898,9 +1110,9 @@ pub fn render_optimize_text(r: &OptimizeReport) -> String {
 fn verdict_rationale(v: Verdict) -> &'static str {
     match v {
         Verdict::InsufficientData => "too few OOS folds / rebalances / activity to judge",
-        Verdict::OverfitLikely => "winner's edge collapses out-of-sample (IS≫OOS)",
-        Verdict::Fragile => "winner is an isolated grid spike (neighbours much worse)",
-        Verdict::Robust => "survives every in-run gate — still NOT proven (see caveat)",
+        Verdict::OverfitLikely => "OOS edge collapses (IS≫OOS) or fails PBO≤0.25 / DSR≥0.95",
+        Verdict::Fragile => "isolated grid spike, or PBO/DSR clearance unavailable",
+        Verdict::Robust => "survives every gate incl. PBO≤0.25 + DSR≥0.95 — still NOT proven (see caveat)",
     }
 }
 
@@ -1142,17 +1354,31 @@ mod tests {
         let spec = parse_str(&planted_model_toml(0.0005)).unwrap();
         let axes = vec![optimize::parse_axis("tilt_size=0.0:0.8:0.1").unwrap()];
         let rep =
-            optimize::run_optimize(&spec, &panel, &axes, optimize::Objective::Cagr, Some(4)).unwrap();
-        let txt = super::render_optimize_text(&rep);
+            optimize::run_optimize(&spec, &panel, &axes, optimize::Objective::Cagr, Some(4), None)
+                .unwrap();
+        let ledger = super::LedgerContext {
+            topology_hash: "deadbeefcafef00d".to_string(),
+            prior_cumulative_trials: 0,
+            prior_runs: 0,
+            cumulative_trials_incl: rep.n_configs as i64,
+            recorded: true,
+        };
+        let txt = super::render_optimize_text(&rep, &ledger);
         if std::env::var("PFTUI_PRINT_OPTIMIZE").is_ok() {
             eprintln!("\n{txt}");
         }
         assert!(txt.contains("Walk-forward optimization: planted-edge"));
         assert!(txt.contains("WINNER"));
-        assert!(txt.contains("tilt_size=0.4"));
-        assert!(txt.contains("VERDICT: robust"));
+        // P5b: the CAGR/leverage winner does not clear DSR≥0.95, so the verdict
+        // is honestly downgraded (not `robust`).
+        assert!(txt.contains("VERDICT: overfit-likely"));
         assert!(txt.contains("Sensitivity"));
         assert!(txt.contains("Multiple-testing correction"));
+        // P5b stats surfaced.
+        assert!(txt.contains("PBO (CSCV"));
+        assert!(txt.contains("DSR ("));
+        assert!(txt.contains("LOCKBOX reserved"));
+        assert!(txt.contains("TOPOLOGY"));
         // benchmark + walk-forward honesty lines present
         assert!(txt.contains("Rebalanced-base-policy benchmark OOS"));
         assert!(txt.contains("Walk-forward (train-pick each fold)"));

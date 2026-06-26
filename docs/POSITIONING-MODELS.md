@@ -248,9 +248,38 @@ Metrics are **net** (the daily curve already carries costs). Output: full grid I
 walk-forward realised-OOS line, a sensitivity block around the winner, and a conservative
 **verdict** (`robust | fragile | overfit-likely | insufficient-data`). Language is
 disciplined: "best **observed** OOS config under this frozen search space," never "optimal"
-/ "proven edge." **Deferred to P5b:** PBO/CSCV + DSR statistics, the persistent
-optimization ledger (cumulative trials, topology hash), the lockbox holdout — so this run
-is **in-run hygiene only**, not research-process proof.
+/ "proven edge."
+
+#### P5b — multiple-testing overfit statistics + the optimization ledger (shipped)
+Closes the single biggest remaining lie (a Codex review named **meta-overfitting** the top
+hazard). Same command, now with `[--slices N]` (CSCV slices, even, default 8) and
+`[--no-ledger]`; plus `analytics models optimize-history [--json]`.
+- **PBO via CSCV** (`overfit::pbo_cscv`) over a per-config × per-**slice** objective matrix
+  (S equal time-slices of the post-warmup, pre-lockbox span; each config simulated once then
+  scored on each slice). For every balanced split of S into S/2 IS + S/2 OOS slices, pick the
+  IS-best config, take its OOS relative rank `ω=R/(N+1)` (R=1 worst … N best), logit
+  `λ=ln(ω/(1−ω))`; `PBO = mean 1[λ<0]`. Bands: <0.10 low / 0.10–0.25 caution / 0.25–0.50
+  fragile / >0.50 selecting-noise. Clean persistent edge → ~0; pure noise → ~0.5 (unit-tested,
+  plus a tiny-S exact hand-enumeration).
+- **DSR** (`overfit::deflated_sharpe`) on the winner's OOS return stream sampled at the
+  strategy's **rebalance cadence** (its decision clock), deflated for `n_configs` trials +
+  non-normality: `Var(SR)=(1−γ3·SR+((γ4−1)/4)·SR²)/(T−1)`,
+  `SR*=mean(SR_trials)+std(SR_trials)·E[max_N Z]`, `DSR=Φ((SR−SR*)/√Var(SR))`. <0.95 = weak.
+- **LOCKBOX** (`LOCKBOX_DAYS=548`, ~18mo): the trailing window is reserved and **never** scored
+  — folds, CSCV slices, and the DSR stream all stop strictly before `lockbox_start`. For a
+  one-time final candidate check only; the report states the reserved range.
+- **Optimization ledger** (`model_optimize_runs`, L3 append-only): one row per run keyed by a
+  stable `topology_hash` = SHA-256 of (model + universe + base_policy + rules + cadence/bands/
+  fill + cost model + objective + benchmark + searched param NAMES & RANGES + fold-scheme
+  policy). **Cumulative trials for a topology = SUM(n_configs) over its rows.** A topology
+  change ⇒ a new hash ⇒ a NEW research family (a branch, not confirmation). Each run reads the
+  prior cumulative count (for the report + a loud warning past `CUMULATIVE_TRIALS_WARN_THRESHOLD`)
+  and appends its own row (unless `--no-ledger`). db-catalog entry + `schema_conformance` enforced.
+- **Verdict downgrade:** `overfit-likely` if `PBO>0.25` OR `DSR<0.95` OR mean-OOS≤0; a `robust`
+  verdict now additionally requires `PBO≤0.25` AND `DSR≥0.95`. Honest limits: the per-run PBO/DSR
+  cannot see search done across REPEATED runs (that's what the ledger is for) or OUTSIDE the tool;
+  the DSR is Sharpe-based, so a CAGR/leverage "edge" with flat per-decision Sharpe is correctly
+  refused `robust`.
 
 ## 5. Non-negotiable principles / red flags (from both reviews)
 1. **New `PortfolioBacktestReport` over a daily MTM curve** — never extend `TradeReport`.

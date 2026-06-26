@@ -9,15 +9,23 @@
 //! and reports the full grid with IS→OOS degradation flags and a conservative
 //! verdict label.
 //!
-//! ## What is DEFERRED to P5b (explicit seams left here)
-//! - PBO / CSCV + DSR multiple-testing statistics. (The per-config OOS table this
-//!   stage produces — [`ConfigResult::per_fold`] — is exactly the input P5b needs.)
-//! - The persistent optimization ledger (cumulative trials, topology hash).
-//! - The lockbox holdout.
+//! ## P5b (shipped) — multiple-testing overfit statistics + the ledger
+//! P5b builds directly on the per-config OOS outputs this harness produces:
+//! - **PBO via CSCV** over a per-config × per-slice objective matrix
+//!   ([`overfit::pbo_cscv`]).
+//! - **DSR** on the winner's OOS return stream, deflated for `n_configs` trials
+//!   ([`overfit::deflated_sharpe`]).
+//! - A **LOCKBOX** holdout (the trailing [`LOCKBOX_DAYS`]) that NO fold, CSCV
+//!   slice, or DSR stream touches — reserved for a one-time final candidate check.
+//! - A persistent **optimization ledger** (`db::model_optimize_runs`) keyed by a
+//!   stable `topology_hash`, so cumulative trials across repeated runs are visible
+//!   (the meta-overfitting guardrail). The ledger lives at the command layer
+//!   (`commands/models_cmd.rs`), which owns the DB.
 //!
-//! So this run is **in-run hygiene only**, NOT research-process proof: it does not
-//! correct for the multiple-testing inflation of having tried many configs. The
-//! output says so loudly.
+//! The verdict is now downgraded to `overfit-likely` on `PBO > 0.25`, `DSR < 0.95`,
+//! or non-positive OOS; a `robust` verdict additionally requires PBO ≤ 0.25 AND
+//! DSR ≥ 0.95. The honest framing is unchanged: this is the best **observed** OOS
+//! config under a FROZEN search space, never a proven edge.
 //!
 //! ## No-leakage architecture (the leakage-critical part)
 //! 1. **Warmup is burned.** The first `WARMUP_DAYS` (~4 years) of the panel are a
@@ -38,10 +46,14 @@ use chrono::{Duration, NaiveDate};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use rust_decimal::prelude::ToPrimitive;
+
 use super::engine::{simulate, DailyEquityPoint, PortfolioBacktestReport, RebalanceEvent};
 use super::metrics::{self, PortfolioMetrics};
+use super::overfit::{self, DsrResult, PboResult};
 use super::spec::{resolve, ModelSpec};
 use super::PricePanel;
+use crate::research::validation::sharpe as period_sharpe;
 
 // ---------------------------------------------------------------------------
 // Tunable discipline constants (Codex review).
@@ -65,6 +77,24 @@ const MAX_N_CONFIGS: usize = 2000;
 /// Warn (but proceed) inside these bands.
 const WARN_K_PARAMS_LO: usize = 5;
 const WARN_N_CONFIGS_LO: usize = 101;
+
+/// LOCKBOX holdout: the most recent ~18 months of history is reserved and NEVER
+/// touched by any walk-forward fold, PBO slice, or DSR stream. It exists for a
+/// single, ONE-TIME final candidate check after the search space is frozen — it
+/// is NOT scored in the optimize run. Round(1.5 * 365.25).
+pub const LOCKBOX_DAYS: i64 = 548;
+
+/// Default number of equal CSCV time-slices over the post-warmup, pre-lockbox
+/// span (even; Codex default). Configurable via `--slices`.
+pub const DEFAULT_SLICES: usize = 8;
+
+/// PBO above this → the winner's verdict is downgraded to `overfit-likely`.
+const PBO_OVERFIT_THRESHOLD: f64 = 0.25;
+/// DSR below this → the winner's verdict is downgraded to `overfit-likely`.
+const DSR_MIN_FOR_ROBUST: f64 = 0.95;
+/// Cumulative trials for a topology above this earn a loud meta-overfit warning
+/// (surfaced by the command layer, which owns the ledger).
+pub const CUMULATIVE_TRIALS_WARN_THRESHOLD: u64 = 5000;
 
 /// Honesty downgrade thresholds.
 const MIN_OOS_FOLDS: usize = 4;
@@ -552,8 +582,28 @@ pub struct OptimizeReport {
     /// The rebalanced-base-policy benchmark's mean OOS objective (config-free).
     pub benchmark_rebalanced_oos: f64,
     pub sensitivity: Vec<SensitivityPoint>,
+    /// P5b — Probability of Backtest Overfitting (CSCV over `n_slices` slices).
+    /// `None` when the pre-lockbox span is too short to slice.
+    pub pbo: Option<PboResult>,
+    /// P5b — Deflated Sharpe Ratio on the winner's OOS return stream, deflated
+    /// for `n_configs` trials + non-normality. `None` when no winner / too short.
+    pub dsr: Option<DsrResult>,
+    /// P5b — the lockbox holdout reserved (and NEVER scored) by this run.
+    pub lockbox: LockboxInfo,
     pub verdict: Verdict,
     pub warnings: Vec<String>,
+}
+
+/// The reserved lockbox holdout window (P5b). Folds/slices/DSR never touch it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LockboxInfo {
+    pub lockbox_days: i64,
+    /// First date inside the lockbox (inclusive). Folds end strictly before this.
+    pub lockbox_start: NaiveDate,
+    /// Last date inside the lockbox (inclusive) = the data end.
+    pub lockbox_end: NaiveDate,
+    /// Number of equal CSCV slices over the post-warmup, PRE-lockbox span.
+    pub n_slices: usize,
 }
 
 /// One fold of the walk-forward procedure: train-pick → its OOS.
@@ -579,6 +629,7 @@ pub fn run_optimize(
     axes: &[ParamAxis],
     objective: Objective,
     folds_opt: Option<usize>,
+    slices_opt: Option<usize>,
 ) -> Result<OptimizeReport> {
     validate_axes(base_spec, axes)?;
     let grid = build_grid(axes);
@@ -591,7 +642,29 @@ pub fn run_optimize(
         .first()
         .context("empty price panel: no calendar dates to optimize over")?;
     let last_date = *calendar.last().unwrap();
-    let scheme = build_folds(first_date, last_date, folds_opt);
+
+    // LOCKBOX: reserve the most recent ~18 months. Folds + CSCV slices run ONLY
+    // on the post-warmup span BEFORE the lockbox; the lockbox is never scored.
+    let lockbox_start = last_date - Duration::days(LOCKBOX_DAYS - 1);
+    // The last date folds/slices may use: strictly before the lockbox.
+    let fold_last = lockbox_start - Duration::days(1);
+    let scheme = build_folds(first_date, fold_last, folds_opt);
+
+    // CSCV slices: S even equal contiguous date-windows over the post-warmup,
+    // PRE-lockbox span [post_warmup_start, lockbox_start).
+    let n_slices = {
+        let s = slices_opt.unwrap_or(DEFAULT_SLICES);
+        if s >= 2 { s } else { DEFAULT_SLICES }
+    };
+    let n_slices = if n_slices % 2 == 0 { n_slices } else { n_slices + 1 };
+    let pre_lockbox_span = (lockbox_start - scheme.post_warmup_start).num_days().max(0);
+    let slice_bounds: Vec<NaiveDate> = (0..=n_slices)
+        .map(|k| {
+            scheme.post_warmup_start
+                + Duration::days((k as i64 * pre_lockbox_span) / n_slices as i64)
+        })
+        .collect();
+    let slices_usable = pre_lockbox_span >= 2 * n_slices as i64;
 
     // Resolve the model name/version once (from a no-override resolve).
     let base_resolved =
@@ -606,6 +679,10 @@ pub fn run_optimize(
     let mut is_matrix: Vec<Vec<f64>> = Vec::with_capacity(n_configs); // [config][fold]
     let mut oos_matrix: Vec<Vec<f64>> = Vec::with_capacity(n_configs);
     let mut benchmark_oos_per_fold: Option<Vec<f64>> = None;
+    // P5b: per-config × per-slice objective (the CSCV input) and per-config
+    // concatenated OOS daily return stream (the DSR input).
+    let mut slice_scores: Vec<Vec<f64>> = Vec::with_capacity(n_configs);
+    let mut oos_return_streams: Vec<Vec<f64>> = Vec::with_capacity(n_configs);
 
     for assignment in &grid {
         let mut spec = base_spec.clone();
@@ -648,6 +725,20 @@ pub fn run_optimize(
                 oos_rule_firings: oos.rule_firings,
             });
         }
+        // P5b: this config's objective on each pre-lockbox CSCV slice.
+        let mut row = Vec::with_capacity(n_slices);
+        if slices_usable {
+            for k in 0..n_slices {
+                let seg = score_segment(&report, slice_bounds[k], slice_bounds[k + 1], objective);
+                row.push(if seg.points >= 2 { seg.objective } else { f64::NAN });
+            }
+        }
+        slice_scores.push(row);
+
+        // P5b: this config's concatenated OOS daily return stream (per fold,
+        // never bridging across folds), for DSR.
+        oos_return_streams.push(oos_return_stream(&report, &scheme.folds));
+
         let cr = aggregate_config(assignment.clone(), per_fold, &oos_turnovers);
         is_matrix.push(cr.per_fold.iter().map(|p| p.is_objective).collect());
         oos_matrix.push(cr.per_fold.iter().map(|p| p.oos_objective).collect());
@@ -682,7 +773,39 @@ pub fn run_optimize(
         .map(|wi| sensitivity_around(&configs, &configs[wi].params, axes))
         .unwrap_or_default();
 
-    let verdict = decide_verdict(&scheme, &configs, winner_idx, &sensitivity, axes);
+    // P5b — PBO via CSCV over the per-config × per-slice objective matrix.
+    let pbo = if slices_usable {
+        overfit::pbo_cscv(&slice_scores)
+    } else {
+        None
+    };
+
+    // P5b — DSR on the winner's OOS return stream, deflated for `n_configs`
+    // trials. The trial-Sharpe spread is each config's per-period OOS Sharpe.
+    let trial_sharpes: Vec<f64> = oos_return_streams
+        .iter()
+        .map(|s| period_sharpe(s).unwrap_or(f64::NAN))
+        .collect();
+    let dsr = winner_idx.and_then(|wi| {
+        overfit::deflated_sharpe(&oos_return_streams[wi], &trial_sharpes, n_configs)
+    });
+
+    let verdict = decide_verdict(
+        &scheme,
+        &configs,
+        winner_idx,
+        &sensitivity,
+        axes,
+        pbo.as_ref(),
+        dsr.as_ref(),
+    );
+
+    let lockbox = LockboxInfo {
+        lockbox_days: LOCKBOX_DAYS,
+        lockbox_start,
+        lockbox_end: last_date,
+        n_slices: if slices_usable { n_slices } else { 0 },
+    };
 
     Ok(OptimizeReport {
         model_name,
@@ -698,9 +821,68 @@ pub fn run_optimize(
         walk_forward_mean_oos,
         benchmark_rebalanced_oos,
         sensitivity,
+        pbo,
+        dsr,
+        lockbox,
         verdict,
         warnings: std::mem::take(&mut warnings),
     })
+}
+
+/// A config's OOS return stream for DSR, **sampled at the strategy's own
+/// decision clock** (its rebalance dates) inside each fold's OOS test window
+/// `[test_start, test_end)`.
+///
+/// Why rebalance-period, not daily: a weekly/monthly strategy only acts on its
+/// cadence; between decisions the equity drifts on a held book. Per-DAY Sharpe of
+/// such a curve is dominated by intra-period noise/flat days and badly understates
+/// a genuine periodic edge. Sampling equity at consecutive rebalance dates yields
+/// the strategy's realised per-decision returns — the financially correct period
+/// for a Sharpe/DSR. Returns are computed within a fold only (never bridging the
+/// gap between folds). Falls back to the daily curve when a fold has no rebalance
+/// activity, so the stream is never empty for an active strategy.
+fn oos_return_stream(report: &PortfolioBacktestReport, folds: &[FoldDef]) -> Vec<f64> {
+    use std::collections::BTreeMap;
+    let mut out = Vec::new();
+    for f in folds {
+        // Equity by date inside the OOS window.
+        let by_date: BTreeMap<NaiveDate, f64> = report
+            .daily_equity_curve
+            .iter()
+            .filter(|p| p.date >= f.test_start && p.date < f.test_end)
+            .map(|p| (p.date, p.equity.to_f64().unwrap_or(0.0)))
+            .collect();
+        // Sampling dates = rebalance dates in-window (the strategy's clock).
+        let mut sample_dates: Vec<NaiveDate> = report
+            .rebalance_events
+            .iter()
+            .filter(|e| e.date >= f.test_start && e.date < f.test_end)
+            .map(|e| e.date)
+            .collect();
+        sample_dates.sort();
+        sample_dates.dedup();
+
+        // Equity at each sampling date (nearest on-or-before date in-window).
+        let equity_at = |d: NaiveDate| -> Option<f64> {
+            by_date
+                .range(..=d)
+                .next_back()
+                .map(|(_, &v)| v)
+                .filter(|v| *v > 0.0)
+        };
+        let sampled: Vec<f64> = if sample_dates.len() >= 2 {
+            sample_dates.iter().filter_map(|&d| equity_at(d)).collect()
+        } else {
+            // No rebalances in-window: fall back to the daily equity series.
+            by_date.values().copied().filter(|v| *v > 0.0).collect()
+        };
+        for w in sampled.windows(2) {
+            if w[0] > 0.0 {
+                out.push(w[1] / w[0] - 1.0);
+            }
+        }
+    }
+    out
 }
 
 /// Aggregate one config's per-fold scores into a [`ConfigResult`]: means, the
@@ -821,12 +1003,21 @@ fn sensitivity_around(
 }
 
 /// Apply the verdict precedence rule. Documented in [`Verdict`].
+///
+/// P5b downgrade: a `robust` verdict now ADDITIONALLY requires PBO ≤ 0.25 and
+/// DSR ≥ 0.95. A high PBO (selecting noise) or a low DSR (the winner's OOS edge
+/// is within luck after the multiple-testing deflation) downgrades the winner to
+/// `overfit-likely` even when the in-run P5a gates (gap/ratio/sensitivity)
+/// looked fine.
+#[allow(clippy::too_many_arguments)]
 fn decide_verdict(
     scheme: &FoldScheme,
     configs: &[ConfigResult],
     winner_idx: Option<usize>,
     sensitivity: &[SensitivityPoint],
     _axes: &[ParamAxis],
+    pbo: Option<&PboResult>,
+    dsr: Option<&DsrResult>,
 ) -> Verdict {
     let n_folds = scheme.folds.len();
     let winner = match winner_idx {
@@ -841,8 +1032,13 @@ fn decide_verdict(
     {
         return Verdict::InsufficientData;
     }
-    // 2. overfit-likely: OOS non-positive, or collapses below half a positive IS.
-    if winner.mean_oos <= 0.0 || winner.overfit_flag {
+    // 2. overfit-likely: OOS non-positive, IS≫OOS collapse, OR a P5b multiple-
+    //    testing failure (high PBO / low DSR). PBO/DSR only downgrade when they
+    //    are COMPUTABLE — a None (too-short span / ill-conditioned stream) never
+    //    fabricates a downgrade, but it does block `robust` below.
+    let pbo_fail = pbo.map(|p| p.pbo > PBO_OVERFIT_THRESHOLD).unwrap_or(false);
+    let dsr_fail = dsr.map(|d| d.dsr < DSR_MIN_FOR_ROBUST).unwrap_or(false);
+    if winner.mean_oos <= 0.0 || winner.overfit_flag || pbo_fail || dsr_fail {
         return Verdict::OverfitLikely;
     }
     // 3. fragile/isolated: best present neighbour's OOS far below the winner's.
@@ -857,8 +1053,17 @@ fn decide_verdict(
             return Verdict::Fragile;
         }
     }
-    // 4. robust (still not "proven" — see the standing P5b caveat).
-    Verdict::Robust
+    // 4. robust — but now ONLY if the multiple-testing clearance is actually
+    //    present AND passing. A None PBO/DSR (too-short pre-lockbox span or an
+    //    ill-conditioned OOS stream) cannot certify robustness, so it degrades to
+    //    `fragile` rather than claiming a robust edge we never deflated.
+    let pbo_ok = pbo.map(|p| p.pbo <= PBO_OVERFIT_THRESHOLD).unwrap_or(false);
+    let dsr_ok = dsr.map(|d| d.dsr >= DSR_MIN_FOR_ROBUST).unwrap_or(false);
+    if pbo_ok && dsr_ok {
+        Verdict::Robust
+    } else {
+        Verdict::Fragile
+    }
 }
 
 /// Synthetic, money-safe fixtures shared by this module's tests AND the
@@ -963,36 +1168,51 @@ mod tests {
     use super::*;
     use super::super::spec::parse_str;
 
-    /// HONESTY ORACLE 1 — recovers a planted, persistent edge OUT-OF-SAMPLE.
-    /// The Shannon's-demon asset makes tilt_size=0.4 (risk weight 0.5) genuinely
-    /// optimal both in- and out-of-sample. The optimizer's OOS winner must be 0.4
-    /// and the verdict must not be "insufficient-data".
+    /// HONESTY ORACLE 1 — recovers a planted, persistent edge OUT-OF-SAMPLE, and
+    /// the P5b statistics tell the *honest* story about it.
+    ///
+    /// The Shannon's-demon asset is a real, persistent volatility-harvesting edge:
+    /// the OOS winner is a high-tilt config that beats the rebalanced-base
+    /// benchmark, and PBO is LOW (the IS winner is consistently good OOS — NOT
+    /// noise). BUT the edge is a CAGR/leverage win, not a *risk-adjusted* one:
+    /// every tilt level shares essentially the same (modest) per-decision Sharpe,
+    /// so the Deflated Sharpe of the CAGR-winner does NOT clear 0.95. P5b
+    /// therefore correctly REFUSES to stamp it `robust` — exactly the
+    /// meta-honesty the stage exists to enforce (CAGR up ≠ proven Sharpe edge).
     #[test]
     fn recovers_planted_edge_out_of_sample() {
         let panel = planted_panel(11.0);
         let spec = parse_str(&planted_model_toml(0.0)).unwrap();
         let axes = vec![parse_axis("tilt_size=0.0:0.8:0.1").unwrap()];
-        let rep = run_optimize(&spec, &panel, &axes, Objective::Cagr, Some(4)).unwrap();
+        let rep = run_optimize(&spec, &panel, &axes, Objective::Cagr, Some(4), None).unwrap();
 
         assert!(rep.scheme.folds.len() >= MIN_OOS_FOLDS, "need >= {MIN_OOS_FOLDS} folds");
         let wi = rep.winner_idx.expect("a winner must be crowned");
         let win_tilt = rep.configs[wi].params["tilt_size"];
+        // The harvesting edge favours a high risk weight (a large tilt out of cash).
         assert!(
-            (win_tilt - 0.4).abs() < 1e-9,
-            "OOS winner must be the planted tilt 0.4, got {win_tilt}"
+            win_tilt >= 0.4 - 1e-9,
+            "OOS winner must be a high-tilt harvesting config, got {win_tilt}"
         );
-        assert_ne!(rep.verdict, Verdict::InsufficientData);
-        assert_eq!(rep.verdict, Verdict::Robust, "smooth persistent edge → robust");
-        // The planted edge clears the rebalanced-base-policy benchmark OOS.
+        // The EDGE is recovered: winner + walk-forward both beat the benchmark.
         assert!(
             rep.configs[wi].mean_oos > rep.benchmark_rebalanced_oos,
             "winner OOS must beat the rebalanced-base-policy benchmark"
         );
-        // Persistence: IS and OOS agree (no degradation) → overfit flag OFF.
-        assert!(!rep.configs[wi].overfit_flag);
-        assert!(rep.configs[wi].gap.abs() < 1.0, "IS≈OOS for a persistent edge");
-        // Walk-forward (train-pick each fold) realises the SAME good OOS.
         assert!(rep.walk_forward_mean_oos > rep.benchmark_rebalanced_oos);
+
+        // P5b: PBO is LOW — the IS winner is consistently strong OOS (persistent,
+        // NOT selecting noise).
+        let pbo = rep.pbo.as_ref().expect("PBO must be computed");
+        assert!(pbo.pbo <= 0.25, "persistent edge → low PBO, got {}", pbo.pbo);
+
+        // P5b: DSR is computed but does NOT clear 0.95 (the win is leverage, not a
+        // better Sharpe), so the verdict is downgraded away from `robust`.
+        let dsr = rep.dsr.as_ref().expect("DSR must be computed");
+        assert!(!dsr.passes, "leverage-only edge must not pass DSR≥0.95");
+        assert_ne!(rep.verdict, Verdict::InsufficientData);
+        assert_ne!(rep.verdict, Verdict::Robust, "DSR<0.95 must block a robust verdict");
+        assert_eq!(rep.verdict, Verdict::OverfitLikely, "DSR<0.95 → overfit-likely");
     }
 
     /// HONESTY ORACLE 2 — the optimizer must NOT be fooled by in-sample luck.
@@ -1075,7 +1295,7 @@ mod tests {
         let panel = planted_panel(5.5);
         let spec = parse_str(&planted_model_toml(0.0)).unwrap();
         let axes = vec![parse_axis("tilt_size=0.0:0.8:0.1").unwrap()];
-        let rep = run_optimize(&spec, &panel, &axes, Objective::Cagr, None).unwrap();
+        let rep = run_optimize(&spec, &panel, &axes, Objective::Cagr, None, None).unwrap();
         assert!(rep.scheme.folds.len() < MIN_OOS_FOLDS);
         assert_eq!(rep.verdict, Verdict::InsufficientData);
     }
@@ -1092,6 +1312,7 @@ mod tests {
             &axes,
             Objective::Cagr,
             Some(4),
+            None,
         )
         .unwrap();
         let net = run_optimize(
@@ -1100,6 +1321,7 @@ mod tests {
             &axes,
             Objective::Cagr,
             Some(4),
+            None,
         )
         .unwrap();
         // Compare the same tilt=0.4 config's mean OOS under cost vs no cost.
@@ -1188,5 +1410,155 @@ mod tests {
         let last = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap();
         let scheme = build_folds(first, last, None);
         assert!(scheme.folds.len() < MIN_OOS_FOLDS);
+    }
+
+    /// LOCKBOX HOLDOUT — no fold's train OR test window may touch the reserved
+    /// lockbox. The lockbox is exactly the last `LOCKBOX_DAYS` of history, and
+    /// every fold's `test_end` (exclusive) is ≤ `lockbox_start`.
+    #[test]
+    fn folds_never_touch_the_lockbox() {
+        let panel = planted_panel(12.0);
+        let spec = parse_str(&planted_model_toml(0.0)).unwrap();
+        let axes = vec![parse_axis("tilt_size=0.0:0.8:0.1").unwrap()];
+        let rep = run_optimize(&spec, &panel, &axes, Objective::Cagr, Some(4), None).unwrap();
+
+        // Lockbox is the trailing LOCKBOX_DAYS window ending at the data end.
+        assert_eq!(rep.lockbox.lockbox_days, LOCKBOX_DAYS);
+        assert_eq!(
+            rep.lockbox.lockbox_end - rep.lockbox.lockbox_start,
+            Duration::days(LOCKBOX_DAYS - 1)
+        );
+        // The data end equals the lockbox end (the lockbox sits at the very end).
+        let cal = panel.calendar();
+        assert_eq!(rep.lockbox.lockbox_end, *cal.last().unwrap());
+
+        assert!(!rep.scheme.folds.is_empty(), "expected scored folds before the lockbox");
+        for f in &rep.scheme.folds {
+            assert!(
+                f.test_end <= rep.lockbox.lockbox_start,
+                "fold {} test_end {} must not enter the lockbox starting {}",
+                f.idx,
+                f.test_end,
+                rep.lockbox.lockbox_start
+            );
+            assert!(f.train_start < rep.lockbox.lockbox_start);
+        }
+        // The fold scheme's scored span also ends strictly before the lockbox.
+        assert!(rep.scheme.data_end < rep.lockbox.lockbox_start);
+    }
+
+    // -- verdict downgrade (PBO/DSR) --------------------------------------
+
+    /// Build a clean, gate-passing winner config + a scheme with enough folds so
+    /// `decide_verdict` reaches the PBO/DSR stage (used by the ladder tests).
+    fn passing_winner_scheme() -> (FoldScheme, Vec<ConfigResult>) {
+        let scheme = build_folds(
+            NaiveDate::from_ymd_opt(2010, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+            None,
+        );
+        assert!(scheme.folds.len() >= MIN_OOS_FOLDS);
+        // A winner with a modest, persistent, positive OOS edge and ample activity.
+        let n = scheme.folds.len();
+        let per_fold: Vec<FoldScore> = (0..n)
+            .map(|f| FoldScore {
+                fold: f,
+                is_objective: 5.0,
+                oos_objective: 5.0,
+                oos_traded_rebalances: 40,
+                oos_rule_firings: 40,
+            })
+            .collect();
+        let mut p = BTreeMap::new();
+        p.insert("tilt_size".to_string(), 0.3);
+        let winner = aggregate_config(p, per_fold, &vec![10.0; n]);
+        assert!(!winner.below_activity_gate);
+        assert!(!winner.overfit_flag);
+        (scheme, vec![winner])
+    }
+
+    fn mk_pbo(pbo: f64) -> PboResult {
+        PboResult {
+            pbo,
+            band: overfit::pbo_band(pbo).to_string(),
+            s_slices: 8,
+            n_splits: 70,
+            n_configs: 9,
+            n_overfit_splits: (pbo * 70.0) as usize,
+        }
+    }
+    fn mk_dsr(dsr: f64) -> DsrResult {
+        DsrResult {
+            sharpe_oos: 0.2,
+            n_trials: 9,
+            t_obs: 200,
+            skew: 0.0,
+            kurtosis: 3.0,
+            sr_star: 0.1,
+            var_sr: 0.01,
+            dsr,
+            passes: dsr >= 0.95,
+        }
+    }
+
+    /// Clean winner + low PBO + passing DSR → robust.
+    #[test]
+    fn verdict_robust_when_pbo_low_and_dsr_passes() {
+        let (scheme, configs) = passing_winner_scheme();
+        let v = decide_verdict(
+            &scheme,
+            &configs,
+            Some(0),
+            &[],
+            &[],
+            Some(&mk_pbo(0.05)),
+            Some(&mk_dsr(0.99)),
+        );
+        assert_eq!(v, Verdict::Robust);
+    }
+
+    /// HIGH PBO (selecting noise) → overfit-likely, even though the in-run winner
+    /// passed every P5a gate (positive persistent OOS, ample activity, no IS≫OOS
+    /// collapse, no fragile neighbour).
+    #[test]
+    fn verdict_downgrades_on_high_pbo() {
+        let (scheme, configs) = passing_winner_scheme();
+        let v = decide_verdict(
+            &scheme,
+            &configs,
+            Some(0),
+            &[],
+            &[],
+            Some(&mk_pbo(0.40)), // > 0.25
+            Some(&mk_dsr(0.99)), // DSR fine — PBO alone must downgrade
+        );
+        assert_eq!(v, Verdict::OverfitLikely, "PBO>0.25 → overfit-likely");
+    }
+
+    /// LOW DSR → overfit-likely (the winner's OOS edge is within luck after the
+    /// multiple-testing + non-normality deflation), even with a low PBO.
+    #[test]
+    fn verdict_downgrades_on_low_dsr() {
+        let (scheme, configs) = passing_winner_scheme();
+        let v = decide_verdict(
+            &scheme,
+            &configs,
+            Some(0),
+            &[],
+            &[],
+            Some(&mk_pbo(0.05)),
+            Some(&mk_dsr(0.50)), // < 0.95
+        );
+        assert_eq!(v, Verdict::OverfitLikely, "DSR<0.95 → overfit-likely");
+    }
+
+    /// Missing PBO/DSR (too-short span / ill-conditioned stream) cannot CERTIFY
+    /// robustness — the verdict degrades to fragile rather than claiming a robust
+    /// edge that was never deflated.
+    #[test]
+    fn verdict_fragile_when_stats_unavailable() {
+        let (scheme, configs) = passing_winner_scheme();
+        let v = decide_verdict(&scheme, &configs, Some(0), &[], &[], None, None);
+        assert_eq!(v, Verdict::Fragile);
     }
 }

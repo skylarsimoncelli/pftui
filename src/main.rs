@@ -2798,7 +2798,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                     to,
                     param,
                     folds,
+                    slices,
                     objective,
+                    no_ledger,
                     json,
                 } => commands::cli_json::or_json_error(
                     "analytics models optimize",
@@ -2810,10 +2812,19 @@ fn run_cli(cli: Cli) -> Result<()> {
                         to.as_deref(),
                         &param,
                         folds,
+                        slices,
                         &objective,
+                        no_ledger,
                         json,
                     ),
                 ),
+                cli::AnalyticsModelsCommand::OptimizeHistory { json } => {
+                    commands::cli_json::or_json_error(
+                        "analytics models optimize-history",
+                        json,
+                        commands::models_cmd::run_optimize_history(&backend, json),
+                    )
+                }
             },
             cli::AnalyticsCommand::Cycles { command } => match command {
                 // Wrap in or_json_error so a failure emits the same
