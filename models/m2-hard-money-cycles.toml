@@ -1,0 +1,65 @@
+# Model M2 — hard-money cycle tilt.
+#
+# A cash-buffered diversified book that TILTS into hard money (BTC + gold) when
+# BTC's mechanical cycle-BOTTOM confluence lights up, and TILTS back to cash when
+# the cycle-TOP confluence fires. This is the first model that comes alive on
+# real signal rules (P3b): the `when` clauses are evaluated point-in-time at each
+# rebalance date against COMPLETED-bucket cycle reads (no lookahead).
+#
+# Base book (incl. cash) sums to 1.00; every floor <= target <= ceiling; feasible.
+# Rules reference numeric `[params]` so P5 can optimize the thresholds/size later.
+
+[model]
+name = "m2-hard-money-cycles"
+version = 1
+base_currency = "USD"
+initial_capital = 100000
+
+[universe]
+assets = [
+  { symbol = "BTC-USD", class = "hard_money" },
+  { symbol = "GC=F",    class = "hard_money" },
+  { symbol = "SPY",     class = "equity" },
+  { symbol = "IEF",     class = "bond" },
+]
+cash_class = "cash"
+
+[base_policy]
+targets = [
+  { class = "cash",       target = 0.30, floor = 0.20, ceiling = 0.40 },
+  { class = "hard_money", target = 0.20, floor = 0.10, ceiling = 0.50 },
+  { class = "equity",     target = 0.35, floor = 0.00, ceiling = 0.60 },
+  { class = "bond",       target = 0.15, floor = 0.00, ceiling = 0.40 },
+]
+within_class = "equal"
+
+[constraints]
+max_position = 0.40
+no_average_down = false
+rebalance_cadence = "weekly"
+rebalance_band_mode = "to_target"
+fill = "next_close"
+cash_yield_proxy = "none"
+commission_pct = 0.001
+slippage_pct = 0.0005
+
+# Add hard money out of cash when BTC's cycle-bottom confluence is strong.
+[[rules]]
+id = "add-hard-money-on-cycle-bottom"
+when = "cycle_bottom_met('BTC-USD') >= dip_threshold"
+then = { kind = "tilt", class = "hard_money", by = "tilt_size", from = "cash" }
+priority = 10
+cadence = "weekly"
+
+# Raise cash back out of hard money when BTC's cycle-top confluence is strong.
+[[rules]]
+id = "raise-cash-on-cycle-top"
+when = "cycle_top_met('BTC-USD') >= top_threshold"
+then = { kind = "tilt", class = "hard_money", by = "-tilt_size", to = "cash" }
+priority = 10
+cadence = "weekly"
+
+[params]
+dip_threshold = 5
+top_threshold = 5
+tilt_size = 0.10

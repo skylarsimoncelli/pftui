@@ -17,6 +17,8 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 
+use super::actions::{Action, Condition, Rule, TargetKey};
+use super::rule_expr;
 use super::{
     AssetSpec, CashYield, ClassTarget, FillMode, PortfolioModel, RebalanceBandMode,
     RebalanceCadence, WithinClass,
@@ -480,9 +482,14 @@ pub fn resolve(spec: ModelSpec) -> Result<ResolvedModel> {
         bail!("[model].base_currency must be a non-empty currency code");
     }
 
-    // --- rules: parsed + carried, NEVER evaluated in this stage. Light hygiene
-    //     validation only (non-empty id/when/kind, known cadence if present). ---
+    // --- rules: parse + VALIDATE + COMPILE into executable signal rules (P3b).
+    //     A `when` is a stub keyword (`always`/`never`) or a signal expression
+    //     validated against the registry + universe + params. ANY parse/validate
+    //     failure is a hard error — never a silent skip (a dropped rule is a
+    //     correctness lie). The raw RuleSpec list is still carried for display. ---
+    let universe_syms: BTreeSet<String> = universe.iter().map(|a| a.symbol.clone()).collect();
     let mut seen_rule_ids: BTreeSet<String> = BTreeSet::new();
+    let mut compiled_rules: Vec<Rule> = Vec::with_capacity(spec.rules.len());
     for r in &spec.rules {
         if r.id.trim().is_empty() {
             bail!("a [[rules]] block has an empty id");
@@ -496,15 +503,12 @@ pub fn resolve(spec: ModelSpec) -> Result<ResolvedModel> {
         if r.then.kind.trim().is_empty() {
             bail!("rule '{}' has an empty `then.kind`", r.id);
         }
-        if let Some(c) = &r.cadence {
-            if !matches!(c.as_str(), "daily" | "weekly" | "monthly" | "on_signal") {
-                bail!(
-                    "rule '{}' cadence '{}' is unknown: expected daily|weekly|monthly|on_signal",
-                    r.id,
-                    c
-                );
-            }
-        }
+        let when = compile_when(&r.when, &spec.params, &universe_syms)
+            .with_context(|| format!("rule '{}' has an invalid `when`", r.id))?;
+        let then = compile_action(&r.then, &spec.params, &universe_syms, &target_classes, &r.id)
+            .with_context(|| format!("rule '{}' has an invalid `then`", r.id))?;
+        let cadence = compile_rule_cadence(r.cadence.as_deref(), rebalance_cadence, &r.id)?;
+        compiled_rules.push(Rule::new(r.id.clone(), when, then, r.priority, cadence));
     }
 
     let model = PortfolioModel {
@@ -521,10 +525,9 @@ pub fn resolve(spec: ModelSpec) -> Result<ResolvedModel> {
         slippage_pct: dec_from(spec.constraints.slippage_pct)?,
         cash_yield,
         max_position,
-        // P3a: TOML `when` strings are parsed but NOT evaluated as signal rules
-        // here (P3b connects the DSL). The simulated model therefore carries no
-        // executable rules and runs as base_policy.
-        rules: Vec::new(),
+        // P3b: `when`/`then` are compiled into executable signal rules that the
+        // engine evaluates point-in-time at each rebalance date.
+        rules: compiled_rules,
     };
 
     Ok(ResolvedModel {
@@ -536,6 +539,196 @@ pub fn resolve(spec: ModelSpec) -> Result<ResolvedModel> {
         rules: spec.rules,
         params: spec.params,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Rule compilation (when / then / cadence) — P3b.
+// ---------------------------------------------------------------------------
+
+/// Compile a `when` string into an executable [`Condition`]. `always`/`never`
+/// are stub keywords; anything else is a signal expression parsed + validated
+/// against the accessor registry, the model `universe`, and `params`.
+fn compile_when(
+    when: &str,
+    params: &BTreeMap<String, f64>,
+    universe: &BTreeSet<String>,
+) -> Result<Condition> {
+    match when.trim().to_lowercase().as_str() {
+        "always" => Ok(Condition::Always),
+        "never" => Ok(Condition::Never),
+        _ => {
+            let expr = rule_expr::parse_and_validate(when, params, universe)?;
+            Ok(Condition::Signal(Box::new(expr)))
+        }
+    }
+}
+
+/// Resolve a magnitude string — a numeric literal (`"0.10"`, `"-0.10"`) or a
+/// `[params]` reference (`"tilt_size"`, `"-tilt_size"`) — into a `Decimal`.
+fn resolve_magnitude(
+    raw: &str,
+    params: &BTreeMap<String, f64>,
+    rule_id: &str,
+    field: &str,
+) -> Result<Decimal> {
+    let s = raw.trim();
+    let (neg, body) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest.trim()),
+        None => (false, s),
+    };
+    let val = if let Ok(f) = body.parse::<f64>() {
+        f
+    } else if let Some(v) = params.get(body) {
+        *v
+    } else {
+        bail!(
+            "rule '{rule_id}' {field} = '{raw}' is neither a number nor a declared [params] value"
+        );
+    };
+    dec_from(if neg { -val } else { val })
+}
+
+fn require<'a>(opt: &'a Option<String>, rule_id: &str, kind: &str, field: &str) -> Result<&'a str> {
+    opt.as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("rule '{rule_id}' {kind} requires `{field}`"))
+}
+
+/// Compile a [`RuleThen`] into an [`Action`], resolving param magnitudes and
+/// validating that referenced classes/symbols actually exist in the model.
+fn compile_action(
+    then: &RuleThen,
+    params: &BTreeMap<String, f64>,
+    universe: &BTreeSet<String>,
+    target_classes: &BTreeSet<String>,
+    rule_id: &str,
+) -> Result<Action> {
+    let kind = then.kind.trim();
+    let check_class = |c: &str| -> Result<()> {
+        if target_classes.contains(c) {
+            Ok(())
+        } else {
+            bail!("rule '{rule_id}' {kind} references class '{c}' with no [base_policy] target")
+        }
+    };
+    let check_symbol = |s: &str| -> Result<()> {
+        if universe.contains(s) {
+            Ok(())
+        } else {
+            bail!("rule '{rule_id}' {kind} references symbol '{s}' not in the model universe")
+        }
+    };
+    match kind {
+        "set_target" => {
+            let weight = resolve_magnitude(
+                require(&then.by, rule_id, kind, "by (the anchor weight)")?,
+                params,
+                rule_id,
+                "by",
+            )?;
+            let key = match (&then.class, &then.symbol) {
+                (Some(c), None) => {
+                    check_class(c)?;
+                    TargetKey::Class(c.clone())
+                }
+                (None, Some(s)) => {
+                    check_symbol(s)?;
+                    TargetKey::Symbol(s.clone())
+                }
+                _ => bail!("rule '{rule_id}' set_target needs exactly one of `class` or `symbol`"),
+            };
+            Ok(Action::SetTarget { key, weight })
+        }
+        "tilt" => {
+            let class = require(&then.class, rule_id, kind, "class")?.to_string();
+            check_class(&class)?;
+            let by = resolve_magnitude(
+                require(&then.by, rule_id, kind, "by")?,
+                params,
+                rule_id,
+                "by",
+            )?;
+            // Offset class (`from`/`to`) defaults to cash inside the action algebra
+            // (empty string → cash). Validate any explicit, non-empty offset.
+            let from = then.from.clone().unwrap_or_default();
+            let to = then.to.clone().unwrap_or_default();
+            if !from.trim().is_empty() {
+                check_class(from.trim())?;
+            }
+            if !to.trim().is_empty() {
+                check_class(to.trim())?;
+            }
+            Ok(Action::Tilt { class, by, from, to })
+        }
+        "add" => {
+            let symbol = require(&then.symbol, rule_id, kind, "symbol")?.to_string();
+            check_symbol(&symbol)?;
+            // `up_to` is carried in `to` (preferred) or `by`.
+            let raw = then.to.as_deref().or(then.by.as_deref());
+            let up_to = resolve_magnitude(
+                require(&raw.map(str::to_string), rule_id, kind, "to (the up_to ceiling)")?,
+                params,
+                rule_id,
+                "to",
+            )?;
+            Ok(Action::Add { symbol, up_to })
+        }
+        "trim" => {
+            let symbol = require(&then.symbol, rule_id, kind, "symbol")?.to_string();
+            check_symbol(&symbol)?;
+            let to = resolve_magnitude(
+                require(&then.to, rule_id, kind, "to")?,
+                params,
+                rule_id,
+                "to",
+            )?;
+            Ok(Action::Trim { symbol, to })
+        }
+        "exit" => {
+            let symbol = require(&then.symbol, rule_id, kind, "symbol")?.to_string();
+            check_symbol(&symbol)?;
+            Ok(Action::Exit { symbol })
+        }
+        "gate_block" => {
+            let key = match (&then.class, &then.symbol) {
+                (Some(c), None) => {
+                    check_class(c)?;
+                    TargetKey::Class(c.clone())
+                }
+                (None, Some(s)) => {
+                    check_symbol(s)?;
+                    TargetKey::Symbol(s.clone())
+                }
+                _ => bail!("rule '{rule_id}' gate_block needs exactly one of `class` or `symbol`"),
+            };
+            Ok(Action::GateBlock { key })
+        }
+        other => bail!(
+            "rule '{rule_id}' unknown then.kind '{other}': expected set_target|tilt|add|trim|exit|gate_block"
+        ),
+    }
+}
+
+/// Resolve a rule's per-rule cadence (defaulting to the model cadence). Only
+/// `weekly`/`monthly` are honored in this stage (the engine's cadence-boundary
+/// gate handles those); `daily`/`on_signal` are rejected rather than silently
+/// downgraded.
+fn compile_rule_cadence(
+    raw: Option<&str>,
+    model_cadence: RebalanceCadence,
+    rule_id: &str,
+) -> Result<RebalanceCadence> {
+    match raw {
+        None => Ok(model_cadence),
+        Some("weekly") => Ok(RebalanceCadence::Weekly),
+        Some("monthly") => Ok(RebalanceCadence::Monthly),
+        Some(other @ ("daily" | "on_signal")) => bail!(
+            "rule '{rule_id}' cadence '{other}' is a known cadence but not yet supported in this stage (only weekly|monthly)"
+        ),
+        Some(other) => bail!(
+            "rule '{rule_id}' cadence '{other}' is unknown: expected daily|weekly|monthly|on_signal"
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -585,17 +778,66 @@ commission_pct = 0.001
     }
 
     #[test]
-    fn rules_are_parsed_not_evaluated() {
+    fn rules_are_parsed_and_compiled() {
         let with_rules = format!(
-            "{SAMPLE}\n[[rules]]\nid = \"tilt-up\"\nwhen = \"cycle_bottom_met('SPY') >= 5\"\nthen = {{ kind = \"tilt\", class = \"equity\", by = \"tilt_size\", from = \"cash\" }}\npriority = 10\n\n[params]\ntilt_size = 0.1\n"
+            "{SAMPLE}\n[[rules]]\nid = \"tilt-up\"\nwhen = \"cycle_bottom_met('SPY') >= dip\"\nthen = {{ kind = \"tilt\", class = \"equity\", by = \"tilt_size\", from = \"cash\" }}\npriority = 10\n\n[params]\ntilt_size = 0.1\ndip = 5\n"
         );
         let rm = resolve_str(&with_rules).unwrap();
         assert!(rm.has_rules());
+        // Raw RuleSpec carried for display…
         assert_eq!(rm.rules.len(), 1);
         assert_eq!(rm.rules[0].id, "tilt-up");
         assert_eq!(rm.rules[0].then.kind, "tilt");
         assert_eq!(rm.rules[0].then.from.as_deref(), Some("cash"));
         assert_eq!(rm.params.get("tilt_size").copied(), Some(0.1));
+        // …and compiled into an executable signal rule on the model.
+        assert_eq!(rm.model.rules.len(), 1);
+        assert!(matches!(rm.model.rules[0].when, Condition::Signal(_)));
+        match &rm.model.rules[0].then {
+            Action::Tilt { class, by, from, .. } => {
+                assert_eq!(class, "equity");
+                assert_eq!(*by, dec!(0.1)); // resolved from params.tilt_size
+                assert_eq!(from, "cash");
+            }
+            other => panic!("expected a Tilt action, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_rule_with_unknown_accessor() {
+        let bad = format!(
+            "{SAMPLE}\n[[rules]]\nid = \"bad\"\nwhen = \"regime_score('SPY') >= 1\"\nthen = {{ kind = \"tilt\", class = \"equity\", by = \"0.1\", from = \"cash\" }}\n"
+        );
+        let err = format!("{:#}", resolve_str(&bad).unwrap_err());
+        assert!(err.contains("unknown signal accessor"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn rejects_rule_referencing_non_universe_symbol() {
+        let bad = format!(
+            "{SAMPLE}\n[[rules]]\nid = \"bad\"\nwhen = \"cycle_bottom_met('DOGE') >= 5\"\nthen = {{ kind = \"tilt\", class = \"equity\", by = \"0.1\", from = \"cash\" }}\n"
+        );
+        let err = format!("{:#}", resolve_str(&bad).unwrap_err());
+        assert!(err.contains("not in the model universe"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn rejects_non_boolean_when() {
+        let bad = format!(
+            "{SAMPLE}\n[[rules]]\nid = \"bad\"\nwhen = \"cycle_bottom_met('SPY')\"\nthen = {{ kind = \"tilt\", class = \"equity\", by = \"0.1\", from = \"cash\" }}\n"
+        );
+        let err = format!("{:#}", resolve_str(&bad).unwrap_err());
+        assert!(err.contains("boolean predicate"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn always_never_stub_keywords_compile() {
+        let s = format!(
+            "{SAMPLE}\n[[rules]]\nid = \"a\"\nwhen = \"always\"\nthen = {{ kind = \"tilt\", class = \"equity\", by = \"0.05\", from = \"cash\" }}\n[[rules]]\nid = \"n\"\nwhen = \"never\"\nthen = {{ kind = \"tilt\", class = \"bond\", by = \"0.05\", from = \"cash\" }}\n"
+        );
+        let rm = resolve_str(&s).unwrap();
+        assert!(matches!(rm.model.rules[0].when, Condition::Always));
+        assert!(matches!(rm.model.rules[1].when, Condition::Never));
     }
 
     #[test]
@@ -695,6 +937,33 @@ commission_pct = 0.001
         let bad = SAMPLE.replace("max_position = 0.50", "max_position = 0.0");
         let err = resolve_str(&bad).unwrap_err().to_string();
         assert!(err.contains("max_position"), "unexpected error: {err}");
+    }
+
+    /// The shipped Model M2 spec must validate, resolve, and compile its two
+    /// signal rules into executable `Condition::Signal` tilt rules.
+    #[test]
+    fn m2_hard_money_spec_validates_and_compiles() {
+        let toml = include_str!("../../../models/m2-hard-money-cycles.toml");
+        let rm = resolve_str(toml).expect("M2 spec must resolve");
+        assert_eq!(rm.name, "m2-hard-money-cycles");
+        assert_eq!(rm.model.rules.len(), 2);
+        for r in &rm.model.rules {
+            assert!(matches!(r.when, Condition::Signal(_)), "rule {} is a signal rule", r.id);
+            assert!(matches!(r.then, Action::Tilt { .. }));
+        }
+        // dip tilt is +0.10 (resolved from params.tilt_size); top tilt is -0.10.
+        let add = rm
+            .model
+            .rules
+            .iter()
+            .find(|r| r.id == "add-hard-money-on-cycle-bottom")
+            .unwrap();
+        if let Action::Tilt { by, from, .. } = &add.then {
+            assert_eq!(*by, dec!(0.10));
+            assert_eq!(from, "cash");
+        } else {
+            panic!("expected tilt");
+        }
     }
 
     #[test]

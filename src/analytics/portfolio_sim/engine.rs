@@ -10,7 +10,7 @@
 //! Money — cash, quantities, fill prices, commissions — is `Decimal`. The f64
 //! metrics are derived from the daily curve *after* the ledger is closed.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
@@ -18,13 +18,20 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 
-use super::actions::{resolve_targets, EvalContext, Rule, TargetResolution};
+use super::actions::{resolve_targets, EvalContext, Rule, SignalEnv, TargetResolution};
 use super::metrics::{self, PortfolioMetrics};
 use super::solver::{solve_targets, SolveBucket, SolveOutcome};
 use super::{
     AssetSpec, CashYield, ClassTarget, PortfolioModel, PricePanel, RebalanceBandMode,
     RebalanceCadence, WithinClass,
 };
+use crate::analytics::cycle_signals::SignalTimeframe;
+
+/// Default timeframe for a signal accessor written without an explicit `@tf`.
+/// The cycle-confluence suites are tuned for the monthly cycle read (matching
+/// the rest of pftui's cycle tooling), so an unqualified `cycle_bottom_met(...)`
+/// reads the monthly snapshot.
+const SIGNAL_DEFAULT_TF: SignalTimeframe = SignalTimeframe::Monthly;
 
 /// One marked-to-market point on the daily equity curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -424,21 +431,28 @@ fn run_sim(model: &PortfolioModel, panel: &PricePanel, opts: SimOptions) -> Resu
         let rebalance_index = n_decisions;
         n_decisions += 1;
 
-        // Collect the rules that FIRE at T: stub `when` true AND the rule's own
+        // Collect the rules that FIRE at T: `when` true AND the rule's own
         // cadence boundary coincides with T. Benchmarks pass `apply_rules = false`.
-        let fired: Vec<Rule> = if opts.apply_rules {
-            let ctx = EvalContext {
+        // A FRESH signal env (with a fresh snapshot memo) is built per rebalance
+        // date so a `(sym, tf)` signal is computed once and never leaks across
+        // dates. Cadence is checked first so a rule off its boundary never even
+        // computes a signal.
+        let fired: Vec<Rule> = if opts.apply_rules && !model.rules.is_empty() {
+            let mut ctx = EvalContext {
                 date: t,
                 rebalance_index,
+                signal: Some(SignalEnv::new(panel, SIGNAL_DEFAULT_TF)),
             };
-            model
-                .rules
-                .iter()
-                .filter(|r| {
-                    r.when.eval(&ctx) && cadence_active(r.cadence, is_week_boundary, is_month_boundary)
-                })
-                .cloned()
-                .collect()
+            let mut out = Vec::new();
+            for r in &model.rules {
+                if !cadence_active(r.cadence, is_week_boundary, is_month_boundary) {
+                    continue;
+                }
+                if r.when.eval(&mut ctx)? {
+                    out.push(r.clone());
+                }
+            }
+            out
         } else {
             Vec::new()
         };
@@ -535,6 +549,17 @@ fn decide_rebalance(
     events: &mut Vec<RebalanceEvent>,
     pending: &mut BTreeMap<NaiveDate, Vec<PendingOrder>>,
 ) -> Result<()> {
+    // Symbols tradable on the decision date T (have a close at T). The signal
+    // rule path splits each class budget across these only, so a non-tradable
+    // symbol's share flows to its tradable peers (consistent with the rule-free
+    // equal-split below), never silently to cash.
+    let tradable: BTreeSet<String> = model
+        .universe
+        .iter()
+        .filter(|a| panel.close_on(&a.symbol, t).is_some())
+        .map(|a| a.symbol.clone())
+        .collect();
+
     // Current marked weights per symbol (+ CASH), for pre_weights.
     let mut pre_weights: Vec<(String, Decimal)> = Vec::new();
     let mut current_symbol_weights: BTreeMap<String, Decimal> = BTreeMap::new();
@@ -586,7 +611,7 @@ fn decide_rebalance(
                 .collect();
             (cw, None)
         } else {
-            match resolve_targets(model, &current_symbol_weights, fired)? {
+            match resolve_targets(model, &current_symbol_weights, &tradable, fired)? {
                 TargetResolution::Infeasible {
                     applied_rule_ids: ids,
                     ..
@@ -1632,5 +1657,144 @@ mod tests {
             assert_eq!(p.equity, dec!(100000));
             assert_eq!(p.invested, dec!(0));
         }
+    }
+
+    /// Plant a deep V-bottom daily series: ~800-day decline then ~300-day rally.
+    /// (Mirrors the cycle_signals V-bottom fixture; the mechanical cycle-bottom
+    /// confluence crosses 5/7 on the monthly read in mid-2020.)
+    fn planted_v_series(start: NaiveDate, n_decline: usize, n_rally: usize) -> Vec<(NaiveDate, Decimal)> {
+        use chrono::Days;
+        use rust_decimal::prelude::FromPrimitive;
+        let mut out = Vec::with_capacity(n_decline + n_rally);
+        let mut price = 1000.0_f64;
+        for i in 0..n_decline {
+            price = 1000.0 - i as f64 * (820.0 / n_decline as f64);
+            let noise = 8.0 * (i as f64 / 11.0).sin();
+            let p = (price + noise).max(50.0);
+            out.push((start + Days::new(i as u64), Decimal::from_f64(p).unwrap().round_dp(2)));
+        }
+        let base = price;
+        for j in 1..=n_rally {
+            let p = base + j as f64 * (700.0 / n_rally as f64);
+            let noise = 6.0 * (j as f64 / 9.0).sin();
+            out.push((
+                start + Days::new((n_decline + j) as u64),
+                Decimal::from_f64(p + noise).unwrap().round_dp(2),
+            ));
+        }
+        out
+    }
+
+    /// M2 end-to-end: a signal rule fires on a PLANTED cycle bottom and tilts the
+    /// book toward hard money vs an otherwise-identical no-rule run, the ledger
+    /// stays balanced, and the rule does NOT fire during the long decline.
+    #[test]
+    fn signal_rule_tilts_on_planted_cycle_bottom() {
+        // cash 0.8 / hard_money 0.2 (HMX). The rule tilts +0.20 into hard money
+        // when the monthly cycle-bottom confluence is >= 5.
+        let base = |rules: Vec<Rule>| PortfolioModel {
+            base_currency: "USD".into(),
+            initial_capital: dec!(100000),
+            universe: vec![AssetSpec::new("HMX", "hard_money")],
+            cash_class: "cash".into(),
+            targets: vec![
+                ClassTarget::new("cash", dec!(0.8), dec!(0), dec!(1)),
+                ClassTarget::new("hard_money", dec!(0.2), dec!(0), dec!(0.6)),
+            ],
+            within_class: WithinClass::Equal,
+            rebalance_cadence: RebalanceCadence::Weekly,
+            rebalance_band_mode: RebalanceBandMode::ToTarget,
+            fill: FillMode::NextClose,
+            commission_pct: dec!(0),
+            slippage_pct: dec!(0),
+            cash_yield: CashYield::None,
+            max_position: None,
+            rules,
+        };
+        let tilt_rule = Rule::new(
+            "add-hm",
+            Condition::Signal(Box::new(
+                crate::analytics::portfolio_sim::rule_expr::Expr::Compare {
+                    op: crate::analytics::portfolio_sim::rule_expr::CmpOp::Ge,
+                    lhs: Box::new(crate::analytics::portfolio_sim::rule_expr::Expr::Accessor {
+                        name: "cycle_bottom_met".into(),
+                        args: vec!["HMX".into()],
+                        tf: None,
+                    }),
+                    rhs: Box::new(crate::analytics::portfolio_sim::rule_expr::Expr::Num(5.0)),
+                },
+            )),
+            Action::Tilt {
+                class: "hard_money".into(),
+                by: dec!(0.2),
+                from: "cash".into(),
+                to: "cash".into(),
+            },
+            10,
+            RebalanceCadence::Weekly,
+        );
+
+        let series = planted_v_series(d(2018, 1, 1), 800, 300);
+        let mut panel = PricePanel::new();
+        panel.insert_series("HMX", series);
+
+        let ruled = simulate(&base(vec![tilt_rule]), &panel).unwrap();
+        let plain = simulate(&base(vec![]), &panel).unwrap();
+
+        // (1) Ledger balanced on every day (both runs).
+        for p in ruled.daily_equity_curve.iter().chain(plain.daily_equity_curve.iter()) {
+            assert_eq!(p.equity, p.cash + p.invested, "ledger must balance at {}", p.date);
+        }
+
+        // (2) Early stretch does NOT fire: the first rebalance has too little
+        //     history (insufficient → NaN → no fire), and a mid-decline 2019
+        //     rebalance is below threshold.
+        assert!(
+            ruled.rebalance_events[0].applied_rule_ids.is_empty(),
+            "first rebalance must not fire (insufficient history)"
+        );
+        let fired_in_2019 = ruled
+            .rebalance_events
+            .iter()
+            .filter(|e| e.date.year() == 2019)
+            .any(|e| !e.applied_rule_ids.is_empty());
+        assert!(!fired_in_2019, "rule must not fire during the 2019 decline");
+
+        // (3) The rule DOES fire on the planted bottom (mid-2020), tagging events.
+        let firing: Vec<&RebalanceEvent> = ruled
+            .rebalance_events
+            .iter()
+            .filter(|e| e.applied_rule_ids.iter().any(|id| id == "add-hm"))
+            .collect();
+        assert!(!firing.is_empty(), "rule must fire on the planted cycle bottom");
+        assert!(
+            firing.iter().all(|e| e.date.year() == 2020),
+            "firing window should sit at the mid-2020 bottom, got {:?}",
+            firing.iter().map(|e| e.date).collect::<Vec<_>>()
+        );
+
+        // (4) Allocation tilts toward hard money: the ruled run pushes HMX above
+        //     the 0.2 baseline at least once; the no-rule run never does.
+        let hmx_post = |rep: &PortfolioBacktestReport| -> Decimal {
+            rep.rebalance_events
+                .iter()
+                .flat_map(|e| e.post_weights.iter())
+                .filter(|(k, _)| k == "HMX")
+                .map(|(_, w)| *w)
+                .max()
+                .unwrap_or(dec!(0))
+        };
+        let ruled_max = hmx_post(&ruled);
+        let plain_max = hmx_post(&plain);
+        assert!(
+            ruled_max > plain_max,
+            "ruled HMX max weight {ruled_max} must exceed no-rule max {plain_max}"
+        );
+        assert!(
+            ruled_max > dec!(0.2),
+            "tilt should raise HMX above its 0.2 base, got {ruled_max}"
+        );
+        // The no-rule run holds the base 0.2 target (no tilt ever).
+        assert!(plain_max <= dec!(0.2000001), "no-rule HMX must stay at base, got {plain_max}");
     }
 }

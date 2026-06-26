@@ -29,16 +29,19 @@
 //!   its symbols (equal weight + overrides) and project the symbol layer inside
 //!   that budget, clamping each symbol to `max_position`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 
+use super::accessors::{AtDateCtx, Memo};
+use super::rule_expr::{self, Expr};
 use super::solver::{solve_targets, SolveBucket, SolveOutcome};
-use super::{PortfolioModel, RebalanceCadence};
+use super::{PortfolioModel, PricePanel, RebalanceCadence};
+use crate::analytics::cycle_signals::SignalTimeframe;
 
 /// A target the algebra can address: a whole class budget or a single symbol.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -72,10 +75,11 @@ pub enum Action {
     GateBlock { key: TargetKey },
 }
 
-/// The `when` predicate. **STUB for P3a** — no signal access. P3b extends this
-/// (e.g. a `Signal(Expr)` variant) without changing the engine call site: the
-/// engine only ever calls [`Condition::eval`] against an [`EvalContext`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// The `when` predicate. The date/index stubs are evaluated with no extra
+/// context; [`Condition::Signal`] (P3b) evaluates a validated signal expression
+/// against the [`SignalEnv`] the engine supplies — WITHOUT changing the engine's
+/// single `Condition::eval(&mut EvalContext)` call site.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Condition {
     /// Always fires.
     Always,
@@ -87,22 +91,61 @@ pub enum Condition {
     BeforeDate(NaiveDate),
     /// Fires when `(rebalance_index - offset)` is a non-negative multiple of `n`.
     EveryNthRebalance { n: usize, offset: usize },
+    /// Fires when the validated signal expression is true at the rebalance date
+    /// (point-in-time, COMPLETED-bucket signal reads — see [`super::accessors`]).
+    Signal(Box<Expr>),
 }
 
-/// The (stub) evaluation context handed to [`Condition::eval`]. P3b widens this
-/// (a signal snapshot, regime read, …) without disturbing existing variants.
-#[derive(Debug, Clone, Copy)]
-pub struct EvalContext {
+/// The signal-evaluation environment the engine threads into [`EvalContext`] at
+/// each rebalance date: the price panel, the default timeframe for `@tf`-less
+/// accessors, and a FRESH per-date snapshot [`Memo`] (no cross-date leakage).
+#[derive(Debug)]
+pub struct SignalEnv<'a> {
+    pub panel: &'a PricePanel,
+    pub default_tf: SignalTimeframe,
+    pub memo: Memo,
+}
+
+impl<'a> SignalEnv<'a> {
+    pub fn new(panel: &'a PricePanel, default_tf: SignalTimeframe) -> Self {
+        Self {
+            panel,
+            default_tf,
+            memo: Memo::new(),
+        }
+    }
+}
+
+/// The evaluation context handed to [`Condition::eval`]. The date/index drive
+/// the stub conditions; `signal` (when present) carries the panel + memo a
+/// [`Condition::Signal`] needs. Not `Copy` — it owns a mutable snapshot memo.
+#[derive(Debug)]
+pub struct EvalContext<'a> {
     /// The rebalance decision date.
     pub date: NaiveDate,
     /// 0-based index of this rebalance within the run.
     pub rebalance_index: usize,
+    /// Signal-evaluation environment (None for stub-only callers/tests).
+    pub signal: Option<SignalEnv<'a>>,
+}
+
+impl<'a> EvalContext<'a> {
+    /// A stub-only context (no signal environment).
+    pub fn stub(date: NaiveDate, rebalance_index: usize) -> Self {
+        Self {
+            date,
+            rebalance_index,
+            signal: None,
+        }
+    }
 }
 
 impl Condition {
-    /// Evaluate the stub condition. Deterministic, side-effect-free.
-    pub fn eval(&self, ctx: &EvalContext) -> bool {
-        match self {
+    /// Evaluate the condition. Deterministic, side-effect-free apart from the
+    /// per-date signal memo. Returns `Err` only on an internal inconsistency
+    /// (a signal rule with no signal env) — never to silently skip a rule.
+    pub fn eval(&self, ctx: &mut EvalContext) -> Result<bool> {
+        Ok(match self {
             Condition::Always => true,
             Condition::Never => false,
             Condition::AfterDate(d) => ctx.date >= *d,
@@ -114,7 +157,20 @@ impl Condition {
                     (ctx.rebalance_index - *offset).is_multiple_of(*n)
                 }
             }
-        }
+            Condition::Signal(expr) => {
+                let date = ctx.date;
+                let env = ctx.signal.as_mut().ok_or_else(|| {
+                    anyhow!("signal rule evaluated without a signal environment (engine bug)")
+                })?;
+                let mut at = AtDateCtx {
+                    as_of: date,
+                    panel: env.panel,
+                    default_tf: env.default_tf,
+                    memo: &mut env.memo,
+                };
+                rule_expr::eval_bool(expr, &mut at)?
+            }
+        })
     }
 }
 
@@ -191,6 +247,7 @@ struct SymbolOverride {
 pub fn resolve_targets(
     model: &PortfolioModel,
     current_symbol_weights: &BTreeMap<String, Decimal>,
+    tradable: &BTreeSet<String>,
     fired_rules: &[Rule],
 ) -> Result<TargetResolution> {
     let _ = current_symbol_weights; // reserved for P3b band/drift semantics
@@ -378,10 +435,14 @@ pub fn resolve_targets(
             continue; // cash holds no tradable symbol
         }
         let budget = *class_weights.get(&ct.class).expect("solved");
+        // Split the class budget across this class's TRADABLE symbols only, so a
+        // non-tradable symbol's share flows to its tradable peers (matching the
+        // engine's rule-free equal-split). A missing symbol does NOT park its
+        // budget in cash here — that was the P3a carry-forward inconsistency.
         let symbols: Vec<&String> = model
             .universe
             .iter()
-            .filter(|a| a.class == ct.class)
+            .filter(|a| a.class == ct.class && tradable.contains(&a.symbol))
             .map(|a| &a.symbol)
             .collect();
         if symbols.is_empty() {
@@ -528,11 +589,16 @@ mod tests {
         Rule::new(id, Condition::Always, then, 10, RebalanceCadence::Weekly)
     }
 
+    /// Every universe symbol is tradable (the P3a default — all dates present).
+    fn all_tradable(m: &PortfolioModel) -> BTreeSet<String> {
+        m.universe.iter().map(|a| a.symbol.clone()).collect()
+    }
+
     /// (a) Empty rules → base_policy weights unchanged.
     #[test]
     fn empty_rules_unchanged() {
         let m = base_model();
-        let res = resolve_targets(&m, &BTreeMap::new(), &[]).unwrap();
+        let res = resolve_targets(&m, &BTreeMap::new(), &all_tradable(&m),&[]).unwrap();
         assert_eq!(cw(&res, "cash"), dec!(0.40000000));
         assert_eq!(cw(&res, "equity"), dec!(0.30000000));
         assert_eq!(cw(&res, "bond"), dec!(0.30000000));
@@ -553,7 +619,7 @@ mod tests {
                 weight: dec!(0.5),
             },
         )];
-        let res = resolve_targets(&m, &BTreeMap::new(), &rules).unwrap();
+        let res = resolve_targets(&m, &BTreeMap::new(), &all_tradable(&m),&rules).unwrap();
         assert_eq!(cw(&res, "bond"), dec!(0.50000000));
         assert_eq!(cw(&res, "cash"), dec!(0.30000000));
         assert_eq!(cw(&res, "equity"), dec!(0.20000000));
@@ -574,7 +640,7 @@ mod tests {
                 to: "cash".into(),
             },
         )];
-        let res = resolve_targets(&m, &BTreeMap::new(), &rules).unwrap();
+        let res = resolve_targets(&m, &BTreeMap::new(), &all_tradable(&m),&rules).unwrap();
         assert_eq!(cw(&res, "cash"), dec!(0.30000000));
         assert_eq!(cw(&res, "equity"), dec!(0.40000000));
         assert_eq!(cw(&res, "bond"), dec!(0.30000000));
@@ -600,7 +666,7 @@ mod tests {
                 key: TargetKey::Symbol("BTC".into()),
             },
         )];
-        let res = resolve_targets(&m, &BTreeMap::new(), &rules).unwrap();
+        let res = resolve_targets(&m, &BTreeMap::new(), &all_tradable(&m),&rules).unwrap();
         assert_eq!(cw(&res, "hard_money"), dec!(0.20000000));
         assert_eq!(sw(&res, "BTC"), dec!(0));
         assert_eq!(sw(&res, "GOLD"), dec!(0.20000000));
@@ -619,7 +685,7 @@ mod tests {
             ClassTarget::new("hard_money", dec!(0.2), dec!(0), dec!(1)),
         ];
         let rules = vec![rule("exit-btc", Action::Exit { symbol: "BTC".into() })];
-        let res = resolve_targets(&m, &BTreeMap::new(), &rules).unwrap();
+        let res = resolve_targets(&m, &BTreeMap::new(), &all_tradable(&m),&rules).unwrap();
         assert_eq!(sw(&res, "BTC"), dec!(0));
         assert_eq!(sw(&res, "GOLD"), dec!(0.20000000));
     }
@@ -646,7 +712,7 @@ mod tests {
                 up_to: dec!(0.45),
             },
         )];
-        let res = resolve_targets(&m, &BTreeMap::new(), &rules).unwrap();
+        let res = resolve_targets(&m, &BTreeMap::new(), &all_tradable(&m),&rules).unwrap();
         assert_eq!(sw(&res, "SPY"), dec!(0.30000000));
         assert_eq!(sw(&res, "VTI"), dec!(0.20000000));
     }
@@ -668,7 +734,7 @@ mod tests {
                 weight: dec!(0.9),
             },
         )];
-        let res = resolve_targets(&m, &BTreeMap::new(), &rules).unwrap();
+        let res = resolve_targets(&m, &BTreeMap::new(), &all_tradable(&m),&rules).unwrap();
         assert!(matches!(res, TargetResolution::Infeasible { .. }));
     }
 
@@ -702,8 +768,8 @@ mod tests {
                 RebalanceCadence::Weekly,
             ),
         ];
-        let r1 = resolve_targets(&m, &BTreeMap::new(), &rules).unwrap();
-        let r2 = resolve_targets(&m, &BTreeMap::new(), &rules).unwrap();
+        let r1 = resolve_targets(&m, &BTreeMap::new(), &all_tradable(&m),&rules).unwrap();
+        let r2 = resolve_targets(&m, &BTreeMap::new(), &all_tradable(&m),&rules).unwrap();
         assert_eq!(r1, r2);
         // cash .4 −0.05 −0.05 = .3; equity .35; bond .35.
         assert_eq!(cw(&r1, "cash"), dec!(0.30000000));
@@ -737,7 +803,7 @@ mod tests {
                 RebalanceCadence::Weekly,
             ),
         ];
-        let res = resolve_targets(&m, &BTreeMap::new(), &rules).unwrap();
+        let res = resolve_targets(&m, &BTreeMap::new(), &all_tradable(&m),&rules).unwrap();
         if let TargetResolution::Resolved { warnings, .. } = &res {
             assert!(warnings.iter().any(|w| w.contains("twice at priority")));
         } else {
@@ -751,19 +817,66 @@ mod tests {
     #[test]
     fn condition_eval_stub() {
         let d = |y, m, day| NaiveDate::from_ymd_opt(y, m, day).unwrap();
-        let ctx = EvalContext {
-            date: d(2024, 6, 15),
-            rebalance_index: 4,
-        };
-        assert!(Condition::Always.eval(&ctx));
-        assert!(!Condition::Never.eval(&ctx));
-        assert!(Condition::AfterDate(d(2024, 6, 1)).eval(&ctx));
-        assert!(!Condition::AfterDate(d(2024, 7, 1)).eval(&ctx));
-        assert!(Condition::BeforeDate(d(2024, 7, 1)).eval(&ctx));
-        assert!(!Condition::BeforeDate(d(2024, 6, 1)).eval(&ctx));
+        let mut ctx = EvalContext::stub(d(2024, 6, 15), 4);
+        assert!(Condition::Always.eval(&mut ctx).unwrap());
+        assert!(!Condition::Never.eval(&mut ctx).unwrap());
+        assert!(Condition::AfterDate(d(2024, 6, 1)).eval(&mut ctx).unwrap());
+        assert!(!Condition::AfterDate(d(2024, 7, 1)).eval(&mut ctx).unwrap());
+        assert!(Condition::BeforeDate(d(2024, 7, 1)).eval(&mut ctx).unwrap());
+        assert!(!Condition::BeforeDate(d(2024, 6, 1)).eval(&mut ctx).unwrap());
         // index 4, n=2, offset=0 → (4-0)%2==0 → fires.
-        assert!(Condition::EveryNthRebalance { n: 2, offset: 0 }.eval(&ctx));
+        assert!(Condition::EveryNthRebalance { n: 2, offset: 0 }
+            .eval(&mut ctx)
+            .unwrap());
         // index 4, n=2, offset=1 → (4-1)%2==1 → no.
-        assert!(!Condition::EveryNthRebalance { n: 2, offset: 1 }.eval(&ctx));
+        assert!(!Condition::EveryNthRebalance { n: 2, offset: 1 }
+            .eval(&mut ctx)
+            .unwrap());
+    }
+
+    /// A signal rule with NO signal environment is an engine bug, not a silent
+    /// skip — it must error rather than quietly evaluate to false.
+    #[test]
+    fn signal_without_env_errors() {
+        let d = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+        let mut ctx = EvalContext::stub(d, 0);
+        let cond = Condition::Signal(Box::new(crate::analytics::portfolio_sim::rule_expr::Expr::Num(
+            1.0,
+        )));
+        assert!(cond.eval(&mut ctx).is_err());
+    }
+
+    /// The P3a carry-forward fix: when a class budget is split, a NON-tradable
+    /// symbol's share flows to its tradable peer instead of leaking to cash.
+    /// hard_money budget 0.2 over {BTC, GOLD}; BTC non-tradable on T (omitted
+    /// from the tradable set) → GOLD takes the whole 0.2 (a fired rule path).
+    #[test]
+    fn non_tradable_symbol_share_redistributes_to_peers() {
+        let mut m = base_model();
+        m.universe = vec![
+            AssetSpec::new("BTC", "hard_money"),
+            AssetSpec::new("GOLD", "hard_money"),
+        ];
+        m.targets = vec![
+            ClassTarget::new("cash", dec!(0.8), dec!(0), dec!(1)),
+            ClassTarget::new("hard_money", dec!(0.2), dec!(0), dec!(1)),
+        ];
+        // A trivially-firing rule routes through the symbol_targets (rule) path.
+        let rules = vec![rule(
+            "tilt-noop",
+            Action::Tilt {
+                class: "hard_money".into(),
+                by: dec!(0),
+                from: "cash".into(),
+                to: "cash".into(),
+            },
+        )];
+        // Only GOLD is tradable on this date.
+        let tradable: BTreeSet<String> = ["GOLD".to_string()].into_iter().collect();
+        let res = resolve_targets(&m, &BTreeMap::new(), &tradable, &rules).unwrap();
+        assert_eq!(cw(&res, "hard_money"), dec!(0.20000000));
+        // BTC absent (non-tradable) → 0; GOLD absorbs the full class budget.
+        assert_eq!(sw(&res, "BTC"), dec!(0));
+        assert_eq!(sw(&res, "GOLD"), dec!(0.20000000));
     }
 }

@@ -252,14 +252,10 @@ pub fn run_backtest(
     let panel = load_panel(&loader, &rm.model, from_d, to_d)?;
     let report = simulate(&rm.model, &panel)?;
 
-    // Warnings: rules parsed-not-evaluated, and any deferred/dropped legs.
+    // Warnings: any deferred/dropped legs, infeasible rebalances. (Rules now
+    // evaluate as real signal rules — see the engine; a bad rule fails at
+    // resolve time rather than running silently as base_policy.)
     let mut warnings: Vec<String> = Vec::new();
-    if rm.has_rules() {
-        warnings.push(format!(
-            "{} rule(s) parsed but not yet evaluated (signal-rule engine lands in P3); running base_policy only",
-            rm.rules.len()
-        ));
-    }
     let deferred: usize = report.rebalance_events.iter().map(|e| e.deferred_legs.len()).sum();
     let dropped: usize = report.rebalance_events.iter().map(|e| e.dropped_legs.len()).sum();
     if deferred > 0 {

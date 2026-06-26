@@ -20,16 +20,18 @@
 // exist ahead of its wiring without polluting the workspace warning budget.
 #![allow(dead_code)]
 
+pub mod accessors;
 pub mod actions;
 pub mod engine;
 pub mod loader;
 pub mod metrics;
+pub mod rule_expr;
 pub mod solver;
 pub mod spec;
 
 #[allow(unused_imports)]
 pub use actions::{
-    resolve_targets, Action, Condition, EvalContext, Rule, TargetKey, TargetResolution,
+    resolve_targets, Action, Condition, EvalContext, Rule, SignalEnv, TargetKey, TargetResolution,
 };
 
 #[allow(unused_imports)]
@@ -208,6 +210,24 @@ impl PricePanel {
     /// Close for `symbol` on exactly `date`, if present.
     pub fn close_on(&self, symbol: &str, date: chrono::NaiveDate) -> Option<Decimal> {
         self.closes.get(symbol).and_then(|m| m.get(&date)).copied()
+    }
+
+    /// Every `(date, close)` for `symbol` with `date <= cutoff`, oldest-first.
+    /// The signal-accessor adapter uses this to build a COMPLETED-bucket-trimmed
+    /// daily history (see [`accessors::completed_bucket_history`]).
+    pub fn closes_through(
+        &self,
+        symbol: &str,
+        cutoff: chrono::NaiveDate,
+    ) -> Vec<(chrono::NaiveDate, Decimal)> {
+        self.closes
+            .get(symbol)
+            .map(|m| {
+                m.range((std::ops::Bound::Unbounded, std::ops::Bound::Included(cutoff)))
+                    .map(|(d, c)| (*d, *c))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// The first `(date, close)` for `symbol` strictly after `after`.
